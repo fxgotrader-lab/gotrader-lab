@@ -36,6 +36,93 @@ export type ICTConcept =
   | "higher-timeframe bias"
   | "kill-zone tagging";
 
+export type StructureDirection = "bullish" | "bearish";
+
+export type CandleSession = "Asia" | "London" | "New York" | "Off hours";
+
+export type ICTKillZone = "Asia range" | "London open" | "NY AM" | "NY Lunch" | "NY PM" | "none";
+
+export interface Candle {
+  id: string;
+  symbol: FuturesSymbol;
+  timeframe: Timeframe;
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+}
+
+export interface SwingPoint {
+  id: string;
+  candleId: string;
+  timestamp: string;
+  index: number;
+  type: "high" | "low";
+  price: number;
+  strength: number;
+}
+
+export interface MarketStructureEvent {
+  id: string;
+  candleId: string;
+  timestamp: string;
+  index: number;
+  type: "MSS" | "BOS";
+  direction: StructureDirection;
+  price: number;
+  brokenSwingId: string;
+  displacement: "mild" | "strong";
+  description: string;
+}
+
+export interface LiquiditySweep {
+  id: string;
+  candleId: string;
+  timestamp: string;
+  index: number;
+  direction: "buy-side" | "sell-side";
+  sweptSwingId: string;
+  sweptLevel: number;
+  rejectionClose: number;
+  reclaimed: boolean;
+  description: string;
+}
+
+export interface FairValueGap {
+  id: string;
+  candleId: string;
+  timestamp: string;
+  index: number;
+  direction: StructureDirection;
+  start: number;
+  end: number;
+  midpoint: number;
+  mitigated: boolean;
+  createdByDisplacement: boolean;
+  description: string;
+}
+
+export interface PremiumDiscountZone {
+  rangeHigh: number;
+  rangeLow: number;
+  equilibrium: number;
+  premium: [number, number];
+  discount: [number, number];
+  currentPrice: number;
+  currentZone: "premium" | "discount" | "equilibrium";
+}
+
+export interface SessionContext {
+  candleId: string;
+  timestamp: string;
+  session: CandleSession;
+  killZone: ICTKillZone;
+  minutesFromSessionOpen: number;
+  label: string;
+}
+
 export interface PerformanceSnapshot {
   hitRate: number;
   drawdown: number;
@@ -144,7 +231,7 @@ export interface ICTContext {
   premiumDiscount: "premium" | "discount" | "equilibrium";
   sessionTiming: TradingSession;
   higherTimeframeBias: MarketBias;
-  killZoneTag: "Asia range" | "London open" | "NY AM" | "NY PM" | "none";
+  killZoneTag: ICTKillZone;
 }
 
 export interface SimulatedTradePlan {

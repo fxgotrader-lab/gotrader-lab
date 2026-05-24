@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import {
   Activity,
   Bot,
+  ChartCandlestick,
   FlaskConical,
   Gauge,
   GitBranch,
@@ -18,6 +19,7 @@ const navigation = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/agents", label: "Agents", icon: Bot },
   { href: "/research", label: "Research", icon: FlaskConical },
+  { href: "/ict-lab", label: "ICT Lab", icon: ChartCandlestick },
   { href: "/performance", label: "Performance", icon: Activity },
   { href: "/prompt-lab", label: "Prompt Lab", icon: GitBranch },
   { href: "/settings", label: "Settings", icon: Settings }

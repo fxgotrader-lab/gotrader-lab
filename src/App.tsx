@@ -3,6 +3,7 @@ import { AgentDetail } from "@/components/agents/AgentDetail";
 import { AgentRoster } from "@/components/agents/AgentRoster";
 import { AppShell } from "@/components/AppShell";
 import { DashboardOverview } from "@/components/dashboard/DashboardOverview";
+import { ICTLab } from "@/components/ict-lab/ICTLab";
 import { PerformanceView } from "@/components/performance/PerformanceView";
 import { PromptLab } from "@/components/prompt-lab/PromptLab";
 import { ResearchWorkbench } from "@/components/research/ResearchWorkbench";
@@ -20,6 +21,7 @@ export default function App() {
         <Route path="/agents" element={<AgentRoster state={state} />} />
         <Route path="/agents/:id" element={<AgentDetail state={state} />} />
         <Route path="/research" element={<ResearchWorkbench state={state} actions={actions} />} />
+        <Route path="/ict-lab" element={<ICTLab />} />
         <Route path="/performance" element={<PerformanceView state={state} />} />
         <Route path="/prompt-lab" element={<PromptLab state={state} actions={actions} />} />
         <Route path="/settings" element={<SettingsView state={state} onReset={actions.reset} />} />
