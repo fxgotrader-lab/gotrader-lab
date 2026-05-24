@@ -7,6 +7,7 @@ import { ICTLab } from "@/components/ict-lab/ICTLab";
 import { PerformanceView } from "@/components/performance/PerformanceView";
 import { PromptLab } from "@/components/prompt-lab/PromptLab";
 import { ResearchWorkbench } from "@/components/research/ResearchWorkbench";
+import { ReplayView } from "@/components/replay/ReplayView";
 import { SettingsView } from "@/components/settings/SettingsView";
 import { useLabState } from "@/lib/storage/useLabState";
 
@@ -22,6 +23,7 @@ export default function App() {
         <Route path="/agents/:id" element={<AgentDetail state={state} />} />
         <Route path="/research" element={<ResearchWorkbench state={state} actions={actions} />} />
         <Route path="/ict-lab" element={<ICTLab />} />
+        <Route path="/replay" element={<ReplayView />} />
         <Route path="/performance" element={<PerformanceView state={state} />} />
         <Route path="/prompt-lab" element={<PromptLab state={state} actions={actions} />} />
         <Route path="/settings" element={<SettingsView state={state} onReset={actions.reset} />} />

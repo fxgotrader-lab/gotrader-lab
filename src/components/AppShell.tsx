@@ -8,6 +8,7 @@ import {
   Gauge,
   GitBranch,
   LayoutDashboard,
+  RefreshCw,
   Settings,
   ShieldCheck
 } from "lucide-react";
@@ -20,6 +21,7 @@ const navigation = [
   { href: "/agents", label: "Agents", icon: Bot },
   { href: "/research", label: "Research", icon: FlaskConical },
   { href: "/ict-lab", label: "ICT Lab", icon: ChartCandlestick },
+  { href: "/replay", label: "Replay", icon: RefreshCw },
   { href: "/performance", label: "Performance", icon: Activity },
   { href: "/prompt-lab", label: "Prompt Lab", icon: GitBranch },
   { href: "/settings", label: "Settings", icon: Settings }

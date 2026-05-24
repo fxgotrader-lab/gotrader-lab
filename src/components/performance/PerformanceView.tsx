@@ -1,16 +1,31 @@
-import { AlertTriangle, Activity, Trophy } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useMemo } from "react";
+import { AlertTriangle, Activity, ShieldAlert, Trophy } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { MetricCard } from "@/components/MetricCard";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { runBacktest } from "@/lib/backtesting";
+import { mockCandles } from "@/lib/mockData/mockCandles";
 import { aggregatePortfolioMetrics, identifyWeakestAgent } from "@/lib/scoring";
 import type { LabState } from "@/lib/types";
 import { formatPercent, formatSigned } from "@/lib/utils";
 
+const biasVariant = (bias?: string) => {
+  if (bias === "bullish") {
+    return "success" as const;
+  }
+  if (bias === "bearish") {
+    return "danger" as const;
+  }
+  return "warning" as const;
+};
+
 export function PerformanceView({ state }: { state: LabState }) {
   const metrics = aggregatePortfolioMetrics(state);
   const weakest = identifyWeakestAgent(state);
+  const backtest = useMemo(() => runBacktest(mockCandles, { symbol: "NQ", timeframe: "5m" }), []);
+  const backtestSummary = backtest.summary;
   const chartData = state.agents
     .filter((agent) => agent.layer !== "cio")
     .map((agent) => ({
@@ -42,6 +57,107 @@ export function PerformanceView({ state }: { state: LabState }) {
         <MetricCard label="Sharpe-like" value={metrics.sharpeLike.toFixed(2)} detail="Heuristic score" />
         <MetricCard label="Stored outcomes" value={String(state.outcomes.length)} detail="Local memory rows" />
       </div>
+
+      <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+        <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
+        Simulation only. No broker connection. No real trades.
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <MetricCard label="Backtest trades" value={String(backtestSummary.totalTrades)} detail={`${backtestSummary.directionalTrades} directional`} />
+        <MetricCard label="Backtest win rate" value={formatPercent(backtestSummary.winRate)} detail={`${backtestSummary.wins} target hit(s)`} />
+        <MetricCard label="Average R" value={formatSigned(backtestSummary.averageR, 2)} detail="Per simulated record" tone={backtestSummary.averageR >= 0 ? "positive" : "danger"} />
+        <MetricCard label="Max drawdown" value={`${backtestSummary.maxDrawdown.toFixed(2)}R`} detail="Replay equity curve" />
+        <MetricCard label="Best trade" value={`${formatSigned(backtestSummary.bestTrade?.rMultiple ?? 0, 2)}R`} detail={backtestSummary.bestTrade?.outcome.replace("_", " ") ?? "n/a"} tone="positive" />
+        <MetricCard label="Worst trade" value={`${formatSigned(backtestSummary.worstTrade?.rMultiple ?? 0, 2)}R`} detail={backtestSummary.worstTrade?.outcome.replace("_", " ") ?? "n/a"} tone="danger" />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Backtest Equity Curve</CardTitle>
+            <CardDescription>Cumulative simulated R from deterministic mock-candle replay.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={backtestSummary.equityCurve}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
+                  <XAxis dataKey="index" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={{ background: "#111827", border: "1px solid #334155", borderRadius: 8 }} />
+                  <Line type="monotone" dataKey="equityR" stroke="#2dd4bf" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Strategy / Agent Attribution</CardTitle>
+            <CardDescription>How often each internal agent aligned with the CIO replay thesis.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {backtestSummary.agentAttribution.map((agent) => (
+              <div key={agent.agentId} className="rounded-lg border border-border bg-background/45 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="font-medium">{agent.name}</p>
+                    <p className="text-xs text-muted-foreground">{agent.totalOpinions} replay opinions</p>
+                  </div>
+                  <Badge variant="secondary">{formatPercent(agent.cioAlignmentRate)}</Badge>
+                </div>
+                <div className="mt-3 grid grid-cols-4 gap-2 text-xs text-muted-foreground">
+                  <span>Bull {agent.bullishCount}</span>
+                  <span>Bear {agent.bearishCount}</span>
+                  <span>Neutral {agent.neutralCount}</span>
+                  <span>Conf {formatPercent(agent.averageConfidence)}</span>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Backtest Trade List</CardTitle>
+          <CardDescription>Simulated target, invalidation, and expiry outcomes from mock OHLC only.</CardDescription>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <table className="w-full min-w-[920px] text-left text-sm">
+            <thead className="text-xs uppercase text-muted-foreground">
+              <tr className="border-b border-border">
+                <th className="py-3 pr-3">Decision</th>
+                <th className="py-3 pr-3">Bias</th>
+                <th className="py-3 pr-3">Confidence</th>
+                <th className="py-3 pr-3">Outcome</th>
+                <th className="py-3 pr-3">R</th>
+                <th className="py-3 pr-3">MFE</th>
+                <th className="py-3 pr-3">MAE</th>
+                <th className="py-3 pr-3">Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {backtest.trades.map((trade) => (
+                <tr key={trade.id} className="border-b border-border/70">
+                  <td className="py-3 pr-3 font-mono">{trade.decisionIndex + 1}</td>
+                  <td className="py-3 pr-3">
+                    <Badge variant={biasVariant(trade.bias)}>{trade.bias}</Badge>
+                  </td>
+                  <td className="py-3 pr-3 font-mono">{formatPercent(trade.confidence)}</td>
+                  <td className="py-3 pr-3">{trade.outcome.replace("_", " ")}</td>
+                  <td className="py-3 pr-3 font-mono">{formatSigned(trade.rMultiple, 2)}R</td>
+                  <td className="py-3 pr-3 font-mono">{trade.maxFavorableExcursion.toFixed(2)}</td>
+                  <td className="py-3 pr-3 font-mono">{trade.maxAdverseExcursion.toFixed(2)}</td>
+                  <td className="py-3 pr-3 text-muted-foreground">{trade.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-5 xl:grid-cols-[1.3fr_0.9fr]">
         <Card>
