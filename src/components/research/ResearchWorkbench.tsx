@@ -26,6 +26,15 @@ const symbolOptions = ["ES", "NQ", "MES", "MNQ"].map((value) => ({ label: value,
 const timeframeOptions = ["1m", "5m", "15m", "1h", "4h", "1d"].map((value) => ({ label: value, value }));
 const sessionOptions = ["Globex", "London", "New York AM", "New York Lunch", "New York PM"].map((value) => ({ label: value, value }));
 const regimeOptions = ["trend", "balanced", "volatile", "range", "news-driven", "risk-off", "risk-on"].map((value) => ({ label: value, value }));
+const biasVariant = (bias?: string) => {
+  if (bias === "bullish") {
+    return "success" as const;
+  }
+  if (bias === "bearish") {
+    return "danger" as const;
+  }
+  return "warning" as const;
+};
 
 export function ResearchWorkbench({ state, actions }: { state: LabState; actions: ResearchActions }) {
   const [input, setInput] = useState<ThesisInput>({
@@ -46,6 +55,7 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
     () => state.debateSessions.find((debate) => debate.cioThesisId === activeThesis?.id),
     [activeThesis?.id, state.debateSessions]
   );
+  const structuredIct = activeThesis?.ictContext;
 
   const updateInput = (field: keyof ThesisInput, value: string) => {
     setInput((current) => ({ ...current, [field]: value }));
@@ -179,7 +189,7 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
                     {activeThesis.symbol} {activeThesis.timeframe} during {activeThesis.session}
                   </CardDescription>
                 </div>
-                <Badge variant={activeThesis.finalBias === "bullish" ? "success" : activeThesis.finalBias === "bearish" ? "danger" : "warning"}>
+                <Badge variant={biasVariant(activeThesis.finalBias)}>
                   {activeThesis.finalBias}
                 </Badge>
               </div>
@@ -270,6 +280,80 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
         ) : null}
       </div>
 
+      {structuredIct ? (
+        <Card>
+          <CardHeader>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle>Structured ICT Context</CardTitle>
+                <CardDescription>
+                  Deterministic mock-candle analysis injected into the CIO thesis pipeline.
+                </CardDescription>
+              </div>
+              <Badge variant={biasVariant(structuredIct.bias)}>{structuredIct.bias ?? "neutral"}</Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs text-muted-foreground">Confluence</p>
+                <p className="mt-1 font-mono text-lg">{formatPercent(structuredIct.confluenceScore ?? 0)}</p>
+                <Progress value={(structuredIct.confluenceScore ?? 0) * 100} className="mt-2" />
+              </div>
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs text-muted-foreground">Swing high</p>
+                <p className="mt-1 font-mono text-lg">{structuredIct.latestSwingHigh?.price ?? "n/a"}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs text-muted-foreground">Swing low</p>
+                <p className="mt-1 font-mono text-lg">{structuredIct.latestSwingLow?.price ?? "n/a"}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs text-muted-foreground">MSS</p>
+                <p className="mt-1 font-mono text-lg">
+                  {structuredIct.hasBullishMSS ? "Bull" : structuredIct.hasBearishMSS ? "Bear" : "None"}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs text-muted-foreground">BOS</p>
+                <p className="mt-1 font-mono text-lg">
+                  {structuredIct.hasBullishBOS ? "Bull" : structuredIct.hasBearishBOS ? "Bear" : "None"}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs text-muted-foreground">Sweeps</p>
+                <p className="mt-1 font-mono text-lg">{structuredIct.liquiditySweeps?.length ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs text-muted-foreground">FVGs</p>
+                <p className="mt-1 font-mono text-lg">{structuredIct.fairValueGaps?.length ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs text-muted-foreground">Location</p>
+                <p className="mt-1 font-mono text-lg">{structuredIct.premiumDiscount ?? "equilibrium"}</p>
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-[0.7fr_1.3fr]">
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs text-muted-foreground">Session / kill zone</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Badge variant="secondary">{structuredIct.session ?? activeThesis?.session}</Badge>
+                  <Badge variant={structuredIct.killZone === "none" ? "muted" : "warning"}>
+                    {structuredIct.killZone ?? structuredIct.killZoneTag ?? "none"}
+                  </Badge>
+                </div>
+              </div>
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs text-muted-foreground">Narrative summary</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {structuredIct.narrativeSummary ?? "Legacy thesis context loaded from local storage; generate a new thesis to attach structured ICT facts."}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {activeDebate ? (
         <Card>
           <CardHeader>
@@ -284,7 +368,7 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
                     <p className="font-medium">{message.agentName}</p>
                     <p className="text-xs text-muted-foreground">{message.layer}</p>
                   </div>
-                  <Badge variant={message.stance === "bullish" ? "success" : message.stance === "bearish" ? "danger" : "warning"}>
+                  <Badge variant={biasVariant(message.stance)}>
                     {message.stance}
                   </Badge>
                 </div>

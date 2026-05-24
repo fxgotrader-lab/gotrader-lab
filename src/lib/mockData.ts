@@ -10,6 +10,8 @@ import type {
   Recommendation,
   TradeThesis
 } from "@/lib/types";
+import { buildICTContext } from "@/lib/ict";
+import { mockCandles } from "@/lib/mockData/mockCandles";
 import { numericDate } from "@/lib/utils";
 
 type AgentSeed = Omit<
@@ -607,6 +609,12 @@ export const mockOutcomes: MarketOutcome[] = [
   }
 ];
 
+const seededIctContext = buildICTContext(mockCandles, {
+  symbol: "NQ",
+  timeframe: "5m",
+  session: "New York AM"
+});
+
 export const mockTradeTheses: TradeThesis[] = [
   {
     id: "thesis_001",
@@ -622,16 +630,7 @@ export const mockTradeTheses: TradeThesis[] = [
     targetLiquidity: 18952,
     riskNotes: "Invalid if price accepts below the swept low or if volatility expands without upside displacement.",
     reasoningSummary: "Liquidity sweep, session timing, and tech breadth aligned while risk/reward remained above 2R.",
-    ictContext: {
-      liquiditySweep: true,
-      marketStructureShift: true,
-      displacement: "strong",
-      fairValueGap: "bullish",
-      premiumDiscount: "discount",
-      sessionTiming: "New York AM",
-      higherTimeframeBias: "bullish",
-      killZoneTag: "NY AM"
-    },
+    ictContext: seededIctContext,
     simulatedTradePlan: {
       id: "plan_001",
       symbol: "NQ",
@@ -666,7 +665,7 @@ export const mockDebateSessions: DebateSession[] = [
         layer: "macro",
         stance: "bullish",
         confidence: 0.66,
-        message: "Volatility is elevated but controlled; continuation is acceptable only after displacement holds.",
+        message: `Volatility is elevated but controlled; ICT confluence is ${Math.round(seededIctContext.confluenceScore * 100)}% with ${seededIctContext.displacement} displacement and ${seededIctContext.killZone} timing.`,
         ictTags: ["displacement", "session timing"],
         createdAt: numericDate(-1)
       },
@@ -677,7 +676,7 @@ export const mockDebateSessions: DebateSession[] = [
         layer: "sector",
         stance: "bullish",
         confidence: 0.7,
-        message: "Tech breadth is supportive, and the mock semiconductor basket is not confirming downside continuation.",
+        message: `Tech breadth is supportive while structured ICT bias is ${seededIctContext.bias}; latest swing high ${seededIctContext.latestSwingHigh?.price ?? "n/a"} remains the upside liquidity reference.`,
         ictTags: ["higher-timeframe bias"],
         createdAt: numericDate(-1)
       },
@@ -688,7 +687,7 @@ export const mockDebateSessions: DebateSession[] = [
         layer: "strategy",
         stance: "bullish",
         confidence: 0.72,
-        message: "Sell-side liquidity was swept and price displaced back through midpoint during the NY AM window.",
+        message: `ICT sweep engine found ${seededIctContext.liquiditySweeps.length} sweep(s), ${seededIctContext.fairValueGaps.length} FVG(s), and ${seededIctContext.premiumDiscount} location during ${seededIctContext.killZone} timing.`,
         ictTags,
         createdAt: numericDate(-1)
       }

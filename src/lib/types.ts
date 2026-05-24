@@ -224,6 +224,22 @@ export interface PromptMutation {
 }
 
 export interface ICTContext {
+  symbol: FuturesSymbol;
+  timeframe: Timeframe;
+  session: TradingSession;
+  bias: MarketBias;
+  latestSwingHigh?: SwingPoint;
+  latestSwingLow?: SwingPoint;
+  hasBullishMSS: boolean;
+  hasBearishMSS: boolean;
+  hasBullishBOS: boolean;
+  hasBearishBOS: boolean;
+  liquiditySweeps: LiquiditySweep[];
+  fairValueGaps: FairValueGap[];
+  premiumDiscountZone: PremiumDiscountZone;
+  killZone: ICTKillZone;
+  confluenceScore: number;
+  narrativeSummary: string;
   liquiditySweep: boolean;
   marketStructureShift: boolean;
   displacement: "none" | "mild" | "strong";

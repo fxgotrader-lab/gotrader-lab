@@ -3,6 +3,8 @@ import {
   performanceFromRecommendations,
   scoreRecommendation
 } from "@/lib/scoring";
+import { buildICTContext } from "@/lib/ict";
+import { mockCandles } from "@/lib/mockData/mockCandles";
 import type {
   Agent,
   AgentDebateMessage,
@@ -89,46 +91,64 @@ function scoreToBias(score: number): MarketBias {
   return "neutral";
 }
 
-function generateICTContext(input: ThesisInput, finalBias: MarketBias): ICTContext {
-  const notes = input.notes?.toLowerCase() ?? "";
-  const isSweep = notes.includes("sweep") || input.session.includes("New York");
-  const inKillZone = input.session === "London" || input.session === "New York AM" || input.session === "New York PM";
+const biasToScore = (bias: MarketBias) => (bias === "bullish" ? 1 : bias === "bearish" ? -1 : 0);
 
-  return {
-    liquiditySweep: isSweep,
-    marketStructureShift: finalBias !== "neutral" && (notes.includes("shift") || isSweep),
-    displacement: finalBias === "neutral" ? "mild" : input.marketRegime === "volatile" ? "strong" : "mild",
-    fairValueGap: finalBias === "neutral" ? "none" : finalBias,
-    premiumDiscount: finalBias === "bearish" ? "premium" : finalBias === "bullish" ? "discount" : "equilibrium",
-    sessionTiming: input.session,
-    higherTimeframeBias: finalBias,
-    killZoneTag:
-      input.session === "London"
-        ? "London open"
-        : input.session === "New York AM"
-          ? "NY AM"
-          : input.session === "New York PM"
-            ? "NY PM"
-            : input.session === "Globex"
-              ? "Asia range"
-              : "none"
-  };
-}
-
-function messageForAgent(agent: Agent, bias: MarketBias, input: ThesisInput, ictTags: ICTConcept[]) {
+function messageForAgent(agent: Agent, bias: MarketBias, input: ThesisInput, ictTags: ICTConcept[], ictContext: ICTContext) {
   const stance = bias === "neutral" ? "withholds directional conviction" : `leans ${bias}`;
   const ictText = ictTags.slice(0, 2).join(" and ");
-  return `${agent.name} ${stance} on ${input.symbol} ${input.timeframe}; ${agent.domain} evidence is weighted against ${input.marketRegime} conditions with ${ictText || "no ICT confirmation"} in scope.`;
+  const swingText = `swing high ${ictContext.latestSwingHigh?.price ?? "n/a"} / swing low ${ictContext.latestSwingLow?.price ?? "n/a"}`;
+  const structureText = `${ictContext.hasBullishMSS || ictContext.hasBearishMSS ? "MSS present" : "no MSS"} and ${ictContext.hasBullishBOS || ictContext.hasBearishBOS ? "BOS present" : "no BOS"}`;
+  const liquidityText = `${ictContext.liquiditySweeps.length} sweep(s), ${ictContext.fairValueGaps.length} FVG(s), ${ictContext.premiumDiscount} location`;
+
+  if (agent.domain.includes("ICT") || agent.domain.includes("liquidity")) {
+    return `${agent.name} ${stance} on ${input.symbol} ${input.timeframe}; deterministic ICT facts show ${structureText}, ${liquidityText}, ${swingText}, and ${ictContext.killZone} timing.`;
+  }
+
+  return `${agent.name} ${stance} on ${input.symbol} ${input.timeframe}; ${agent.domain} evidence is weighted against ${input.marketRegime} while ICT context contributes ${ictText || "limited confirmation"} at ${Math.round(ictContext.confluenceScore * 100)}% confluence.`;
 }
 
-function buildTradePlan(input: ThesisInput, finalBias: MarketBias, confidence: number): SimulatedTradePlan {
+function buildTradePlan(input: ThesisInput, finalBias: MarketBias, ictContext: ICTContext): SimulatedTradePlan {
   const base = basePriceBySymbol[input.symbol];
   const unit = input.symbol.includes("NQ") ? 16 : 5;
-  const direction = finalBias === "bearish" ? -1 : 1;
-  const entryMid = finalBias === "neutral" ? base : base - direction * unit * 0.4;
-  const entryZone: [number, number] = finalBias === "neutral" ? [base - unit, base + unit] : [entryMid - unit * 0.35, entryMid + unit * 0.35];
-  const invalidation = finalBias === "neutral" ? base - unit * 1.4 : entryMid - direction * unit * 1.8;
-  const targetLiquidity = finalBias === "neutral" ? base + unit * 1.1 : entryMid + direction * unit * (2.4 + confidence);
+  const rawCurrentPrice = ictContext.premiumDiscountZone.currentPrice || base;
+  const scale = input.symbol === "ES" || input.symbol === "MES" ? base / Math.max(1, rawCurrentPrice) : 1;
+  const scaleLevel = (value: number | undefined, fallback: number) => Number(((value ?? fallback) * scale).toFixed(2));
+  const currentPrice = scaleLevel(rawCurrentPrice, base);
+  const equilibrium = scaleLevel(ictContext.premiumDiscountZone.equilibrium, currentPrice);
+  const latestSwingHigh = scaleLevel(ictContext.latestSwingHigh?.price, currentPrice + unit * 2);
+  const latestSwingLow = scaleLevel(ictContext.latestSwingLow?.price, currentPrice - unit * 2);
+  const rangeHigh = scaleLevel(ictContext.premiumDiscountZone.rangeHigh, latestSwingHigh);
+  const rangeLow = scaleLevel(ictContext.premiumDiscountZone.rangeLow, latestSwingLow);
+  const latestBullishGap = [...ictContext.fairValueGaps].reverse().find((gap) => gap.direction === "bullish" && !gap.mitigated);
+  const latestBearishGap = [...ictContext.fairValueGaps].reverse().find((gap) => gap.direction === "bearish" && !gap.mitigated);
+  const gapMidpoint =
+    finalBias === "bullish"
+      ? scaleLevel(latestBullishGap?.midpoint, equilibrium)
+      : finalBias === "bearish"
+        ? scaleLevel(latestBearishGap?.midpoint, equilibrium)
+        : equilibrium;
+  const entryMid =
+    finalBias === "neutral"
+      ? currentPrice
+      : finalBias === "bullish"
+        ? Math.min(currentPrice, gapMidpoint)
+        : Math.max(currentPrice, gapMidpoint);
+  const entryZone: [number, number] =
+    finalBias === "neutral" ? [currentPrice - unit, currentPrice + unit] : [entryMid - unit * 0.35, entryMid + unit * 0.35];
+  const invalidation =
+    finalBias === "neutral"
+      ? rangeLow
+      : finalBias === "bullish"
+        ? Math.min(latestSwingLow, rangeLow) - unit * 0.25
+        : Math.max(latestSwingHigh, rangeHigh) + unit * 0.25;
+  const targetLiquidity =
+    finalBias === "neutral"
+      ? equilibrium
+      : finalBias === "bullish"
+        ? Math.max(latestSwingHigh, rangeHigh) + unit * 0.5
+        : Math.min(latestSwingLow, rangeLow) - unit * 0.5;
+  const risk = Math.max(unit * 0.5, Math.abs(entryMid - invalidation));
+  const reward = Math.abs(targetLiquidity - entryMid);
 
   return {
     id: uid("plan"),
@@ -141,17 +161,18 @@ function buildTradePlan(input: ThesisInput, finalBias: MarketBias, confidence: n
     stopRiskNotes:
       finalBias === "neutral"
         ? "Simulation remains neutral unless price leaves balance with accepted displacement."
-        : "Simulation invalidates if price accepts beyond the thesis level. No order is placed.",
-    riskReward: finalBias === "neutral" ? 0 : Number((1.8 + confidence).toFixed(2)),
+        : `Simulation invalidates if price accepts beyond the ICT structure level. Context: ${ictContext.narrativeSummary}`,
+    riskReward: finalBias === "neutral" ? 0 : Number((reward / risk).toFixed(2)),
     mode: "simulation"
   };
 }
 
 export function generateThesis(input: ThesisInput, state: LabState) {
   const activeAgents = state.agents.filter((agent) => agent.active && agent.layer !== "cio");
-  const weightedScore = activeAgents.reduce((sum, agent) => sum + weightedBiasScore(agent, input), 0);
-  const finalBias = scoreToBias(weightedScore);
-  const ictContext = generateICTContext(input, finalBias);
+  const ictContext = buildICTContext(mockCandles, input);
+  const agentWeightedScore = activeAgents.reduce((sum, agent) => sum + weightedBiasScore(agent, input), 0);
+  const weightedScore = agentWeightedScore + biasToScore(ictContext.bias) * ictContext.confluenceScore * 0.22;
+  const finalBias = ictContext.confluenceScore >= 0.58 && ictContext.bias !== "neutral" ? ictContext.bias : scoreToBias(weightedScore);
   const relevantTags = allIctTags.filter((tag) => {
     if (tag === "liquidity sweep") {
       return ictContext.liquiditySweep;
@@ -165,11 +186,11 @@ export function generateThesis(input: ThesisInput, state: LabState) {
     return true;
   });
   const confidence = clamp(
-    0.5 + Math.abs(weightedScore) * 1.4 + (ictContext.liquiditySweep ? 0.05 : 0) + (ictContext.killZoneTag !== "none" ? 0.04 : 0),
+    0.42 + Math.abs(agentWeightedScore) * 1.1 + ictContext.confluenceScore * 0.34 + (ictContext.killZoneTag !== "none" ? 0.04 : 0),
     0.42,
     0.86
   );
-  const plan = buildTradePlan(input, finalBias, confidence);
+  const plan = buildTradePlan(input, finalBias, ictContext);
   const createdAt = new Date().toISOString();
   const debateId = uid("debate");
 
@@ -184,7 +205,7 @@ export function generateThesis(input: ThesisInput, state: LabState) {
       layer: agent.layer,
       stance,
       confidence: clamp(agent.confidence + Math.abs(localScore) * 0.08, 0.38, 0.92),
-      message: messageForAgent(agent, stance, input, tags),
+      message: messageForAgent(agent, stance, input, tags, ictContext),
       ictTags: tags,
       createdAt
     };
@@ -217,12 +238,12 @@ export function generateThesis(input: ThesisInput, state: LabState) {
     confidence,
     thesisSummary:
       finalBias === "neutral"
-        ? `${input.symbol} ${input.timeframe} stays research-neutral until displacement confirms outside balance.`
-        : `${input.symbol} ${input.timeframe} research thesis is ${finalBias} with ICT context supporting a simulated plan.`,
+        ? `${input.symbol} ${input.timeframe} stays research-neutral until deterministic ICT context confirms displacement outside balance.`
+        : `${input.symbol} ${input.timeframe} research thesis is ${finalBias}; ${ictContext.narrativeSummary}`,
     invalidationLevel: plan.invalidation,
     targetLiquidity: plan.targetLiquidity,
     riskNotes: plan.stopRiskNotes,
-    reasoningSummary: `CIO synthesis blends ${activeAgents.length} active agents. Key context: ${relevantTags.slice(0, 4).join(", ")}.`,
+    reasoningSummary: `CIO synthesis blends ${activeAgents.length} active agents with deterministic ICT bias ${ictContext.bias} at ${Math.round(ictContext.confluenceScore * 100)}% confluence. Key context: ${relevantTags.slice(0, 4).join(", ")}.`,
     ictContext,
     simulatedTradePlan: plan,
     createdAt,
