@@ -437,11 +437,55 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
                     <p className="font-medium">{message.agentName}</p>
                     <p className="text-xs text-muted-foreground">{message.layer}</p>
                   </div>
-                  <Badge variant={biasVariant(message.stance)}>
-                    {message.stance}
-                  </Badge>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Badge variant={biasVariant(message.stance)}>{message.stance}</Badge>
+                    <Badge variant="secondary">{formatPercent(message.confidence)}</Badge>
+                    {typeof message.weight === "number" ? <Badge variant="muted">weight {formatPercent(message.weight)}</Badge> : null}
+                  </div>
                 </div>
                 <p className="mt-3 text-sm text-muted-foreground">{message.message}</p>
+                {message.recommendation ? (
+                  <div className="mt-3 rounded-md border border-border bg-card/45 p-2 text-sm">
+                    <span className="text-xs uppercase text-muted-foreground">Recommendation</span>
+                    <p className="mt-1 text-muted-foreground">{message.recommendation}</p>
+                  </div>
+                ) : null}
+                {message.supportingFactors ? (
+                  <div className="mt-3">
+                    <p className="text-xs uppercase text-emerald-300">Supporting factors</p>
+                    <div className="mt-2 space-y-1">
+                      {message.supportingFactors.length ? (
+                        message.supportingFactors.slice(0, 3).map((factor) => (
+                          <div key={factor} className="rounded-md border border-emerald-400/20 bg-emerald-400/5 px-2 py-1 text-xs text-muted-foreground">
+                            {factor}
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-md border border-border bg-card/45 px-2 py-1 text-xs text-muted-foreground">
+                          No explicit supporting factors.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+                {message.warningFactors ? (
+                  <div className="mt-3">
+                    <p className="text-xs uppercase text-amber-200">Warning factors</p>
+                    <div className="mt-2 space-y-1">
+                      {message.warningFactors.length ? (
+                        message.warningFactors.slice(0, 3).map((factor) => (
+                          <div key={factor} className="rounded-md border border-amber-400/20 bg-amber-400/5 px-2 py-1 text-xs text-muted-foreground">
+                            {factor}
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-md border border-border bg-card/45 px-2 py-1 text-xs text-muted-foreground">
+                          No active warnings.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="mt-3 flex flex-wrap gap-2">
                   {message.ictTags.map((tag) => (
                     <Badge key={tag} variant="muted">

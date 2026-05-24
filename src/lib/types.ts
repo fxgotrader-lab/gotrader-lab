@@ -309,7 +309,11 @@ export interface AgentDebateMessage {
   layer: AgentLayer;
   stance: MarketBias;
   confidence: number;
+  weight?: number;
   message: string;
+  supportingFactors?: string[];
+  warningFactors?: string[];
+  recommendation?: string;
   ictTags: ICTConcept[];
   createdAt: string;
 }
