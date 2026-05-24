@@ -43,6 +43,9 @@ const symbolOptions = ["ES", "NQ", "MES", "MNQ"].map((value) => ({ label: value,
 const timeframeOptions = ["1m", "5m", "15m", "1h", "4h", "1d"].map((value) => ({ label: value, value }));
 const sessionOptions = ["Globex", "London", "New York AM", "New York Lunch", "New York PM"].map((value) => ({ label: value, value }));
 const regimeOptions = ["trend", "balanced", "volatile", "range", "news-driven", "risk-off", "risk-on"].map((value) => ({ label: value, value }));
+const handoffExportFolder = "C:/Users/andre/OneDrive/Documents/gotrader/exports/";
+const latestHandoffFilename = "latest-gotrader-handoff.json";
+const goTraderReaderPath = "../gotrader/exports/latest-gotrader-handoff.json";
 const weightLabels: Record<string, string> = {
   bullishMSS: "Bullish MSS",
   bearishMSS: "Bearish MSS",
@@ -145,7 +148,7 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
     }
   };
 
-  const exportHandoff = () => {
+  const exportHandoff = (filenameMode: "timestamped" | "latest" = "timestamped") => {
     if (!activeThesis) {
       return;
     }
@@ -160,7 +163,8 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
     try {
       const handoff = createGoTraderHandoff(activeThesis, { debateSession: activeDebate });
       const validation = validateGoTraderHandoff(handoff);
-      const filename = `gotrader-handoff-${activeThesis.symbol}-${activeThesis.timeframe}-${handoff.handoffId}.json`;
+      const timestampedFilename = `gotrader-handoff-${activeThesis.symbol}-${activeThesis.timeframe}-${handoff.handoffId}.json`;
+      const filename = filenameMode === "latest" ? latestHandoffFilename : timestampedFilename;
       const json = JSON.stringify(handoff, null, 2);
       setHandoffValidation(validation);
       setHandoffJson(json);
@@ -363,9 +367,13 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
                   <Download className="h-4 w-4" aria-hidden="true" />
                   Confirm simulated signal export
                 </Button>
-                <Button variant="secondary" onClick={exportHandoff}>
+                <Button variant="secondary" onClick={() => exportHandoff()}>
                   <FileJson className="h-4 w-4" aria-hidden="true" />
                   Export GoTrader Handoff
+                </Button>
+                <Button variant="secondary" className="h-auto min-h-10 whitespace-normal" onClick={() => exportHandoff("latest")}>
+                  <FileJson className="h-4 w-4" aria-hidden="true" />
+                  Download as latest-gotrader-handoff.json
                 </Button>
                 <Input readOnly value={activeThesis.id} className="max-w-sm font-mono text-xs" aria-label="Thesis ID" />
               </div>
@@ -373,6 +381,32 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
               <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
                 <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
                 Simulation-only handoff. No broker execution.
+              </div>
+
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold">Export Folder Workflow</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Save stable handoff downloads into the local AI Lab exports folder for the separate go-trader reader.
+                    </p>
+                  </div>
+                  <Badge variant="secondary">local file handoff</Badge>
+                </div>
+                <div className="mt-3 grid gap-2 text-sm md:grid-cols-3">
+                  <div className="rounded-md border border-border bg-card/45 p-2">
+                    <p className="text-xs text-muted-foreground">Recommended folder</p>
+                    <p className="mt-1 break-all font-mono text-xs text-foreground">{handoffExportFolder}</p>
+                  </div>
+                  <div className="rounded-md border border-border bg-card/45 p-2">
+                    <p className="text-xs text-muted-foreground">Suggested filename</p>
+                    <p className="mt-1 break-all font-mono text-xs text-foreground">{latestHandoffFilename}</p>
+                  </div>
+                  <div className="rounded-md border border-border bg-card/45 p-2">
+                    <p className="text-xs text-muted-foreground">go-trader reader path</p>
+                    <p className="mt-1 break-all font-mono text-xs text-foreground">{goTraderReaderPath}</p>
+                  </div>
+                </div>
               </div>
 
               {handoffValidation ? (
