@@ -123,6 +123,43 @@ export interface SessionContext {
   label: string;
 }
 
+export interface ICTScoringWeights {
+  bullishMSS: number;
+  bearishMSS: number;
+  bullishBOS: number;
+  bearishBOS: number;
+  liquiditySweep: number;
+  fvgAlignment: number;
+  premiumDiscountAlignment: number;
+  sessionKillZone: number;
+  latestSwingStructure: number;
+  riskRewardQuality: number;
+}
+
+export interface ICTConfluenceFactor {
+  id: string;
+  label: string;
+  bias: MarketBias;
+  score: number;
+  weight: number;
+  explanation: string;
+}
+
+export interface ICTConfluenceBreakdown {
+  totalScore: number;
+  bullishScore: number;
+  bearishScore: number;
+  neutralScore: number;
+  finalBias: MarketBias;
+  confidence: number;
+  explanation: string;
+  positiveFactors: ICTConfluenceFactor[];
+  negativeFactors: ICTConfluenceFactor[];
+  neutralFactors: ICTConfluenceFactor[];
+  bullishFactors: ICTConfluenceFactor[];
+  bearishFactors: ICTConfluenceFactor[];
+}
+
 export interface PerformanceSnapshot {
   hitRate: number;
   drawdown: number;
@@ -239,6 +276,8 @@ export interface ICTContext {
   premiumDiscountZone: PremiumDiscountZone;
   killZone: ICTKillZone;
   confluenceScore: number;
+  confluenceBreakdown: ICTConfluenceBreakdown;
+  scoringWeightsUsed: ICTScoringWeights;
   narrativeSummary: string;
   liquiditySweep: boolean;
   marketStructureShift: boolean;

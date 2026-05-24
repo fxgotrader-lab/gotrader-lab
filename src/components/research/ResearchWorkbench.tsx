@@ -26,6 +26,19 @@ const symbolOptions = ["ES", "NQ", "MES", "MNQ"].map((value) => ({ label: value,
 const timeframeOptions = ["1m", "5m", "15m", "1h", "4h", "1d"].map((value) => ({ label: value, value }));
 const sessionOptions = ["Globex", "London", "New York AM", "New York Lunch", "New York PM"].map((value) => ({ label: value, value }));
 const regimeOptions = ["trend", "balanced", "volatile", "range", "news-driven", "risk-off", "risk-on"].map((value) => ({ label: value, value }));
+const weightLabels: Record<string, string> = {
+  bullishMSS: "Bullish MSS",
+  bearishMSS: "Bearish MSS",
+  bullishBOS: "Bullish BOS",
+  bearishBOS: "Bearish BOS",
+  liquiditySweep: "Liquidity sweep",
+  fvgAlignment: "FVG alignment",
+  premiumDiscountAlignment: "Premium/discount",
+  sessionKillZone: "Session kill zone",
+  latestSwingStructure: "Latest swing structure",
+  riskRewardQuality: "Risk/reward quality"
+};
+const formatWeightLabel = (key: string) => weightLabels[key] ?? key;
 const biasVariant = (bias?: string) => {
   if (bias === "bullish") {
     return "success" as const;
@@ -56,6 +69,7 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
     [activeThesis?.id, state.debateSessions]
   );
   const structuredIct = activeThesis?.ictContext;
+  const confluenceBreakdown = structuredIct?.confluenceBreakdown;
 
   const updateInput = (field: keyof ThesisInput, value: string) => {
     setInput((current) => ({ ...current, [field]: value }));
@@ -350,6 +364,61 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
                 </p>
               </div>
             </div>
+            {confluenceBreakdown ? (
+              <div className="space-y-3 rounded-lg border border-border bg-background/35 p-4">
+                <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+                  <div>
+                    <h3 className="text-sm font-semibold">Confluence Score Breakdown</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">{confluenceBreakdown.explanation}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant={biasVariant(confluenceBreakdown.finalBias)}>{confluenceBreakdown.finalBias}</Badge>
+                    <Badge variant="secondary">score {formatPercent(confluenceBreakdown.totalScore)}</Badge>
+                    <Badge variant="secondary">confidence {formatPercent(confluenceBreakdown.confidence)}</Badge>
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  {[
+                    { label: "Bullish factors", items: confluenceBreakdown.bullishFactors, variant: "success" as const },
+                    { label: "Bearish factors", items: confluenceBreakdown.bearishFactors, variant: "danger" as const },
+                    { label: "Neutral factors", items: confluenceBreakdown.neutralFactors, variant: "muted" as const }
+                  ].map((group) => (
+                    <div key={group.label} className="rounded-lg border border-border bg-background/45 p-3">
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold">{group.label}</p>
+                        <Badge variant={group.variant}>{group.items.length}</Badge>
+                      </div>
+                      <div className="space-y-2">
+                        {group.items.map((factor) => (
+                          <div key={factor.id} className="rounded-md border border-border bg-card/45 p-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-medium">{factor.label}</span>
+                              <span className="font-mono text-xs text-muted-foreground">
+                                {factor.score.toFixed(2)} / {factor.weight.toFixed(2)}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">{factor.explanation}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {structuredIct.scoringWeightsUsed ? (
+                  <div className="rounded-lg border border-border bg-background/45 p-3">
+                    <p className="text-sm font-semibold">Weights Used</p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                      {Object.entries(structuredIct.scoringWeightsUsed).map(([key, value]) => (
+                        <div key={key} className="flex items-center justify-between gap-2 rounded-md border border-border bg-card/45 px-2 py-1.5 text-xs">
+                          <span className="text-muted-foreground">{formatWeightLabel(key)}</span>
+                          <span className="font-mono">{value.toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}

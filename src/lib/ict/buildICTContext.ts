@@ -5,27 +5,50 @@ import { detectMSS } from "@/lib/ict/detectMSS";
 import { detectPremiumDiscount } from "@/lib/ict/detectPremiumDiscount";
 import { detectSwings } from "@/lib/ict/detectSwings";
 import { tagSessions } from "@/lib/ict/sessionTagger";
-import type { Candle, ICTContext, MarketBias, ThesisInput } from "@/lib/types";
-import { clamp } from "@/lib/utils";
+import {
+  loadICTScoringWeights,
+  scoreICTConfluence,
+  sanitizeICTScoringWeights
+} from "@/lib/ict/confluenceScoring";
+import type { Candle, ICTContext, ICTScoringWeights, ThesisInput } from "@/lib/types";
 
 type ICTContextInput = Pick<ThesisInput, "symbol" | "timeframe" | "session">;
 
 const latestByIndex = <T extends { index: number }>(items: T[]) =>
   [...items].sort((a, b) => b.index - a.index)[0];
 
-const biasScore = (bias: MarketBias) => (bias === "bullish" ? 1 : bias === "bearish" ? -1 : 0);
+const riskRewardQualityFor = (
+  currentPrice: number,
+  latestSwingHigh: number | undefined,
+  latestSwingLow: number | undefined,
+  rangeHigh: number,
+  rangeLow: number
+) => {
+  const bullishTarget = Math.max(latestSwingHigh ?? rangeHigh, rangeHigh);
+  const bullishInvalidation = Math.min(latestSwingLow ?? rangeLow, rangeLow);
+  const bearishTarget = Math.min(latestSwingLow ?? rangeLow, rangeLow);
+  const bearishInvalidation = Math.max(latestSwingHigh ?? rangeHigh, rangeHigh);
+  const bullishRisk = Math.max(1, currentPrice - bullishInvalidation);
+  const bearishRisk = Math.max(1, bearishInvalidation - currentPrice);
+  const bullishReward = Math.max(0, bullishTarget - currentPrice);
+  const bearishReward = Math.max(0, currentPrice - bearishTarget);
+  const bullishRatio = bullishReward / bullishRisk;
+  const bearishRatio = bearishReward / bearishRisk;
+  const bullish = Math.min(1, Math.max(0, (bullishRatio - 1) / 2));
+  const bearish = Math.min(1, Math.max(0, (bearishRatio - 1) / 2));
 
-const scoreToBias = (score: number): MarketBias => {
-  if (score > 0.14) {
-    return "bullish";
-  }
-  if (score < -0.14) {
-    return "bearish";
-  }
-  return "neutral";
+  return {
+    bullish,
+    bearish,
+    neutral: Math.max(0, 1 - Math.max(bullish, bearish))
+  };
 };
 
-export function buildICTContext(candles: Candle[], input: ICTContextInput): ICTContext {
+export function buildICTContext(
+  candles: Candle[],
+  input: ICTContextInput,
+  scoringWeights: Partial<ICTScoringWeights> = loadICTScoringWeights()
+): ICTContext {
   const scopedCandles = candles.filter((candle) => candle.symbol === input.symbol && candle.timeframe === input.timeframe);
   const sample = scopedCandles.length ? scopedCandles : candles;
   const swings = detectSwings(sample, 2);
@@ -46,34 +69,36 @@ export function buildICTContext(candles: Candle[], input: ICTContextInput): ICTC
   const hasBearishMSS = mss.some((event) => event.direction === "bearish");
   const hasBullishBOS = bos.some((event) => event.direction === "bullish");
   const hasBearishBOS = bos.some((event) => event.direction === "bearish");
-  const structureBias = latestStructure?.direction ?? "neutral";
-  const sweepBias: MarketBias =
-    latestSweep?.direction === "sell-side" ? "bullish" : latestSweep?.direction === "buy-side" ? "bearish" : "neutral";
-  const gapBias = latestGap?.direction ?? "neutral";
-  const locationBias: MarketBias =
-    premiumDiscountZone.currentZone === "discount"
-      ? "bullish"
-      : premiumDiscountZone.currentZone === "premium"
-        ? "bearish"
-        : "neutral";
-
-  // Assumption: structure gets the largest vote, then liquidity raids, imbalance,
-  // and location. Session timing raises confidence only when directional facts exist.
-  const directionalScore =
-    biasScore(structureBias) * 0.36 +
-    biasScore(sweepBias) * 0.26 +
-    biasScore(gapBias) * 0.18 +
-    biasScore(locationBias) * 0.12;
-  const killZoneBoost = latestSession?.killZone !== "none" && directionalScore !== 0 ? 0.08 : 0;
-  const confluenceScore = Number(clamp(0.42 + Math.abs(directionalScore) + killZoneBoost, 0.25, 0.95).toFixed(2));
-  const bias = scoreToBias(directionalScore);
   const fairValueGap = latestGap?.direction ?? "none";
   const displacement = latestStructure?.displacement ?? (latestGap?.createdByDisplacement ? "mild" : "none");
   const killZone = latestSession?.killZone ?? "none";
+  const weightsUsed = sanitizeICTScoringWeights(scoringWeights);
+  const confluenceBreakdown = scoreICTConfluence({
+    hasBullishMSS,
+    hasBearishMSS,
+    hasBullishBOS,
+    hasBearishBOS,
+    latestLiquiditySweep: latestSweep,
+    latestFairValueGapDirection: fairValueGap,
+    premiumDiscountZone,
+    killZone,
+    latestSwingHigh,
+    latestSwingLow,
+    riskRewardQuality: riskRewardQualityFor(
+      premiumDiscountZone.currentPrice,
+      latestSwingHigh?.price,
+      latestSwingLow?.price,
+      premiumDiscountZone.rangeHigh,
+      premiumDiscountZone.rangeLow
+    ),
+    weights: weightsUsed
+  });
+  const bias = confluenceBreakdown.finalBias;
+  const confluenceScore = confluenceBreakdown.totalScore;
 
   const swingHighText = latestSwingHigh ? latestSwingHigh.price : "n/a";
   const swingLowText = latestSwingLow ? latestSwingLow.price : "n/a";
-  const narrativeSummary = `ICT engine reads ${bias} with ${Math.round(confluenceScore * 100)}% confluence: latest swing high ${swingHighText}, latest swing low ${swingLowText}, ${mss.length} MSS, ${bos.length} BOS, ${liquiditySweeps.length} sweep(s), ${fairValueGaps.length} FVG(s), price in ${premiumDiscountZone.currentZone}, kill zone ${killZone}.`;
+  const narrativeSummary = `ICT engine reads ${bias} with ${Math.round(confluenceBreakdown.confidence * 100)}% confidence: latest swing high ${swingHighText}, latest swing low ${swingLowText}, ${mss.length} MSS, ${bos.length} BOS, ${liquiditySweeps.length} sweep(s), ${fairValueGaps.length} FVG(s), price in ${premiumDiscountZone.currentZone}, kill zone ${killZone}. ${confluenceBreakdown.explanation}`;
 
   return {
     symbol: input.symbol,
@@ -91,6 +116,8 @@ export function buildICTContext(candles: Candle[], input: ICTContextInput): ICTC
     premiumDiscountZone,
     killZone,
     confluenceScore,
+    confluenceBreakdown,
+    scoringWeightsUsed: weightsUsed,
     narrativeSummary,
     liquiditySweep: liquiditySweeps.length > 0,
     marketStructureShift: mss.length > 0,

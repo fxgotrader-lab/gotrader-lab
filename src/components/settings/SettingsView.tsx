@@ -1,15 +1,55 @@
-import { Database, KeyRound, Lock, ShieldCheck } from "lucide-react";
+import { useState } from "react";
+import { Database, KeyRound, Lock, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { LabState } from "@/lib/types";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  defaultICTScoringWeights,
+  loadICTScoringWeights,
+  resetICTScoringWeights,
+  saveICTScoringWeights
+} from "@/lib/ict";
+import type { ICTScoringWeights, LabState } from "@/lib/types";
+
+const weightLabels: Record<string, string> = {
+  bullishMSS: "Bullish MSS",
+  bearishMSS: "Bearish MSS",
+  bullishBOS: "Bullish BOS",
+  bearishBOS: "Bearish BOS",
+  liquiditySweep: "Liquidity sweep",
+  fvgAlignment: "FVG alignment",
+  premiumDiscountAlignment: "Premium/discount",
+  sessionKillZone: "Session kill zone",
+  latestSwingStructure: "Latest swing structure",
+  riskRewardQuality: "Risk/reward quality"
+};
+const formatWeightLabel = (key: string) => weightLabels[key] ?? key;
 
 export function SettingsView({ state, onReset }: { state: LabState; onReset: () => void }) {
+  const [ictWeights, setIctWeights] = useState<ICTScoringWeights>(() => loadICTScoringWeights());
+
   const reset = () => {
     const approved = window.confirm("Reset local GoTrader AI Lab mock data and prompt history?");
     if (approved) {
       onReset();
     }
+  };
+
+  const updateWeight = (key: keyof ICTScoringWeights, value: string) => {
+    const numeric = Number(value);
+    const next = {
+      ...ictWeights,
+      [key]: Number.isFinite(numeric) ? Math.min(3, Math.max(0, numeric)) : ictWeights[key]
+    };
+    setIctWeights(next);
+    saveICTScoringWeights(next);
+  };
+
+  const resetWeights = () => {
+    const next = resetICTScoringWeights();
+    setIctWeights(next);
   };
 
   return (
@@ -24,6 +64,52 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
         </div>
         <Badge variant="success">Simulation mode locked</Badge>
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="h-4 w-4 text-primary" aria-hidden="true" />
+                <CardTitle>ICT Scoring Calibration</CardTitle>
+              </div>
+              <CardDescription>Local weights used by the deterministic mock-candle confluence engine.</CardDescription>
+            </div>
+            <Button variant="secondary" onClick={resetWeights}>
+              Reset to defaults
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            {Object.entries(ictWeights).map(([key, value]) => (
+              <div key={key} className="space-y-2 rounded-lg border border-border bg-background/45 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor={`ict-weight-${key}`} className="text-xs">
+                    {formatWeightLabel(key)}
+                  </Label>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    default {defaultICTScoringWeights[key as keyof ICTScoringWeights].toFixed(2)}
+                  </span>
+                </div>
+                <Input
+                  id={`ict-weight-${key}`}
+                  type="number"
+                  min="0"
+                  max="3"
+                  step="0.05"
+                  value={value}
+                  onChange={(event) => updateWeight(key as keyof ICTScoringWeights, event.target.value)}
+                  className="font-mono"
+                />
+              </div>
+            ))}
+          </div>
+          <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+            Calibration is local to this browser and applies to newly generated simulated research theses.
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-5 xl:grid-cols-3">
         <Card>

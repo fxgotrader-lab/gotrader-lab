@@ -171,8 +171,9 @@ export function generateThesis(input: ThesisInput, state: LabState) {
   const activeAgents = state.agents.filter((agent) => agent.active && agent.layer !== "cio");
   const ictContext = buildICTContext(mockCandles, input);
   const agentWeightedScore = activeAgents.reduce((sum, agent) => sum + weightedBiasScore(agent, input), 0);
-  const weightedScore = agentWeightedScore + biasToScore(ictContext.bias) * ictContext.confluenceScore * 0.22;
-  const finalBias = ictContext.confluenceScore >= 0.58 && ictContext.bias !== "neutral" ? ictContext.bias : scoreToBias(weightedScore);
+  const weightedScore = agentWeightedScore + biasToScore(ictContext.bias) * ictContext.confluenceBreakdown.confidence * 0.22;
+  const finalBias =
+    ictContext.confluenceBreakdown.confidence >= 0.58 && ictContext.bias !== "neutral" ? ictContext.bias : scoreToBias(weightedScore);
   const relevantTags = allIctTags.filter((tag) => {
     if (tag === "liquidity sweep") {
       return ictContext.liquiditySweep;
@@ -186,7 +187,7 @@ export function generateThesis(input: ThesisInput, state: LabState) {
     return true;
   });
   const confidence = clamp(
-    0.42 + Math.abs(agentWeightedScore) * 1.1 + ictContext.confluenceScore * 0.34 + (ictContext.killZoneTag !== "none" ? 0.04 : 0),
+    0.42 + Math.abs(agentWeightedScore) * 1.1 + ictContext.confluenceBreakdown.confidence * 0.34 + (ictContext.killZoneTag !== "none" ? 0.04 : 0),
     0.42,
     0.86
   );

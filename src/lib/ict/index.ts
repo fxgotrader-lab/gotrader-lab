@@ -1,4 +1,12 @@
 export { buildICTContext } from "@/lib/ict/buildICTContext";
+export {
+  defaultICTScoringWeights,
+  loadICTScoringWeights,
+  resetICTScoringWeights,
+  sanitizeICTScoringWeights,
+  saveICTScoringWeights,
+  scoreICTConfluence
+} from "@/lib/ict/confluenceScoring";
 export { detectBOS } from "@/lib/ict/detectBOS";
 export { detectFairValueGaps } from "@/lib/ict/detectFVG";
 export { detectLiquiditySweeps } from "@/lib/ict/detectLiquiditySweeps";
