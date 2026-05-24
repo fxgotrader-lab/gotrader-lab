@@ -878,6 +878,7 @@ export const createInitialLabState = (): LabState => {
     promptMutations,
     debateSessions: mockDebateSessions,
     tradeTheses: mockTradeTheses,
+    handoffExports: [],
     userApprovals: [
       {
         id: "approval_001",

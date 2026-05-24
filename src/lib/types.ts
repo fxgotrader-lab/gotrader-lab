@@ -394,6 +394,17 @@ export interface GoTraderBridgeValidationResult {
   errors: string[];
 }
 
+export interface GoTraderHandoffAuditEntry {
+  id: string;
+  handoffId: string;
+  thesisId: string;
+  exportedAt: string;
+  filename: string;
+  validationStatus: "valid" | "invalid";
+  errorCount: number;
+  mode: "simulation";
+}
+
 export interface LabState {
   agents: Agent[];
   promptVersions: AgentPromptVersion[];
@@ -403,6 +414,7 @@ export interface LabState {
   promptMutations: PromptMutation[];
   debateSessions: DebateSession[];
   tradeTheses: TradeThesis[];
+  handoffExports: GoTraderHandoffAuditEntry[];
   userApprovals: Array<{
     id: string;
     createdAt: string;

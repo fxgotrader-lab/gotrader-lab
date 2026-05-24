@@ -31,6 +31,7 @@ const formatBridgeValue = (value: string) => value.replace(/_/g, " ");
 
 export function SettingsView({ state, onReset }: { state: LabState; onReset: () => void }) {
   const [ictWeights, setIctWeights] = useState<ICTScoringWeights>(() => loadICTScoringWeights());
+  const latestHandoffExport = state.handoffExports?.[0];
 
   const reset = () => {
     const approved = window.confirm("Reset local GoTrader AI Lab mock data and prompt history?");
@@ -138,6 +139,16 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
             <div className="flex justify-between gap-3">
               <span>Prompt versions</span>
               <span className="font-mono text-foreground">{state.promptVersions.length}</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span>Handoff exports</span>
+              <span className="font-mono text-foreground">{state.handoffExports?.length ?? 0}</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span>Latest handoff</span>
+              <span className="max-w-[11rem] truncate font-mono text-foreground">
+                {latestHandoffExport?.exportedAt ?? "none"}
+              </span>
             </div>
           </CardContent>
         </Card>

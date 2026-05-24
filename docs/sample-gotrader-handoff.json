@@ -1,0 +1,102 @@
+{
+  "schemaVersion": "gotrader_ai_lab_handoff_v1",
+  "handoffId": "handoff_sample_nq_5m_001",
+  "timestamp": "2026-05-24T00:00:00.000Z",
+  "source": "gotrader_ai_lab",
+  "mode": "simulation",
+  "strategy": "ict_ai_lab",
+  "symbol": "NQ",
+  "timeframe": "5m",
+  "signal": 1,
+  "confidence": 0.72,
+  "confluenceScore": 0.64,
+  "ictSummary": {
+    "narrativeSummary": "ICT engine reads bullish after sell-side sweep, displacement, and premium/discount alignment.",
+    "bias": "bullish",
+    "confluenceScore": 0.64,
+    "killZone": "NY AM",
+    "premiumDiscount": "discount",
+    "displacement": "strong",
+    "fairValueGap": "bullish",
+    "latestSwingHigh": 19020,
+    "latestSwingLow": 18906,
+    "liquiditySweepCount": 1,
+    "fairValueGapCount": 2,
+    "hasBullishMSS": true,
+    "hasBearishMSS": false,
+    "hasBullishBOS": true,
+    "hasBearishBOS": false
+  },
+  "agentSummaries": [
+    {
+      "agentId": "ict-liquidity-agent",
+      "agentName": "ICT Liquidity Agent",
+      "layer": "strategy",
+      "bias": "bullish",
+      "confidence": 0.71,
+      "weight": 0.22,
+      "reasoning": "Latest liquidity event is a sell-side sweep that reclaimed the level.",
+      "recommendation": "Favor bullish research while the swept level remains respected.",
+      "supportingFactors": ["Sell-side sweep detected", "Sweep occurred during active session timing"],
+      "warningFactors": []
+    },
+    {
+      "agentId": "ict-structure-agent",
+      "agentName": "ICT Structure Agent",
+      "layer": "strategy",
+      "bias": "bullish",
+      "confidence": 0.76,
+      "weight": 0.24,
+      "reasoning": "Structure map reads bullish with MSS and BOS confirmation.",
+      "recommendation": "Use bullish structure as the primary directional anchor.",
+      "supportingFactors": ["Bullish MSS confirmed", "Bullish BOS confirmed"],
+      "warningFactors": []
+    },
+    {
+      "agentId": "cio-agent",
+      "agentName": "CIO Agent",
+      "layer": "cio",
+      "bias": "bullish",
+      "confidence": 0.72,
+      "weight": 1,
+      "reasoning": "CIO synthesized deterministic internal agents into a bullish research thesis.",
+      "recommendation": "Use bullish CIO thesis with defined simulated invalidation and target.",
+      "supportingFactors": ["Liquidity and structure aligned", "Risk/reward remained above threshold"],
+      "warningFactors": ["Simulation-only handoff; no broker execution"]
+    }
+  ],
+  "cioThesis": {
+    "thesisId": "thesis_sample_001",
+    "bias": "bullish",
+    "summary": "NQ 5m CIO thesis is bullish after ICT confluence and internal agent agreement.",
+    "reasoningSummary": "Weighted agent synthesis favored bullish continuation with invalidation below the swept low.",
+    "confidence": 0.72,
+    "session": "New York AM",
+    "marketRegime": "trend"
+  },
+  "entryZone": [18864, 18880],
+  "invalidation": 18836,
+  "target": 18952,
+  "riskNotes": "Research-only simulated invalidation below swept low. No broker execution.",
+  "replayBacktestMetadata": {
+    "sourceModule": "research_workbench",
+    "mockDataOnly": true,
+    "backtestConfig": {
+      "symbol": "NQ",
+      "timeframe": "5m",
+      "sessionFilter": "all",
+      "minimumConfluenceThreshold": 0.35,
+      "minimumConfidenceThreshold": 0.42,
+      "targetRMultiple": 2,
+      "stopModel": "latest swing",
+      "maxBarsToResolveTrade": 8
+    }
+  },
+  "safety": {
+    "label": "Simulation-only handoff. No broker execution.",
+    "brokerConnection": false,
+    "liveTrading": false,
+    "orderExecution": false,
+    "externalApi": false
+  }
+}

@@ -1,5 +1,5 @@
 import { createInitialLabState } from "@/lib/mockData";
-import type { LabState } from "@/lib/types";
+import type { GoTraderHandoffAuditEntry, LabState } from "@/lib/types";
 import { uid } from "@/lib/utils";
 
 export interface LabStorageAdapter {
@@ -11,6 +11,24 @@ export interface LabStorageAdapter {
 const STORAGE_KEY = "gotrader-ai-lab-state";
 
 const isBrowser = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+
+const normalizeLabState = (state: Partial<LabState>): LabState => {
+  const seeded = createInitialLabState();
+  return {
+    ...seeded,
+    ...state,
+    agents: state.agents ?? seeded.agents,
+    promptVersions: state.promptVersions ?? seeded.promptVersions,
+    recommendations: state.recommendations ?? seeded.recommendations,
+    outcomes: state.outcomes ?? seeded.outcomes,
+    performanceScores: state.performanceScores ?? seeded.performanceScores,
+    promptMutations: state.promptMutations ?? seeded.promptMutations,
+    debateSessions: state.debateSessions ?? seeded.debateSessions,
+    tradeTheses: state.tradeTheses ?? seeded.tradeTheses,
+    handoffExports: state.handoffExports ?? [],
+    userApprovals: state.userApprovals ?? seeded.userApprovals
+  };
+};
 
 export class LocalStorageLabAdapter implements LabStorageAdapter {
   load(): LabState {
@@ -26,7 +44,12 @@ export class LocalStorageLabAdapter implements LabStorageAdapter {
     }
 
     try {
-      return JSON.parse(raw) as LabState;
+      const parsed = JSON.parse(raw) as Partial<LabState>;
+      const normalized = normalizeLabState(parsed);
+      if (!parsed.handoffExports) {
+        this.save(normalized);
+      }
+      return normalized;
     } catch {
       const seeded = createInitialLabState();
       this.save(seeded);
@@ -174,6 +197,22 @@ export function recordSignalExportDecision(
         entityId: thesisId,
         decision
       }
+    ]
+  };
+}
+
+export function recordHandoffExport(
+  state: LabState,
+  entry: Omit<GoTraderHandoffAuditEntry, "id">
+): LabState {
+  return {
+    ...state,
+    handoffExports: [
+      {
+        id: uid("handoff_export"),
+        ...entry
+      },
+      ...(state.handoffExports ?? [])
     ]
   };
 }

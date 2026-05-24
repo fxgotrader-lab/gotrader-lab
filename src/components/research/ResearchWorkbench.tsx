@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Download, FlaskConical, Play, ShieldAlert, Sparkles } from "lucide-react";
+import { Download, FileJson, FlaskConical, Play, ShieldAlert, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,12 +13,29 @@ import {
   createGoTraderSimulationSignal,
   GoTraderBridgeValidationError
 } from "@/lib/integrations/goTraderBridge";
-import type { DebateSession, FuturesSymbol, LabState, MarketRegime, ThesisInput, Timeframe, TradeThesis, TradingSession } from "@/lib/types";
+import { createGoTraderHandoff } from "@/lib/integrations/createGoTraderHandoff";
+import {
+  GoTraderHandoffValidationError,
+  validateGoTraderHandoff
+} from "@/lib/integrations/validateGoTraderHandoff";
+import type {
+  DebateSession,
+  FuturesSymbol,
+  GoTraderHandoffAuditEntry,
+  LabState,
+  MarketRegime,
+  ThesisInput,
+  Timeframe,
+  TradeThesis,
+  TradingSession
+} from "@/lib/types";
+import type { GoTraderHandoffValidationResult } from "@/lib/integrations/goTraderHandoffSchema";
 import { formatPercent } from "@/lib/utils";
 
 interface ResearchActions {
   saveThesis(input: ThesisInput): { debateSession: DebateSession; thesis: TradeThesis } | undefined;
   recordSignalExport(thesisId: string, decision: "approved" | "rejected"): void;
+  recordHandoffExport(entry: Omit<GoTraderHandoffAuditEntry, "id">): void;
   scoreThesis(thesisId: string): void;
 }
 
@@ -59,6 +76,9 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
   });
   const [activeThesisId, setActiveThesisId] = useState(state.tradeTheses[0]?.id);
   const [exportJson, setExportJson] = useState("");
+  const [handoffJson, setHandoffJson] = useState("");
+  const [handoffValidation, setHandoffValidation] = useState<GoTraderHandoffValidationResult>();
+  const [handoffFilename, setHandoffFilename] = useState("");
 
   const activeThesis = useMemo(
     () => state.tradeTheses.find((thesis) => thesis.id === activeThesisId) ?? state.tradeTheses[0],
@@ -80,7 +100,22 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
     if (generated) {
       setActiveThesisId(generated.thesis.id);
       setExportJson("");
+      setHandoffJson("");
+      setHandoffValidation(undefined);
+      setHandoffFilename("");
     }
+  };
+
+  const downloadJson = (filename: string, contents: string) => {
+    const blob = new Blob([contents], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
   };
 
   const confirmExport = () => {
@@ -107,6 +142,53 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
   const scoreOutcome = () => {
     if (activeThesis) {
       actions.scoreThesis(activeThesis.id);
+    }
+  };
+
+  const exportHandoff = () => {
+    if (!activeThesis) {
+      return;
+    }
+
+    const approved = window.confirm(
+      "Download a simulation-only GoTrader handoff JSON file? This file cannot execute trades and does not connect to a broker."
+    );
+    if (!approved) {
+      return;
+    }
+
+    try {
+      const handoff = createGoTraderHandoff(activeThesis, { debateSession: activeDebate });
+      const validation = validateGoTraderHandoff(handoff);
+      const filename = `gotrader-handoff-${activeThesis.symbol}-${activeThesis.timeframe}-${handoff.handoffId}.json`;
+      const json = JSON.stringify(handoff, null, 2);
+      setHandoffValidation(validation);
+      setHandoffJson(json);
+      setHandoffFilename(filename);
+
+      if (validation.valid) {
+        downloadJson(filename, json);
+      }
+
+      actions.recordHandoffExport({
+        handoffId: handoff.handoffId,
+        thesisId: activeThesis.id,
+        exportedAt: handoff.timestamp,
+        filename,
+        validationStatus: validation.valid ? "valid" : "invalid",
+        errorCount: validation.errors.length,
+        mode: "simulation"
+      });
+    } catch (error) {
+      const validation =
+        error instanceof GoTraderHandoffValidationError
+          ? error.validation
+          : {
+              valid: false,
+              errors: ["Unable to create simulation-only GoTrader handoff."]
+            };
+      setHandoffValidation(validation);
+      window.alert(validation.errors.join("\n"));
     }
   };
 
@@ -281,12 +363,56 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
                   <Download className="h-4 w-4" aria-hidden="true" />
                   Confirm simulated signal export
                 </Button>
+                <Button variant="secondary" onClick={exportHandoff}>
+                  <FileJson className="h-4 w-4" aria-hidden="true" />
+                  Export GoTrader Handoff
+                </Button>
                 <Input readOnly value={activeThesis.id} className="max-w-sm font-mono text-xs" aria-label="Thesis ID" />
               </div>
+
+              <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+                <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
+                Simulation-only handoff. No broker execution.
+              </div>
+
+              {handoffValidation ? (
+                <div className="rounded-lg border border-border bg-background/45 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold">Handoff Validation Status</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {handoffFilename || "No handoff file generated yet."}
+                      </p>
+                    </div>
+                    <Badge variant={handoffValidation.valid ? "success" : "danger"}>
+                      {handoffValidation.valid ? "valid" : "invalid"}
+                    </Badge>
+                  </div>
+                  {handoffValidation.errors.length ? (
+                    <div className="mt-3 space-y-1">
+                      {handoffValidation.errors.map((error) => (
+                        <div key={error} className="rounded-md border border-rose-400/20 bg-rose-400/5 px-2 py-1 text-xs text-rose-100">
+                          {error}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      Strict schema passed. Mode is locked to simulation and signal is constrained to -1, 0, or 1.
+                    </p>
+                  )}
+                </div>
+              ) : null}
 
               {exportJson ? (
                 <pre className="overflow-x-auto rounded-lg border border-border bg-background/75 p-4 font-mono text-xs leading-5 text-slate-200">
                   {exportJson}
+                </pre>
+              ) : null}
+
+              {handoffJson ? (
+                <pre className="overflow-x-auto rounded-lg border border-border bg-background/75 p-4 font-mono text-xs leading-5 text-slate-200">
+                  {handoffJson}
                 </pre>
               ) : null}
             </CardContent>

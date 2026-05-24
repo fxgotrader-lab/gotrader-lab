@@ -2,12 +2,13 @@ import { useCallback, useMemo, useState } from "react";
 import {
   approveMutation,
   labStorage,
+  recordHandoffExport,
   recordSignalExportDecision,
   rejectMutation,
   rollbackPromptVersion
 } from "@/lib/storage";
 import { applySimulatedOutcome, generateThesis } from "@/lib/simulation";
-import type { LabState, ThesisInput } from "@/lib/types";
+import type { GoTraderHandoffAuditEntry, LabState, ThesisInput } from "@/lib/types";
 
 export function useLabState() {
   const [state, setState] = useState<LabState>(() => labStorage.load());
@@ -45,6 +46,9 @@ export function useLabState() {
       },
       recordSignalExport(thesisId: string, decision: "approved" | "rejected") {
         commit((current) => recordSignalExportDecision(current, thesisId, decision));
+      },
+      recordHandoffExport(entry: Omit<GoTraderHandoffAuditEntry, "id">) {
+        commit((current) => recordHandoffExport(current, entry));
       },
       scoreThesis(thesisId: string) {
         commit((current) => {
