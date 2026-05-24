@@ -5,7 +5,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { createReplayState, getReplayFrame, jumpReplay, runBacktest, setReplayPlaying, stepReplay } from "@/lib/backtesting";
+import {
+  createReplayState,
+  describeBacktestConfig,
+  getReplayFrame,
+  jumpReplay,
+  loadBacktestConfig,
+  runBacktest,
+  setReplayPlaying,
+  stepReplay
+} from "@/lib/backtesting";
 import type { BacktestResult } from "@/lib/backtesting";
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import type { Candle, MarketBias, TradeThesis } from "@/lib/types";
@@ -167,7 +176,8 @@ function ReplayControls({ result, isAtEnd, onSetState }: {
 }
 
 export function ReplayView() {
-  const backtest = useMemo(() => runBacktest(mockCandles, { symbol: "NQ", timeframe: "5m" }), []);
+  const activeConfig = useMemo(() => loadBacktestConfig(), []);
+  const backtest = useMemo(() => runBacktest(mockCandles, activeConfig), [activeConfig]);
   const [replayState, setReplayState] = useState(() => createReplayState(backtest));
   const frame = useMemo(() => getReplayFrame(backtest, replayState), [backtest, replayState]);
   const progress = backtest.candles.length ? frame.currentIndex / Math.max(1, backtest.candles.length - 1) : 0;
@@ -206,6 +216,7 @@ export function ReplayView() {
         <div className="flex flex-wrap gap-2">
           <Badge variant="warning">Mock data only</Badge>
           <Badge variant="muted">No execution</Badge>
+          <Badge variant="secondary">{activeConfig.sessionFilter}</Badge>
         </div>
       </div>
 
@@ -221,6 +232,20 @@ export function ReplayView() {
         <MetricCard label="Backtest win rate" value={formatPercent(backtest.summary.winRate)} detail={`${backtest.summary.wins} targets`} />
         <MetricCard label="Average R" value={formatSigned(backtest.summary.averageR, 2)} detail={`${backtest.summary.maxDrawdown.toFixed(2)}R max DD`} tone={backtest.summary.averageR >= 0 ? "positive" : "danger"} />
       </div>
+
+      <Card>
+        <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs uppercase text-muted-foreground">Active Backtest Configuration</p>
+            <p className="mt-1 text-sm text-muted-foreground">{describeBacktestConfig(backtest.config)}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="secondary">max {backtest.config.maxBarsToResolveTrade} bars</Badge>
+            <Badge variant="secondary">stop: {backtest.config.stopModel}</Badge>
+            <Badge variant="secondary">skipped {backtest.summary.skippedSignals}</Badge>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

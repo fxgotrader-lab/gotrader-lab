@@ -1,4 +1,5 @@
 import type { CIOSynthesisResult, InternalAgentOpinion } from "@/lib/agents";
+import type { InternalAgentId } from "@/lib/agents";
 import type {
   Candle,
   ICTContext,
@@ -13,12 +14,26 @@ import type {
 } from "@/lib/types";
 
 export type SimulatedTradeOutcome = "target_hit" | "stop_hit" | "expired" | "neutral";
+export type BacktestSessionFilter = "all" | "Asia" | "London" | "New York" | "NY AM Kill Zone" | "NY PM Kill Zone";
+export type BacktestStopModel = "latest swing" | "fixed ticks" | "FVG invalidation";
+export type BacktestAgentWeightId = Exclude<InternalAgentId, "cio-agent">;
+export type BacktestAgentWeights = Record<BacktestAgentWeightId, number>;
 
 export interface BacktestConfig {
   symbol?: FuturesSymbol;
   timeframe?: Timeframe;
   session?: TradingSession;
+  sessionFilter?: BacktestSessionFilter;
   marketRegime?: MarketRegime;
+  minimumConfluenceThreshold?: number;
+  minimumConfidenceThreshold?: number;
+  targetRMultiple?: number;
+  stopModel?: BacktestStopModel;
+  fixedTickStopSize?: number;
+  maxBarsToResolveTrade?: number;
+  allowLong?: boolean;
+  allowShort?: boolean;
+  agentWeights?: Partial<BacktestAgentWeights>;
   warmupCandles?: number;
   decisionInterval?: number;
   lookaheadCandles?: number;
@@ -29,7 +44,17 @@ export interface ResolvedBacktestConfig {
   symbol: FuturesSymbol;
   timeframe: Timeframe;
   session?: TradingSession;
+  sessionFilter: BacktestSessionFilter;
   marketRegime: MarketRegime;
+  minimumConfluenceThreshold: number;
+  minimumConfidenceThreshold: number;
+  targetRMultiple: number;
+  stopModel: BacktestStopModel;
+  fixedTickStopSize: number;
+  maxBarsToResolveTrade: number;
+  allowLong: boolean;
+  allowShort: boolean;
+  agentWeights: BacktestAgentWeights;
   warmupCandles: number;
   decisionInterval: number;
   lookaheadCandles: number;
@@ -107,9 +132,27 @@ export interface BacktestAgentAttributionSummary {
   cioAlignmentRate: number;
 }
 
+export interface BacktestSkippedSignal {
+  id: string;
+  decisionIndex: number;
+  timestamp: string;
+  reason: string;
+  bias: MarketBias;
+  confidence: number;
+  confluenceScore: number;
+  sessionLabel: string;
+}
+
+export interface BacktestSkipReasonSummary {
+  reason: string;
+  count: number;
+}
+
 export interface BacktestSummary {
   totalTrades: number;
   directionalTrades: number;
+  skippedSignals: number;
+  skipReasons: BacktestSkipReasonSummary[];
   wins: number;
   losses: number;
   unresolved: number;
@@ -126,6 +169,7 @@ export interface BacktestResult {
   config: ResolvedBacktestConfig;
   candles: Candle[];
   decisions: BacktestDecisionPoint[];
+  skippedSignals: BacktestSkippedSignal[];
   trades: SimulatedTradeRecord[];
   summary: BacktestSummary;
 }

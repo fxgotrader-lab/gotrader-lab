@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AgentDetail } from "@/components/agents/AgentDetail";
 import { AgentRoster } from "@/components/agents/AgentRoster";
 import { AppShell } from "@/components/AppShell";
+import { BacktestLab } from "@/components/backtest-lab/BacktestLab";
 import { DashboardOverview } from "@/components/dashboard/DashboardOverview";
 import { ICTLab } from "@/components/ict-lab/ICTLab";
 import { PerformanceView } from "@/components/performance/PerformanceView";
@@ -24,6 +25,7 @@ export default function App() {
         <Route path="/research" element={<ResearchWorkbench state={state} actions={actions} />} />
         <Route path="/ict-lab" element={<ICTLab />} />
         <Route path="/replay" element={<ReplayView />} />
+        <Route path="/backtest-lab" element={<BacktestLab />} />
         <Route path="/performance" element={<PerformanceView state={state} />} />
         <Route path="/prompt-lab" element={<PromptLab state={state} actions={actions} />} />
         <Route path="/settings" element={<SettingsView state={state} onReset={actions.reset} />} />

@@ -1,4 +1,14 @@
-import type { BacktestResult, ReplayFrame, ReplayState } from "@/lib/backtesting/backtestTypes";
+import type { BacktestConfig, BacktestResult, ReplayFrame, ReplayState } from "@/lib/backtesting/backtestTypes";
+import { runBacktest } from "@/lib/backtesting/runBacktest";
+import type { Candle } from "@/lib/types";
+
+export function createConfiguredReplay(candles: Candle[], config: BacktestConfig = {}, initialIndex?: number) {
+  const result = runBacktest(candles, config);
+  return {
+    result,
+    state: createReplayState(result, initialIndex)
+  };
+}
 
 export function createReplayState(result: BacktestResult, initialIndex?: number): ReplayState {
   const firstDecisionIndex = result.decisions[0]?.decisionIndex ?? 0;

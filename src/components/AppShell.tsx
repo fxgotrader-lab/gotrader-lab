@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import {
   Activity,
+  Beaker,
   Bot,
   ChartCandlestick,
   FlaskConical,
@@ -22,6 +23,7 @@ const navigation = [
   { href: "/research", label: "Research", icon: FlaskConical },
   { href: "/ict-lab", label: "ICT Lab", icon: ChartCandlestick },
   { href: "/replay", label: "Replay", icon: RefreshCw },
+  { href: "/backtest-lab", label: "Backtest Lab", icon: Beaker },
   { href: "/performance", label: "Performance", icon: Activity },
   { href: "/prompt-lab", label: "Prompt Lab", icon: GitBranch },
   { href: "/settings", label: "Settings", icon: Settings }

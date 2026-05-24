@@ -5,7 +5,7 @@ import { MetricCard } from "@/components/MetricCard";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { runBacktest } from "@/lib/backtesting";
+import { describeBacktestConfig, loadBacktestConfig, runBacktest } from "@/lib/backtesting";
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import { aggregatePortfolioMetrics, identifyWeakestAgent } from "@/lib/scoring";
 import type { LabState } from "@/lib/types";
@@ -24,7 +24,8 @@ const biasVariant = (bias?: string) => {
 export function PerformanceView({ state }: { state: LabState }) {
   const metrics = aggregatePortfolioMetrics(state);
   const weakest = identifyWeakestAgent(state);
-  const backtest = useMemo(() => runBacktest(mockCandles, { symbol: "NQ", timeframe: "5m" }), []);
+  const activeBacktestConfig = useMemo(() => loadBacktestConfig(), []);
+  const backtest = useMemo(() => runBacktest(mockCandles, activeBacktestConfig), [activeBacktestConfig]);
   const backtestSummary = backtest.summary;
   const chartData = state.agents
     .filter((agent) => agent.layer !== "cio")
@@ -71,6 +72,20 @@ export function PerformanceView({ state }: { state: LabState }) {
         <MetricCard label="Best trade" value={`${formatSigned(backtestSummary.bestTrade?.rMultiple ?? 0, 2)}R`} detail={backtestSummary.bestTrade?.outcome.replace("_", " ") ?? "n/a"} tone="positive" />
         <MetricCard label="Worst trade" value={`${formatSigned(backtestSummary.worstTrade?.rMultiple ?? 0, 2)}R`} detail={backtestSummary.worstTrade?.outcome.replace("_", " ") ?? "n/a"} tone="danger" />
       </div>
+
+      <Card>
+        <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs uppercase text-muted-foreground">Active Backtest Configuration</p>
+            <p className="mt-1 text-sm text-muted-foreground">{describeBacktestConfig(backtest.config)}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="secondary">{backtest.config.sessionFilter}</Badge>
+            <Badge variant="secondary">max {backtest.config.maxBarsToResolveTrade} bars</Badge>
+            <Badge variant="secondary">skipped {backtestSummary.skippedSignals}</Badge>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
         <Card>
