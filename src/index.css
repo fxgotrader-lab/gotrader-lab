@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    --background: 218 24% 7%;
+    --foreground: 210 20% 96%;
+    --card: 218 21% 10%;
+    --card-foreground: 210 20% 96%;
+    --popover: 218 21% 10%;
+    --popover-foreground: 210 20% 96%;
+    --primary: 174 64% 46%;
+    --primary-foreground: 180 30% 6%;
+    --secondary: 216 16% 17%;
+    --secondary-foreground: 210 20% 92%;
+    --muted: 217 18% 15%;
+    --muted-foreground: 215 12% 66%;
+    --accent: 44 92% 60%;
+    --accent-foreground: 42 44% 8%;
+    --destructive: 350 74% 57%;
+    --destructive-foreground: 210 20% 96%;
+    --border: 216 16% 21%;
+    --input: 216 16% 21%;
+    --ring: 174 64% 46%;
+    --radius: 0.5rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply min-h-screen bg-background text-foreground antialiased;
+    background:
+      radial-gradient(circle at top left, rgba(45, 212, 191, 0.08), transparent 32rem),
+      linear-gradient(180deg, #07111f 0%, #0b1018 48%, #0d1117 100%);
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+}
+
+@layer utilities {
+  .terminal-grid {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
+  }
+}
