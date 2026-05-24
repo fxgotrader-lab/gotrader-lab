@@ -207,6 +207,7 @@ export interface DebateSession {
 
 export interface GoTraderSignalExport {
   strategy: "ict_ai_lab";
+  source: "gotrader_ai_lab";
   symbol: FuturesSymbol;
   timeframe: Timeframe;
   signal: -1 | 0 | 1;
@@ -240,6 +241,11 @@ export interface GoTraderSignalExport {
     multiplier: number;
     margin: number;
   };
+}
+
+export interface GoTraderBridgeValidationResult {
+  valid: boolean;
+  errors: string[];
 }
 
 export interface LabState {

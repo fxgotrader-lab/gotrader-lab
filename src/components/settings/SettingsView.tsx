@@ -114,6 +114,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
           <pre className="overflow-x-auto rounded-lg border border-border bg-background/75 p-4 font-mono text-xs leading-5 text-slate-200">
 {`{
   "strategy": "ict_ai_lab",
+  "source": "gotrader_ai_lab",
   "symbol": "NQ",
   "timeframe": "5m",
   "signal": 1,

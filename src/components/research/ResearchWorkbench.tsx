@@ -9,7 +9,10 @@ import { Progress } from "@/components/ui/progress";
 import { Select } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { exportGoTraderSignal } from "@/lib/exporters/goTraderSignalExporter";
+import {
+  createGoTraderSimulationSignal,
+  GoTraderBridgeValidationError
+} from "@/lib/integrations/goTraderBridge";
 import type { DebateSession, FuturesSymbol, LabState, MarketRegime, ThesisInput, Timeframe, TradeThesis, TradingSession } from "@/lib/types";
 import { formatPercent } from "@/lib/utils";
 
@@ -65,7 +68,15 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
     );
     actions.recordSignalExport(activeThesis.id, approved ? "approved" : "rejected");
     if (approved) {
-      setExportJson(JSON.stringify(exportGoTraderSignal(activeThesis), null, 2));
+      try {
+        setExportJson(JSON.stringify(createGoTraderSimulationSignal(activeThesis), null, 2));
+      } catch (error) {
+        const message =
+          error instanceof GoTraderBridgeValidationError
+            ? error.validation.errors.join("\n")
+            : "Unable to create simulated go-trader export.";
+        window.alert(message);
+      }
     }
   };
 
