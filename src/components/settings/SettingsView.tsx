@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Database, KeyRound, Lock, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { Database, KeyRound, Lock, ShieldAlert, ShieldCheck, SlidersHorizontal, Unplug } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import {
   resetICTScoringWeights,
   saveICTScoringWeights
 } from "@/lib/ict";
+import { brokerDemoBridgeSpec } from "@/lib/integrations/brokerDemoBridgeSpec";
 import type { ICTScoringWeights, LabState } from "@/lib/types";
 
 const weightLabels: Record<string, string> = {
@@ -26,6 +27,7 @@ const weightLabels: Record<string, string> = {
   riskRewardQuality: "Risk/reward quality"
 };
 const formatWeightLabel = (key: string) => weightLabels[key] ?? key;
+const formatBridgeValue = (value: string) => value.replace(/_/g, " ");
 
 export function SettingsView({ state, onReset }: { state: LabState; onReset: () => void }) {
   const [ictWeights, setIctWeights] = useState<ICTScoringWeights>(() => loadICTScoringWeights());
@@ -111,7 +113,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
         </CardContent>
       </Card>
 
-      <div className="grid gap-5 xl:grid-cols-3">
+      <div className="grid gap-5 xl:grid-cols-4">
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
@@ -157,6 +159,30 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
                 </div>
               )
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Unplug className="h-4 w-4 text-amber-200" aria-hidden="true" />
+              <CardTitle>Broker Demo Bridge</CardTitle>
+            </div>
+            <CardDescription>Single-account paper execution bridge architecture only.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="flex items-center justify-between rounded-md border border-border bg-background/45 px-3 py-2">
+              <span className="text-muted-foreground">Status</span>
+              <Badge variant="warning">{formatBridgeValue(brokerDemoBridgeSpec.status)}</Badge>
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-border bg-background/45 px-3 py-2">
+              <span className="text-muted-foreground">Mode</span>
+              <Badge variant="muted">{formatBridgeValue(brokerDemoBridgeSpec.mode)}</Badge>
+            </div>
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
+              No broker code exists yet. No API keys, broker connection, websocket feed, or order placement is present.
+            </div>
           </CardContent>
         </Card>
 
