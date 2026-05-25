@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bell,
   Bot,
@@ -17,8 +17,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  COMMUNICATION_AUDIT_UPDATED_EVENT,
   getCommunicationSummary,
   inAppCommunicationSpec,
+  loadCommunicationMessages,
 } from "@/lib/communications/communicationSpec";
 import type {
   AgentMessageAuditEntry,
@@ -48,25 +50,41 @@ const requestOptions = inAppCommunicationSpec.supportedUserRequests.map((request
 }));
 
 export function AICommunicationsView() {
+  const [messages, setMessages] = useState(() => loadCommunicationMessages());
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [severityFilter, setSeverityFilter] = useState("all");
-  const [selectedId, setSelectedId] = useState(inAppCommunicationSpec.sampleMessages[0]?.messageId ?? "");
+  const [selectedId, setSelectedId] = useState(() => loadCommunicationMessages()[0]?.messageId ?? "");
   const [draftRequest, setDraftRequest] = useState("");
+
+  useEffect(() => {
+    const refreshMessages = () => {
+      const nextMessages = loadCommunicationMessages();
+      setMessages(nextMessages);
+      setSelectedId((current) => current || (nextMessages[0]?.messageId ?? ""));
+    };
+
+    window.addEventListener(COMMUNICATION_AUDIT_UPDATED_EVENT, refreshMessages);
+    window.addEventListener("storage", refreshMessages);
+    return () => {
+      window.removeEventListener(COMMUNICATION_AUDIT_UPDATED_EVENT, refreshMessages);
+      window.removeEventListener("storage", refreshMessages);
+    };
+  }, []);
 
   const filteredMessages = useMemo(
     () =>
-      inAppCommunicationSpec.sampleMessages.filter((message) => {
+      messages.filter((message) => {
         const categoryMatch = categoryFilter === "all" || message.category === categoryFilter;
         const severityMatch = severityFilter === "all" || message.severity === severityFilter;
         return categoryMatch && severityMatch;
       }),
-    [categoryFilter, severityFilter]
+    [categoryFilter, messages, severityFilter]
   );
   const selectedMessage =
     filteredMessages.find((message) => message.messageId === selectedId) ??
     filteredMessages[0] ??
-    inAppCommunicationSpec.sampleMessages[0];
-  const summary = getCommunicationSummary(inAppCommunicationSpec.sampleMessages);
+    messages[0];
+  const summary = getCommunicationSummary(messages);
 
   return (
     <div className="space-y-5">
@@ -111,7 +129,7 @@ export function AICommunicationsView() {
                   <MessageSquareText className="h-4 w-4 text-primary" aria-hidden="true" />
                   <CardTitle>Agent Inbox</CardTitle>
                 </div>
-                <CardDescription>Mock planning messages that model the future audit trail.</CardDescription>
+                <CardDescription>Stored research messages, alerts, and audit trail entries.</CardDescription>
               </div>
               <Badge variant="secondary">{filteredMessages.length} shown</Badge>
             </div>

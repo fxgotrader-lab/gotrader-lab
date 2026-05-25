@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ArrowRight, ClipboardCheck, ExternalLink, MessageSquareText, Route, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -9,7 +10,7 @@ import {
   latestAutoResearchCycle,
   loadAutoResearchState,
 } from "@/lib/autoResearch";
-import { getCommunicationSummary, inAppCommunicationSpec } from "@/lib/communications/communicationSpec";
+import { getCommunicationSummary, loadCommunicationMessages } from "@/lib/communications/communicationSpec";
 import {
   getLLMReadinessImpact,
   latestLLMAdvisoryRun,
@@ -18,6 +19,7 @@ import {
 } from "@/lib/llm";
 import { evaluateReadinessGate, loadManualApprovalRecord } from "@/lib/readiness";
 import { loadLatestResearchQualityReview } from "@/lib/researchQuality";
+import { latestResearchCycleRun, loadResearchCycleState } from "@/lib/researchCycle";
 import { loadSelfImprovementState } from "@/lib/selfImprovement";
 import {
   countCompletedRunbookItems,
@@ -32,6 +34,7 @@ import { AutoResearchStatusCard } from "./AutoResearchStatusCard";
 import { formatDateTime, formatNumber } from "./dashboardFormatters";
 import { LLMAgentStatusCard } from "./LLMAgentStatusCard";
 import { ReadinessSummaryCard } from "./ReadinessSummaryCard";
+import { ResearchCycleControl } from "./ResearchCycleControl";
 import { SafetyLockCard } from "./SafetyLockCard";
 import { SelfImprovementStatusCard } from "./SelfImprovementStatusCard";
 import { SimulationBridgeStatusCard } from "./SimulationBridgeStatusCard";
@@ -43,8 +46,11 @@ type ResearchCommandCenterProps = {
 };
 
 export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
+  const [, setDashboardRefresh] = useState(0);
   const llmState = loadLLMResearchState();
   const latestLLMRun = latestLLMAdvisoryRun(llmState);
+  const researchCycleState = loadResearchCycleState();
+  const latestResearchCycle = latestResearchCycleRun(researchCycleState);
   const providerStatus = providerStatusForMode(llmState.providerMode);
   const autoResearchState = loadAutoResearchState();
   const latestAutoResearch = latestAutoResearchCycle(autoResearchState);
@@ -63,7 +69,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
     runbook,
   });
   const latestHandoff = state.handoffExports[0];
-  const communicationSummary = getCommunicationSummary(inAppCommunicationSpec.sampleMessages);
+  const communicationSummary = getCommunicationSummary(loadCommunicationMessages());
 
   const recommendedAction = getRecommendedAction({
     completedRunbookItems,
@@ -81,6 +87,8 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
     autoResearchTimestamp: latestAutoResearch?.timestamp,
     autoResearchStatus: latestAutoResearch?.status,
     completedRunbookItems,
+    researchCycleStatus: latestResearchCycle?.status,
+    researchCycleTimestamp: latestResearchCycle?.completedAt ?? latestResearchCycle?.startedAt,
     llmRunTimestamp: latestLLMRun?.timestamp,
     llmRunPassed: Boolean(latestLLMRun?.advisoryPassed),
     proposalTimestamp: latestProposal?.timestamp,
@@ -134,6 +142,8 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
           </Link>
         </CardContent>
       </Card>
+
+      <ResearchCycleControl state={state} onCycleUpdate={() => setDashboardRefresh((value) => value + 1)} />
 
       <SafetyLockCard />
 
@@ -408,6 +418,8 @@ function buildTimelineEvents({
   autoResearchStatus,
   autoResearchTimestamp,
   completedRunbookItems,
+  researchCycleStatus,
+  researchCycleTimestamp,
   llmRunPassed,
   llmRunTimestamp,
   proposalStatus,
@@ -421,6 +433,8 @@ function buildTimelineEvents({
   autoResearchStatus?: string;
   autoResearchTimestamp?: string;
   completedRunbookItems: number;
+  researchCycleStatus?: string;
+  researchCycleTimestamp?: string;
   llmRunPassed: boolean;
   llmRunTimestamp?: string;
   proposalStatus?: string;
@@ -432,6 +446,15 @@ function buildTimelineEvents({
   validationTimestamp?: string;
 }): AutomationTimelineEvent[] {
   return [
+    {
+      label: "Dashboard research cycle",
+      timestamp: researchCycleTimestamp,
+      status: researchCycleStatus === "completed" ? "complete" : researchCycleTimestamp ? "attention" : "missing",
+      detail: researchCycleStatus
+        ? `Latest dashboard cycle status: ${researchCycleStatus}.`
+        : "Use the dashboard control to run the safe research sequence.",
+      href: "/dashboard",
+    },
     {
       label: "LLM advisory run",
       timestamp: llmRunTimestamp,

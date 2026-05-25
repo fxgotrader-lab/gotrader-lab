@@ -1,10 +1,18 @@
 import type {
   AgentMessageAuditEntry,
+  CommunicationSeverity,
   InAppCommunicationSpec,
 } from "@/lib/communications/communicationTypes";
+import type { ReadinessState } from "@/lib/readiness";
+import type { ResearchCycleStatus } from "@/lib/researchCycle";
+import { uid } from "@/lib/utils";
 
 const now = new Date();
 const minutesAgo = (minutes: number) => new Date(now.getTime() - minutes * 60_000).toISOString();
+export const COMMUNICATION_AUDIT_STORAGE_KEY = "gotrader_ai_lab_communication_audit";
+export const COMMUNICATION_AUDIT_UPDATED_EVENT = "gotrader-ai-lab-communication-audit-updated";
+
+const isBrowser = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 
 export const mockAgentMessages: AgentMessageAuditEntry[] = [
   {
@@ -146,7 +154,106 @@ export const inAppCommunicationSpec: InAppCommunicationSpec = {
   sampleMessages: mockAgentMessages,
 };
 
-export function getCommunicationSummary(messages = mockAgentMessages) {
+export function loadStoredCommunicationMessages(): AgentMessageAuditEntry[] {
+  if (!isBrowser()) {
+    return [];
+  }
+
+  const raw = window.localStorage.getItem(COMMUNICATION_AUDIT_STORAGE_KEY);
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as AgentMessageAuditEntry[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function loadCommunicationMessages(): AgentMessageAuditEntry[] {
+  return [...loadStoredCommunicationMessages(), ...mockAgentMessages].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
+}
+
+export function saveCommunicationMessages(messages: AgentMessageAuditEntry[]) {
+  if (!isBrowser()) {
+    return messages;
+  }
+
+  window.localStorage.setItem(COMMUNICATION_AUDIT_STORAGE_KEY, JSON.stringify(messages.slice(0, 80)));
+  window.dispatchEvent(new CustomEvent(COMMUNICATION_AUDIT_UPDATED_EVENT, { detail: messages }));
+  return messages;
+}
+
+export function recordCommunicationMessage(
+  message: Omit<AgentMessageAuditEntry, "messageId" | "timestamp" | "safetyNotice" | "userResponse" | "resolved"> &
+    Partial<Pick<AgentMessageAuditEntry, "messageId" | "timestamp" | "userResponse" | "resolved">>
+) {
+  const entry: AgentMessageAuditEntry = {
+    ...message,
+    messageId: message.messageId ?? uid("msg"),
+    timestamp: message.timestamp ?? new Date().toISOString(),
+    userResponse: message.userResponse ?? "no_response",
+    resolved: message.resolved ?? false,
+    safetyNotice: "Research communication only. No execution authority.",
+  };
+  const stored = loadStoredCommunicationMessages();
+  return saveCommunicationMessages([entry, ...stored.filter((item) => item.messageId !== entry.messageId)]);
+}
+
+export function recordResearchCycleCommunication({
+  actionRequired,
+  cycleId,
+  proposalId,
+  readinessState,
+  status,
+  summary,
+  validationId,
+}: {
+  actionRequired: boolean;
+  cycleId: string;
+  proposalId?: string;
+  readinessState?: ReadinessState;
+  status: ResearchCycleStatus;
+  summary: string;
+  validationId?: string;
+}) {
+  const severity: CommunicationSeverity =
+    status === "failed" ? "critical" : actionRequired ? "action_required" : "info";
+  const title =
+    status === "failed"
+      ? "AI research cycle failed"
+      : actionRequired
+        ? "AI research cycle completed with required review"
+        : "AI research cycle completed";
+
+  return recordCommunicationMessage({
+    source: "openclaw_research_supervisor",
+    agentName: "AI Research Cycle Supervisor",
+    category: "openclaw_supervisor_message",
+    severity,
+    title,
+    summary,
+    body: [
+      `Cycle ${cycleId} completed with status ${status}.`,
+      `Readiness: ${readinessState ?? "not evaluated"}.`,
+      proposalId
+        ? `A self-improvement proposal was created (${proposalId}) and still requires user approval.`
+        : "No active settings were changed.",
+      "Broker execution, live trading, order placement, and readiness override remained disabled."
+    ].join(" "),
+    relatedProposalId: proposalId,
+    relatedValidationId: validationId,
+    relatedReadinessGateId: readinessState ? "readiness_gate_latest" : undefined,
+    actionRequired,
+    requestedAction: proposalId ? "approve_calibration_proposal" : actionRequired ? "acknowledge_readiness_blocker" : undefined,
+  });
+}
+
+export function getCommunicationSummary(messages = loadCommunicationMessages()) {
   const unreadMessages = messages.filter((message) => !message.resolved).length;
   const actionRequiredCount = messages.filter((message) => message.actionRequired && !message.resolved).length;
   const latestAgentMessage = messages[0];

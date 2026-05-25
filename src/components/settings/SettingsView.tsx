@@ -27,7 +27,7 @@ import {
   latestAutoResearchCycle,
   loadAutoResearchState
 } from "@/lib/autoResearch";
-import { getCommunicationSummary, inAppCommunicationSpec } from "@/lib/communications/communicationSpec";
+import { getCommunicationSummary, inAppCommunicationSpec, loadCommunicationMessages } from "@/lib/communications/communicationSpec";
 import {
   defaultICTScoringWeights,
   loadICTScoringWeights,
@@ -117,7 +117,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const latestLLMRun = latestLLMAdvisoryRun(llmResearchState);
   const llmProviderStatus = providerStatusForMode(llmResearchState.providerMode);
   const latestAutoResearch = latestAutoResearchCycle(autoResearchState);
-  const communicationSummary = getCommunicationSummary(inAppCommunicationSpec.sampleMessages);
+  const communicationSummary = getCommunicationSummary(loadCommunicationMessages());
   const runbookCompleted = countCompletedRunbookItems(simulationRunbook);
   const runbookTotal = simulationRunbookChecklist.length;
   const readinessGate = useMemo(

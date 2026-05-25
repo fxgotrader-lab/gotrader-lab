@@ -92,6 +92,21 @@ The dashboard chooses the next action based on current state. Typical actions in
 
 If all research checks pass, the dashboard still reminds the user not to proceed to broker demo from this frontend. Broker-demo execution requires a separate future implementation.
 
+## Run AI Research Cycle
+
+The dashboard includes a single safe control: **Run AI Research Cycle**. It runs the research workflow in order:
+
+1. Try the local LLM advisory bridge.
+2. Continue with deterministic simulation steps if the bridge is unavailable.
+3. Run Auto Research configuration search.
+4. Run the validation suite.
+5. Run research quality review.
+6. Check for an approval-required self-improvement proposal.
+7. Recompute readiness without applying overrides.
+8. Log the result into the in-app communications audit trail.
+
+If the local LLM bridge is not running, the cycle records a warning and continues only through safe simulation steps. It does not mark LLM advisory as passed. Any calibration proposal created by Auto Research remains approval-required and does not change active settings automatically.
+
 ## Daily Monitoring Workflow
 
 1. Start the local LLM bridge.
@@ -111,4 +126,4 @@ The system can generate candidate calibrations and advisory recommendations, but
 
 ## Execution Boundary
 
-GoTrader AI Lab remains a research and simulation cockpit. Any future paper-demo execution layer must live behind explicit risk controls, manual approval, and a separate broker-demo bridge implementation. No broker execution exists in this dashboard.
+GoTrader AI Lab remains a research and simulation cockpit. The dashboard research cycle never places orders, connects to brokers, enables paper/demo/live mode, changes API keys, or overrides readiness. Any future paper-demo execution layer must live behind explicit risk controls, manual approval, and a separate broker-demo bridge implementation. No broker execution exists in this dashboard.
