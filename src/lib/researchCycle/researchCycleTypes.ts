@@ -1,4 +1,4 @@
-import type { AutoResearchCycle, AutoResearchSearchMode } from "@/lib/autoResearch";
+import type { AutoResearchCycle, AutoResearchProgressSnapshot, AutoResearchSearchMode } from "@/lib/autoResearch";
 import type { LLMAdvisoryRun } from "@/lib/llm";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
 import type { ResearchQualityReview } from "@/lib/researchQuality";
@@ -42,6 +42,7 @@ export interface ResearchCycleRun {
   status: ResearchCycleStatus;
   steps: ResearchCycleStepResult[];
   llmBridgeAvailable: boolean;
+  candidateProgress?: AutoResearchProgressSnapshot;
   llmRun?: LLMAdvisoryRun;
   autoResearchCycle?: AutoResearchCycle;
   validationReport?: ValidationSuiteReport;

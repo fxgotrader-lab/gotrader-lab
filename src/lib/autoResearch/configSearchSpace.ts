@@ -5,13 +5,30 @@ import {
 import type { AutoResearchScoringCriteria } from "@/lib/autoResearch/autoResearchTypes";
 
 export const autoResearchSearchModes = [
-  "conservative",
-  "balanced",
-  "aggressive_research_only",
-  "session_focused",
-  "stop_model_focused",
-  "long_short_bias"
+  "quick",
+  "standard",
+  "deep",
+  "session_focus",
+  "stop_model_focus",
+  "long_short_focus",
+  "conservative_only"
 ] as const;
+
+export const autoResearchSearchModeDefaults = {
+  quick: 5,
+  standard: 10,
+  deep: 25,
+  session_focus: 10,
+  stop_model_focus: 10,
+  long_short_focus: 10,
+  conservative_only: 5,
+  conservative: 5,
+  balanced: 10,
+  aggressive_research_only: 10,
+  session_focused: 10,
+  stop_model_focused: 10,
+  long_short_bias: 10
+} as const;
 
 export const safeAutoResearchSearchSpace = {
   confluenceThreshold: [0.25, 0.35, 0.45, 0.55, 0.65],

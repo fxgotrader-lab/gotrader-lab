@@ -107,6 +107,8 @@ The dashboard includes a single safe control: **Run AI Research Cycle**. It runs
 
 If the local LLM bridge is not running, the cycle records a warning and continues only through safe simulation steps. It does not mark LLM advisory as passed. Any calibration proposal created by Auto Research remains approval-required and does not change active settings automatically.
 
+The dashboard control supports quick, standard, and deep Auto Research passes. Quick tests 5 candidates, standard tests 10, and deep tests up to 25. During the Auto Research step, the UI reports candidate progress and the best stable candidate so far. If no candidate reaches Paper-Demo Candidate criteria, the final state says no safe Paper-Demo Candidate was found and recommends continued research.
+
 ## Daily Monitoring Workflow
 
 1. Start the local LLM bridge.

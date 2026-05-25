@@ -8,6 +8,7 @@ export {
 } from "@/lib/autoResearch/runAutoResearchCycle";
 export {
   autoResearchSafetyNotes,
+  autoResearchSearchModeDefaults,
   autoResearchSearchModes,
   defaultAutoResearchScoringCriteria,
   safeAutoResearchSearchSpace
@@ -21,6 +22,8 @@ export type {
   AutoResearchCandidateResult,
   AutoResearchCycle,
   AutoResearchCycleStatus,
+  AutoResearchProgressSnapshot,
+  AutoResearchResultCategory,
   AutoResearchRunOptions,
   AutoResearchSafeConfigPatch,
   AutoResearchScoreBreakdown,

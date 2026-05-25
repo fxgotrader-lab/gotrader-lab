@@ -118,9 +118,11 @@ const resultSummaryFor = (run: ResearchCycleRun) => {
   return [
     `${counts.completed} steps completed`,
     counts.warnings ? `${counts.warnings} warning${counts.warnings === 1 ? "" : "s"}` : "no blocking warnings",
+    run.autoResearchCycle?.noSafePaperDemoCandidateFound ? "No safe Paper-Demo Candidate found" : undefined,
+    run.autoResearchCycle?.finalResultCategory ? `final category: ${run.autoResearchCycle.finalResultCategory}` : undefined,
     run.createdProposalId ? `proposal ${run.createdProposalId} created` : "no proposal created",
     `readiness: ${run.readinessSnapshot?.state ?? "not evaluated"}`
-  ].join(" / ");
+  ].filter(Boolean).join(" / ");
 };
 
 export function loadResearchCycleState(): ResearchCycleState {
@@ -160,8 +162,8 @@ export function latestResearchCycleRun(state = loadResearchCycleState()) {
 
 export async function runResearchCycle({
   state,
-  searchMode = "balanced",
-  maxCandidateCount = 6,
+  searchMode = "standard",
+  maxCandidateCount = 10,
   onUpdate
 }: ResearchCycleRunOptions): Promise<ResearchCycleRun> {
   let steps = initialSteps();
@@ -266,7 +268,17 @@ export async function runResearchCycle({
     const autoResearchCycle = runAutoResearchCycle({
       searchMode,
       maxCandidateCount,
-      createProposal: true
+      createProposal: true,
+      onCandidateEvaluated: (progress) => {
+        run.candidateProgress = progress;
+        setStep("auto_research", {
+          status: "running",
+          summary: `Candidate ${progress.currentCandidate}/${progress.totalCandidates}: ${progress.candidateLabel}.`,
+          detail: progress.bestCandidateLabel
+            ? `Best so far: ${progress.bestCandidateLabel} (${progress.bestCandidateCategory}, score ${progress.bestCandidateScore}).`
+            : "No stable best candidate selected yet."
+        });
+      }
     });
     run.autoResearchCycle = autoResearchCycle;
     run.createdProposalId = autoResearchCycle.createdProposalId;
@@ -279,7 +291,9 @@ export async function runResearchCycle({
       summary: autoResearchCycle.bestCandidate
         ? `Best candidate: ${autoResearchCycle.bestCandidate.label}.`
         : "Auto Research completed without a viable best candidate.",
-      detail: `${autoResearchCycle.candidateResults.length} candidates tested; ${autoResearchCycle.rejectedCandidates.length} rejected.`
+      detail: autoResearchCycle.noSafePaperDemoCandidateFound
+        ? `Candidate ${autoResearchCycle.candidatesTested}/${autoResearchCycle.candidatesTested}. No safe Paper-Demo Candidate found. Continue research.`
+        : `Candidate ${autoResearchCycle.candidatesTested}/${autoResearchCycle.candidatesTested}. Final category: ${autoResearchCycle.finalResultCategory}.`
     });
 
     startStep("validation");

@@ -5,6 +5,9 @@ import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import type { AutoResearchSearchMode } from "@/lib/autoResearch";
 import {
   latestResearchCycleRun,
   loadResearchCycleState,
@@ -49,12 +52,19 @@ const stepIcon = (status: ResearchCycleStepStatus) => {
 };
 
 const formatStatus = (status?: string) => (status ?? "idle").replace(/_/g, " ");
+const dashboardSearchModes: Array<{ label: string; value: AutoResearchSearchMode; count: number }> = [
+  { label: "Quick - 5 candidates", value: "quick", count: 5 },
+  { label: "Standard - 10 candidates", value: "standard", count: 10 },
+  { label: "Deep - 25 candidates", value: "deep", count: 25 }
+];
 
 export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleControlProps) {
   const [cycleState, setCycleState] = useState(() => loadResearchCycleState());
   const [activeRun, setActiveRun] = useState<ResearchCycleRun>();
+  const [searchMode, setSearchMode] = useState<AutoResearchSearchMode>("standard");
   const [busy, setBusy] = useState(false);
   const latestRun = activeRun ?? latestResearchCycleRun(cycleState);
+  const selectedSearchMode = dashboardSearchModes.find((mode) => mode.value === searchMode) ?? dashboardSearchModes[1];
 
   useEffect(() => {
     const refresh = () => setCycleState(loadResearchCycleState());
@@ -82,6 +92,8 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
     try {
       const result = await runResearchCycle({
         state,
+        searchMode,
+        maxCandidateCount: selectedSearchMode.count,
         onUpdate: (run) => {
           setActiveRun(run);
           onCycleUpdate?.();
@@ -117,7 +129,7 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
           className="border-cyan-400/20 bg-cyan-400/10 text-cyan-50"
         />
 
-        <div className="grid gap-3 lg:grid-cols-[1fr_220px] lg:items-center">
+        <div className="grid gap-3 lg:grid-cols-[1fr_260px] lg:items-end">
           <div className="rounded-lg border border-white/10 bg-slate-950/60 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -138,11 +150,29 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
             <p className="mt-3 text-xs text-slate-400">
               Last run: {formatDateTime(latestRun?.completedAt ?? latestRun?.startedAt)}
             </p>
+            {latestRun?.candidateProgress ? (
+              <div className="mt-3 rounded-md border border-cyan-400/15 bg-cyan-400/5 p-2 text-xs text-cyan-100/80">
+                Candidate {latestRun.candidateProgress.currentCandidate}/{latestRun.candidateProgress.totalCandidates}{" "}
+                tested. Best so far: {latestRun.candidateProgress.bestCandidateLabel ?? "none"}.
+              </div>
+            ) : null}
           </div>
-          <Button onClick={runCycle} disabled={busy} className="h-full min-h-14 justify-center gap-2">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
-            Run AI Research Cycle
-          </Button>
+          <div className="space-y-2">
+            <Label htmlFor="dashboard-research-depth" className="text-cyan-100">
+              Search depth
+            </Label>
+            <Select
+              id="dashboard-research-depth"
+              disabled={busy}
+              value={searchMode}
+              options={dashboardSearchModes.map((mode) => ({ label: mode.label, value: mode.value }))}
+              onChange={(event) => setSearchMode(event.target.value as AutoResearchSearchMode)}
+            />
+            <Button onClick={runCycle} disabled={busy} className="h-12 w-full justify-center gap-2">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
+              Run AI Research Cycle
+            </Button>
+          </div>
         </div>
 
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4" aria-live="polite">

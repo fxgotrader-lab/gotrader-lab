@@ -39,6 +39,23 @@ const nudgeAgent = (
   [agentId]: round(Math.min(1.5, Math.max(0.05, baseline.agentWeights[agentId] + delta)), 3)
 });
 
+const isAnyMode = (searchMode: AutoResearchSearchMode, modes: AutoResearchSearchMode[]) => modes.includes(searchMode);
+
+const dedupeCandidates = (candidates: AutoResearchCandidateConfig[]) => {
+  const seen = new Set<string>();
+  return candidates.filter((item) => {
+    const fingerprint = JSON.stringify({
+      config: item.config,
+      ictScoringWeights: item.ictScoringWeights ?? {}
+    });
+    if (seen.has(fingerprint)) {
+      return false;
+    }
+    seen.add(fingerprint);
+    return true;
+  });
+};
+
 export function generateCandidateConfigs(
   baseline: ResolvedBacktestConfig,
   searchMode: AutoResearchSearchMode,
@@ -46,7 +63,7 @@ export function generateCandidateConfigs(
 ): AutoResearchCandidateConfig[] {
   const candidates: AutoResearchCandidateConfig[] = [];
 
-  if (searchMode === "conservative") {
+  if (isAnyMode(searchMode, ["conservative", "conservative_only", "quick", "standard", "deep"])) {
     candidates.push(
       candidate(
         baseline,
@@ -87,7 +104,7 @@ export function generateCandidateConfigs(
     );
   }
 
-  if (searchMode === "balanced") {
+  if (isAnyMode(searchMode, ["balanced", "quick", "standard", "deep"])) {
     candidates.push(
       candidate(
         baseline,
@@ -108,11 +125,32 @@ export function generateCandidateConfigs(
           targetRMultiple: round(Math.min(3, Math.max(1.5, baseline.targetRMultiple + 0.25)), 2)
         },
         ["targetRMultiple"]
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Confidence calibration nudge",
+        "Raise confidence threshold without changing the ICT threshold.",
+        {
+          minimumConfidenceThreshold: round(clamp01(baseline.minimumConfidenceThreshold + 0.05), 2)
+        },
+        ["confidenceThreshold"]
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Tighter confluence, lower target",
+        "Test whether a smaller target improves resolution quality under stricter confluence.",
+        {
+          minimumConfluenceThreshold: round(clamp01(baseline.minimumConfluenceThreshold + 0.06), 2),
+          targetRMultiple: round(Math.max(1.25, baseline.targetRMultiple - 0.25), 2)
+        },
+        ["confluenceThreshold", "targetRMultiple"]
       )
     );
   }
 
-  if (searchMode === "aggressive_research_only") {
+  if (isAnyMode(searchMode, ["aggressive_research_only", "deep"])) {
     candidates.push(
       candidate(
         baseline,
@@ -138,7 +176,7 @@ export function generateCandidateConfigs(
     );
   }
 
-  if (searchMode === "session_focused") {
+  if (isAnyMode(searchMode, ["session_focused", "session_focus", "standard", "deep"])) {
     candidates.push(
       candidate(
         baseline,
@@ -163,11 +201,35 @@ export function generateCandidateConfigs(
         "Compare broader New York context against kill-zone-only behavior.",
         { sessionFilter: "New York" },
         ["sessionFilter"]
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "London strict threshold",
+        "Compare London only with stricter evidence requirements.",
+        {
+          sessionFilter: "London",
+          minimumConfluenceThreshold: Math.max(0.5, baseline.minimumConfluenceThreshold),
+          minimumConfidenceThreshold: Math.max(0.5, baseline.minimumConfidenceThreshold)
+        },
+        ["sessionFilter", "confluenceThreshold", "confidenceThreshold"]
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "New York PM strict filter",
+        "Test whether the PM kill-zone stays stable under stricter filters.",
+        {
+          sessionFilter: "NY PM Kill Zone",
+          minimumConfluenceThreshold: Math.max(0.5, baseline.minimumConfluenceThreshold),
+          minimumConfidenceThreshold: Math.max(0.5, baseline.minimumConfidenceThreshold)
+        },
+        ["sessionFilter", "confluenceThreshold", "confidenceThreshold"]
       )
     );
   }
 
-  if (searchMode === "stop_model_focused") {
+  if (isAnyMode(searchMode, ["stop_model_focused", "stop_model_focus", "standard", "deep"])) {
     candidates.push(
       candidate(baseline, searchMode, "Latest swing stop", "Retest structure-based invalidation.", { stopModel: "latest swing" }, ["stopModel"]),
       candidate(
@@ -185,11 +247,27 @@ export function generateCandidateConfigs(
         "Retest fixed tick stop assumptions with bounded risk.",
         { stopModel: "fixed ticks", fixedTickStopSize: 40 },
         ["stopModel", "fixedTickStopSize"]
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Wider fixed tick stop",
+        "Check whether a wider fixed stop reduces premature stop-outs without bloating drawdown.",
+        { stopModel: "fixed ticks", fixedTickStopSize: Math.min(120, baseline.fixedTickStopSize + 16) },
+        ["stopModel", "fixedTickStopSize"]
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Tighter fixed tick stop",
+        "Check whether a tighter fixed stop reduces adverse excursion without killing sample size.",
+        { stopModel: "fixed ticks", fixedTickStopSize: Math.max(12, baseline.fixedTickStopSize - 12) },
+        ["stopModel", "fixedTickStopSize"]
       )
     );
   }
 
-  if (searchMode === "long_short_bias") {
+  if (isAnyMode(searchMode, ["long_short_bias", "long_short_focus", "standard", "deep"])) {
     candidates.push(
       candidate(
         baseline,
@@ -219,6 +297,119 @@ export function generateCandidateConfigs(
           }
         },
         ["agentWeights"]
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Liquidity agent weight nudge",
+        "Small grouped agent-weight change to test whether liquidity evidence improves CIO stability.",
+        {
+          agentWeights: {
+            ...nudgeAgent(baseline, "ict-liquidity-agent", 0.04),
+            "risk-reward-agent": round(Math.max(0.05, baseline.agentWeights["risk-reward-agent"] - 0.04), 3)
+          }
+        },
+        ["agentWeights"]
+      )
+    );
+  }
+
+  if (isAnyMode(searchMode, ["deep"])) {
+    candidates.push(
+      candidate(
+        baseline,
+        searchMode,
+        "High confluence high confidence",
+        "Stress-test the strictest practical evidence combination.",
+        { minimumConfluenceThreshold: 0.65, minimumConfidenceThreshold: 0.68 },
+        ["confluenceThreshold", "confidenceThreshold"]
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Moderate confluence high confidence",
+        "Test whether confidence filtering is more useful than aggressive confluence.",
+        { minimumConfluenceThreshold: 0.45, minimumConfidenceThreshold: 0.68 },
+        ["confluenceThreshold", "confidenceThreshold"]
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "NY AM swing stop",
+        "Combine session quality with structure-based invalidation.",
+        { sessionFilter: "NY AM Kill Zone", stopModel: "latest swing" },
+        ["sessionFilter", "stopModel"]
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "NY AM FVG stop",
+        "Combine session quality with fair-value-gap invalidation.",
+        { sessionFilter: "NY AM Kill Zone", stopModel: "FVG invalidation" },
+        ["sessionFilter", "stopModel"]
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "London FVG stop",
+        "Test whether London entries need FVG-based invalidation.",
+        { sessionFilter: "London", stopModel: "FVG invalidation" },
+        ["sessionFilter", "stopModel"]
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Higher target quality",
+        "Check if better reward target improves average R without sacrificing stability.",
+        { targetRMultiple: Math.min(3.5, baseline.targetRMultiple + 0.5) },
+        ["targetRMultiple"]
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Lower target stability",
+        "Check if a more conservative target improves win rate and drawdown.",
+        { targetRMultiple: Math.max(1.25, baseline.targetRMultiple - 0.5) },
+        ["targetRMultiple"]
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "FVG scoring emphasis",
+        "Emphasize FVG alignment in ICT scoring without changing execution authority.",
+        {
+          ictScoringWeights: {
+            fvgAlignment: 1.15,
+            premiumDiscountAlignment: 1.05
+          }
+        },
+        ["ictScoringWeights"]
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Session scoring emphasis",
+        "Emphasize kill-zone timing and swing structure in ICT scoring.",
+        {
+          ictScoringWeights: {
+            sessionKillZone: 1.15,
+            latestSwingStructure: 1.1
+          }
+        },
+        ["ictScoringWeights"]
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Risk reward agent emphasis",
+        "Increase risk/reward influence while slightly reducing volatility influence.",
+        {
+          agentWeights: {
+            ...nudgeAgent(baseline, "risk-reward-agent", 0.05),
+            "volatility-regime-agent": round(Math.max(0.05, baseline.agentWeights["volatility-regime-agent"] - 0.05), 3)
+          }
+        },
+        ["agentWeights"]
       )
     );
   }
@@ -236,5 +427,5 @@ export function generateCandidateConfigs(
     );
   }
 
-  return candidates.slice(0, Math.max(1, Math.min(12, maxCandidateCount)));
+  return dedupeCandidates(candidates).slice(0, Math.max(1, Math.min(25, maxCandidateCount)));
 }

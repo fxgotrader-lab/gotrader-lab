@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import {
   AUTO_RESEARCH_UPDATED_EVENT,
+  autoResearchSearchModeDefaults,
   autoResearchSearchModes,
   latestAutoResearchCycle,
   loadAutoResearchState,
@@ -29,6 +30,10 @@ const maxCandidateOptions = [2, 3, 4, 6, 8, 10, 12].map((count) => ({
   label: `${count} candidates`,
   value: String(count)
 }));
+const multiPassCandidateOptions = [5, 10, 25].map((count) => ({
+  label: `${count} candidates`,
+  value: String(count)
+}));
 const statusVariant = (status?: string) =>
   status === "proposal_created" || status === "completed"
     ? "success"
@@ -39,13 +44,23 @@ const statusVariant = (status?: string) =>
         : "muted";
 
 const formatProfitFactor = (value: number | null) => (value === null ? "n/a" : value >= 99 ? "uncapped" : value.toFixed(2));
+const categoryVariant = (category?: string) =>
+  category === "paper_demo_candidate"
+    ? "success"
+    : category === "research_ready" || category === "improved_but_not_ready"
+      ? "warning"
+      : category === "unsafe_overfit"
+        ? "danger"
+        : "muted";
+const formatToken = (value?: string) => (value ?? "none").replace(/_/g, " ");
 
 const CandidateTable = ({ candidates }: { candidates: AutoResearchCandidateResult[] }) => (
   <div className="overflow-x-auto rounded-lg border border-border">
-    <table className="w-full min-w-[980px] text-left text-sm">
+    <table className="w-full min-w-[1220px] text-left text-sm">
       <thead className="border-b border-border bg-muted/45 text-xs uppercase text-muted-foreground">
         <tr>
           <th className="px-3 py-3 font-medium">Candidate</th>
+          <th className="px-3 py-3 font-medium">Category</th>
           <th className="px-3 py-3 text-right font-medium">Score</th>
           <th className="px-3 py-3 text-right font-medium">Trades</th>
           <th className="px-3 py-3 text-right font-medium">Win</th>
@@ -53,15 +68,26 @@ const CandidateTable = ({ candidates }: { candidates: AutoResearchCandidateResul
           <th className="px-3 py-3 text-right font-medium">Max DD</th>
           <th className="px-3 py-3 text-right font-medium">False +</th>
           <th className="px-3 py-3 text-right font-medium">PF</th>
+          <th className="px-3 py-3 font-medium">Readiness</th>
           <th className="px-3 py-3 font-medium">Changed</th>
+          <th className="px-3 py-3 font-medium">Why not selected</th>
         </tr>
       </thead>
       <tbody className="divide-y divide-border">
         {candidates.map((candidate) => (
+          // Stored cycles from earlier prototypes may not have every multi-pass field yet.
+          // Keep display defensive so older localStorage state does not break the page.
+          (() => {
+            const readinessState = candidate.readinessEstimate?.state ?? "Not Ready";
+            const rejectionReasons = candidate.rejectionReasons ?? [];
+            return (
           <tr key={candidate.candidateId} className="align-top">
             <td className="px-3 py-3">
               <div className="font-medium">{candidate.label}</div>
               <div className="mt-1 max-w-md text-xs text-muted-foreground">{candidate.rationale}</div>
+            </td>
+            <td className="px-3 py-3">
+              <Badge variant={categoryVariant(candidate.resultCategory)}>{formatToken(candidate.resultCategory)}</Badge>
             </td>
             <td className="px-3 py-3 text-right font-mono tabular-nums">{candidate.scoreBreakdown.totalScore}</td>
             <td className="px-3 py-3 text-right font-mono tabular-nums">{candidate.metrics.totalTrades}</td>
@@ -71,13 +97,23 @@ const CandidateTable = ({ candidates }: { candidates: AutoResearchCandidateResul
             <td className="px-3 py-3 text-right font-mono tabular-nums">{candidate.metrics.falsePositiveCount}</td>
             <td className="px-3 py-3 text-right font-mono tabular-nums">{formatProfitFactor(candidate.metrics.profitFactor)}</td>
             <td className="px-3 py-3">
+              <Badge variant={readinessState === "Paper-Demo Candidate" ? "success" : readinessState === "Research Ready" ? "warning" : "danger"}>
+                {readinessState}
+              </Badge>
+            </td>
+            <td className="px-3 py-3">
               <div className="flex flex-wrap gap-1">
                 {candidate.changedParameters.map((item) => (
                   <Badge key={item} variant="muted">{item}</Badge>
                 ))}
               </div>
             </td>
+            <td className="px-3 py-3 text-xs text-muted-foreground">
+              {rejectionReasons.length ? rejectionReasons.join(" ") : "Selected or eligible for proposal review."}
+            </td>
           </tr>
+            );
+          })()
         ))}
       </tbody>
     </table>
@@ -89,12 +125,15 @@ const CandidateTable = ({ candidates }: { candidates: AutoResearchCandidateResul
 
 export function AutoResearchView() {
   const [state, setState] = useState<AutoResearchState>(() => loadAutoResearchState());
-  const [searchMode, setSearchMode] = useState<AutoResearchSearchMode>("conservative");
-  const [maxCandidateCount, setMaxCandidateCount] = useState("6");
+  const [searchMode, setSearchMode] = useState<AutoResearchSearchMode>("standard");
+  const [maxCandidateCount, setMaxCandidateCount] = useState("10");
   const [isRunning, setIsRunning] = useState(false);
   const baselineConfig = useMemo(() => loadBacktestConfig(), [state.latestCycleId]);
   const latestCycle = latestAutoResearchCycle(state);
   const bestCandidate = latestCycle?.bestCandidate;
+  const topCandidates = latestCycle?.closestCandidates?.length
+    ? latestCycle.closestCandidates
+    : [...(latestCycle?.candidateResults ?? [])].sort((a, b) => b.scoreBreakdown.totalScore - a.scoreBreakdown.totalScore).slice(0, 3);
 
   useEffect(() => {
     const refresh = () => setState(loadAutoResearchState());
@@ -170,7 +209,11 @@ export function AutoResearchView() {
                   id="auto-search-mode"
                   value={searchMode}
                   options={searchModeOptions}
-                  onChange={(event) => setSearchMode(event.target.value as AutoResearchSearchMode)}
+                  onChange={(event) => {
+                    const nextMode = event.target.value as AutoResearchSearchMode;
+                    setSearchMode(nextMode);
+                    setMaxCandidateCount(String(autoResearchSearchModeDefaults[nextMode] ?? 10));
+                  }}
                 />
               </div>
               <div className="space-y-2">
@@ -178,7 +221,9 @@ export function AutoResearchView() {
                 <Select
                   id="auto-max-candidates"
                   value={maxCandidateCount}
-                  options={maxCandidateOptions}
+                  options={[...multiPassCandidateOptions, ...maxCandidateOptions].filter(
+                    (option, index, array) => array.findIndex((item) => item.value === option.value) === index
+                  )}
                   onChange={(event) => setMaxCandidateCount(event.target.value)}
                 />
               </div>
@@ -205,13 +250,18 @@ export function AutoResearchView() {
           <CardContent className="space-y-3">
             {bestCandidate ? (
               <>
+                {latestCycle?.noSafePaperDemoCandidateFound ? (
+                  <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+                    No safe Paper-Demo Candidate found. Continue research.
+                  </div>
+                ) : null}
                 <div className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border bg-background/45 p-3">
                   <div>
                     <p className="font-medium">{bestCandidate.label}</p>
                     <p className="mt-1 text-sm text-muted-foreground">{bestCandidate.rationale}</p>
                   </div>
                   <Badge variant={bestCandidate.scoreBreakdown.stabilityImproved ? "success" : "warning"}>
-                    score {bestCandidate.scoreBreakdown.totalScore}
+                    {formatToken(bestCandidate.resultCategory)} / score {bestCandidate.scoreBreakdown.totalScore}
                   </Badge>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -254,13 +304,59 @@ export function AutoResearchView() {
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
+              <CardTitle>Top 3 Closest Candidates</CardTitle>
+              <CardDescription>
+                If no Paper-Demo Candidate is found, these are the closest research candidates and their blockers.
+              </CardDescription>
+            </div>
+            <Badge variant={latestCycle?.noSafePaperDemoCandidateFound ? "warning" : "success"}>
+              {latestCycle?.noSafePaperDemoCandidateFound ? "No safe candidate found" : "Candidate found"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="grid gap-3 lg:grid-cols-3">
+          {topCandidates.map((candidate) => (
+            <div key={candidate.candidateId} className="rounded-lg border border-border bg-background/45 p-3 text-sm">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-medium">{candidate.label}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{candidate.rationale}</p>
+                </div>
+                <Badge variant={categoryVariant(candidate.resultCategory)}>{candidate.scoreBreakdown.totalScore}</Badge>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-1">
+                <Badge variant={categoryVariant(candidate.resultCategory)}>{formatToken(candidate.resultCategory)}</Badge>
+                <Badge variant="muted">{candidate.readinessEstimate?.state ?? "Not Ready"}</Badge>
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                {(candidate.rejectionReasons ?? []).length
+                  ? candidate.rejectionReasons.join(" ")
+                  : "Eligible for proposal review; approval still required before any setting changes."}
+              </p>
+            </div>
+          ))}
+          {!topCandidates.length ? (
+            <div className="rounded-lg border border-border bg-background/45 p-3 text-sm text-muted-foreground lg:col-span-3">
+              Run a multi-pass search to see closest candidates.
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
               <CardTitle>Candidate Comparison</CardTitle>
               <CardDescription>Every candidate runs through mock backtesting, validation, and research quality review.</CardDescription>
             </div>
             <Badge variant={statusVariant(latestCycle?.status)}>{latestCycle?.status ?? "idle"}</Badge>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+            Auto Research can optimize simulation settings only. It cannot execute trades, enable demo/live mode, or override readiness.
+          </div>
           <CandidateTable candidates={latestCycle?.candidateResults ?? []} />
         </CardContent>
       </Card>
@@ -310,9 +406,9 @@ export function AutoResearchView() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="font-medium">{candidate.label}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{candidate.rejectionReasons.join(" ") || "Lower score than best candidate."}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{(candidate.rejectionReasons ?? []).join(" ") || "Lower score than best candidate."}</p>
                     </div>
-                    <Badge variant="muted">{candidate.scoreBreakdown.totalScore}</Badge>
+                    <Badge variant={categoryVariant(candidate.resultCategory)}>{candidate.scoreBreakdown.totalScore}</Badge>
                   </div>
                 </div>
               ))
