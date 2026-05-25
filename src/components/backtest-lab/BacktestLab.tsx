@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Activity, RotateCcw, ShieldAlert, SlidersHorizontal, Target, TimerReset } from "lucide-react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { CalibrationAssistantPanel } from "@/components/backtest-lab/CalibrationAssistantPanel";
 import { MetricCard } from "@/components/MetricCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -148,6 +149,8 @@ export function BacktestLab() {
       </div>
 
       <ValidationGuideCard compact />
+
+      <CalibrationAssistantPanel result={result} config={result.config} />
 
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Card>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   ClipboardCheck,
   ClipboardList,
@@ -64,6 +65,12 @@ const validationVariant = (status?: string) =>
   status === "green" ? "success" : status === "yellow" ? "warning" : status === "red" ? "danger" : "muted";
 const readinessStateVariant = (state?: string) =>
   state === "Paper-Demo Candidate" ? "success" : state === "Research Ready" ? "warning" : state === "Not Ready" ? "danger" : "muted";
+const calibrationHelpLinks = [
+  { label: "Backtest Lab", href: "/backtest-lab" },
+  { label: "Validation", href: "/validation" },
+  { label: "Research Quality", href: "/research-quality" },
+  { label: "Readiness Gate", href: "/readiness-gate" }
+];
 
 export function SettingsView({ state, onReset }: { state: LabState; onReset: () => void }) {
   const [ictWeights, setIctWeights] = useState<ICTScoringWeights>(() => loadICTScoringWeights());
@@ -459,6 +466,33 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
             <Button variant="destructive" onClick={reset} className="w-full">
               Reset local prototype data
             </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal className="h-4 w-4 text-primary" aria-hidden="true" />
+              <CardTitle>Calibration Help</CardTitle>
+            </div>
+            <CardDescription>Quick links for the simulation validation workflow.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              Simulation calibration only. Do not connect broker execution until readiness is repeatedly Paper-Demo
+              Candidate under conservative settings.
+            </div>
+            <div className="grid gap-2">
+              {calibrationHelpLinks.map((link) => (
+                <Link
+                  key={link.href}
+                  to={link.href}
+                  className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-background/60 px-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary/70"
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </div>
           </CardContent>
         </Card>
       </div>
