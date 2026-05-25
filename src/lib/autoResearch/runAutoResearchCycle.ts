@@ -40,6 +40,10 @@ import {
   summarizeValidationMetrics,
   upsertCalibrationProposal
 } from "@/lib/selfImprovement";
+import type {
+  CalibrationProposal,
+  CalibrationProposalMetrics
+} from "@/lib/selfImprovement";
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import { labStorage } from "@/lib/storage";
 import { loadSimulationRunbookState } from "@/lib/simulationRunbook";
@@ -602,6 +606,120 @@ const recoveryFailureReasonsFor = (
   return safeTopN(reasons, 6);
 };
 
+const falsePositivesControlled = (candidate?: AutoResearchCandidateResult) =>
+  Boolean(candidate && candidate.metrics.falsePositiveCount <= 2 && candidate.scoreBreakdown.falsePositiveScore >= 70);
+
+const sessionConsistencyPassed = (candidate?: AutoResearchCandidateResult) =>
+  Boolean(
+    candidate &&
+      (candidate.scoreBreakdown.sessionConsistencyScore >= 50 ||
+        safeArray(candidate.researchQualityReview?.sessionComparison).some(
+          (session) => session.readiness !== "red" && session.totalTrades > 0 && session.averageR >= -0.1
+        ))
+  );
+
+const conservativeScenarioStabilityPassed = (candidate?: AutoResearchCandidateResult) =>
+  Boolean(
+    candidate &&
+      (candidate.metrics.conservativeScenarioStable ||
+        safeArray(candidate.validationReport?.scenarios).some(
+          (scenario) => scenario.id === "conservative-confluence" && scenario.readiness === "green"
+        ))
+  );
+
+const isConfluenceBlockedZeroTradeRun = (diagnostics: ReturnType<typeof diagnoseTradeGeneration>) =>
+  safeArray(diagnostics).some((item) => item.reasonCode === "confluence_threshold_too_high");
+
+const isZeroTradeRecoveryProposalEligible = ({
+  diagnostics,
+  recoveryResult,
+  tradesBeforeRecovery,
+  tradesAfterRecovery
+}: {
+  diagnostics: ReturnType<typeof diagnoseTradeGeneration>;
+  recoveryResult?: AutoResearchCandidateResult;
+  tradesBeforeRecovery: number;
+  tradesAfterRecovery: number;
+}) =>
+  tradesBeforeRecovery === 0 &&
+  tradesAfterRecovery > 0 &&
+  isConfluenceBlockedZeroTradeRun(diagnostics) &&
+  falsePositivesControlled(recoveryResult) &&
+  sessionConsistencyPassed(recoveryResult) &&
+  conservativeScenarioStabilityPassed(recoveryResult);
+
+const recoveryConfluenceThresholdFor = (
+  baselineConfig: ReturnType<typeof loadBacktestConfig>,
+  recoveryResult?: AutoResearchCandidateResult
+) => {
+  const recoveredThreshold = recoveryResult?.config.minimumConfluenceThreshold;
+  if (typeof recoveredThreshold === "number" && recoveredThreshold < baselineConfig.minimumConfluenceThreshold) {
+    return Number(recoveredThreshold.toFixed(2));
+  }
+  return Number(Math.max(0.12, baselineConfig.minimumConfluenceThreshold - 0.04).toFixed(2));
+};
+
+const createZeroTradeRecoveryProposal = ({
+  baselineConfig,
+  baselineMetrics,
+  recoveryResult,
+  tradesBeforeRecovery,
+  tradesAfterRecovery
+}: {
+  baselineConfig: ReturnType<typeof loadBacktestConfig>;
+  baselineMetrics: CalibrationProposalMetrics;
+  recoveryResult: AutoResearchCandidateResult;
+  tradesBeforeRecovery: number;
+  tradesAfterRecovery: number;
+}): CalibrationProposal => {
+  const confluenceThreshold = recoveryConfluenceThresholdFor(baselineConfig, recoveryResult);
+  const proposedConfig = {
+    ...baselineConfig,
+    minimumConfluenceThreshold: confluenceThreshold
+  };
+  const qualityGatesPassed = [
+    "false positives controlled",
+    "session consistency passed",
+    "conservative scenario stability passed"
+  ];
+
+  return {
+    proposalId: uid("calibration_proposal"),
+    timestamp: new Date().toISOString(),
+    source: "internal",
+    status: "proposed",
+    proposalIntent: "research_calibration_candidate",
+    mode: "simulation",
+    executionAuthority: "none",
+    brokerAuthority: "none",
+    readinessOverrideAuthority: "none",
+    reason:
+      "Confluence threshold blocked all trades before outcome scoring. Recovery generated " +
+      `${tradesAfterRecovery} simulated trades after a bounded confluence reduction.`,
+    targetProblem: "trade_generation_blocked",
+    proposedChanges: {
+      confluenceThreshold
+    },
+    expectedImprovement:
+      "Generate enough simulated trades for outcome scoring while preserving false-positive, session consistency, and conservative stability gates.",
+    safetyNotes: [
+      "Simulation only.",
+      "Broker execution disabled.",
+      "Readiness not overridden.",
+      "Approval required before active calibration changes."
+    ],
+    beforeMetrics: baselineMetrics,
+    afterMetrics: recoveryResult.metrics,
+    comparisonResult: compareProposalToBaseline(baselineMetrics, recoveryResult.metrics),
+    baselineConfig,
+    proposedConfig,
+    approvalRequired: true,
+    tradesBeforeRecovery,
+    tradesAfterRecovery,
+    qualityGatesPassed
+  };
+};
+
 export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResearchCycle {
   const cycleId = uid("auto_cycle");
   try {
@@ -763,7 +881,38 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       (candidate) => candidate.resultCategory === "paper_demo_candidate"
     ) || recoveryStillZero;
 
-    if (!recoveryStillZero && bestCandidate && options.createProposal !== false && shouldCreateProposal(bestCandidate)) {
+    if (
+      recoveryResult &&
+      options.createProposal !== false &&
+      isZeroTradeRecoveryProposalEligible({
+        diagnostics: tradeGenerationDiagnostics,
+        recoveryResult,
+        tradesBeforeRecovery,
+        tradesAfterRecovery
+      })
+    ) {
+      const proposal = createZeroTradeRecoveryProposal({
+        baselineConfig,
+        baselineMetrics,
+        recoveryResult,
+        tradesBeforeRecovery,
+        tradesAfterRecovery
+      });
+      upsertCalibrationProposal(
+        proposal,
+        "created",
+        "Created from successful zero-trade recovery. Proposal remains approval-required and simulation-only."
+      );
+      createdProposalId = proposal.proposalId;
+    }
+
+    if (
+      !createdProposalId &&
+      !recoveryStillZero &&
+      bestCandidate &&
+      options.createProposal !== false &&
+      shouldCreateProposal(bestCandidate)
+    ) {
       const advisorySource = (labStorage.load().advisoryResponses?.length ?? 0) > 0 ? "openclaw" : "internal";
       const proposal = createSelfImprovementFromCandidate({
         baselineConfig,

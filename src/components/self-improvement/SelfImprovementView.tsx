@@ -510,6 +510,29 @@ export function SelfImprovementView() {
               <p className="text-xs text-muted-foreground">Reason</p>
               <p className="mt-1 text-sm text-foreground">{latestProposal?.reason ?? "Create a proposal to begin."}</p>
             </div>
+            {latestProposal?.targetProblem === "trade_generation_blocked" ? (
+              <div className="rounded-lg border border-emerald-300/25 bg-emerald-300/10 p-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-emerald-100/70">Trade-generation recovery</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-md border border-emerald-200/20 bg-emerald-200/5 p-2">
+                    <p className="text-xs text-emerald-100/70">Before recovery</p>
+                    <p className="mt-1 font-mono text-lg text-emerald-50">{latestProposal.tradesBeforeRecovery ?? 0} trades</p>
+                  </div>
+                  <div className="rounded-md border border-emerald-200/20 bg-emerald-200/5 p-2">
+                    <p className="text-xs text-emerald-100/70">After recovery</p>
+                    <p className="mt-1 font-mono text-lg text-emerald-50">{latestProposal.tradesAfterRecovery ?? 0} trades</p>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1">
+                  {(latestProposal.qualityGatesPassed ?? []).map((gate) => (
+                    <Badge key={gate} variant="success">{gate}</Badge>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs text-emerald-100/80">
+                  This proposal only lowers confluence slightly after recovery evidence. It is not applied until approved.
+                </p>
+              </div>
+            ) : null}
             <div className="rounded-lg border border-border bg-background/45 p-3">
               <p className="text-xs text-muted-foreground">Expected improvement</p>
               <p className="mt-1 text-sm text-foreground">{latestProposal?.expectedImprovement ?? "n/a"}</p>

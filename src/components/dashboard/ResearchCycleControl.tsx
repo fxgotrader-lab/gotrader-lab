@@ -268,6 +268,11 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
             <p className="mt-3 text-xs text-amber-100/80">
               Next action: {safeArray(latestRun.backtestDiagnostics)[0]?.suggestedFix ?? "Run bounded recovery in Auto Research, then rerun validation."}
             </p>
+            {latestRun.createdProposalId && latestRun.autoResearchCycle?.recoveryAttempted && (latestRun.autoResearchCycle.tradesAfterRecovery ?? 0) > 0 ? (
+              <div className="mt-3 rounded-md border border-emerald-300/25 bg-emerald-300/10 p-3 text-sm text-emerald-100">
+                Calibration proposal available: lower confluence threshold slightly.
+              </div>
+            ) : null}
           </div>
         ) : null}
 

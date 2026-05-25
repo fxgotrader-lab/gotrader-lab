@@ -562,6 +562,11 @@ export function AutoResearchView() {
                   </div>
                 ))}
               </div>
+              {latestCycle.createdProposalId && (latestCycle.tradesAfterRecovery ?? 0) > 0 ? (
+                <div className="mt-3 rounded-md border border-emerald-300/25 bg-emerald-300/10 p-3 text-sm text-emerald-100">
+                  Recovery produced {latestCycle.tradesAfterRecovery ?? 0} trades; proposal created.
+                </div>
+              ) : null}
               {safeArray(latestCycle.recoveryFailureReasons).length ? (
                 <div className="mt-3 rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-xs text-amber-100">
                   {safeArray(latestCycle.recoveryFailureReasons).join(" ")}

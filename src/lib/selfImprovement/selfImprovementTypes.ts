@@ -20,7 +20,8 @@ export type CalibrationTargetProblem =
   | "poor_confidence_calibration"
   | "unstable_agent_weight"
   | "overfitting_risk"
-  | "trade_generation_issue";
+  | "trade_generation_issue"
+  | "trade_generation_blocked";
 
 export type CalibrationComparisonRecommendation = "accept" | "reject" | "keep_testing";
 
@@ -89,6 +90,9 @@ export interface CalibrationProposal {
   revertedAt?: string;
   approvalRequired: true;
   approvalNotes?: string;
+  tradesBeforeRecovery?: number;
+  tradesAfterRecovery?: number;
+  qualityGatesPassed?: string[];
 }
 
 export interface SelfImprovementAuditEntry {
