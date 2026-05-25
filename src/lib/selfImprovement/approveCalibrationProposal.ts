@@ -9,7 +9,9 @@ import {
   saveICTScoringWeights
 } from "@/lib/ict";
 import type {
+  ActiveResearchCalibration,
   CalibrationProposal,
+  CalibrationProposalChanges,
   SelfImprovementAuditEntry,
   SelfImprovementState
 } from "@/lib/selfImprovement/selfImprovementTypes";
@@ -17,6 +19,7 @@ import { uid } from "@/lib/utils";
 
 export const SELF_IMPROVEMENT_STORAGE_KEY = "gotrader_ai_lab_self_improvement_state";
 export const SELF_IMPROVEMENT_UPDATED_EVENT = "gotrader-ai-lab-self-improvement-updated";
+export const ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT = "gotrader-ai-lab-active-research-calibration-updated";
 
 const isBrowser = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 
@@ -44,6 +47,7 @@ const publish = (state: SelfImprovementState) => {
   if (isBrowser()) {
     window.localStorage.setItem(SELF_IMPROVEMENT_STORAGE_KEY, JSON.stringify(state));
     window.dispatchEvent(new CustomEvent(SELF_IMPROVEMENT_UPDATED_EVENT, { detail: state }));
+    window.dispatchEvent(new CustomEvent(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, { detail: state.activeResearchCalibration }));
   }
   return state;
 };
@@ -64,7 +68,8 @@ export function loadSelfImprovementState(): SelfImprovementState {
       ...initialState(),
       ...parsed,
       proposals: parsed.proposals ?? [],
-      auditTrail: parsed.auditTrail ?? []
+      auditTrail: parsed.auditTrail ?? [],
+      activeResearchCalibration: parsed.activeResearchCalibration
     };
   } catch {
     return publish(initialState());
@@ -135,6 +140,16 @@ const hasAllowedProposedChanges = (proposal: CalibrationProposal) => {
   );
 };
 
+const compactAllowedConfigPatch = (changes: CalibrationProposalChanges): CalibrationProposalChanges => ({
+  confluenceThreshold: changes.confluenceThreshold,
+  confidenceThreshold: changes.confidenceThreshold,
+  sessionFilter: changes.sessionFilter,
+  stopModel: changes.stopModel,
+  targetRMultiple: changes.targetRMultiple,
+  agentWeights: changes.agentWeights,
+  ictScoringWeights: changes.ictScoringWeights
+});
+
 const hasResearchImprovement = (proposal: CalibrationProposal) => {
   const tradeGenerationImproved =
     typeof proposal.tradesBeforeRecovery === "number" &&
@@ -204,8 +219,14 @@ export function applyApprovedResearchCalibration(
   proposal: CalibrationProposal,
   currentConfig: ResolvedBacktestConfig = loadBacktestConfig()
 ): ResolvedBacktestConfig {
-  const changes = proposal.proposedChanges;
-  const nextConfig = sanitizeBacktestConfig({
+  return applyResearchCalibrationPatchToConfig(currentConfig, proposal.proposedChanges);
+}
+
+export function applyResearchCalibrationPatchToConfig(
+  currentConfig: ResolvedBacktestConfig,
+  changes: CalibrationProposalChanges
+): ResolvedBacktestConfig {
+  return sanitizeBacktestConfig({
     ...currentConfig,
     minimumConfluenceThreshold: changes.confluenceThreshold ?? currentConfig.minimumConfluenceThreshold,
     minimumConfidenceThreshold: changes.confidenceThreshold ?? currentConfig.minimumConfidenceThreshold,
@@ -220,8 +241,22 @@ export function applyApprovedResearchCalibration(
       : currentConfig.agentWeights
   });
 
-  const savedConfig = saveBacktestConfig(nextConfig);
+}
 
+export function saveApprovedResearchCalibration(
+  proposal: CalibrationProposal,
+  currentConfig: ResolvedBacktestConfig = loadBacktestConfig()
+) {
+  const activeConfigAfter = applyResearchCalibrationPatchToConfig(currentConfig, proposal.proposedChanges);
+  const savedConfig = saveBacktestConfig(activeConfigAfter);
+  const activeCalibration: ActiveResearchCalibration = {
+    approvedCalibrationId: proposal.proposalId,
+    approvedAt: new Date().toISOString(),
+    appliedConfigPatch: compactAllowedConfigPatch(proposal.proposedChanges),
+    baselineConfigBefore: currentConfig,
+    activeConfigAfter: savedConfig
+  };
+  const changes = proposal.proposedChanges;
   if (changes.ictScoringWeights) {
     saveICTScoringWeights({
       ...loadICTScoringWeights(),
@@ -229,7 +264,38 @@ export function applyApprovedResearchCalibration(
     });
   }
 
-  return savedConfig;
+  return activeCalibration;
+}
+
+export function loadActiveResearchCalibration(): ActiveResearchCalibration | undefined {
+  return loadSelfImprovementState().activeResearchCalibration;
+}
+
+export function resolveActiveResearchConfig(config: ResolvedBacktestConfig = loadBacktestConfig()) {
+  const activeResearchCalibration = loadActiveResearchCalibration();
+  if (!activeResearchCalibration) {
+    return {
+      config,
+      activeResearchCalibration: undefined,
+      activeCalibrationApplied: false
+    };
+  }
+
+  return {
+    config: applyResearchCalibrationPatchToConfig(config, activeResearchCalibration.appliedConfigPatch),
+    activeResearchCalibration,
+    activeCalibrationApplied: true
+  };
+}
+
+export function clearActiveResearchCalibration(notes = "Active research calibration cleared."): SelfImprovementState {
+  const state = loadSelfImprovementState();
+  const activeId = state.activeResearchCalibration?.approvedCalibrationId ?? "active_calibration";
+  return saveSelfImprovementState({
+    ...state,
+    activeResearchCalibration: undefined,
+    auditTrail: [auditEntry(activeId, "reverted", notes), ...state.auditTrail]
+  });
 }
 
 export function approveCalibrationProposal(proposalId: string, reviewerName = "local user", notes = "") {
@@ -240,13 +306,14 @@ export function approveCalibrationProposal(proposalId: string, reviewerName = "l
     return state;
   }
 
-  const approvedConfig = applyApprovedResearchCalibration(target);
+  const baselineConfigBefore = loadBacktestConfig();
+  const activeResearchCalibration = saveApprovedResearchCalibration(target, baselineConfigBefore);
   const updated: CalibrationProposal = {
     ...target,
     status: "accepted",
-    approvedAt: new Date().toISOString(),
-    approvalNotes: notes || "Research calibration approved. Rerun AI Research Cycle to evaluate the new baseline.",
-    proposedConfig: approvedConfig
+    approvedAt: activeResearchCalibration.approvedAt,
+    approvalNotes: notes || "Research calibration applied. Next AI Research Cycle will use the updated baseline.",
+    proposedConfig: activeResearchCalibration.activeConfigAfter
   };
 
   return saveSelfImprovementState({
@@ -254,11 +321,12 @@ export function approveCalibrationProposal(proposalId: string, reviewerName = "l
     proposals: state.proposals.map((proposal) => (proposal.proposalId === proposalId ? updated : proposal)),
     latestProposalId: updated.proposalId,
     lastAcceptedProposalId: updated.proposalId,
+    activeResearchCalibration,
     auditTrail: [
       auditEntry(
         proposalId,
         "accepted",
-        notes || "Research calibration approved. Rerun AI Research Cycle to evaluate the new baseline.",
+        notes || "Research calibration applied. Next AI Research Cycle will use the updated baseline.",
         reviewerName
       ),
       ...state.auditTrail
@@ -282,21 +350,28 @@ export function rejectCalibrationProposal(proposalId: string, reviewerName = "lo
 }
 
 export function revertCalibrationProposal(proposalId: string, reviewerName = "local user", notes = "") {
-  return updateProposal(
-    proposalId,
-    (proposal) => {
-      if (proposal.status === "accepted") {
-        saveBacktestConfig(proposal.baselineConfig ?? loadBacktestConfig());
-      }
-      return {
-        ...proposal,
-        status: "reverted",
-        revertedAt: new Date().toISOString(),
-        approvalNotes: notes || "Reverted to the proposal baseline simulation settings."
-      };
-    },
-    "reverted",
-    notes || "User reverted accepted simulation calibration settings.",
-    reviewerName
-  );
+  const state = loadSelfImprovementState();
+  const target = state.proposals.find((proposal) => proposal.proposalId === proposalId);
+  if (!target) {
+    return state;
+  }
+  if (target.status === "accepted") {
+    saveBacktestConfig(state.activeResearchCalibration?.baselineConfigBefore ?? target.baselineConfig ?? loadBacktestConfig());
+  }
+  const updated: CalibrationProposal = {
+    ...target,
+    status: "reverted",
+    revertedAt: new Date().toISOString(),
+    approvalNotes: notes || "Reverted to the proposal baseline simulation settings."
+  };
+  return saveSelfImprovementState({
+    ...state,
+    activeResearchCalibration:
+      state.activeResearchCalibration?.approvedCalibrationId === proposalId
+        ? undefined
+        : state.activeResearchCalibration,
+    proposals: state.proposals.map((proposal) => (proposal.proposalId === proposalId ? updated : proposal)),
+    latestProposalId: updated.proposalId,
+    auditTrail: [auditEntry(proposalId, "reverted", notes || "User reverted accepted simulation calibration settings.", reviewerName), ...state.auditTrail]
+  });
 }

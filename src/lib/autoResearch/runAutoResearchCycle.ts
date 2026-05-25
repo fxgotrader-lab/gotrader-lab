@@ -37,6 +37,8 @@ import {
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
 import {
   compareProposalToBaseline,
+  loadActiveResearchCalibration,
+  resolveActiveResearchConfig,
   summarizeValidationMetrics,
   upsertCalibrationProposal
 } from "@/lib/selfImprovement";
@@ -730,6 +732,21 @@ const createZeroTradeRecoveryProposal = ({
   };
 };
 
+const patchesMatch = (left: CalibrationProposal["proposedChanges"], right: CalibrationProposal["proposedChanges"]) =>
+  left.confluenceThreshold === right.confluenceThreshold &&
+  left.confidenceThreshold === right.confidenceThreshold &&
+  left.sessionFilter === right.sessionFilter &&
+  left.stopModel === right.stopModel &&
+  left.targetRMultiple === right.targetRMultiple;
+
+const duplicateActiveCalibrationMessage = (
+  proposal: CalibrationProposal,
+  activeCalibration = loadActiveResearchCalibration()
+) =>
+  activeCalibration && patchesMatch(proposal.proposedChanges, activeCalibration.appliedConfigPatch)
+    ? "Approved calibration is already active; further improvement requires a different adjustment."
+    : undefined;
+
 const candidateImprovedForResearch = (
   candidate: AutoResearchCandidateResult | undefined,
   baselineMetrics: CalibrationProposalMetrics
@@ -865,7 +882,8 @@ const createResearchCalibrationCandidateProposal = ({
 export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResearchCycle {
   const cycleId = uid("auto_cycle");
   try {
-    const baselineConfig = loadBacktestConfig();
+    const activeResearchConfig = resolveActiveResearchConfig(loadBacktestConfig());
+    const baselineConfig = activeResearchConfig.config;
     const baselineBacktest = runBacktest(mockCandles, baselineConfig);
     const tradesBeforeRecovery = baselineBacktest.summary.totalTrades;
     const tradeGenerationDiagnostics = tradesBeforeRecovery === 0
@@ -1040,12 +1058,21 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
         tradesBeforeRecovery,
         tradesAfterRecovery
       });
-      upsertCalibrationProposal(
-        proposal,
-        "created",
-        "Created from successful zero-trade recovery. Proposal remains approval-required and simulation-only."
-      );
-      createdProposalId = proposal.proposalId;
+      const duplicateMessage = duplicateActiveCalibrationMessage(proposal, activeResearchConfig.activeResearchCalibration);
+      if (duplicateMessage) {
+        recoveryFailureReasons = safeTopN([
+          duplicateMessage,
+          `Active threshold ${(baselineConfig.minimumConfluenceThreshold * 100).toFixed(0)}%; recovery threshold ${((recoveryResult.config.minimumConfluenceThreshold ?? baselineConfig.minimumConfluenceThreshold) * 100).toFixed(0)}%.`,
+          ...safeArray(recoveryFailureReasons)
+        ], 6);
+      } else {
+        upsertCalibrationProposal(
+          proposal,
+          "created",
+          "Created from successful zero-trade recovery. Proposal remains approval-required and simulation-only."
+        );
+        createdProposalId = proposal.proposalId;
+      }
     }
 
     if (
@@ -1088,12 +1115,17 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
           candidate: researchCalibrationCandidate,
           adaptivePasses
         });
-        upsertCalibrationProposal(
-          proposal,
-          "created",
-          "Created from improved-but-not-ready Auto Research candidate. Proposal remains research-only and approval-required."
-        );
-        createdProposalId = proposal.proposalId;
+        const duplicateMessage = duplicateActiveCalibrationMessage(proposal, activeResearchConfig.activeResearchCalibration);
+        if (duplicateMessage) {
+          recoveryFailureReasons = safeTopN([duplicateMessage, ...safeArray(recoveryFailureReasons)], 6);
+        } else {
+          upsertCalibrationProposal(
+            proposal,
+            "created",
+            "Created from improved-but-not-ready Auto Research candidate. Proposal remains research-only and approval-required."
+          );
+          createdProposalId = proposal.proposalId;
+        }
       }
     }
 

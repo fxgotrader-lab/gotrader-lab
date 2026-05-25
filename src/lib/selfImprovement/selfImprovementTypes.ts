@@ -103,6 +103,14 @@ export interface CalibrationProposal {
   candidateStabilityScore?: number;
 }
 
+export interface ActiveResearchCalibration {
+  approvedCalibrationId: string;
+  approvedAt: string;
+  appliedConfigPatch: CalibrationProposalChanges;
+  baselineConfigBefore: ResolvedBacktestConfig;
+  activeConfigAfter: ResolvedBacktestConfig;
+}
+
 export interface SelfImprovementAuditEntry {
   id: string;
   timestamp: string;
@@ -117,5 +125,6 @@ export interface SelfImprovementState {
   auditTrail: SelfImprovementAuditEntry[];
   latestProposalId?: string;
   lastAcceptedProposalId?: string;
+  activeResearchCalibration?: ActiveResearchCalibration;
   safetyNotice: "Simulation self-improvement only. Broker execution remains disabled.";
 }

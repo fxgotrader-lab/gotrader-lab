@@ -1,10 +1,16 @@
 export {
+  ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
   applyApprovedResearchCalibration,
+  applyResearchCalibrationPatchToConfig,
   approveCalibrationProposal,
   canApproveProposal,
+  clearActiveResearchCalibration,
+  loadActiveResearchCalibration,
   loadSelfImprovementState,
   rejectCalibrationProposal,
+  resolveActiveResearchConfig,
   revertCalibrationProposal,
+  saveApprovedResearchCalibration,
   saveSelfImprovementState,
   SELF_IMPROVEMENT_STORAGE_KEY,
   SELF_IMPROVEMENT_UPDATED_EVENT,
@@ -18,6 +24,7 @@ export {
   summarizeValidationMetrics
 } from "@/lib/selfImprovement/evaluateCalibrationProposal";
 export type {
+  ActiveResearchCalibration,
   CalibrationComparisonRecommendation,
   CalibrationComparisonResult,
   CalibrationProposal,

@@ -292,7 +292,10 @@ export function SelfImprovementView() {
   const [actionMessage, setActionMessage] = useState("");
   const latestValidation = loadLatestValidationReport();
   const latestQuality = loadLatestResearchQualityReview();
-  const baselineConfig = useMemo(() => loadBacktestConfig(), [state.latestProposalId]);
+  const baselineConfig = useMemo(
+    () => loadBacktestConfig(),
+    [state.latestProposalId, state.lastAcceptedProposalId, state.activeResearchCalibration?.approvedAt]
+  );
   const latestAdvisory = labStorage.load().advisoryResponses?.[0];
   const latestProposal = state.proposals.find((proposal) => proposal.proposalId === state.latestProposalId) ?? state.proposals[0];
   const effectiveProposalIntent =
@@ -344,7 +347,7 @@ export function SelfImprovementView() {
       return;
     }
     setState(approveCalibrationProposal(latestProposal.proposalId, reviewerName, approvalNotes));
-    setActionMessage("Research calibration approved. Rerun AI Research Cycle to evaluate the new baseline.");
+    setActionMessage("Research calibration applied. Next AI Research Cycle will use the updated baseline.");
     setApprovalNotes("");
   };
 

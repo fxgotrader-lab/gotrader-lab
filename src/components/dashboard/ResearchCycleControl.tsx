@@ -15,6 +15,10 @@ import {
   runResearchCycle
 } from "@/lib/researchCycle";
 import type { ResearchCycleRun, ResearchCycleStepResult, ResearchCycleStepStatus } from "@/lib/researchCycle";
+import {
+  ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
+  loadActiveResearchCalibration
+} from "@/lib/selfImprovement";
 import type { LabState } from "@/lib/types";
 import { safeArray, safeTopN } from "@/lib/utils";
 
@@ -68,6 +72,7 @@ const dashboardSearchModes: Array<{ label: string; value: AutoResearchSearchMode
 export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleControlProps) {
   const [cycleState, setCycleState] = useState(() => loadResearchCycleState());
   const [activeRun, setActiveRun] = useState<ResearchCycleRun>();
+  const [activeCalibration, setActiveCalibration] = useState(() => loadActiveResearchCalibration());
   const [searchMode, setSearchMode] = useState<AutoResearchSearchMode>("standard");
   const [busy, setBusy] = useState(false);
   const latestRun = activeRun ?? latestResearchCycleRun(cycleState);
@@ -77,11 +82,16 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
   );
 
   useEffect(() => {
-    const refresh = () => setCycleState(loadResearchCycleState());
+    const refresh = () => {
+      setCycleState(loadResearchCycleState());
+      setActiveCalibration(loadActiveResearchCalibration());
+    };
     window.addEventListener(RESEARCH_CYCLE_UPDATED_EVENT, refresh);
+    window.addEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
       window.removeEventListener(RESEARCH_CYCLE_UPDATED_EVENT, refresh);
+      window.removeEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
   }, []);
@@ -235,6 +245,21 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
           </div>
         ) : null}
 
+        {activeCalibration ? (
+          <div className="rounded-lg border border-emerald-300/25 bg-emerald-300/10 p-3 text-sm text-emerald-100">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-medium">Using approved research baseline</p>
+                <p className="mt-1">
+                  Active calibration: {activeCalibration.approvedCalibrationId}. Active confluence threshold{" "}
+                  {(activeCalibration.activeConfigAfter.minimumConfluenceThreshold * 100).toFixed(0)}%.
+                </p>
+              </div>
+              <Badge variant="success">approved calibration</Badge>
+            </div>
+          </div>
+        ) : null}
+
         {safeArray(latestRun?.blockers).length ? (
           <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
             <p className="font-medium">Current blockers</p>
@@ -270,6 +295,18 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
               <div className="rounded-md border border-amber-200/20 bg-amber-200/5 p-2">
                 <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Trades after recovery</p>
                 <p className="mt-1">{latestRun.autoResearchCycle?.tradesAfterRecovery ?? 0}</p>
+              </div>
+              <div className="rounded-md border border-amber-200/20 bg-amber-200/5 p-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Active threshold</p>
+                <p className="mt-1">{((latestRun.activeConfluenceThreshold ?? latestRun.backtestSummary.config.minimumConfluenceThreshold) * 100).toFixed(0)}%</p>
+              </div>
+              <div className="rounded-md border border-amber-200/20 bg-amber-200/5 p-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Recovery threshold</p>
+                <p className="mt-1">{latestRun.autoResearchCycle?.recoveryResult?.config.minimumConfluenceThreshold !== undefined ? `${(latestRun.autoResearchCycle.recoveryResult.config.minimumConfluenceThreshold * 100).toFixed(0)}%` : "n/a"}</p>
+              </div>
+              <div className="rounded-md border border-amber-200/20 bg-amber-200/5 p-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Config merge</p>
+                <p className="mt-1">{latestRun.activeCalibrationApplied ? "active calibration applied" : "default baseline"}</p>
               </div>
             </div>
             <p className="mt-3 text-xs text-amber-100/80">

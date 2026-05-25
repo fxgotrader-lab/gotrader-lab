@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Activity, RotateCcw, ShieldAlert, SlidersHorizontal, Target, TimerReset } from "lucide-react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { CalibrationAssistantPanel } from "@/components/backtest-lab/CalibrationAssistantPanel";
@@ -26,6 +26,11 @@ import {
 } from "@/lib/backtesting";
 import type { BacktestAgentWeightId, ResolvedBacktestConfig } from "@/lib/backtesting";
 import { mockCandles } from "@/lib/mockData/mockCandles";
+import {
+  ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
+  clearActiveResearchCalibration,
+  loadActiveResearchCalibration
+} from "@/lib/selfImprovement";
 import type { FuturesSymbol, MarketRegime, Timeframe } from "@/lib/types";
 import { formatPercent, formatSigned } from "@/lib/utils";
 
@@ -84,6 +89,7 @@ const biasVariant = (bias?: string) => {
 export function BacktestLab() {
   const [draftConfig, setDraftConfig] = useState<ResolvedBacktestConfig>(() => loadBacktestConfig());
   const [result, setResult] = useState(() => runBacktest(mockCandles, loadBacktestConfig()));
+  const [activeCalibration, setActiveCalibration] = useState(() => loadActiveResearchCalibration());
   const summary = result.summary;
   const zeroTradeDiagnostics = summary.totalTrades === 0
     ? diagnoseTradeGeneration({ candles: mockCandles, config: result.config, result })
@@ -127,10 +133,27 @@ export function BacktestLab() {
   };
 
   const reset = () => {
+    clearActiveResearchCalibration("Reset Backtest Lab to the default simulation baseline.");
     const next = resetBacktestConfig();
+    setActiveCalibration(loadActiveResearchCalibration());
     setDraftConfig(next);
     setResult(runBacktest(mockCandles, next));
   };
+
+  useEffect(() => {
+    const refresh = () => {
+      setActiveCalibration(loadActiveResearchCalibration());
+      const latestConfig = loadBacktestConfig();
+      setDraftConfig(latestConfig);
+      setResult(runBacktest(mockCandles, latestConfig));
+    };
+    window.addEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
 
   return (
     <div className="space-y-5">
@@ -150,6 +173,23 @@ export function BacktestLab() {
       </div>
 
       <SafetyLockBanner message="Simulation calibration only. No broker connection, live market data, or real trades." />
+
+      {activeCalibration ? (
+        <Card className="border-emerald-300/25 bg-emerald-300/10">
+          <CardContent className="flex flex-col gap-3 p-4 text-sm text-emerald-100 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-medium">Active approved calibration</p>
+              <p className="mt-1">
+                {activeCalibration.approvedCalibrationId} is active. Current confluence threshold{" "}
+                {(activeCalibration.activeConfigAfter.minimumConfluenceThreshold * 100).toFixed(0)}%.
+              </p>
+            </div>
+            <Button variant="secondary" onClick={reset}>
+              Reset to default baseline
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <TechnicalDetails
         title="View validation guide"

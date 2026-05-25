@@ -9,6 +9,7 @@ import type { FuturesSymbol, MarketRegime, Timeframe } from "@/lib/types";
 import { clamp } from "@/lib/utils";
 
 const STORAGE_KEY = "gotrader-ai-lab-backtest-config";
+export const BACKTEST_CONFIG_UPDATED_EVENT = "gotrader-ai-lab-backtest-config-updated";
 
 const isBrowser = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 
@@ -125,6 +126,7 @@ export function saveBacktestConfig(config: BacktestConfig): ResolvedBacktestConf
   const sanitized = sanitizeBacktestConfig(config);
   if (isBrowser()) {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
+    window.dispatchEvent(new CustomEvent(BACKTEST_CONFIG_UPDATED_EVENT, { detail: sanitized }));
   }
   return sanitized;
 }

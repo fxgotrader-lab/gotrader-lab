@@ -62,6 +62,7 @@ import {
   simulationRunbookChecklist
 } from "@/lib/simulationRunbook";
 import {
+  ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
   loadSelfImprovementState,
   SELF_IMPROVEMENT_UPDATED_EVENT
 } from "@/lib/selfImprovement";
@@ -114,6 +115,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const lastAcceptedSelfImprovementProposal = selfImprovementState.proposals.find(
     (proposal) => proposal.proposalId === selfImprovementState.lastAcceptedProposalId
   );
+  const activeResearchCalibration = selfImprovementState.activeResearchCalibration;
   const latestLLMRun = latestLLMAdvisoryRun(llmResearchState);
   const llmProviderStatus = providerStatusForMode(llmResearchState.providerMode);
   const latestAutoResearch = latestAutoResearchCycle(autoResearchState);
@@ -173,9 +175,11 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   useEffect(() => {
     const refreshSelfImprovement = () => setSelfImprovementState(loadSelfImprovementState());
     window.addEventListener(SELF_IMPROVEMENT_UPDATED_EVENT, refreshSelfImprovement);
+    window.addEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refreshSelfImprovement);
     window.addEventListener("storage", refreshSelfImprovement);
     return () => {
       window.removeEventListener(SELF_IMPROVEMENT_UPDATED_EVENT, refreshSelfImprovement);
+      window.removeEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refreshSelfImprovement);
       window.removeEventListener("storage", refreshSelfImprovement);
     };
   }, []);
@@ -556,6 +560,19 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
             ))}
             <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
               Auto Research can create proposals only. Active calibration changes still require user approval.
+            </div>
+            <div className="rounded-md border border-emerald-300/25 bg-emerald-300/10 p-3 text-emerald-100">
+              <div className="font-medium">Active research calibration</div>
+              <div className="mt-2 space-y-1 text-xs">
+                <div>ID: {activeResearchCalibration?.approvedCalibrationId ?? "none"}</div>
+                <div>
+                  Confluence:{" "}
+                  {activeResearchCalibration
+                    ? `${(activeResearchCalibration.activeConfigAfter.minimumConfluenceThreshold * 100).toFixed(0)}%`
+                    : "default baseline"}
+                </div>
+                <div>Approved: {activeResearchCalibration?.approvedAt ?? "n/a"}</div>
+              </div>
             </div>
             <Link
               to="/auto-research"

@@ -40,7 +40,10 @@ import {
   saveSimulationRunbookState
 } from "@/lib/simulationRunbook";
 import type { SimulationRunbookSignal } from "@/lib/simulationRunbook";
-import { loadSelfImprovementState } from "@/lib/selfImprovement";
+import {
+  loadSelfImprovementState,
+  resolveActiveResearchConfig
+} from "@/lib/selfImprovement";
 import { labStorage } from "@/lib/storage";
 import type { LabState, ThesisInput, TradeThesis } from "@/lib/types";
 import { safeArray, safeTopN, uid } from "@/lib/utils";
@@ -332,13 +335,20 @@ export async function runResearchCycle({
   let workingState: LabState = labStorage.load() ?? state;
   const cycleId = uid("research_cycle");
   const config = loadBacktestConfig();
-  const activeConfig = backtestConfig ? sanitizeBacktestConfig({ ...config, ...backtestConfig }) : config;
+  const optionConfig = backtestConfig ? sanitizeBacktestConfig({ ...config, ...backtestConfig }) : config;
+  const activeResearchConfig = resolveActiveResearchConfig(optionConfig);
+  const activeConfig = activeResearchConfig.config;
   const run: ResearchCycleRun = {
     cycleId,
     startedAt: now(),
     status: "running",
     steps,
     llmBridgeAvailable: false,
+    activeCalibrationId: activeResearchConfig.activeResearchCalibration?.approvedCalibrationId,
+    activeCalibrationApprovedAt: activeResearchConfig.activeResearchCalibration?.approvedAt,
+    activeCalibrationApplied: activeResearchConfig.activeCalibrationApplied,
+    activeCalibrationPatch: activeResearchConfig.activeResearchCalibration?.appliedConfigPatch,
+    activeConfluenceThreshold: activeConfig.minimumConfluenceThreshold,
     nextRecommendedAction: "Research cycle is running.",
     resultSummary: "Research cycle is running.",
     safetyNotice: "Research cycle only. Broker execution remains disabled."
@@ -390,7 +400,7 @@ export async function runResearchCycle({
       run.thesisSummary = summarizeThesis(generatedThesis.thesis, generatedThesis.debateSession.id);
       passStep("thesis_generation", {
         summary: `${generatedThesis.thesis.symbol} ${generatedThesis.thesis.timeframe} thesis generated: ${generatedThesis.thesis.finalBias}.`,
-        detail: `ICT ${generatedThesis.thesis.ictContext.bias}, confluence ${Math.round(generatedThesis.thesis.ictContext.confluenceScore * 100)}%, CIO confidence ${Math.round(generatedThesis.thesis.confidence * 100)}%.`
+        detail: `ICT ${generatedThesis.thesis.ictContext.bias}, confluence ${Math.round(generatedThesis.thesis.ictContext.confluenceScore * 100)}%, CIO confidence ${Math.round(generatedThesis.thesis.confidence * 100)}%. Active confluence threshold ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%.`
       });
     } catch (error) {
       failStep("thesis_generation", error instanceof Error ? error.message : "Research thesis generation failed.");
@@ -432,13 +442,13 @@ export async function runResearchCycle({
             topDiagnostic?.explanation ??
             "No simulated trades were generated. Auto Research will try bounded trade-generation recovery.",
           detail: topDiagnostic
-            ? `${topDiagnostic.reasonCode.replace(/_/g, " ")}: ${topDiagnostic.suggestedFix}`
-            : "Auto Research will try threshold, session, direction, stop-model, and resolution-window recovery candidates."
+            ? `${topDiagnostic.reasonCode.replace(/_/g, " ")}: ${topDiagnostic.suggestedFix} Active threshold used ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%; calibration merge ${activeResearchConfig.activeCalibrationApplied ? "applied" : "not active"}.`
+            : `Auto Research will try threshold, session, direction, stop-model, and resolution-window recovery candidates. Active threshold used ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%; calibration merge ${activeResearchConfig.activeCalibrationApplied ? "applied" : "not active"}.`
         });
       } else {
         passStep("backtest", {
           summary: `Backtest completed with ${backtestResult.summary.totalTrades} simulated trades.`,
-          detail: `Win rate ${Math.round(backtestResult.summary.winRate * 100)}%, average R ${backtestResult.summary.averageR.toFixed(2)}, max drawdown ${backtestResult.summary.maxDrawdown.toFixed(2)}R.`
+          detail: `Win rate ${Math.round(backtestResult.summary.winRate * 100)}%, average R ${backtestResult.summary.averageR.toFixed(2)}, max drawdown ${backtestResult.summary.maxDrawdown.toFixed(2)}R. Active confluence threshold ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%.`
         });
       }
     } catch (error) {
