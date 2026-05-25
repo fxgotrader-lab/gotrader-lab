@@ -88,6 +88,30 @@ OpenClaw and Hermes must not:
 }
 ```
 
+## Local File Workflow
+
+Before any API automation, AI Lab uses a local file workflow:
+
+1. Export an advisory request packet from `/advisory-agents`.
+2. Save it as:
+
+   `C:/Users/andre/OneDrive/Documents/gotrader/advisory/requests/latest-advisory-request.json`
+
+3. Provide the file to OpenClaw/Hermes manually.
+4. Save the returned response as:
+
+   `C:/Users/andre/OneDrive/Documents/gotrader/advisory/responses/latest-advisory-response.json`
+
+5. Paste/import the response into the AI Lab advisory review screen.
+
+Advisory-only. No execution authority. No broker control. No readiness override.
+
+## Future Automation
+
+The local file workflow is the stepping stone before a local OpenClaw bridge or authenticated API. Future automation may
+move files or call an authenticated advisory endpoint, but it must not execute trades, approve trades, control go-trader,
+connect to a broker, or override readiness gates.
+
 ## Safety Boundary
 
 The advisory layer is a research reviewer. It cannot execute, approve, override, connect, or control anything. The readiness gate and manual approval layer remain the source of local simulation readiness state.

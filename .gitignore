@@ -7,3 +7,7 @@ logs
 coverage
 exports/*.json
 !exports/.gitkeep
+advisory/requests/*.json
+advisory/responses/*.json
+!advisory/requests/.gitkeep
+!advisory/responses/.gitkeep

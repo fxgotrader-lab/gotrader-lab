@@ -35,6 +35,8 @@ const sampleHint = `{
   "proceedRecommendation": "rerun_validation",
   "notes": "Research review only. No execution authority requested or granted."
 }`;
+const advisoryResponsePath =
+  "C:/Users/andre/OneDrive/Documents/gotrader/advisory/responses/latest-advisory-response.json";
 
 const recommendationVariant = (recommendation?: string) => {
   if (recommendation === "paper_demo_candidate_review") {
@@ -107,6 +109,36 @@ export function AdvisoryResponseReview({
         <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
           <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
           Advisory responses cannot execute trades, approve trades, or override readiness gates.
+        </div>
+
+        <div className="rounded-lg border border-border bg-background/45 p-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold">Local Response File Workflow</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Save the manually returned advisory response file, then paste its JSON here for validation and local
+                review.
+              </p>
+            </div>
+            <Badge variant="warning">manual import</Badge>
+          </div>
+          <div className="mt-3 rounded-md border border-border bg-card/45 p-3">
+            <p className="text-xs text-muted-foreground">Recommended response import path</p>
+            <p className="mt-1 break-all font-mono text-xs text-foreground">{advisoryResponsePath}</p>
+          </div>
+          <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+            <li>Save the OpenClaw/Hermes response as latest-advisory-response.json.</li>
+            <li>Open the file locally and copy the full JSON payload.</li>
+            <li>Paste the response into this review screen.</li>
+            <li>Validate the response before importing it into local AI Lab memory.</li>
+          </ol>
+          <div className="mt-3 rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+            Advisory-only. No execution authority. No broker control. No readiness override.
+          </div>
+          <div className="mt-3 rounded-md border border-border bg-card/45 p-3 text-sm text-muted-foreground">
+            Future Automation: The local file workflow is the stepping stone before a local OpenClaw bridge or
+            authenticated API.
+          </div>
         </div>
 
         <div className="grid gap-3 md:grid-cols-3">

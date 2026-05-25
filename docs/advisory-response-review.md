@@ -62,6 +62,29 @@ Sample response:
 
 `docs/sample-openclaw-hermes-advisory-response.json`
 
+## Local File Workflow
+
+Recommended response import path:
+
+`C:/Users/andre/OneDrive/Documents/gotrader/advisory/responses/latest-advisory-response.json`
+
+Workflow:
+
+1. Export the advisory request packet from AI Lab.
+2. Save it as `advisory/requests/latest-advisory-request.json`.
+3. Provide the request file to OpenClaw/Hermes manually.
+4. Save the advisory response as `advisory/responses/latest-advisory-response.json`.
+5. Open the response file and copy the JSON payload.
+6. Paste it into the AI Lab advisory response review screen.
+7. Validate and import it locally.
+
+Advisory-only. No execution authority. No broker control. No readiness override.
+
+## Future Automation
+
+The local file workflow is the stepping stone before a local OpenClaw bridge or authenticated API. Any future automation
+must keep response import as advisory review only and must not grant execution, broker, or readiness override authority.
+
 ## Safety Boundary
 
 Advisory responses cannot execute trades, approve trades, or override readiness gates.

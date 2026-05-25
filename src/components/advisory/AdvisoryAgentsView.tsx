@@ -27,6 +27,11 @@ interface AdvisoryActions {
 }
 
 const formatValue = (value: string) => value.replace(/_/g, " ");
+const latestAdvisoryRequestFilename = "latest-advisory-request.json";
+const advisoryRequestPath =
+  "C:/Users/andre/OneDrive/Documents/gotrader/advisory/requests/latest-advisory-request.json";
+const advisoryResponsePath =
+  "C:/Users/andre/OneDrive/Documents/gotrader/advisory/responses/latest-advisory-response.json";
 
 export function AdvisoryAgentsView({ state, actions }: { state: LabState; actions: AdvisoryActions }) {
   const [packet, setPacket] = useState<AdvisoryRequestPacket>();
@@ -77,7 +82,7 @@ export function AdvisoryAgentsView({ state, actions }: { state: LabState; action
     });
   };
 
-  const downloadPacket = () => {
+  const downloadPacket = (filename?: string) => {
     if (!packet || !packetJson) {
       return;
     }
@@ -86,7 +91,7 @@ export function AdvisoryAgentsView({ state, actions }: { state: LabState; action
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `openclaw-hermes-advisory-${packet.packetId}.json`;
+    anchor.download = filename ?? `openclaw-hermes-advisory-${packet.packetId}.json`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -224,10 +229,56 @@ export function AdvisoryAgentsView({ state, actions }: { state: LabState; action
               <PackageCheck className="h-4 w-4" aria-hidden="true" />
               Generate Advisory Request Packet
             </Button>
-            <Button variant="secondary" onClick={downloadPacket} disabled={!packetJson}>
+            <Button variant="secondary" onClick={() => downloadPacket()} disabled={!packetJson}>
               <Download className="h-4 w-4" aria-hidden="true" />
               Download advisory packet JSON
             </Button>
+            <Button
+              variant="secondary"
+              className="h-auto min-h-10 whitespace-normal"
+              onClick={() => downloadPacket(latestAdvisoryRequestFilename)}
+              disabled={!packetJson}
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Download as latest-advisory-request.json
+            </Button>
+          </div>
+
+          <div className="rounded-lg border border-border bg-background/45 p-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold">Local Advisory File Workflow</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Export a stable request file, hand it to OpenClaw/Hermes manually, then paste the returned response
+                  into AI Lab.
+                </p>
+              </div>
+              <Badge variant="warning">manual file workflow</Badge>
+            </div>
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              <div className="rounded-md border border-border bg-card/45 p-3">
+                <p className="text-xs text-muted-foreground">Recommended request export path</p>
+                <p className="mt-1 break-all font-mono text-xs text-foreground">{advisoryRequestPath}</p>
+              </div>
+              <div className="rounded-md border border-border bg-card/45 p-3">
+                <p className="text-xs text-muted-foreground">Recommended response import path</p>
+                <p className="mt-1 break-all font-mono text-xs text-foreground">{advisoryResponsePath}</p>
+              </div>
+            </div>
+            <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+              <li>Generate and download the advisory request packet.</li>
+              <li>Save it as {latestAdvisoryRequestFilename} in the requests folder.</li>
+              <li>Provide the request file to OpenClaw/Hermes manually.</li>
+              <li>Save the returned response JSON into the responses folder.</li>
+              <li>Paste and import the response in the review screen below.</li>
+            </ol>
+            <div className="mt-3 rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+              Advisory-only. No execution authority. No broker control. No readiness override.
+            </div>
+            <div className="mt-3 rounded-md border border-border bg-card/45 p-3 text-sm text-muted-foreground">
+              Future Automation: The local file workflow is the stepping stone before a local OpenClaw bridge or
+              authenticated API.
+            </div>
           </div>
 
           {latestPacketAudit ? (

@@ -74,6 +74,32 @@ Sample packet:
 
 `docs/sample-openclaw-hermes-advisory-request.json`
 
+## Local File Workflow
+
+Recommended request export path:
+
+`C:/Users/andre/OneDrive/Documents/gotrader/advisory/requests/latest-advisory-request.json`
+
+Use the stable download button:
+
+`Download as latest-advisory-request.json`
+
+Workflow:
+
+1. Generate the advisory request packet in `/advisory-agents`.
+2. Download it as `latest-advisory-request.json`.
+3. Save it in `advisory/requests/`.
+4. Provide the file to OpenClaw/Hermes manually.
+5. Save the returned response JSON into `advisory/responses/latest-advisory-response.json`.
+6. Paste and import the response in the AI Lab review screen.
+
+Advisory-only. No execution authority. No broker control. No readiness override.
+
+## Future Automation
+
+The local file workflow is the stepping stone before a local OpenClaw bridge or authenticated API. API automation must
+preserve the same advisory-only authority locks.
+
 ## Safety Boundary
 
 The packet is advisory only. It cannot execute trades or override readiness gates.
