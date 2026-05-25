@@ -20,6 +20,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  AUTO_RESEARCH_UPDATED_EVENT,
+  latestAutoResearchCycle,
+  loadAutoResearchState
+} from "@/lib/autoResearch";
+import {
   defaultICTScoringWeights,
   loadICTScoringWeights,
   resetICTScoringWeights,
@@ -95,6 +100,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const [readinessApproval, setReadinessApproval] = useState(() => loadManualApprovalRecord());
   const [selfImprovementState, setSelfImprovementState] = useState(() => loadSelfImprovementState());
   const [llmResearchState, setLlmResearchState] = useState(() => loadLLMResearchState());
+  const [autoResearchState, setAutoResearchState] = useState(() => loadAutoResearchState());
   const latestHandoffExport = state.handoffExports?.[0];
   const latestAdvisoryPacket = state.advisoryPackets?.[0];
   const latestAdvisoryResponse = state.advisoryResponses?.[0];
@@ -106,6 +112,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   );
   const latestLLMRun = latestLLMAdvisoryRun(llmResearchState);
   const llmProviderStatus = providerStatusForMode(llmResearchState.providerMode);
+  const latestAutoResearch = latestAutoResearchCycle(autoResearchState);
   const runbookCompleted = countCompletedRunbookItems(simulationRunbook);
   const runbookTotal = simulationRunbookChecklist.length;
   const readinessGate = useMemo(
@@ -175,6 +182,16 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
     return () => {
       window.removeEventListener(LLM_RESEARCH_UPDATED_EVENT, refreshLLMResearch);
       window.removeEventListener("storage", refreshLLMResearch);
+    };
+  }, []);
+
+  useEffect(() => {
+    const refreshAutoResearch = () => setAutoResearchState(loadAutoResearchState());
+    window.addEventListener(AUTO_RESEARCH_UPDATED_EVENT, refreshAutoResearch);
+    window.addEventListener("storage", refreshAutoResearch);
+    return () => {
+      window.removeEventListener(AUTO_RESEARCH_UPDATED_EVENT, refreshAutoResearch);
+      window.removeEventListener("storage", refreshAutoResearch);
     };
   }, []);
 
@@ -465,6 +482,42 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
               className="inline-flex h-9 w-full items-center justify-center rounded-md border border-border bg-background/60 px-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary/70"
             >
               Open LLM research agents
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Bot className="h-4 w-4 text-primary" aria-hidden="true" />
+              <CardTitle>Auto Research Supervisor</CardTitle>
+            </div>
+            <CardDescription>Simulation-only configuration search and proposal generator.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {[
+              ["Latest cycle", latestAutoResearch?.timestamp ?? "none"],
+              ["Best candidate status", latestAutoResearch?.bestCandidate ? "selected" : "none"],
+              ["Latest proposal", latestAutoResearch?.createdProposalId ?? "none"],
+              ["Execution authority", "none"],
+              ["Broker authority", "none"],
+              ["Readiness override", "none"]
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+                <span className="text-muted-foreground">{label}</span>
+                <Badge variant={value === "none" ? "danger" : value === "selected" ? "success" : "warning"}>
+                  {formatBridgeValue(value)}
+                </Badge>
+              </div>
+            ))}
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              Auto Research can create proposals only. Active calibration changes still require user approval.
+            </div>
+            <Link
+              to="/auto-research"
+              className="inline-flex h-9 w-full items-center justify-center rounded-md border border-border bg-background/60 px-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary/70"
+            >
+              Open auto research
             </Link>
           </CardContent>
         </Card>

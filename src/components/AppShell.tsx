@@ -34,6 +34,7 @@ const navigation = [
   { href: "/simulation-runbook", label: "Runbook", icon: ClipboardList },
   { href: "/readiness-gate", label: "Readiness", icon: ShieldAlert },
   { href: "/llm-agents", label: "LLM Agents", icon: BrainCircuit },
+  { href: "/auto-research", label: "Auto Research", icon: Bot },
   { href: "/advisory-agents", label: "Advisory", icon: Bot },
   { href: "/self-improvement", label: "Improve", icon: SlidersHorizontal },
   { href: "/performance", label: "Performance", icon: Activity },

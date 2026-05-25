@@ -1,0 +1,106 @@
+import type { AutoResearchCandidateResult } from "@/lib/autoResearch/autoResearchTypes";
+import type { ResolvedBacktestConfig } from "@/lib/backtesting";
+import { compareProposalToBaseline } from "@/lib/selfImprovement";
+import type {
+  CalibrationProposalMetrics,
+  CalibrationProposal,
+  CalibrationProposalChanges,
+  CalibrationTargetProblem
+} from "@/lib/selfImprovement";
+import type { ICTScoringWeights } from "@/lib/types";
+import { uid } from "@/lib/utils";
+
+const diffAgentWeights = (
+  baseline: ResolvedBacktestConfig,
+  candidate: ResolvedBacktestConfig
+) => {
+  const changes = Object.fromEntries(
+    Object.entries(candidate.agentWeights).filter(
+      ([agentId, value]) => baseline.agentWeights[agentId as keyof typeof baseline.agentWeights] !== value
+    )
+  );
+  return Object.keys(changes).length ? changes : undefined;
+};
+
+const changesFor = (
+  baseline: ResolvedBacktestConfig,
+  candidate: AutoResearchCandidateResult
+): CalibrationProposalChanges => ({
+  confluenceThreshold:
+    baseline.minimumConfluenceThreshold !== candidate.config.minimumConfluenceThreshold
+      ? candidate.config.minimumConfluenceThreshold
+      : undefined,
+  confidenceThreshold:
+    baseline.minimumConfidenceThreshold !== candidate.config.minimumConfidenceThreshold
+      ? candidate.config.minimumConfidenceThreshold
+      : undefined,
+  sessionFilter: baseline.sessionFilter !== candidate.config.sessionFilter ? candidate.config.sessionFilter : undefined,
+  stopModel: baseline.stopModel !== candidate.config.stopModel ? candidate.config.stopModel : undefined,
+  targetRMultiple: baseline.targetRMultiple !== candidate.config.targetRMultiple ? candidate.config.targetRMultiple : undefined,
+  agentWeights: diffAgentWeights(baseline, candidate.config),
+  ictScoringWeights: candidate.ictScoringWeights as Partial<ICTScoringWeights> | undefined
+});
+
+const targetProblemFor = (candidate: AutoResearchCandidateResult): CalibrationTargetProblem => {
+  const scores = candidate.scoreBreakdown;
+  if (scores.drawdownScore < 60) {
+    return "high_drawdown";
+  }
+  if (scores.winRateScore < 48) {
+    return "low_win_rate";
+  }
+  if (scores.averageRScore < 50) {
+    return "weak_average_r";
+  }
+  if (scores.falsePositiveScore < 70) {
+    return "false_positives";
+  }
+  if (scores.sessionConsistencyScore < 50) {
+    return "poor_session_performance";
+  }
+  if (scores.confidenceCalibrationScore < 60) {
+    return "poor_confidence_calibration";
+  }
+  return "overfitting_risk";
+};
+
+export function createSelfImprovementFromCandidate({
+  baselineConfig,
+  baselineMetrics,
+  candidate,
+  source = "internal"
+}: {
+  baselineConfig: ResolvedBacktestConfig;
+  baselineMetrics: CalibrationProposalMetrics;
+  candidate: AutoResearchCandidateResult;
+  source?: "internal" | "openclaw";
+}): CalibrationProposal {
+  const comparisonResult = compareProposalToBaseline(baselineMetrics, candidate.metrics);
+
+  return {
+    proposalId: uid("calibration_proposal"),
+    timestamp: new Date().toISOString(),
+    source,
+    status: "proposed",
+    mode: "simulation",
+    executionAuthority: "none",
+    brokerAuthority: "none",
+    readinessOverrideAuthority: "none",
+    reason: `Auto Research selected ${candidate.label}: ${candidate.scoreBreakdown.rationale}`,
+    targetProblem: targetProblemFor(candidate),
+    proposedChanges: changesFor(baselineConfig, candidate),
+    expectedImprovement:
+      "Improve stability-first validation metrics without changing broker settings, execution authority, or readiness gates.",
+    safetyNotes: [
+      "Auto Research cannot execute trades.",
+      "Candidate must be accepted manually in the Self-Improvement workflow.",
+      "No broker, execution, live mode, demo mode, API key, or readiness permission can be changed."
+    ],
+    beforeMetrics: baselineMetrics,
+    afterMetrics: candidate.metrics,
+    comparisonResult,
+    baselineConfig,
+    proposedConfig: candidate.config,
+    approvalRequired: true
+  };
+}

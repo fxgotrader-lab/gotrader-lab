@@ -3,6 +3,7 @@ import { AgentDetail } from "@/components/agents/AgentDetail";
 import { AgentRoster } from "@/components/agents/AgentRoster";
 import { AdvisoryAgentsView } from "@/components/advisory/AdvisoryAgentsView";
 import { AppShell } from "@/components/AppShell";
+import { AutoResearchView } from "@/components/auto-research/AutoResearchView";
 import { BacktestLab } from "@/components/backtest-lab/BacktestLab";
 import { DashboardOverview } from "@/components/dashboard/DashboardOverview";
 import { ICTLab } from "@/components/ict-lab/ICTLab";
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="/simulation-runbook" element={<SimulationRunbookView />} />
         <Route path="/readiness-gate" element={<ReadinessGateView />} />
         <Route path="/llm-agents" element={<LLMAgentsView state={state} />} />
+        <Route path="/auto-research" element={<AutoResearchView />} />
         <Route path="/advisory-agents" element={<AdvisoryAgentsView state={state} actions={actions} />} />
         <Route path="/self-improvement" element={<SelfImprovementView />} />
         <Route path="/performance" element={<PerformanceView state={state} />} />
