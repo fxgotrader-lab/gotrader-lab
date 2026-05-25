@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { Database, KeyRound, Lock, ShieldAlert, ShieldCheck, SlidersHorizontal, Unplug } from "lucide-react";
+import {
+  ClipboardList,
+  Database,
+  KeyRound,
+  Lock,
+  ShieldAlert,
+  ShieldCheck,
+  SlidersHorizontal,
+  Unplug
+} from "lucide-react";
 import { BridgeStatusCard } from "@/components/bridge/BridgeStatusCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +22,7 @@ import {
   saveICTScoringWeights
 } from "@/lib/ict";
 import { brokerDemoBridgeSpec } from "@/lib/integrations/brokerDemoBridgeSpec";
+import { paperDemoExecutionSpec } from "@/lib/integrations/paperDemoExecutionSpec";
 import type { ICTScoringWeights, LabState } from "@/lib/types";
 
 const weightLabels: Record<string, string> = {
@@ -196,6 +206,34 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
             <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
               <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
               No broker code exists yet. No API keys, broker connection, websocket feed, or order placement is present.
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <ClipboardList className="h-4 w-4 text-primary" aria-hidden="true" />
+              <CardTitle>Paper/Demo Execution Plan</CardTitle>
+            </div>
+            <CardDescription>Future single-account paper bridge planning only.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {[
+              ["Status", paperDemoExecutionSpec.status],
+              ["Broker connection", paperDemoExecutionSpec.brokerConnection],
+              ["Live trading", paperDemoExecutionSpec.liveTrading],
+              ["Account mode", paperDemoExecutionSpec.accountMode],
+              ["Next phase", paperDemoExecutionSpec.nextPhase]
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+                <span className="text-muted-foreground">{label}</span>
+                <Badge variant={label === "Live trading" ? "danger" : "warning"}>{formatBridgeValue(value)}</Badge>
+              </div>
+            ))}
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
+              No broker code exists yet. Demo execution comes after simulation bridge verification.
             </div>
           </CardContent>
         </Card>
