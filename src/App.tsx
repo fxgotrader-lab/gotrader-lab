@@ -11,6 +11,7 @@ import { ResearchWorkbench } from "@/components/research/ResearchWorkbench";
 import { ResearchQualityView } from "@/components/research-quality/ResearchQualityView";
 import { ReplayView } from "@/components/replay/ReplayView";
 import { SettingsView } from "@/components/settings/SettingsView";
+import { SimulationRunbookView } from "@/components/simulation-runbook/SimulationRunbookView";
 import { StrategyValidationView } from "@/components/validation/StrategyValidationView";
 import { useLabState } from "@/lib/storage/useLabState";
 
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="/backtest-lab" element={<BacktestLab />} />
         <Route path="/validation" element={<StrategyValidationView />} />
         <Route path="/research-quality" element={<ResearchQualityView />} />
+        <Route path="/simulation-runbook" element={<SimulationRunbookView />} />
         <Route path="/performance" element={<PerformanceView state={state} />} />
         <Route path="/prompt-lab" element={<PromptLab state={state} actions={actions} />} />
         <Route path="/settings" element={<SettingsView state={state} onReset={actions.reset} />} />

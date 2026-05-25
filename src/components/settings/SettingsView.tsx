@@ -28,6 +28,12 @@ import {
   loadLatestResearchQualityReview,
   RESEARCH_QUALITY_UPDATED_EVENT
 } from "@/lib/researchQuality";
+import {
+  countCompletedRunbookItems,
+  loadSimulationRunbookState,
+  SIMULATION_RUNBOOK_UPDATED_EVENT,
+  simulationRunbookChecklist
+} from "@/lib/simulationRunbook";
 import type { ICTScoringWeights, LabState } from "@/lib/types";
 import {
   loadLatestValidationReport,
@@ -55,7 +61,10 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const [ictWeights, setIctWeights] = useState<ICTScoringWeights>(() => loadICTScoringWeights());
   const [latestValidationReport, setLatestValidationReport] = useState(() => loadLatestValidationReport());
   const [latestQualityReview, setLatestQualityReview] = useState(() => loadLatestResearchQualityReview());
+  const [simulationRunbook, setSimulationRunbook] = useState(() => loadSimulationRunbookState());
   const latestHandoffExport = state.handoffExports?.[0];
+  const runbookCompleted = countCompletedRunbookItems(simulationRunbook);
+  const runbookTotal = simulationRunbookChecklist.length;
 
   useEffect(() => {
     const refreshValidationReport = () => setLatestValidationReport(loadLatestValidationReport());
@@ -74,6 +83,16 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
     return () => {
       window.removeEventListener(RESEARCH_QUALITY_UPDATED_EVENT, refreshQualityReview);
       window.removeEventListener("storage", refreshQualityReview);
+    };
+  }, []);
+
+  useEffect(() => {
+    const refreshRunbook = () => setSimulationRunbook(loadSimulationRunbookState());
+    window.addEventListener(SIMULATION_RUNBOOK_UPDATED_EVENT, refreshRunbook);
+    window.addEventListener("storage", refreshRunbook);
+    return () => {
+      window.removeEventListener(SIMULATION_RUNBOOK_UPDATED_EVENT, refreshRunbook);
+      window.removeEventListener("storage", refreshRunbook);
     };
   }, []);
 
@@ -243,6 +262,39 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
             <div className="rounded-md border border-border bg-background/45 p-3 text-muted-foreground">
               {latestValidationReport?.calibration.recommendedNextStep ??
                 "Run the validation suite before any broker-demo implementation planning."}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <ClipboardList className="h-4 w-4 text-primary" aria-hidden="true" />
+              <CardTitle>Simulation Runbook</CardTitle>
+            </div>
+            <CardDescription>Latest AI Lab to go-trader simulation verification record.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+              <span className="text-muted-foreground">Latest verification</span>
+              <span className="max-w-[11rem] truncate font-mono text-xs text-foreground">
+                {simulationRunbook.verifiedAt ?? "none"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+              <span className="text-muted-foreground">Checklist</span>
+              <Badge variant={runbookCompleted === runbookTotal ? "success" : "warning"}>
+                {runbookCompleted}/{runbookTotal}
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-2 rounded-md border border-border bg-background/45 p-3 font-mono text-xs text-muted-foreground">
+              <span>{simulationRunbook.symbol || "symbol n/a"}</span>
+              <span>{simulationRunbook.timeframe || "timeframe n/a"}</span>
+              <span>{simulationRunbook.signal || "signal n/a"}</span>
+              <span>{simulationRunbook.mode}</span>
+            </div>
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              Broker execution must remain skipped and trades must stay at 0.
             </div>
           </CardContent>
         </Card>

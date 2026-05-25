@@ -6,6 +6,7 @@ import {
   Bot,
   ChartCandlestick,
   ClipboardCheck,
+  ClipboardList,
   FlaskConical,
   Gauge,
   GitBranch,
@@ -27,6 +28,7 @@ const navigation = [
   { href: "/backtest-lab", label: "Backtest Lab", icon: Beaker },
   { href: "/validation", label: "Validation", icon: ClipboardCheck },
   { href: "/research-quality", label: "Quality", icon: ShieldCheck },
+  { href: "/simulation-runbook", label: "Runbook", icon: ClipboardList },
   { href: "/performance", label: "Performance", icon: Activity },
   { href: "/prompt-lab", label: "Prompt Lab", icon: GitBranch },
   { href: "/settings", label: "Settings", icon: Settings }
