@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  ClipboardCheck,
   ClipboardList,
   Database,
   KeyRound,
@@ -24,6 +25,10 @@ import {
 import { brokerDemoBridgeSpec } from "@/lib/integrations/brokerDemoBridgeSpec";
 import { paperDemoExecutionSpec } from "@/lib/integrations/paperDemoExecutionSpec";
 import type { ICTScoringWeights, LabState } from "@/lib/types";
+import {
+  loadLatestValidationReport,
+  VALIDATION_REPORT_UPDATED_EVENT
+} from "@/lib/validation";
 
 const weightLabels: Record<string, string> = {
   bullishMSS: "Bullish MSS",
@@ -39,10 +44,23 @@ const weightLabels: Record<string, string> = {
 };
 const formatWeightLabel = (key: string) => weightLabels[key] ?? key;
 const formatBridgeValue = (value: string) => value.replace(/_/g, " ");
+const validationVariant = (status?: string) =>
+  status === "green" ? "success" : status === "yellow" ? "warning" : status === "red" ? "danger" : "muted";
 
 export function SettingsView({ state, onReset }: { state: LabState; onReset: () => void }) {
   const [ictWeights, setIctWeights] = useState<ICTScoringWeights>(() => loadICTScoringWeights());
+  const [latestValidationReport, setLatestValidationReport] = useState(() => loadLatestValidationReport());
   const latestHandoffExport = state.handoffExports?.[0];
+
+  useEffect(() => {
+    const refreshValidationReport = () => setLatestValidationReport(loadLatestValidationReport());
+    window.addEventListener(VALIDATION_REPORT_UPDATED_EVENT, refreshValidationReport);
+    window.addEventListener("storage", refreshValidationReport);
+    return () => {
+      window.removeEventListener(VALIDATION_REPORT_UPDATED_EVENT, refreshValidationReport);
+      window.removeEventListener("storage", refreshValidationReport);
+    };
+  }, []);
 
   const reset = () => {
     const approved = window.confirm("Reset local GoTrader AI Lab mock data and prompt history?");
@@ -183,6 +201,34 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
                 </div>
               )
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <ClipboardCheck className="h-4 w-4 text-primary" aria-hidden="true" />
+              <CardTitle>Strategy Validation</CardTitle>
+            </div>
+            <CardDescription>Latest simulated ICT validation and calibration readiness.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+              <span className="text-muted-foreground">Latest run</span>
+              <span className="max-w-[11rem] truncate font-mono text-xs text-foreground">
+                {latestValidationReport?.generatedAt ?? "none"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+              <span className="text-muted-foreground">Readiness</span>
+              <Badge variant={validationVariant(latestValidationReport?.calibration.readinessStatus)}>
+                {latestValidationReport?.calibration.readinessStatus ?? "not run"}
+              </Badge>
+            </div>
+            <div className="rounded-md border border-border bg-background/45 p-3 text-muted-foreground">
+              {latestValidationReport?.calibration.recommendedNextStep ??
+                "Run the validation suite before any broker-demo implementation planning."}
+            </div>
           </CardContent>
         </Card>
 

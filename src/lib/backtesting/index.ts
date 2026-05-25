@@ -5,6 +5,7 @@ export type {
   BacktestConfig,
   BacktestDecisionPoint,
   BacktestResult,
+  BacktestSkipReasonSummary,
   BacktestSummary,
   EquityCurvePoint,
   ReplayFrame,

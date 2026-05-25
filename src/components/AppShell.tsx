@@ -5,6 +5,7 @@ import {
   Beaker,
   Bot,
   ChartCandlestick,
+  ClipboardCheck,
   FlaskConical,
   Gauge,
   GitBranch,
@@ -24,6 +25,7 @@ const navigation = [
   { href: "/ict-lab", label: "ICT Lab", icon: ChartCandlestick },
   { href: "/replay", label: "Replay", icon: RefreshCw },
   { href: "/backtest-lab", label: "Backtest Lab", icon: Beaker },
+  { href: "/validation", label: "Validation", icon: ClipboardCheck },
   { href: "/performance", label: "Performance", icon: Activity },
   { href: "/prompt-lab", label: "Prompt Lab", icon: GitBranch },
   { href: "/settings", label: "Settings", icon: Settings }

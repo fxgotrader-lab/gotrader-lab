@@ -10,6 +10,7 @@ import { PromptLab } from "@/components/prompt-lab/PromptLab";
 import { ResearchWorkbench } from "@/components/research/ResearchWorkbench";
 import { ReplayView } from "@/components/replay/ReplayView";
 import { SettingsView } from "@/components/settings/SettingsView";
+import { StrategyValidationView } from "@/components/validation/StrategyValidationView";
 import { useLabState } from "@/lib/storage/useLabState";
 
 export default function App() {
@@ -26,6 +27,7 @@ export default function App() {
         <Route path="/ict-lab" element={<ICTLab />} />
         <Route path="/replay" element={<ReplayView />} />
         <Route path="/backtest-lab" element={<BacktestLab />} />
+        <Route path="/validation" element={<StrategyValidationView />} />
         <Route path="/performance" element={<PerformanceView state={state} />} />
         <Route path="/prompt-lab" element={<PromptLab state={state} actions={actions} />} />
         <Route path="/settings" element={<SettingsView state={state} onReset={actions.reset} />} />
