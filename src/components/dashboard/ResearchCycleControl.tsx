@@ -72,6 +72,9 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
   const [busy, setBusy] = useState(false);
   const latestRun = activeRun ?? latestResearchCycleRun(cycleState);
   const selectedSearchMode = dashboardSearchModes.find((mode) => mode.value === searchMode) ?? dashboardSearchModes[1];
+  const researchCalibrationAvailable = Boolean(
+    latestRun?.createdProposalId && latestRun.autoResearchCycle?.noSafePaperDemoCandidateFound
+  );
 
   useEffect(() => {
     const refresh = () => setCycleState(loadResearchCycleState());
@@ -219,7 +222,11 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
             </div>
             <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
               <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Proposal</p>
-              <p className="mt-1 truncate font-semibold text-slate-100">{latestRun.createdProposalId ?? latestRun.proposalStatus ?? "No proposal"}</p>
+              <p className="mt-1 truncate font-semibold text-slate-100">
+                {researchCalibrationAvailable
+                  ? "Research calibration proposal available"
+                  : latestRun.createdProposalId ?? latestRun.proposalStatus ?? "No proposal"}
+              </p>
             </div>
             <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
               <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Blockers</p>
@@ -270,9 +277,15 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
             </p>
             {latestRun.createdProposalId && latestRun.autoResearchCycle?.recoveryAttempted && (latestRun.autoResearchCycle.tradesAfterRecovery ?? 0) > 0 ? (
               <div className="mt-3 rounded-md border border-emerald-300/25 bg-emerald-300/10 p-3 text-sm text-emerald-100">
-                Calibration proposal available: lower confluence threshold slightly.
+                Research calibration proposal available: lower confluence threshold slightly.
               </div>
             ) : null}
+          </div>
+        ) : null}
+
+        {researchCalibrationAvailable && latestRun?.backtestSummary?.totalTrades !== 0 ? (
+          <div className="rounded-lg border border-emerald-300/25 bg-emerald-300/10 p-3 text-sm text-emerald-100">
+            Research calibration proposal available. This is a baseline-improvement proposal only, not a Paper-Demo Candidate approval.
           </div>
         ) : null}
 

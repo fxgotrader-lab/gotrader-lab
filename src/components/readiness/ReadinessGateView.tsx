@@ -89,8 +89,13 @@ export function ReadinessGateView() {
   const latestProposal =
     selfImprovement.proposals.find((proposal) => proposal.proposalId === selfImprovement.latestProposalId) ??
     selfImprovement.proposals[0];
-  const pendingZeroTradeRecoveryProposal =
-    latestProposal?.targetProblem === "trade_generation_blocked" &&
+  const latestProposalIntent =
+    latestProposal?.proposalIntent ??
+    (latestProposal?.sourceCandidateId || latestProposal?.reason.includes("Auto Research")
+      ? "research_calibration_candidate"
+      : undefined);
+  const pendingResearchCalibrationProposal =
+    latestProposalIntent === "research_calibration_candidate" &&
     (latestProposal.status === "proposed" || latestProposal.status === "testing");
 
   const refresh = () => {
@@ -205,10 +210,10 @@ export function ReadinessGateView() {
                   {warning}
                 </div>
               ))}
-              {pendingZeroTradeRecoveryProposal ? (
+              {pendingResearchCalibrationProposal ? (
                 <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
                   <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
-                  Pending calibration approval before readiness can be reevaluated.
+                  Pending research calibration approval before readiness can be reevaluated.
                   <Link
                     to="/self-improvement"
                     className="ml-2 inline-flex rounded-md border border-amber-200/25 px-2 py-1 text-xs font-medium text-amber-50 transition-colors hover:bg-amber-200/10"

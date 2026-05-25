@@ -93,6 +93,14 @@ export interface CalibrationProposal {
   tradesBeforeRecovery?: number;
   tradesAfterRecovery?: number;
   qualityGatesPassed?: string[];
+  sourceCandidateId?: string;
+  sourceCandidateLabel?: string;
+  sourceAdaptivePassNumber?: number;
+  improvementSummary?: string[];
+  notReadyReasons?: string[];
+  nextValidationRequirement?: string;
+  baselineStabilityScore?: number;
+  candidateStabilityScore?: number;
 }
 
 export interface SelfImprovementAuditEntry {

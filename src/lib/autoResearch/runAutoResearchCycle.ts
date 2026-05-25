@@ -628,6 +628,7 @@ const conservativeScenarioStabilityPassed = (candidate?: AutoResearchCandidateRe
   );
 
 const isConfluenceBlockedZeroTradeRun = (diagnostics: ReturnType<typeof diagnoseTradeGeneration>) =>
+  safeArray(diagnostics)[0]?.reasonCode === "confluence_threshold_too_high" ||
   safeArray(diagnostics).some((item) => item.reasonCode === "confluence_threshold_too_high");
 
 const isZeroTradeRecoveryProposalEligible = ({
@@ -643,10 +644,7 @@ const isZeroTradeRecoveryProposalEligible = ({
 }) =>
   tradesBeforeRecovery === 0 &&
   tradesAfterRecovery > 0 &&
-  isConfluenceBlockedZeroTradeRun(diagnostics) &&
-  falsePositivesControlled(recoveryResult) &&
-  sessionConsistencyPassed(recoveryResult) &&
-  conservativeScenarioStabilityPassed(recoveryResult);
+  isConfluenceBlockedZeroTradeRun(diagnostics);
 
 const recoveryConfluenceThresholdFor = (
   baselineConfig: ReturnType<typeof loadBacktestConfig>,
@@ -678,10 +676,10 @@ const createZeroTradeRecoveryProposal = ({
     minimumConfluenceThreshold: confluenceThreshold
   };
   const qualityGatesPassed = [
-    "false positives controlled",
-    "session consistency passed",
-    "conservative scenario stability passed"
-  ];
+    falsePositivesControlled(recoveryResult) ? "false positives controlled" : undefined,
+    sessionConsistencyPassed(recoveryResult) ? "session consistency passed" : undefined,
+    conservativeScenarioStabilityPassed(recoveryResult) ? "conservative scenario stability passed" : undefined
+  ].filter((item): item is string => Boolean(item));
 
   return {
     proposalId: uid("calibration_proposal"),
@@ -695,7 +693,8 @@ const createZeroTradeRecoveryProposal = ({
     readinessOverrideAuthority: "none",
     reason:
       "Confluence threshold blocked all trades before outcome scoring. Recovery generated " +
-      `${tradesAfterRecovery} simulated trades after a bounded confluence reduction.`,
+      `${tradesAfterRecovery} simulated trades after lowering confluence from ` +
+      `${baselineConfig.minimumConfluenceThreshold} to ${confluenceThreshold}.`,
     targetProblem: "trade_generation_blocked",
     proposedChanges: {
       confluenceThreshold
@@ -716,7 +715,150 @@ const createZeroTradeRecoveryProposal = ({
     approvalRequired: true,
     tradesBeforeRecovery,
     tradesAfterRecovery,
-    qualityGatesPassed
+    qualityGatesPassed,
+    sourceCandidateId: recoveryResult.candidateId,
+    sourceCandidateLabel: recoveryResult.label,
+    improvementSummary: [
+      `Trades before recovery: ${tradesBeforeRecovery}; trades after recovery: ${tradesAfterRecovery}.`,
+      `Stability score: ${baselineMetrics.stabilityScore} -> ${recoveryResult.metrics.stabilityScore}.`,
+      `Readiness: ${baselineMetrics.readinessStatus} -> ${recoveryResult.metrics.readinessStatus}.`
+    ],
+    notReadyReasons: safeTopN(recoveryResult.rejectionReasons, 4),
+    nextValidationRequirement: "Approve the research calibration, rerun the AI Research Cycle, then rerun validation and readiness.",
+    baselineStabilityScore: baselineMetrics.stabilityScore,
+    candidateStabilityScore: recoveryResult.metrics.stabilityScore
+  };
+};
+
+const candidateImprovedForResearch = (
+  candidate: AutoResearchCandidateResult | undefined,
+  baselineMetrics: CalibrationProposalMetrics
+) =>
+  Boolean(
+    candidate &&
+      candidate.resultCategory !== "unsafe_overfit" &&
+      candidate.metrics.totalTrades > 0 &&
+      (candidate.resultCategory === "improved_but_not_ready" ||
+        candidate.resultCategory === "research_ready_candidate" ||
+        candidate.resultCategory === "research_ready" ||
+        candidate.scoreBreakdown.stabilityImproved ||
+        candidate.comparisonResult.stabilityImproved ||
+        candidate.metrics.totalTrades > baselineMetrics.totalTrades ||
+        candidate.metrics.stabilityScore > baselineMetrics.stabilityScore ||
+        candidate.metrics.averageR > baselineMetrics.averageR + 0.05)
+  );
+
+const improvementSummaryFor = (
+  candidate: AutoResearchCandidateResult,
+  baselineMetrics: CalibrationProposalMetrics
+) => {
+  const summary = [
+    candidate.metrics.totalTrades !== baselineMetrics.totalTrades
+      ? `Trades: ${baselineMetrics.totalTrades} -> ${candidate.metrics.totalTrades}.`
+      : undefined,
+    candidate.metrics.stabilityScore !== baselineMetrics.stabilityScore
+      ? `Stability score: ${baselineMetrics.stabilityScore} -> ${candidate.metrics.stabilityScore}.`
+      : undefined,
+    candidate.metrics.maxDrawdown !== baselineMetrics.maxDrawdown
+      ? `Max drawdown: ${baselineMetrics.maxDrawdown}R -> ${candidate.metrics.maxDrawdown}R.`
+      : undefined,
+    candidate.metrics.averageR !== baselineMetrics.averageR
+      ? `Average R: ${baselineMetrics.averageR}R -> ${candidate.metrics.averageR}R.`
+      : undefined,
+    candidate.metrics.falsePositiveCount !== baselineMetrics.falsePositiveCount
+      ? `False positives: ${baselineMetrics.falsePositiveCount} -> ${candidate.metrics.falsePositiveCount}.`
+      : undefined,
+    candidate.metrics.readinessStatus !== baselineMetrics.readinessStatus
+      ? `Readiness: ${baselineMetrics.readinessStatus} -> ${candidate.metrics.readinessStatus}.`
+      : undefined
+  ].filter((item): item is string => Boolean(item));
+
+  return summary.length ? summary : ["Candidate improved the stability-first score but still requires validation."];
+};
+
+const proposalPassEntryFor = (
+  candidate: AutoResearchCandidateResult | undefined,
+  adaptivePasses: AutoResearchAdaptivePass[]
+) =>
+  safeArray(adaptivePasses).find((pass) => pass.bestCandidatePerPass?.candidateId === candidate?.candidateId);
+
+const findResearchCalibrationCandidate = ({
+  bestCandidate,
+  closestCandidates,
+  adaptivePasses,
+  baselineMetrics
+}: {
+  bestCandidate?: AutoResearchCandidateResult;
+  closestCandidates: AutoResearchCandidateResult[];
+  adaptivePasses: AutoResearchAdaptivePass[];
+  baselineMetrics: CalibrationProposalMetrics;
+}) => {
+  const candidates = [
+    bestCandidate,
+    ...safeArray(adaptivePasses).map((pass) => pass.bestCandidatePerPass),
+    ...safeArray(closestCandidates)
+  ];
+  const unique = new Map<string, AutoResearchCandidateResult>();
+  candidates.forEach((candidate) => {
+    if (candidate && candidateImprovedForResearch(candidate, baselineMetrics)) {
+      unique.set(candidate.candidateId, candidate);
+    }
+  });
+
+  return [...unique.values()].sort((a, b) => {
+    const categoryScore = (candidate: AutoResearchCandidateResult) =>
+      candidate.resultCategory === "research_ready_candidate" || candidate.resultCategory === "research_ready"
+        ? 3
+        : candidate.resultCategory === "improved_but_not_ready"
+          ? 2
+          : 1;
+    return categoryScore(b) - categoryScore(a) || b.scoreBreakdown.totalScore - a.scoreBreakdown.totalScore;
+  })[0];
+};
+
+const createResearchCalibrationCandidateProposal = ({
+  baselineConfig,
+  baselineMetrics,
+  candidate,
+  adaptivePasses
+}: {
+  baselineConfig: ReturnType<typeof loadBacktestConfig>;
+  baselineMetrics: CalibrationProposalMetrics;
+  candidate: AutoResearchCandidateResult;
+  adaptivePasses: AutoResearchAdaptivePass[];
+}): CalibrationProposal => {
+  const passEntry = proposalPassEntryFor(candidate, adaptivePasses);
+  const notReadyReasons = safeTopN(candidate.rejectionReasons, 4);
+  const proposal = createSelfImprovementFromCandidate({
+    baselineConfig,
+    baselineMetrics,
+    candidate,
+    source: "internal",
+    proposalIntent: "research_calibration_candidate"
+  });
+
+  return {
+    ...proposal,
+    reason:
+      `Auto Research found an improved-but-not-ready research calibration candidate${passEntry ? ` in pass ${passEntry.passNumber}` : ""}: ` +
+      `${candidate.label}. It can improve the research baseline, but it does not grant Paper-Demo Candidate status.`,
+    expectedImprovement:
+      "Improve the active research baseline for the next simulation cycle. After approval, rerun validation, research quality, and readiness before considering any paper-demo review.",
+    safetyNotes: [
+      "This does not grant Paper-Demo Candidate.",
+      "This does not enable demo/live trading.",
+      "This does not override readiness.",
+      "This is only a proposed baseline research calibration.",
+      "User approval is required before active settings change."
+    ],
+    sourceCandidateId: candidate.candidateId,
+    sourceCandidateLabel: candidate.label,
+    sourceAdaptivePassNumber: passEntry?.passNumber,
+    improvementSummary: improvementSummaryFor(candidate, baselineMetrics),
+    notReadyReasons,
+    nextValidationRequirement: "Approve research calibration, rerun the AI Research Cycle, rerun validation, then check readiness again.",
+    baselineStabilityScore: baselineMetrics.stabilityScore,
+    candidateStabilityScore: candidate.metrics.stabilityScore
   };
 };
 
@@ -930,6 +1072,29 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
         "Created by Auto Research supervisor. Proposal still requires simulation review and manual approval."
       );
       createdProposalId = proposal.proposalId;
+    }
+
+    if (!createdProposalId && !recoveryStillZero && options.createProposal !== false) {
+      const researchCalibrationCandidate = findResearchCalibrationCandidate({
+        bestCandidate,
+        closestCandidates,
+        adaptivePasses,
+        baselineMetrics
+      });
+      if (researchCalibrationCandidate && researchCalibrationCandidate.resultCategory !== "paper_demo_candidate") {
+        const proposal = createResearchCalibrationCandidateProposal({
+          baselineConfig,
+          baselineMetrics,
+          candidate: researchCalibrationCandidate,
+          adaptivePasses
+        });
+        upsertCalibrationProposal(
+          proposal,
+          "created",
+          "Created from improved-but-not-ready Auto Research candidate. Proposal remains research-only and approval-required."
+        );
+        createdProposalId = proposal.proposalId;
+      }
     }
 
     const cycle: AutoResearchCycle = {

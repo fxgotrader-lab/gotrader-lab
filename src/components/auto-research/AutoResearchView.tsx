@@ -169,6 +169,9 @@ export function AutoResearchView() {
         ))
   );
   const bestCandidateStable = Boolean(bestCandidate?.scoreBreakdown?.stabilityImproved);
+  const researchCalibrationProposalCreated = Boolean(
+    latestCycle?.createdProposalId && latestCycle.noSafePaperDemoCandidateFound
+  );
 
   useEffect(() => {
     const refresh = () => setState(loadAutoResearchState());
@@ -337,7 +340,13 @@ export function AutoResearchView() {
                 </div>
                 {latestCycle?.createdProposalId ? (
                   <div className="rounded-lg border border-emerald-400/25 bg-emerald-400/10 p-3 text-sm text-emerald-100">
-                    Created proposal {latestCycle.createdProposalId}. Review and test it on{" "}
+                    {researchCalibrationProposalCreated
+                      ? "Research calibration proposal created from an improved-but-not-ready candidate. "
+                      : "Created proposal "}
+                    {researchCalibrationProposalCreated ? null : latestCycle.createdProposalId}
+                    {researchCalibrationProposalCreated
+                      ? "It is not paper-demo ready; approve it only as a baseline calibration and rerun validation. "
+                      : " Review and test it on "}
                     <Link to="/self-improvement" className="font-semibold underline underline-offset-4">
                       /self-improvement
                     </Link>
@@ -478,6 +487,8 @@ export function AutoResearchView() {
             <p className="mt-1 text-foreground">
               {latestCycle?.recoveryAttempted && (latestCycle.tradesAfterRecovery ?? 0) === 0
                 ? "No valid simulated trades were generated. Strategy cannot be evaluated yet."
+                : researchCalibrationProposalCreated
+                ? "Research calibration proposal created. Rerun validation and readiness after user approval."
                 : latestCycle?.noSafePaperDemoCandidateFound
                 ? "No safe Paper-Demo Candidate found. Continue research with the closest stable candidates and review failed gates."
                 : latestCycle?.bestCandidate
@@ -487,6 +498,23 @@ export function AutoResearchView() {
           </div>
         </CardContent>
       </Card>
+
+      {researchCalibrationProposalCreated ? (
+        <Card className="border-emerald-300/25 bg-emerald-300/10">
+          <CardContent className="space-y-2 p-4 text-sm text-emerald-100">
+            <p className="font-medium">Best improved candidate is ready for research calibration review.</p>
+            <p>
+              Proposal created: {latestCycle?.createdProposalId}. This does not grant Paper-Demo Candidate and does not enable demo/live trading.
+            </p>
+            <p>
+              Why not ready:{" "}
+              {safeArray(bestCandidate?.rejectionReasons).length
+                ? safeArray(bestCandidate?.rejectionReasons).join(" ")
+                : "Candidate still needs validation and readiness rerun after approval."}
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>

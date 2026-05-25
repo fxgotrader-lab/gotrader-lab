@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { CheckCircle2, FlaskConical, History, ShieldAlert, SlidersHorizontal, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -296,6 +297,12 @@ export function SelfImprovementView() {
     latestProposal?.status === "testing" &&
     latestProposal.comparisonResult?.improved &&
     latestProposal.comparisonResult.stabilityImproved;
+  const effectiveProposalIntent =
+    latestProposal?.proposalIntent ??
+    (latestProposal?.sourceCandidateId || latestProposal?.reason.includes("Auto Research")
+      ? "research_calibration_candidate"
+      : undefined);
+  const isResearchCalibration = effectiveProposalIntent === "research_calibration_candidate";
 
   useEffect(() => {
     const refresh = () => setState(loadSelfImprovementState());
@@ -376,8 +383,8 @@ export function SelfImprovementView() {
           <div className="rounded-lg border border-border bg-background/45 p-3">
             <p className="text-xs text-muted-foreground">Intent</p>
             <div className="mt-2 flex flex-wrap gap-2">
-              <Badge variant={latestProposal?.proposalIntent === "paper_demo_candidate_review" ? "warning" : "secondary"}>
-                {intentLabel(latestProposal?.proposalIntent)}
+              <Badge variant={effectiveProposalIntent === "paper_demo_candidate_review" ? "warning" : "secondary"}>
+                {intentLabel(effectiveProposalIntent)}
               </Badge>
               <Badge variant={statusVariant(latestProposal?.status)}>{latestProposal?.status ?? "none"}</Badge>
             </div>
@@ -386,9 +393,9 @@ export function SelfImprovementView() {
             <p className="text-xs text-muted-foreground">Approval posture</p>
             <p className="mt-1 text-sm text-foreground">
               {latestProposal
-                ? latestProposal.proposalIntent === "research_calibration_candidate"
+                ? effectiveProposalIntent === "research_calibration_candidate"
                   ? "Research calibration candidate only. It is not approved and does not mark Paper-Demo Candidate readiness."
-                  : latestProposal.proposalIntent === "paper_demo_candidate_review"
+                  : effectiveProposalIntent === "paper_demo_candidate_review"
                     ? "Paper-demo candidate review only. It still cannot enable demo execution or bypass readiness."
                     : "Manual proposal. It still requires simulation testing and explicit approval."
                 : "No proposal has been created yet."}
@@ -494,10 +501,10 @@ export function SelfImprovementView() {
             <div className="rounded-lg border border-border bg-background/45 p-3">
               <p className="text-xs text-muted-foreground">Proposal intent</p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <Badge variant={latestProposal?.proposalIntent === "paper_demo_candidate_review" ? "warning" : "secondary"}>
-                  {intentLabel(latestProposal?.proposalIntent)}
+                <Badge variant={effectiveProposalIntent === "paper_demo_candidate_review" ? "warning" : "secondary"}>
+                  {intentLabel(effectiveProposalIntent)}
                 </Badge>
-                {latestProposal?.proposalIntent === "research_calibration_candidate" ? (
+                {isResearchCalibration ? (
                   <span className="text-xs text-muted-foreground">Proposal-ready, not approved, and not Paper-Demo Candidate.</span>
                 ) : null}
               </div>
@@ -531,6 +538,30 @@ export function SelfImprovementView() {
                 <p className="mt-3 text-xs text-emerald-100/80">
                   This proposal only lowers confluence slightly after recovery evidence. It is not applied until approved.
                 </p>
+              </div>
+            ) : null}
+            {isResearchCalibration && latestProposal ? (
+              <div className="rounded-lg border border-primary/25 bg-primary/10 p-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-primary/80">Research calibration evidence</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-md border border-primary/20 bg-primary/5 p-2">
+                    <p className="text-xs text-muted-foreground">Score before</p>
+                    <p className="mt-1 font-mono text-sm">{latestProposal.baselineStabilityScore ?? latestProposal.beforeMetrics.stabilityScore}</p>
+                  </div>
+                  <div className="rounded-md border border-primary/20 bg-primary/5 p-2">
+                    <p className="text-xs text-muted-foreground">Score after</p>
+                    <p className="mt-1 font-mono text-sm">{latestProposal.candidateStabilityScore ?? latestProposal.afterMetrics?.stabilityScore ?? "not tested"}</p>
+                  </div>
+                </div>
+                <div className="mt-3 space-y-2 text-xs text-primary">
+                  {(latestProposal.improvementSummary ?? []).map((item) => (
+                    <p key={item}>{item}</p>
+                  ))}
+                  {(latestProposal.notReadyReasons ?? []).length ? (
+                    <p>Why not paper-demo ready: {(latestProposal.notReadyReasons ?? []).join(" ")}</p>
+                  ) : null}
+                  <p>{latestProposal.nextValidationRequirement ?? "Rerun validation after approval."}</p>
+                </div>
               </div>
             ) : null}
             <div className="rounded-lg border border-border bg-background/45 p-3">
@@ -625,14 +656,20 @@ export function SelfImprovementView() {
             </div>
             <div className="flex flex-wrap gap-2">
               <Button onClick={acceptProposal} disabled={!canAccept}>
-                Accept Proposal
+                {isResearchCalibration ? "Approve research calibration" : "Accept Proposal"}
               </Button>
               <Button variant="secondary" onClick={rejectProposal} disabled={!latestProposal}>
-                Reject
+                Reject calibration
               </Button>
               <Button variant="destructive" onClick={revertProposal} disabled={latestProposal?.status !== "accepted"}>
                 Revert
               </Button>
+              <Link
+                to="/dashboard"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-transparent px-4 py-2 text-sm font-medium shadow-none transition-[background-color,border-color,color,box-shadow,transform] duration-150 ease-out hover:bg-secondary/60 hover:shadow-sm active:scale-[0.98] active:bg-secondary/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                Rerun cycle after approval
+              </Link>
             </div>
           </div>
           <div className="space-y-3">
