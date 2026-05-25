@@ -35,7 +35,7 @@ import {
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import { labStorage } from "@/lib/storage";
 import { loadSimulationRunbookState } from "@/lib/simulationRunbook";
-import { uid } from "@/lib/utils";
+import { safeArray, safeTopN, uid } from "@/lib/utils";
 import { runValidationSuite } from "@/lib/validation";
 
 export const AUTO_RESEARCH_STORAGE_KEY = "gotrader_ai_lab_auto_research_state";
@@ -62,20 +62,52 @@ const fallbackReadinessEstimate = (): ReadinessGateSnapshot => ({
   brokerExecutionDisabled: true
 });
 
+const fallbackMetrics = (): AutoResearchCandidateResult["metrics"] => ({
+  totalTrades: 0,
+  winRate: 0,
+  averageR: 0,
+  maxDrawdown: 0,
+  profitFactor: null,
+  skippedSignals: 0,
+  falsePositiveCount: 0,
+  confidenceCalibration: 0,
+  readinessScore: 0,
+  readinessStatus: "red",
+  stabilityScore: 0,
+  conservativeScenarioStable: false
+});
+
+const fallbackScoreBreakdown = (): AutoResearchCandidateResult["scoreBreakdown"] => ({
+  totalScore: 0,
+  drawdownScore: 0,
+  averageRScore: 0,
+  winRateScore: 0,
+  falsePositiveScore: 0,
+  confidenceCalibrationScore: 0,
+  sessionConsistencyScore: 0,
+  tradeCountScore: 0,
+  skippedSignalBalanceScore: 0,
+  profitFactorScore: 0,
+  robustnessScore: 0,
+  stabilityImproved: false,
+  sufficientSample: false,
+  rationale: "Score summary unavailable in compact stored history."
+});
+
 const compactReadinessEstimate = (readiness?: AutoResearchCandidateResult["readinessEstimate"]) => ({
   ...(readiness ?? fallbackReadinessEstimate()),
   passedRequirements: [],
-  failedRequirements: (readiness?.failedRequirements ?? []).slice(0, 3),
-  warnings: (readiness?.warnings ?? []).slice(0, 3)
+  failedRequirements: safeTopN(readiness?.failedRequirements, 3),
+  warnings: safeTopN(readiness?.warnings, 3)
 });
 
 const compactComparison = (comparison?: AutoResearchCandidateResult["comparisonResult"]) =>
   comparison
     ? {
         ...comparison,
-        positiveChanges: comparison.positiveChanges.slice(0, 3),
-        negativeChanges: comparison.negativeChanges.slice(0, 3),
-        neutralChanges: comparison.neutralChanges.slice(0, 3)
+        positiveChanges: safeTopN(comparison.positiveChanges, 3),
+        negativeChanges: safeTopN(comparison.negativeChanges, 3),
+        neutralChanges: safeTopN(comparison.neutralChanges, 3)
       }
     : {
         improved: false,
@@ -87,68 +119,90 @@ const compactComparison = (comparison?: AutoResearchCandidateResult["comparisonR
         neutralChanges: []
       };
 
-const compactCandidate = (candidate: AutoResearchCandidateResult): AutoResearchCandidateResult => ({
-  candidateId: candidate.candidateId,
-  label: candidate.label,
-  rationale: candidate.rationale,
-  config: candidate.config,
-  ictScoringWeights: candidate.ictScoringWeights,
-  changedParameters: candidate.changedParameters,
-  readinessEstimate: compactReadinessEstimate(candidate.readinessEstimate),
-  metrics: {
-    validationId: candidate.metrics.validationId,
-    validationTimestamp: candidate.metrics.validationTimestamp,
-    totalTrades: candidate.metrics.totalTrades,
-    winRate: candidate.metrics.winRate,
-    averageR: candidate.metrics.averageR,
-    maxDrawdown: candidate.metrics.maxDrawdown,
-    profitFactor: candidate.metrics.profitFactor,
-    skippedSignals: candidate.metrics.skippedSignals,
-    falsePositiveCount: candidate.metrics.falsePositiveCount,
-    confidenceCalibration: candidate.metrics.confidenceCalibration,
-    readinessScore: candidate.metrics.readinessScore,
-    readinessStatus: candidate.metrics.readinessStatus,
-    stabilityScore: candidate.metrics.stabilityScore,
-    conservativeScenarioStable: candidate.metrics.conservativeScenarioStable,
-    strongestScenario: candidate.metrics.strongestScenario,
-    weakestScenario: candidate.metrics.weakestScenario
-  },
-  scoreBreakdown: candidate.scoreBreakdown,
-  comparisonResult: compactComparison(candidate.comparisonResult),
-  resultCategory: candidate.resultCategory,
-  promotionEligible: candidate.promotionEligible,
-  rejectionReasons: candidate.rejectionReasons.slice(0, 3)
-});
+const compactCandidate = (candidate: AutoResearchCandidateResult): AutoResearchCandidateResult => {
+  const source = (candidate ?? {}) as AutoResearchCandidateResult;
+  const metrics = source.metrics ?? fallbackMetrics();
+  const scoreBreakdown = { ...fallbackScoreBreakdown(), ...(source.scoreBreakdown ?? {}) };
+  return {
+    candidateId: source.candidateId ?? uid("auto_candidate_compact"),
+    label: source.label ?? "Recovered compact candidate",
+    rationale: source.rationale ?? "This candidate was recovered from incomplete stored Auto Research data.",
+    config: source.config ?? loadBacktestConfig(),
+    ictScoringWeights: source.ictScoringWeights,
+    changedParameters: safeArray(source.changedParameters),
+    readinessEstimate: compactReadinessEstimate(source.readinessEstimate),
+    metrics: {
+      validationId: metrics.validationId,
+      validationTimestamp: metrics.validationTimestamp,
+      totalTrades: metrics.totalTrades ?? 0,
+      winRate: metrics.winRate ?? 0,
+      averageR: metrics.averageR ?? 0,
+      maxDrawdown: metrics.maxDrawdown ?? 0,
+      profitFactor: metrics.profitFactor ?? null,
+      skippedSignals: metrics.skippedSignals ?? 0,
+      falsePositiveCount: metrics.falsePositiveCount ?? 0,
+      confidenceCalibration: metrics.confidenceCalibration ?? 0,
+      readinessScore: metrics.readinessScore ?? 0,
+      readinessStatus: metrics.readinessStatus ?? "red",
+      stabilityScore: metrics.stabilityScore ?? 0,
+      conservativeScenarioStable: Boolean(metrics.conservativeScenarioStable),
+      strongestScenario: metrics.strongestScenario,
+      weakestScenario: metrics.weakestScenario
+    },
+    scoreBreakdown,
+    comparisonResult: compactComparison(source.comparisonResult),
+    resultCategory: source.resultCategory ?? "rejected",
+    promotionEligible: Boolean(source.promotionEligible),
+    rejectionReasons: safeTopN(source.rejectionReasons, 3)
+  };
+};
 
-const minimalCandidate = (candidate: AutoResearchCandidateResult): AutoResearchCandidateResult => ({
-  ...compactCandidate(candidate),
-  config: {
-    ...candidate.config,
-    agentWeights: candidate.config.agentWeights
-  },
-  scoreBreakdown: {
-    ...candidate.scoreBreakdown,
-    rationale: candidate.scoreBreakdown.rationale.slice(0, 140)
-  }
-});
+const minimalCandidate = (candidate: AutoResearchCandidateResult): AutoResearchCandidateResult => {
+  const compact = compactCandidate(candidate);
+  return {
+    ...compact,
+    config: {
+      ...compact.config,
+      agentWeights: compact.config.agentWeights
+    },
+    scoreBreakdown: {
+      ...compact.scoreBreakdown,
+      rationale:
+        typeof compact.scoreBreakdown?.rationale === "string"
+          ? compact.scoreBreakdown.rationale.slice(0, 140)
+          : "Score rationale unavailable in compact stored history."
+    }
+  };
+};
 
 export function compactAutoResearchCycle(cycle: AutoResearchCycle): AutoResearchCycle {
-  const compactCandidates = cycle.candidateResults.map(compactCandidate);
+  const missingFields = [
+    !Array.isArray(cycle.candidateConfigs) ? "candidateConfigs" : undefined,
+    !Array.isArray(cycle.candidateResults) ? "candidateResults" : undefined,
+    !Array.isArray(cycle.closestCandidates) ? "closestCandidates" : undefined,
+    !Array.isArray(cycle.rejectedCandidates) ? "rejectedCandidates" : undefined,
+    !Array.isArray(cycle.candidateScores) ? "candidateScores" : undefined
+  ].filter(Boolean);
+  if (missingFields.length) {
+    console.warn("[AutoResearch] Incomplete cycle data recovered with safe defaults.", {
+      cycleId: cycle.cycleId,
+      missingFields
+    });
+  }
+  const compactCandidates = safeArray(cycle.candidateResults).map(compactCandidate);
   const candidateById = new Map(compactCandidates.map((candidate) => [candidate.candidateId, candidate]));
   return {
     ...cycle,
-    candidateConfigs: cycle.candidateConfigs.slice(0, 25),
+    candidateConfigs: safeTopN(cycle.candidateConfigs, 25),
     candidateResults: compactCandidates,
     bestCandidate: cycle.bestCandidate ? candidateById.get(cycle.bestCandidate.candidateId) ?? compactCandidate(cycle.bestCandidate) : undefined,
-    closestCandidates: cycle.closestCandidates
-      .slice(0, 3)
+    closestCandidates: safeTopN(cycle.closestCandidates, 3)
       .map((candidate) => candidateById.get(candidate.candidateId) ?? compactCandidate(candidate)),
-    rejectedCandidates: cycle.rejectedCandidates
-      .slice(0, 25)
+    rejectedCandidates: safeTopN(cycle.rejectedCandidates, 25)
       .map((candidate) => candidateById.get(candidate.candidateId) ?? compactCandidate(candidate)),
-    candidateScores: cycle.candidateScores.map((score) => ({
+    candidateScores: safeArray(cycle.candidateScores).map((score) => ({
       ...score,
-      rejectionReasons: score.rejectionReasons.slice(0, 3)
+      rejectionReasons: safeTopN(score.rejectionReasons, 3)
     }))
   };
 }
@@ -157,33 +211,32 @@ const emergencyAutoResearchCycle = (cycle: AutoResearchCycle): AutoResearchCycle
   const compact = compactAutoResearchCycle(cycle);
   const essentialIds = new Set([
     compact.bestCandidate?.candidateId,
-    ...compact.closestCandidates.map((candidate) => candidate.candidateId)
+    ...safeArray(compact.closestCandidates).map((candidate) => candidate.candidateId)
   ].filter(Boolean));
-  const emergencyCandidates = compact.candidateResults
+  const emergencyCandidates = safeArray(compact.candidateResults)
     .filter((candidate) => essentialIds.has(candidate.candidateId))
     .map(minimalCandidate);
 
   return {
     ...compact,
     candidateResults: emergencyCandidates,
-    candidateConfigs: compact.candidateConfigs.slice(0, 3),
-    closestCandidates: compact.closestCandidates.map(minimalCandidate),
-    rejectedCandidates: compact.rejectedCandidates.slice(0, 3).map(minimalCandidate),
-    candidateScores: compact.candidateScores.slice(0, 25)
+    candidateConfigs: safeTopN(compact.candidateConfigs, 3),
+    closestCandidates: safeArray(compact.closestCandidates).map(minimalCandidate),
+    rejectedCandidates: safeTopN(compact.rejectedCandidates, 3).map(minimalCandidate),
+    candidateScores: safeTopN(compact.candidateScores, 25)
   };
 };
 
 export function pruneAutoResearchHistory(state: AutoResearchState): AutoResearchState {
   return {
     ...state,
-    cycles: state.cycles.slice(0, 5).map(compactAutoResearchCycle),
-    auditTrail: state.auditTrail
-      .slice(0, 30)
+    cycles: safeTopN(state.cycles, 5).map(compactAutoResearchCycle),
+    auditTrail: safeTopN(state.auditTrail, 30)
       .map((entry) => ({
         ...entry,
-        candidateScores: entry.candidateScores?.slice(0, 25).map((score) => ({
+        candidateScores: safeTopN(entry.candidateScores, 25).map((score) => ({
           ...score,
-          rejectionReasons: score.rejectionReasons.slice(0, 3)
+          rejectionReasons: safeTopN(score.rejectionReasons, 3)
         }))
       })),
     safetyNotice: "Auto Research is simulation-only and cannot execute trades or override readiness gates."
@@ -191,14 +244,15 @@ export function pruneAutoResearchHistory(state: AutoResearchState): AutoResearch
 }
 
 const emergencyStateFor = (state: AutoResearchState, warning: string): AutoResearchState => {
-  const latestCycle = state.cycles.find((cycle) => cycle.cycleId === state.latestCycleId) ?? state.cycles[0];
+  const cycles = safeArray(state.cycles);
+  const latestCycle = cycles.find((cycle) => cycle.cycleId === state.latestCycleId) ?? cycles[0];
   return {
     ...initialState(),
     latestCycleId: latestCycle?.cycleId,
     cycles: latestCycle ? [emergencyAutoResearchCycle(latestCycle)] : [],
-    auditTrail: state.auditTrail.slice(0, 5).map((entry) => ({
+    auditTrail: safeTopN(state.auditTrail, 5).map((entry) => ({
       ...entry,
-      candidateScores: entry.candidateScores?.slice(0, 10)
+      candidateScores: safeTopN(entry.candidateScores, 10)
     })),
     storageWarning: warning,
     storageEmergencyMode: true
@@ -237,12 +291,17 @@ const publish = (state: AutoResearchState) => {
       return write(compactState);
     } catch (error) {
       const warning = "Auto Research history was pruned because browser storage quota was reached.";
+      console.warn("[AutoResearch] Storage quota reached. Pruning compact history.", {
+        cycles: compactState.cycles.length,
+        candidateSummaries: compactState.cycles.reduce((sum, cycle) => sum + safeArray(cycle.candidateResults).length, 0),
+        approximateBytes: bytesFor(compactState)
+      });
       try {
         return write({
           ...pruneAutoResearchHistory({
             ...compactState,
-            cycles: compactState.cycles.slice(0, 1),
-            auditTrail: compactState.auditTrail.slice(0, 10),
+            cycles: safeTopN(compactState.cycles, 1),
+            auditTrail: safeTopN(compactState.auditTrail, 10),
             storageWarning: warning
           }),
           storageWarning: warning
@@ -279,8 +338,8 @@ export function loadAutoResearchState(): AutoResearchState {
     return {
       ...initialState(),
       ...parsed,
-      cycles: parsed.cycles ?? [],
-      auditTrail: parsed.auditTrail ?? [],
+      cycles: safeArray(parsed.cycles),
+      auditTrail: safeArray(parsed.auditTrail),
       lastStoredBytes: parsed.lastStoredBytes,
       storageWarning: parsed.storageWarning,
       storageEmergencyMode: parsed.storageEmergencyMode
@@ -295,15 +354,15 @@ export function saveAutoResearchCycle(cycle: AutoResearchCycle): AutoResearchSta
   return publish({
     ...state,
     latestCycleId: cycle.cycleId,
-    cycles: [compactAutoResearchCycle(cycle), ...state.cycles.filter((item) => item.cycleId !== cycle.cycleId)].slice(0, 5),
-    auditTrail: [
+    cycles: safeTopN([compactAutoResearchCycle(cycle), ...safeArray(state.cycles).filter((item) => item.cycleId !== cycle.cycleId)], 5),
+    auditTrail: safeTopN([
       audit(
         cycle.cycleId,
         cycle.status === "proposal_created" ? "proposal_created" : cycle.status === "failed" ? "cycle_failed" : "cycle_completed",
         cycle.createdProposalId
           ? `Created proposal ${cycle.createdProposalId}.`
           : cycle.error ??
-            `Completed ${cycle.candidateResults.length} candidate evaluations. Final category: ${cycle.finalResultCategory}.`,
+            `Completed ${safeArray(cycle.candidateResults).length} candidate evaluations. Final category: ${cycle.finalResultCategory}.`,
         {
           searchMode: cycle.searchMode,
           candidatesTested: cycle.candidatesTested,
@@ -312,8 +371,8 @@ export function saveAutoResearchCycle(cycle: AutoResearchCycle): AutoResearchSta
           finalResultCategory: cycle.finalResultCategory
         }
       ),
-      ...state.auditTrail
-    ].slice(0, 80)
+      ...safeArray(state.auditTrail)
+    ], 80)
   });
 }
 
@@ -326,7 +385,8 @@ export function estimateAutoResearchStateSize(state = loadAutoResearchState()) {
 }
 
 export function latestAutoResearchCycle(state = loadAutoResearchState()) {
-  return state.cycles.find((cycle) => cycle.cycleId === state.latestCycleId) ?? state.cycles[0];
+  const cycles = safeArray(state.cycles);
+  return cycles.find((cycle) => cycle.cycleId === state.latestCycleId) ?? cycles[0];
 }
 
 const evaluateCandidate = (

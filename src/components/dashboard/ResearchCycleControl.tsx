@@ -16,6 +16,7 @@ import {
 } from "@/lib/researchCycle";
 import type { ResearchCycleRun, ResearchCycleStepResult, ResearchCycleStepStatus } from "@/lib/researchCycle";
 import type { LabState } from "@/lib/types";
+import { safeArray } from "@/lib/utils";
 
 import { formatDateTime } from "./dashboardFormatters";
 
@@ -77,7 +78,7 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
   }, []);
 
   const progress = useMemo(() => {
-    const steps = latestRun?.steps ?? [];
+    const steps = safeArray(latestRun?.steps);
     const terminalSteps = steps.filter((step) => ["completed", "warning", "failed", "skipped"].includes(step.status)).length;
     return {
       total: steps.length,
@@ -176,7 +177,7 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
         </div>
 
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4" aria-live="polite">
-          {(latestRun?.steps ?? []).map((step) => (
+          {safeArray(latestRun?.steps).map((step) => (
             <ResearchCycleStep key={step.stepId} step={step} />
           ))}
           {!latestRun ? (

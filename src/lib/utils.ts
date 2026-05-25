@@ -18,6 +18,18 @@ export function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+export function safeArray<T>(value: readonly T[] | T[] | null | undefined): T[] {
+  return Array.isArray(value) ? [...value] : [];
+}
+
+export function safeSlice<T>(value: readonly T[] | T[] | null | undefined, start?: number, end?: number): T[] {
+  return safeArray(value).slice(start, end);
+}
+
+export function safeTopN<T>(value: readonly T[] | T[] | null | undefined, count: number): T[] {
+  return safeSlice(value, 0, count);
+}
+
 export function uid(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}_${Date.now().toString(36)}`;
 }

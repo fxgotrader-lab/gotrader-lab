@@ -27,6 +27,7 @@ import {
   simulationRunbookChecklist,
 } from "@/lib/simulationRunbook";
 import type { LabState } from "@/lib/types";
+import { safeArray } from "@/lib/utils";
 import { loadLatestValidationReport } from "@/lib/validation";
 
 import { AutomationTimeline, type AutomationTimelineEvent } from "./AutomationTimeline";
@@ -78,7 +79,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
     latestProposalStatus: latestProposal?.status,
     providerConfigured: providerStatus.configured || Boolean(latestLLMRun?.providerConfigured),
     qualityRun: Boolean(researchQuality),
-    readinessFailedCount: readiness.failedRequirements.length,
+    readinessFailedCount: safeArray(readiness.failedRequirements).length,
     runbookComplete: completedRunbookItems === simulationRunbookChecklist.length,
     validationRun: Boolean(validationReport),
   });
@@ -179,7 +180,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
             <p>{getLLMReadinessImpact(llmState)}</p>
             <div className="rounded-md border border-white/10 bg-white/[0.03] p-3">
               <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Gate blockers</div>
-              <div className="mt-1 text-lg font-semibold text-slate-100">{readiness.failedRequirements.length}</div>
+              <div className="mt-1 text-lg font-semibold text-slate-100">{safeArray(readiness.failedRequirements).length}</div>
             </div>
             <div className="rounded-md border border-white/10 bg-white/[0.03] p-3">
               <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Latest handoff</div>
@@ -493,8 +494,8 @@ function buildTimelineEvents({
     {
       label: "Readiness gate update",
       timestamp: readiness.evaluatedAt,
-      status: readiness.failedRequirements.length === 0 ? "complete" : "attention",
-      detail: `${readiness.state}; ${readiness.failedRequirements.length} failed requirement${readiness.failedRequirements.length === 1 ? "" : "s"}.`,
+      status: safeArray(readiness.failedRequirements).length === 0 ? "complete" : "attention",
+      detail: `${readiness.state}; ${safeArray(readiness.failedRequirements).length} failed requirement${safeArray(readiness.failedRequirements).length === 1 ? "" : "s"}.`,
       href: "/readiness-gate",
     },
     {

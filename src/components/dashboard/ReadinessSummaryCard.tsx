@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ManualApprovalRecord, ReadinessGateSnapshot } from "@/lib/readiness";
+import { safeArray } from "@/lib/utils";
 
 import { formatDateTime } from "./dashboardFormatters";
 
@@ -14,7 +15,7 @@ type ReadinessSummaryCardProps = {
 };
 
 export function ReadinessSummaryCard({ manualApproval, readiness }: ReadinessSummaryCardProps) {
-  const failedCount = readiness.failedRequirements.length;
+  const failedCount = safeArray(readiness.failedRequirements).length;
   const llmRequirement = readiness.llmSnapshot?.advisoryPassed ? "Passed" : "Required";
 
   return (

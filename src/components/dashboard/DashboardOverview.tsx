@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import type { LabState, MarketBias } from "@/lib/types";
 import { aggregatePortfolioMetrics } from "@/lib/scoring";
-import { formatPercent, formatSigned } from "@/lib/utils";
+import { formatPercent, formatSigned, safeArray, safeTopN } from "@/lib/utils";
 
 function biasVariant(bias: MarketBias) {
   if (bias === "bullish") {
@@ -20,17 +20,18 @@ function biasVariant(bias: MarketBias) {
 
 export function DashboardOverview({ state }: { state: LabState }) {
   const metrics = aggregatePortfolioMetrics(state);
-  const confidenceData = state.agents
-    .filter((agent) => agent.layer !== "cio")
-    .slice(0, 12)
-    .map((agent) => ({
+  const agents = safeArray(state.agents);
+  const confidenceData = safeTopN(
+    agents.filter((agent) => agent.layer !== "cio"),
+    12
+  ).map((agent) => ({
       name: agent.name.replace(" Agent", ""),
       confidence: Math.round(agent.confidence * 100),
       weight: Math.round(agent.weight * 100)
     }));
-  const cio = state.agents.find((agent) => agent.layer === "cio");
-  const recentMutations = state.promptMutations.slice(0, 4);
-  const recentRecommendations = state.recommendations.slice(0, 6);
+  const cio = agents.find((agent) => agent.layer === "cio");
+  const recentMutations = safeTopN(state.promptMutations, 4);
+  const recentRecommendations = safeTopN(state.recommendations, 6);
 
   return (
     <div className="space-y-5">
@@ -100,11 +101,10 @@ export function DashboardOverview({ state }: { state: LabState }) {
             <CardDescription>Decision-layer blend for the simulation engine.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {state.agents
-              .filter((agent) => agent.active)
-              .sort((a, b) => b.weight - a.weight)
-              .slice(0, 8)
-              .map((agent) => (
+            {safeTopN(
+              agents.filter((agent) => agent.active).sort((a, b) => b.weight - a.weight),
+              8
+            ).map((agent) => (
                 <div key={agent.id} className="space-y-1.5">
                   <div className="flex items-center justify-between gap-3 text-sm">
                     <span className="truncate">{agent.name}</span>
@@ -125,7 +125,7 @@ export function DashboardOverview({ state }: { state: LabState }) {
           </CardHeader>
           <CardContent className="space-y-3">
             {recentRecommendations.map((recommendation) => {
-              const agent = state.agents.find((item) => item.id === recommendation.agentId);
+              const agent = agents.find((item) => item.id === recommendation.agentId);
               return (
                 <div key={recommendation.id} className="rounded-lg border border-border bg-background/45 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -149,7 +149,7 @@ export function DashboardOverview({ state }: { state: LabState }) {
           </CardHeader>
           <CardContent className="space-y-3">
             {recentMutations.map((mutation) => {
-              const agent = state.agents.find((item) => item.id === mutation.agentId);
+              const agent = agents.find((item) => item.id === mutation.agentId);
               return (
                 <div key={mutation.id} className="rounded-lg border border-border bg-background/45 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -175,7 +175,7 @@ export function DashboardOverview({ state }: { state: LabState }) {
           <CardContent>
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={cio.confidenceHistory.map((item, index) => ({ label: `T${index + 1}`, value: Math.round(item.value * 100) }))}>
+                <LineChart data={safeArray(cio.confidenceHistory).map((item, index) => ({ label: `T${index + 1}`, value: Math.round(item.value * 100) }))}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
                   <XAxis dataKey="label" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
                   <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} domain={[40, 100]} />

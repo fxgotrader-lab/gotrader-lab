@@ -3,6 +3,7 @@ import { isLLMAdvisoryReviewPassed } from "@/lib/llm/llmProvider";
 import { analyzeDrawdownClusters } from "@/lib/researchQuality/drawdownAnalysis";
 import { analyzeFalsePositivePatterns } from "@/lib/researchQuality/falsePositiveAnalysis";
 import { compareLongShortPerformance, compareSessions } from "@/lib/researchQuality/sessionComparison";
+import { safeArray, safeTopN } from "@/lib/utils";
 import type {
   AgentUsefulnessReview,
   InvalidationTargetQualityReview,
@@ -20,11 +21,12 @@ const round = (value: number, digits = 2) => Number(value.toFixed(digits));
 const average = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
 
 const scenarioById = (report: ValidationSuiteReport, id: string) =>
-  report.scenarios.find((scenario) => scenario.id === id);
+  safeArray(report.scenarios).find((scenario) => scenario.id === id);
 
 const readinessGradeFor = (report: ValidationSuiteReport): ResearchQualityReadinessGrade => {
-  const greenScenarios = report.scenarios.filter((scenario) => scenario.readiness === "green").length;
-  const averageScenarioScore = average(report.scenarios.map((scenario) => scenario.score));
+  const scenarios = safeArray(report.scenarios);
+  const greenScenarios = scenarios.filter((scenario) => scenario.readiness === "green").length;
+  const averageScenarioScore = average(scenarios.map((scenario) => scenario.score));
   if (report.calibration.readinessStatus === "green" && report.calibration.readinessScore >= 70 && greenScenarios >= 4) {
     return isLLMAdvisoryReviewPassed() ? "Paper-Demo Candidate" : "Research Ready";
   }
@@ -46,11 +48,23 @@ const finding = (
 ): ResearchQualityFinding => ({ title, detail, evidence, severity, relatedScenarios });
 
 const topWeaknessesFor = (report: ValidationSuiteReport): ResearchQualityFinding[] => {
-  const weakest = [...report.scenarios].sort((a, b) => a.score - b.score)[0];
-  const highCalibrationGap = [...report.scenarios].sort(
+  const scenarios = safeArray(report.scenarios);
+  const weakest = [...scenarios].sort((a, b) => a.score - b.score)[0];
+  const highCalibrationGap = [...scenarios].sort(
     (a, b) => b.confidenceCalibration.calibrationGap - a.confidenceCalibration.calibrationGap
   )[0];
-  const worstDrawdown = [...report.scenarios].sort((a, b) => b.maxDrawdown - a.maxDrawdown)[0];
+  const worstDrawdown = [...scenarios].sort((a, b) => b.maxDrawdown - a.maxDrawdown)[0];
+  if (!weakest || !highCalibrationGap || !worstDrawdown) {
+    return [
+      finding(
+        "Validation data missing",
+        "No scenario results were available for quality review.",
+        "Run /validation again to regenerate scenario metrics.",
+        "red",
+        []
+      )
+    ];
+  }
   const weaknessFindings = [
     finding(
       "Weakest validation scenario",
@@ -75,21 +89,33 @@ const topWeaknessesFor = (report: ValidationSuiteReport): ResearchQualityFinding
       worstDrawdown.maxDrawdown >= 4 ? "red" : "yellow",
       [worstDrawdown.name]
     ),
-    ...report.calibration.weakICTRules.map((rule) =>
+    ...safeArray(report.calibration.weakICTRules).map((rule) =>
       finding("Weak ICT assumption", rule, "Flagged by the validation calibration report.", "yellow" as const, [])
     )
   ];
 
-  return weaknessFindings.slice(0, 5);
+  return safeTopN(weaknessFindings, 5);
 };
 
 const topStrengthsFor = (report: ValidationSuiteReport): ResearchQualityFinding[] => {
-  const strongest = [...report.scenarios].sort((a, b) => b.score - a.score)[0];
-  const bestAverageR = [...report.scenarios].sort((a, b) => b.averageR - a.averageR)[0];
-  const bestCalibration = [...report.scenarios].sort((a, b) => b.confidenceCalibration.score - a.confidenceCalibration.score)[0];
-  const bestAgent = report.calibration.agentWeightsToIncrease[0];
+  const scenarios = safeArray(report.scenarios);
+  const strongest = [...scenarios].sort((a, b) => b.score - a.score)[0];
+  const bestAverageR = [...scenarios].sort((a, b) => b.averageR - a.averageR)[0];
+  const bestCalibration = [...scenarios].sort((a, b) => b.confidenceCalibration.score - a.confidenceCalibration.score)[0];
+  const bestAgent = safeArray(report.calibration.agentWeightsToIncrease)[0];
+  if (!strongest || !bestAverageR || !bestCalibration) {
+    return [
+      finding(
+        "Auditable workflow",
+        "Validation and quality review remain deterministic, local, and exportable.",
+        "Run /validation again to restore complete scenario metrics.",
+        "yellow",
+        []
+      )
+    ];
+  }
 
-  return [
+  return safeTopN([
     finding(
       "Strongest validation scenario",
       `${strongest.name} produced the best composite quality score.`,
@@ -127,7 +153,7 @@ const topStrengthsFor = (report: ValidationSuiteReport): ResearchQualityFinding[
       "green",
       []
     )
-  ].slice(0, 5);
+  ], 5);
 };
 
 const thresholdSensitivityFor = (
@@ -175,8 +201,8 @@ const invalidationTargetQualityFor = (report: ValidationSuiteReport): Invalidati
 
 const agentUsefulnessFor = (report: ValidationSuiteReport): AgentUsefulnessReview[] => {
   const map = new Map<string, { name: string; alignments: number[]; confidences: number[]; recommendations: string[] }>();
-  for (const scenario of report.scenarios) {
-    for (const agent of scenario.agentContributionSummary) {
+  for (const scenario of safeArray(report.scenarios)) {
+    for (const agent of safeArray(scenario.agentContributionSummary)) {
       const current = map.get(agent.agentId) ?? { name: agent.name, alignments: [], confidences: [], recommendations: [] };
       current.alignments.push(agent.cioAlignmentRate);
       current.confidences.push(agent.averageConfidence);
@@ -227,7 +253,7 @@ const suggestedCalibrationChangesFor = (report: ValidationSuiteReport): Suggeste
     }
   ];
 
-  for (const agent of report.calibration.agentWeightsToIncrease.slice(0, 2)) {
+  for (const agent of safeTopN(report.calibration.agentWeightsToIncrease, 2)) {
     changes.push({
       parameter: `${agent.name} weight`,
       currentValue: "Current local agent weight",
@@ -237,7 +263,7 @@ const suggestedCalibrationChangesFor = (report: ValidationSuiteReport): Suggeste
     });
   }
 
-  for (const agent of report.calibration.agentWeightsToDecrease.slice(0, 2)) {
+  for (const agent of safeTopN(report.calibration.agentWeightsToDecrease, 2)) {
     changes.push({
       parameter: `${agent.name} weight`,
       currentValue: "Current local agent weight",
@@ -247,7 +273,7 @@ const suggestedCalibrationChangesFor = (report: ValidationSuiteReport): Suggeste
     });
   }
 
-  return changes.slice(0, 5);
+  return safeTopN(changes, 5);
 };
 
 const nextStepFor = (grade: ResearchQualityReadinessGrade) => {

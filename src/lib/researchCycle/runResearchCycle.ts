@@ -21,7 +21,7 @@ import type {
 } from "@/lib/researchCycle/researchCycleTypes";
 import { loadSimulationRunbookState } from "@/lib/simulationRunbook";
 import { loadSelfImprovementState } from "@/lib/selfImprovement";
-import { uid } from "@/lib/utils";
+import { safeArray, safeTopN, uid } from "@/lib/utils";
 import { loadLatestValidationReport, runValidationSuite, saveLatestValidationReport } from "@/lib/validation";
 
 export const RESEARCH_CYCLE_STORAGE_KEY = "gotrader_ai_lab_research_cycle_state";
@@ -104,14 +104,14 @@ const nextActionFor = (run: ResearchCycleRun) => {
   if (run.createdProposalId) {
     return "Review the new self-improvement proposal. Approval is still required before settings change.";
   }
-  if (run.readinessSnapshot?.failedRequirements.length) {
+  if (safeArray(run.readinessSnapshot?.failedRequirements).length) {
     return "Review readiness blockers and rerun validation after the weakest requirement improves.";
   }
   return "Keep broker execution disabled and continue simulation monitoring.";
 };
 
 const resultSummaryFor = (run: ResearchCycleRun) => {
-  const counts = statusCounts(run.steps);
+  const counts = statusCounts(safeArray(run.steps));
   if (run.status === "failed") {
     return `Research cycle failed at ${run.failedStepId ?? "unknown step"}. Broker execution remained disabled.`;
   }
@@ -140,7 +140,7 @@ export function loadResearchCycleState(): ResearchCycleState {
     return {
       ...initialState(),
       ...parsed,
-      runs: parsed.runs ?? []
+      runs: safeArray(parsed.runs)
     };
   } catch {
     return publish(initialState());
@@ -156,7 +156,7 @@ export function saveResearchCycleRun(run: ResearchCycleRun): ResearchCycleState 
   return publish({
     ...state,
     latestRunId: compactRun.cycleId,
-    runs: [compactRun, ...state.runs.filter((item) => item.cycleId !== compactRun.cycleId)].slice(0, 20)
+    runs: safeTopN([compactRun, ...safeArray(state.runs).filter((item) => item.cycleId !== compactRun.cycleId)], 20)
   });
 }
 
@@ -245,7 +245,7 @@ export async function runResearchCycle({
       try {
         const bridgeResult = await runLocalBridgeAdvisory(llmPacket);
         run.llmBridgeAvailable = true;
-        const importResult = importLLMAgentResponse(JSON.stringify(bridgeResult.responses), llmPacket.packetId);
+        const importResult = importLLMAgentResponse(JSON.stringify(safeArray(bridgeResult.responses)), llmPacket.packetId);
         if (!importResult.run || !importResult.valid) {
           recordLLMUnsafeResponseRejection(Math.max(1, importResult.unsafeResponseRejections));
           warnStep("llm_advisory", {
@@ -349,7 +349,7 @@ export async function runResearchCycle({
     run.readinessSnapshot = readinessSnapshot;
     completeStep("readiness_gate", {
       summary: `Readiness remains ${readinessSnapshot.state}.`,
-      detail: `${readinessSnapshot.failedRequirements.length} failed requirement${readinessSnapshot.failedRequirements.length === 1 ? "" : "s"}; no override applied.`
+      detail: `${safeArray(readinessSnapshot.failedRequirements).length} failed requirement${safeArray(readinessSnapshot.failedRequirements).length === 1 ? "" : "s"}; no override applied.`
     });
 
     run.status = "completed";
@@ -364,7 +364,7 @@ export async function runResearchCycle({
       validationId: validationReport.id,
       proposalId: run.createdProposalId,
       readinessState: readinessSnapshot.state,
-      actionRequired: Boolean(run.createdProposalId || readinessSnapshot.failedRequirements.length || !run.llmRun?.advisoryPassed)
+      actionRequired: Boolean(run.createdProposalId || safeArray(readinessSnapshot.failedRequirements).length || !run.llmRun?.advisoryPassed)
     });
     completeStep("communications_audit", {
       summary: "Research cycle logged to the in-app communications audit trail.",

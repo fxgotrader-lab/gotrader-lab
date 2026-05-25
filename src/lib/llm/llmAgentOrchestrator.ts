@@ -15,20 +15,23 @@ import type { ResearchQualityReview } from "@/lib/researchQuality";
 import type { SimulationRunbookState } from "@/lib/simulationRunbook";
 import { countCompletedRunbookItems, simulationRunbookChecklist } from "@/lib/simulationRunbook";
 import type { DebateSession, LabState, TradeThesis } from "@/lib/types";
-import { uid } from "@/lib/utils";
+import { safeArray, uid } from "@/lib/utils";
 import type { ValidationSuiteReport } from "@/lib/validation";
 
-const maxDrawdownFor = (validation?: ValidationSuiteReport) =>
-  validation?.scenarios.reduce((max, scenario) => Math.max(max, scenario.maxDrawdown), 0);
+const maxDrawdownFor = (validation?: ValidationSuiteReport) => {
+  const scenarios = safeArray(validation?.scenarios);
+  return scenarios.length ? scenarios.reduce((max, scenario) => Math.max(max, scenario.maxDrawdown), 0) : undefined;
+};
 
-const confidenceCalibrationFor = (validation?: ValidationSuiteReport) =>
-  validation?.scenarios.length
-    ? validation.scenarios.reduce((sum, scenario) => sum + scenario.confidenceCalibration.score, 0) /
-      validation.scenarios.length
+const confidenceCalibrationFor = (validation?: ValidationSuiteReport) => {
+  const scenarios = safeArray(validation?.scenarios);
+  return scenarios.length
+    ? scenarios.reduce((sum, scenario) => sum + scenario.confidenceCalibration.score, 0) / scenarios.length
     : undefined;
+};
 
 const latestDebateFor = (state: LabState, thesis?: TradeThesis): DebateSession | undefined =>
-  state.debateSessions.find((debate) => debate.cioThesisId === thesis?.id) ?? state.debateSessions[0];
+  safeArray(state.debateSessions).find((debate) => debate.cioThesisId === thesis?.id) ?? safeArray(state.debateSessions)[0];
 
 export function buildLLMResearchContextPacket({
   state,
@@ -45,9 +48,13 @@ export function buildLLMResearchContextPacket({
   runbook?: SimulationRunbookState;
   providerMode: LLMProviderMode;
 }): LLMResearchContextPacket {
-  const thesis = state.tradeTheses[0];
+  const thesis = safeArray(state.tradeTheses)[0];
   const debate = latestDebateFor(state, thesis);
   const ictContext = thesis?.ictContext;
+  const validationScenarios = safeArray(validation?.scenarios);
+  const qualityWeaknesses = safeArray(quality?.topWeaknesses);
+  const qualityFalsePositivePatterns = safeArray(quality?.falsePositivePatterns);
+  const failedReadinessRequirements = safeArray(readiness?.failedRequirements);
 
   return {
     packetId: uid("llm_context"),
@@ -74,8 +81,8 @@ export function buildLLMResearchContextPacket({
           hasBearishMSS: ictContext.hasBearishMSS,
           hasBullishBOS: ictContext.hasBullishBOS,
           hasBearishBOS: ictContext.hasBearishBOS,
-          liquiditySweepCount: ictContext.liquiditySweeps.length,
-          fairValueGapCount: ictContext.fairValueGaps.length
+          liquiditySweepCount: safeArray(ictContext.liquiditySweeps).length,
+          fairValueGapCount: safeArray(ictContext.fairValueGaps).length
         }
       : undefined,
     deterministicICTFacts: [
@@ -83,17 +90,17 @@ export function buildLLMResearchContextPacket({
       `Bias: ${ictContext?.bias ?? "missing"}`,
       `MSS bullish/bearish: ${Boolean(ictContext?.hasBullishMSS)}/${Boolean(ictContext?.hasBearishMSS)}`,
       `BOS bullish/bearish: ${Boolean(ictContext?.hasBullishBOS)}/${Boolean(ictContext?.hasBearishBOS)}`,
-      `Liquidity sweeps: ${ictContext?.liquiditySweeps.length ?? 0}`,
-      `Fair value gaps: ${ictContext?.fairValueGaps.length ?? 0}`
+      `Liquidity sweeps: ${safeArray(ictContext?.liquiditySweeps).length}`,
+      `Fair value gaps: ${safeArray(ictContext?.fairValueGaps).length}`
     ],
     internalBaselineAgentDebate:
-      debate?.messages.map((message) => ({
+      safeArray(debate?.messages).map((message) => ({
         agentId: message.agentId,
         agentName: message.agentName,
         bias: message.stance,
         confidence: message.confidence,
         reasoning: message.message
-      })) ?? [],
+      })),
     cioThesis: thesis
       ? {
           thesisId: thesis.id,
@@ -109,7 +116,7 @@ export function buildLLMResearchContextPacket({
           generatedAt: validation.generatedAt,
           readinessStatus: validation.calibration.readinessStatus,
           readinessScore: validation.calibration.readinessScore,
-          conservativeScenarioStatus: validation.scenarios.find((scenario) => scenario.id === "conservative-confluence")?.readiness,
+          conservativeScenarioStatus: validationScenarios.find((scenario) => scenario.id === "conservative-confluence")?.readiness,
           maxDrawdownR: maxDrawdownFor(validation),
           confidenceCalibration: confidenceCalibrationFor(validation)
         }
@@ -119,14 +126,14 @@ export function buildLLMResearchContextPacket({
           reviewId: quality.id,
           generatedAt: quality.generatedAt,
           readinessGrade: quality.readinessGrade,
-          topWeaknesses: quality.topWeaknesses.map((weakness) => weakness.title),
-          falsePositiveCount: quality.falsePositivePatterns.reduce((sum, pattern) => sum + pattern.estimatedFalsePositives, 0)
+          topWeaknesses: qualityWeaknesses.map((weakness) => weakness.title),
+          falsePositiveCount: qualityFalsePositivePatterns.reduce((sum, pattern) => sum + pattern.estimatedFalsePositives, 0)
         }
       : undefined,
     readinessState: readiness
       ? {
           state: readiness.state,
-          failedRequirements: readiness.failedRequirements.map((requirement) => requirement.label),
+          failedRequirements: failedReadinessRequirements.map((requirement) => requirement.label),
           brokerExecutionDisabled: true
         }
       : undefined,

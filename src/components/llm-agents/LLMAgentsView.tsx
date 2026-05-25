@@ -47,6 +47,7 @@ import {
 } from "@/lib/selfImprovement";
 import { loadSimulationRunbookState } from "@/lib/simulationRunbook";
 import type { LabState } from "@/lib/types";
+import { safeArray, safeTopN } from "@/lib/utils";
 import { loadLatestValidationReport } from "@/lib/validation";
 
 const formatValue = (value: string) => value.replace(/_/g, " ");
@@ -125,7 +126,9 @@ export function LLMAgentsView({ state }: { state: LabState }) {
     quality: latestQuality,
     runbook
   });
-  const latestRun = llmState.runs.find((run) => run.runId === llmState.latestRunId) ?? llmState.runs[0];
+  const llmRuns = safeArray(llmState.runs);
+  const latestRun = llmRuns.find((run) => run.runId === llmState.latestRunId) ?? llmRuns[0];
+  const latestResponses = safeArray(latestRun?.responses);
   const providerStatus = providerStatusForMode(llmState.providerMode);
   const context = useMemo(
     () =>
@@ -240,7 +243,7 @@ export function LLMAgentsView({ state }: { state: LabState }) {
 
     try {
       const bridgeResult = await runLocalBridgeAdvisory(packet);
-      const responseJson = JSON.stringify(bridgeResult.responses, null, 2);
+      const responseJson = JSON.stringify(safeArray(bridgeResult.responses), null, 2);
       setImportJson(responseJson);
       const result = importLLMAgentResponse(responseJson, packet.packetId);
       setImportResult(result);
@@ -270,19 +273,20 @@ export function LLMAgentsView({ state }: { state: LabState }) {
   };
 
   const createSelfImprovementProposal = () => {
-    const hasSuggestion = latestRun?.responses.some((response) => response.suggestedCalibration.length > 0);
+    const hasSuggestion = latestResponses.some((response) => safeArray(response.suggestedCalibration).length > 0);
     if (!hasSuggestion) {
       window.alert("Run an LLM advisory review with calibration suggestions before creating a proposal.");
       return;
     }
+    const suggestionSummary = safeTopN(
+      latestResponses.flatMap((response) => safeArray(response.suggestedCalibration)),
+      2
+    ).join(" ");
     const proposal = createCalibrationProposal("openclaw");
     upsertCalibrationProposal(
       {
         ...proposal,
-        reason: `LLM advisory suggestion: ${latestRun?.responses
-          .flatMap((response) => response.suggestedCalibration)
-          .slice(0, 2)
-          .join(" ")}`
+        reason: `LLM advisory suggestion: ${suggestionSummary}`
       },
       "created",
       "Created from LLM advisory suggestedCalibration. Proposal still requires simulation testing and approval."
@@ -566,18 +570,18 @@ node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-c
                   {contextValidation.valid ? "valid" : "invalid"}
                 </Badge>
               </div>
-              {contextValidation.errors.length ? (
+              {safeArray(contextValidation.errors).length ? (
                 <div className="mt-3 space-y-1">
-                  {contextValidation.errors.map((error) => (
+                  {safeArray(contextValidation.errors).map((error) => (
                     <div key={error} className="rounded-md border border-rose-400/20 bg-rose-400/5 px-2 py-1 text-xs text-rose-100">
                       {error}
                     </div>
                   ))}
                 </div>
               ) : null}
-              {contextValidation.warnings.length ? (
+              {safeArray(contextValidation.warnings).length ? (
                 <div className="mt-3 space-y-1">
-                  {contextValidation.warnings.map((warning) => (
+                  {safeArray(contextValidation.warnings).map((warning) => (
                     <div key={warning} className="rounded-md border border-amber-300/25 bg-amber-300/10 px-2 py-1 text-xs text-amber-100">
                       {warning}
                     </div>
@@ -617,7 +621,7 @@ node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-c
                 <p className="text-xs text-muted-foreground">Latest imported response summary</p>
                 <p className="mt-2 text-sm text-foreground">
                   {llmState.latestResponseImportAt
-                    ? `${latestRun?.responses.length ?? 0} LLM agent responses imported.`
+                    ? `${latestResponses.length} LLM agent responses imported.`
                     : "No real local-command LLM response has been imported yet."}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -645,24 +649,24 @@ node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-c
                   </div>
                   <div className="mt-3 grid gap-2 md:grid-cols-2">
                     <div className="rounded-md border border-border bg-card/45 p-2 text-xs">
-                      responses {importResult.responses.length}
+                      responses {safeArray(importResult.responses).length}
                     </div>
                     <div className="rounded-md border border-border bg-card/45 p-2 text-xs">
                       unsafe rejections {importResult.unsafeResponseRejections}
                     </div>
                   </div>
-                  {importResult.errors.length ? (
+                  {safeArray(importResult.errors).length ? (
                     <div className="mt-3 space-y-1">
-                      {importResult.errors.map((error) => (
+                      {safeArray(importResult.errors).map((error) => (
                         <div key={error} className="rounded-md border border-rose-400/20 bg-rose-400/5 px-2 py-1 text-xs text-rose-100">
                           {error}
                         </div>
                       ))}
                     </div>
                   ) : null}
-                  {importResult.warnings.length ? (
+                  {safeArray(importResult.warnings).length ? (
                     <div className="mt-3 space-y-1">
-                      {importResult.warnings.map((warning) => (
+                      {safeArray(importResult.warnings).map((warning) => (
                         <div key={warning} className="rounded-md border border-amber-300/25 bg-amber-300/10 px-2 py-1 text-xs text-amber-100">
                           {warning}
                         </div>
@@ -737,9 +741,11 @@ node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-c
             <CardDescription>Responses must be structured JSON and pass advisory-only validation.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {latestRun?.responses.length ? (
-              latestRun.responses.map((response) => {
-                const validation = latestRun.validationResults[response.agentId];
+            {latestResponses.length ? (
+              latestResponses.map((response) => {
+                const validation = latestRun?.validationResults?.[response.agentId];
+                const suggestedCalibration = safeArray(response.suggestedCalibration);
+                const riskWarnings = safeArray(response.riskWarnings);
                 return (
                   <div key={response.agentId} className="rounded-lg border border-border bg-background/45 p-3">
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -762,12 +768,12 @@ node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-c
                         recommendation {formatValue(response.proceedRecommendation)}
                       </div>
                       <div className="rounded-md border border-border bg-card/45 p-2 text-xs">
-                        calibration suggestions {response.suggestedCalibration.length}
+                        calibration suggestions {suggestedCalibration.length}
                       </div>
                     </div>
-                    {response.riskWarnings.length ? (
+                    {riskWarnings.length ? (
                       <div className="mt-3 rounded-md border border-amber-300/25 bg-amber-300/10 p-2 text-xs text-amber-100">
-                        {response.riskWarnings.join(" ")}
+                        {riskWarnings.join(" ")}
                       </div>
                     ) : null}
                   </div>
@@ -794,7 +800,7 @@ node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-c
               Any proposal created here must still be simulation-tested on /self-improvement and manually approved
               before active calibration settings change.
             </div>
-            <Button onClick={createSelfImprovementProposal} disabled={!latestRun?.responses.length}>
+            <Button onClick={createSelfImprovementProposal} disabled={!latestResponses.length}>
               Create Calibration Proposal
             </Button>
             <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">

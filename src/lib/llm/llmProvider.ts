@@ -4,6 +4,7 @@ import type {
   LLMProviderStatus,
   LLMResearchState
 } from "@/lib/llm/llmTypes";
+import { safeArray, safeTopN } from "@/lib/utils";
 
 export const LLM_RESEARCH_STORAGE_KEY = "gotrader_ai_lab_llm_research_state";
 export const LLM_RESEARCH_UPDATED_EVENT = "gotrader-ai-lab-llm-research-updated";
@@ -45,7 +46,7 @@ export function loadLLMResearchState(): LLMResearchState {
       ...parsed,
       researchMode: "llm_required",
       providerMode: parsed.providerMode ?? "local_command",
-      runs: parsed.runs ?? [],
+      runs: safeArray(parsed.runs),
       latestContextExportAt: parsed.latestContextExportAt,
       latestResponseImportAt: parsed.latestResponseImportAt,
       totalContextExports: parsed.totalContextExports ?? 0,
@@ -77,8 +78,8 @@ export function saveLLMAdvisoryRun(run: LLMAdvisoryRun, providerMode?: LLMProvid
     ...state,
     providerMode: providerMode ?? run.providerMode,
     latestRunId: run.runId,
-    runs: [run, ...state.runs].slice(0, 20),
-    unsafeResponseRejections: state.unsafeResponseRejections + run.unsafeResponseRejections
+    runs: safeTopN([run, ...safeArray(state.runs)], 20),
+    unsafeResponseRejections: (state.unsafeResponseRejections ?? 0) + (run.unsafeResponseRejections ?? 0)
   });
 }
 
@@ -87,7 +88,7 @@ export function recordLLMContextExport(exportedAt = new Date().toISOString()): L
   return saveLLMResearchState({
     ...state,
     latestContextExportAt: exportedAt,
-    totalContextExports: state.totalContextExports + 1
+    totalContextExports: (state.totalContextExports ?? 0) + 1
   });
 }
 
@@ -96,7 +97,7 @@ export function recordLLMResponseImport(run: LLMAdvisoryRun, importedAt = new Da
   return saveLLMResearchState({
     ...saved,
     latestResponseImportAt: importedAt,
-    totalResponseImports: saved.totalResponseImports + 1
+    totalResponseImports: (saved.totalResponseImports ?? 0) + 1
   });
 }
 
@@ -104,12 +105,13 @@ export function recordLLMUnsafeResponseRejection(count = 1): LLMResearchState {
   const state = loadLLMResearchState();
   return saveLLMResearchState({
     ...state,
-    unsafeResponseRejections: state.unsafeResponseRejections + count
+    unsafeResponseRejections: (state.unsafeResponseRejections ?? 0) + count
   });
 }
 
 export function latestLLMAdvisoryRun(state = loadLLMResearchState()) {
-  return state.runs.find((run) => run.runId === state.latestRunId) ?? state.runs[0];
+  const runs = safeArray(state.runs);
+  return runs.find((run) => run.runId === state.latestRunId) ?? runs[0];
 }
 
 export function isLLMAdvisoryReviewPassed(state = loadLLMResearchState()) {

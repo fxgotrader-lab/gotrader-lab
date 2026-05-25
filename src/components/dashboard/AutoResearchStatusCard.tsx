@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { AutoResearchCycle } from "@/lib/autoResearch";
+import { safeArray } from "@/lib/utils";
 
 import { formatDateTime, formatNumber } from "./dashboardFormatters";
 
@@ -14,7 +15,7 @@ type AutoResearchStatusCardProps = {
 
 export function AutoResearchStatusCard({ cycle }: AutoResearchStatusCardProps) {
   const bestCandidate = cycle?.bestCandidate;
-  const rejectedCount = cycle?.rejectedCandidates.length ?? 0;
+  const rejectedCount = safeArray(cycle?.rejectedCandidates).length;
   const finalCategory = cycle?.finalResultCategory?.replace(/_/g, " ") ?? "Not run";
 
   return (
@@ -45,7 +46,7 @@ export function AutoResearchStatusCard({ cycle }: AutoResearchStatusCardProps) {
         <div className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm">
           <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Stability score</div>
           <div className="mt-1 text-lg font-semibold text-emerald-200">
-            {formatNumber(bestCandidate?.scoreBreakdown.totalScore, 1)}
+            {formatNumber(bestCandidate?.scoreBreakdown?.totalScore, 1)}
           </div>
           <p className="mt-1 text-xs text-slate-500">
             Best candidates are selected for stability first, not highest profit alone.

@@ -4,6 +4,7 @@ import type {
   AutoResearchScoreBreakdown
 } from "@/lib/autoResearch/autoResearchTypes";
 import type { CalibrationProposalMetrics } from "@/lib/selfImprovement";
+import { safeArray, safeTopN } from "@/lib/utils";
 
 const conservativeScenarioFor = (candidate: AutoResearchCandidateResult) =>
   candidate.validationReport?.scenarios.find((scenario) => scenario.id === "conservative-confluence");
@@ -98,7 +99,7 @@ export function selectBestCandidate(
   candidates: AutoResearchCandidateResult[],
   baselineMetrics: CalibrationProposalMetrics
 ) {
-  const scored = candidates.map((candidate) => {
+  const scored = safeArray(candidates).map((candidate) => {
     const rejectionReasons = rejectionReasonsFor(candidate, baselineMetrics);
     const resultCategory = categoryFor(candidate, baselineMetrics, rejectionReasons);
     return {
@@ -110,10 +111,12 @@ export function selectBestCandidate(
   });
   const eligible = scored.filter((candidate) => candidate.promotionEligible);
   const bestCandidate = [...eligible].sort((a, b) => b.scoreBreakdown.totalScore - a.scoreBreakdown.totalScore)[0];
-  const closestCandidates = [...scored]
+  const closestCandidates = safeTopN(
+    [...scored]
     .filter((candidate) => candidate.resultCategory !== "unsafe_overfit")
-    .sort((a, b) => b.scoreBreakdown.totalScore - a.scoreBreakdown.totalScore)
-    .slice(0, 3);
+      .sort((a, b) => b.scoreBreakdown.totalScore - a.scoreBreakdown.totalScore),
+    3
+  );
   const rejectedCandidates = scored.filter((candidate) => candidate.candidateId !== bestCandidate?.candidateId);
 
   return {
