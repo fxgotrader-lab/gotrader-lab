@@ -44,6 +44,10 @@ import {
   SIMULATION_RUNBOOK_UPDATED_EVENT,
   simulationRunbookChecklist
 } from "@/lib/simulationRunbook";
+import {
+  loadSelfImprovementState,
+  SELF_IMPROVEMENT_UPDATED_EVENT
+} from "@/lib/selfImprovement";
 import type { ICTScoringWeights, LabState } from "@/lib/types";
 import {
   loadLatestValidationReport,
@@ -81,9 +85,16 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const [latestQualityReview, setLatestQualityReview] = useState(() => loadLatestResearchQualityReview());
   const [simulationRunbook, setSimulationRunbook] = useState(() => loadSimulationRunbookState());
   const [readinessApproval, setReadinessApproval] = useState(() => loadManualApprovalRecord());
+  const [selfImprovementState, setSelfImprovementState] = useState(() => loadSelfImprovementState());
   const latestHandoffExport = state.handoffExports?.[0];
   const latestAdvisoryPacket = state.advisoryPackets?.[0];
   const latestAdvisoryResponse = state.advisoryResponses?.[0];
+  const latestSelfImprovementProposal =
+    selfImprovementState.proposals.find((proposal) => proposal.proposalId === selfImprovementState.latestProposalId) ??
+    selfImprovementState.proposals[0];
+  const lastAcceptedSelfImprovementProposal = selfImprovementState.proposals.find(
+    (proposal) => proposal.proposalId === selfImprovementState.lastAcceptedProposalId
+  );
   const runbookCompleted = countCompletedRunbookItems(simulationRunbook);
   const runbookTotal = simulationRunbookChecklist.length;
   const readinessGate = useMemo(
@@ -133,6 +144,16 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
     return () => {
       window.removeEventListener(READINESS_APPROVAL_UPDATED_EVENT, refreshApproval);
       window.removeEventListener("storage", refreshApproval);
+    };
+  }, []);
+
+  useEffect(() => {
+    const refreshSelfImprovement = () => setSelfImprovementState(loadSelfImprovementState());
+    window.addEventListener(SELF_IMPROVEMENT_UPDATED_EVENT, refreshSelfImprovement);
+    window.addEventListener("storage", refreshSelfImprovement);
+    return () => {
+      window.removeEventListener(SELF_IMPROVEMENT_UPDATED_EVENT, refreshSelfImprovement);
+      window.removeEventListener("storage", refreshSelfImprovement);
     };
   }, []);
 
@@ -421,6 +442,55 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
             <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
               Broker execution remains disabled.
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal className="h-4 w-4 text-primary" aria-hidden="true" />
+              <CardTitle>Self-Improvement Loop</CardTitle>
+            </div>
+            <CardDescription>Simulation calibration proposals with manual approval.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+              <span className="text-muted-foreground">Latest proposal</span>
+              <span className="max-w-[11rem] truncate font-mono text-xs text-foreground">
+                {latestSelfImprovementProposal?.timestamp ?? "none"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+              <span className="text-muted-foreground">Status</span>
+              <Badge
+                variant={
+                  latestSelfImprovementProposal?.status === "accepted"
+                    ? "success"
+                    : latestSelfImprovementProposal?.status === "rejected" || latestSelfImprovementProposal?.status === "reverted"
+                      ? "danger"
+                      : latestSelfImprovementProposal?.status === "testing"
+                        ? "warning"
+                        : "muted"
+                }
+              >
+                {latestSelfImprovementProposal?.status ?? "none"}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+              <span className="text-muted-foreground">Last accepted</span>
+              <span className="max-w-[11rem] truncate font-mono text-xs text-foreground">
+                {lastAcceptedSelfImprovementProposal?.approvedAt ?? "none"}
+              </span>
+            </div>
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              Broker execution remains disabled. Accepted proposals only update simulation calibration settings.
+            </div>
+            <Link
+              to="/self-improvement"
+              className="inline-flex h-9 w-full items-center justify-center rounded-md border border-border bg-background/60 px-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary/70"
+            >
+              Open self-improvement loop
+            </Link>
           </CardContent>
         </Card>
 

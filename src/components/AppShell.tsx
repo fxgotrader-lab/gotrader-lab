@@ -14,7 +14,8 @@ import {
   RefreshCw,
   Settings,
   ShieldAlert,
-  ShieldCheck
+  ShieldCheck,
+  SlidersHorizontal
 } from "lucide-react";
 import { SafetyBanner } from "@/components/SafetyBanner";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +33,7 @@ const navigation = [
   { href: "/simulation-runbook", label: "Runbook", icon: ClipboardList },
   { href: "/readiness-gate", label: "Readiness", icon: ShieldAlert },
   { href: "/advisory-agents", label: "Advisory", icon: Bot },
+  { href: "/self-improvement", label: "Improve", icon: SlidersHorizontal },
   { href: "/performance", label: "Performance", icon: Activity },
   { href: "/prompt-lab", label: "Prompt Lab", icon: GitBranch },
   { href: "/settings", label: "Settings", icon: Settings }
