@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Bot, Download, FileJson, PackageCheck, ShieldAlert, Unplug, XCircle } from "lucide-react";
+import { Bot, Download, FileJson, MessageSquareText, PackageCheck, ShieldAlert, Unplug, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -123,6 +123,30 @@ export function AdvisoryAgentsView({ state, actions }: { state: LabState; action
             <span>This packet is advisory only. It cannot execute trades or override readiness gates.</span>
           </div>
           <Badge variant="warning">No broker authority</Badge>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <MessageSquareText className="h-4 w-4 text-primary" aria-hidden="true" />
+            <CardTitle>App-First Advisory Communication</CardTitle>
+          </div>
+          <CardDescription>
+            OpenClaw, Hermes, Discord, or Telegram may become notification routes, but AI Lab remains the primary
+            place for review messages, approvals, and audit history.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-3">
+          {[
+            "Advisory messages are reviewed inside AI Lab.",
+            "External chat tools are optional notifications only.",
+            "Approval prompts must stay in the app audit trail."
+          ].map((item) => (
+            <div key={item} className="rounded-lg border border-border bg-background/45 p-3 text-sm text-muted-foreground">
+              {item}
+            </div>
+          ))}
         </CardContent>
       </Card>
 

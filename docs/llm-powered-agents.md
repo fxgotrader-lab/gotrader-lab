@@ -142,3 +142,25 @@ Those proposals still must:
 - receive user approval before active calibration settings change
 
 LLMs cannot execute trades, approve trades, or control go-trader.
+
+## In-App Communication
+
+LLM advisory output should flow into GoTrader AI Lab as in-app research messages, not as primary Discord-first chat.
+The `/communications` page is the planned message inbox for:
+
+- LLM advisor messages
+- validation alerts
+- self-improvement proposal alerts
+- readiness warnings
+- risk warnings
+
+This keeps reviews and approvals attached to the app audit trail. External tools such as Discord, Telegram, or Hermes
+may later mirror notifications, but they should not become the source of authority for calibration approval, readiness
+approval, broker control, or execution commands.
+
+LLM agents remain advisory only:
+
+- execution authority: none
+- broker authority: none
+- readiness override authority: none
+- API keys not displayed in browser

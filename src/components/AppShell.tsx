@@ -12,6 +12,7 @@ import {
   Gauge,
   GitBranch,
   LayoutDashboard,
+  MessageSquareText,
   RefreshCw,
   Settings,
   ShieldAlert,
@@ -24,6 +25,7 @@ import { cn } from "@/lib/utils";
 
 const navigation = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/communications", label: "Comms", icon: MessageSquareText },
   { href: "/agents", label: "Agents", icon: Bot },
   { href: "/research", label: "Research", icon: FlaskConical },
   { href: "/ict-lab", label: "ICT Lab", icon: ChartCandlestick },

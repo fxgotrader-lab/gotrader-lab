@@ -116,6 +116,23 @@ The planning-only local bridge contract is defined in:
 
 `docs/openclaw-hermes-local-bridge.md`
 
+## App-First Communication
+
+GoTrader AI Lab should be the primary communication layer for OpenClaw/Hermes advisory review. Discord, Telegram, or
+Hermes-style chat may send optional notifications, but approvals and audit history should remain inside the app.
+
+Future OpenClaw/Hermes messages should appear in `/communications` as advisory-only agent messages with:
+
+- source and timestamp
+- category and severity
+- linked thesis/proposal/validation/readiness IDs
+- action required status
+- user response
+- resolved status
+
+OpenClaw/Hermes may recommend research actions, but they cannot approve trades, execute handoffs, control brokers, or
+override readiness gates.
+
 ## Safety Boundary
 
 The advisory layer is a research reviewer. It cannot execute, approve, override, connect, or control anything. The readiness gate and manual approval layer remain the source of local simulation readiness state.

@@ -8,6 +8,7 @@ import {
   Database,
   KeyRound,
   Lock,
+  MessageSquareText,
   ShieldAlert,
   ShieldCheck,
   SlidersHorizontal,
@@ -24,6 +25,7 @@ import {
   latestAutoResearchCycle,
   loadAutoResearchState
 } from "@/lib/autoResearch";
+import { getCommunicationSummary, inAppCommunicationSpec } from "@/lib/communications/communicationSpec";
 import {
   defaultICTScoringWeights,
   loadICTScoringWeights,
@@ -113,6 +115,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const latestLLMRun = latestLLMAdvisoryRun(llmResearchState);
   const llmProviderStatus = providerStatusForMode(llmResearchState.providerMode);
   const latestAutoResearch = latestAutoResearchCycle(autoResearchState);
+  const communicationSummary = getCommunicationSummary(inAppCommunicationSpec.sampleMessages);
   const runbookCompleted = countCompletedRunbookItems(simulationRunbook);
   const runbookTotal = simulationRunbookChecklist.length;
   const readinessGate = useMemo(
@@ -279,6 +282,43 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
       <BridgeStatusCard handoffExports={state.handoffExports ?? []} />
 
       <div className="grid gap-5 xl:grid-cols-4">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <MessageSquareText className="h-4 w-4 text-primary" aria-hidden="true" />
+              <CardTitle>In-App AI Communication Layer</CardTitle>
+            </div>
+            <CardDescription>Primary research messaging and approval channel inside GoTrader AI Lab.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {[
+              ["Primary channel", "GoTrader AI Lab"],
+              ["Discord/Hermes", "optional notifications only"],
+              ["Execution authority", inAppCommunicationSpec.executionAuthority],
+              ["Broker authority", inAppCommunicationSpec.brokerAuthority],
+              ["Readiness override", inAppCommunicationSpec.readinessOverrideAuthority],
+              ["Unread messages", String(communicationSummary.unreadMessages)],
+              ["Action required", String(communicationSummary.actionRequiredCount)]
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+                <span className="text-muted-foreground">{label}</span>
+                <Badge variant={value === "none" ? "danger" : label === "Action required" ? "warning" : "secondary"}>
+                  {formatBridgeValue(value)}
+                </Badge>
+              </div>
+            ))}
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              App approvals should be recorded inside AI Lab. External chat is notification/routing only.
+            </div>
+            <Link
+              to="/communications"
+              className="inline-flex h-9 w-full items-center justify-center rounded-md border border-border bg-background/60 px-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary/70"
+            >
+              Open AI communications
+            </Link>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
