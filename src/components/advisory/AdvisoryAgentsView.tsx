@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AdvisoryResponseReview } from "@/components/advisory/AdvisoryResponseReview";
 import { createAdvisoryRequestPacket } from "@/lib/integrations/createAdvisoryRequestPacket";
+import { openClawHermesBridgeSpec } from "@/lib/integrations/openclawHermesBridgeSpec";
 import { openClawHermesAdvisorySpec } from "@/lib/integrations/openclawHermesSpec";
 import type {
   AdvisoryPacketAuditEntry,
@@ -188,6 +189,84 @@ export function AdvisoryAgentsView({ state, actions }: { state: LabState; action
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Unplug className="h-4 w-4 text-amber-200" aria-hidden="true" />
+                <CardTitle>Local Bridge File-Watch Contract</CardTitle>
+              </div>
+              <CardDescription>
+                Planning-only contract for a future local bridge that may watch request files and write advisory
+                response files.
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="warning">{formatValue(openClawHermesBridgeSpec.status)}</Badge>
+              <Badge variant="muted">watcher not implemented</Badge>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-md border border-border bg-background/45 p-3">
+              <p className="text-xs text-muted-foreground">Request watch contract</p>
+              <p className="mt-1 break-all font-mono text-xs text-foreground">
+                {openClawHermesBridgeSpec.pathContract.requestPattern}
+              </p>
+            </div>
+            <div className="rounded-md border border-border bg-background/45 p-3">
+              <p className="text-xs text-muted-foreground">Response write contract</p>
+              <p className="mt-1 break-all font-mono text-xs text-foreground">
+                {openClawHermesBridgeSpec.pathContract.responsePattern}
+              </p>
+            </div>
+            <div className="rounded-md border border-border bg-background/45 p-3">
+              <p className="text-xs text-muted-foreground">Stable request file</p>
+              <p className="mt-1 break-all font-mono text-xs text-foreground">
+                {openClawHermesBridgeSpec.pathContract.latestRequestFile}
+              </p>
+            </div>
+            <div className="rounded-md border border-border bg-background/45 p-3">
+              <p className="text-xs text-muted-foreground">Stable response file</p>
+              <p className="mt-1 break-all font-mono text-xs text-foreground">
+                {openClawHermesBridgeSpec.pathContract.latestResponseFile}
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="rounded-lg border border-border bg-background/45 p-3">
+              <p className="text-sm font-semibold">Future Lifecycle</p>
+              <div className="mt-3 space-y-2">
+                {openClawHermesBridgeSpec.lifecycle.map((item) => (
+                  <div key={item.step} className="rounded-md border border-border bg-card/45 p-2 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium">{item.step}</span>
+                      <Badge variant="secondary">{item.owner}</Badge>
+                    </div>
+                    <p className="mt-1 text-muted-foreground">{item.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-lg border border-rose-400/20 bg-rose-400/5 p-3">
+              <p className="text-sm font-semibold text-rose-100">Bridge Must Not</p>
+              <div className="mt-3 space-y-2">
+                {openClawHermesBridgeSpec.prohibitedActions.map((action) => (
+                  <div key={action} className="rounded-md border border-rose-400/20 bg-background/40 px-2 py-1 text-xs text-rose-100">
+                    {action}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+            {openClawHermesBridgeSpec.safetyNotice}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

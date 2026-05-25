@@ -25,6 +25,7 @@ import {
   saveICTScoringWeights
 } from "@/lib/ict";
 import { brokerDemoBridgeSpec } from "@/lib/integrations/brokerDemoBridgeSpec";
+import { openClawHermesBridgeSpec } from "@/lib/integrations/openclawHermesBridgeSpec";
 import { openClawHermesAdvisorySpec } from "@/lib/integrations/openclawHermesSpec";
 import { paperDemoExecutionSpec } from "@/lib/integrations/paperDemoExecutionSpec";
 import {
@@ -364,6 +365,8 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
               ["Latest response", latestAdvisoryResponse?.importedAt ?? "none"],
               ["Total responses", String(state.advisoryResponses?.length ?? 0)],
               ["Latest recommendation", latestAdvisoryResponse?.proceedRecommendation ?? "none"],
+              ["Bridge mode", openClawHermesBridgeSpec.mode],
+              ["File watcher", openClawHermesBridgeSpec.fileWatchImplemented ? "implemented" : "not implemented"],
               ["Role", openClawHermesAdvisorySpec.role],
               ["Broker authority", openClawHermesAdvisorySpec.brokerAuthority],
               ["Execution authority", openClawHermesAdvisorySpec.executionAuthority],
@@ -377,6 +380,10 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
             <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
               <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
               Advisory agents cannot execute trades or override readiness gates.
+            </div>
+            <div className="rounded-md border border-border bg-background/45 p-3 text-muted-foreground">
+              Local bridge contract: watch `{openClawHermesBridgeSpec.pathContract.requestPattern}` and write
+              `{openClawHermesBridgeSpec.pathContract.responsePattern}` in a future planning-only bridge.
             </div>
           </CardContent>
         </Card>

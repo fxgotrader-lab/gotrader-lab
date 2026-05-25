@@ -112,6 +112,10 @@ The local file workflow is the stepping stone before a local OpenClaw bridge or 
 move files or call an authenticated advisory endpoint, but it must not execute trades, approve trades, control go-trader,
 connect to a broker, or override readiness gates.
 
+The planning-only local bridge contract is defined in:
+
+`docs/openclaw-hermes-local-bridge.md`
+
 ## Safety Boundary
 
 The advisory layer is a research reviewer. It cannot execute, approve, override, connect, or control anything. The readiness gate and manual approval layer remain the source of local simulation readiness state.
