@@ -43,6 +43,12 @@ const sanitizeRunbookState = (state: Partial<SimulationRunbookState>): Simulatio
   ...defaultSimulationRunbookState,
   ...state,
   mode: "simulation",
+  latestResearchPipelineStatus:
+    state.latestResearchPipelineStatus === "completed" ||
+    state.latestResearchPipelineStatus === "completed_with_warnings" ||
+    state.latestResearchPipelineStatus === "failed"
+      ? state.latestResearchPipelineStatus
+      : undefined,
   platform: state.platform?.trim() || defaultSimulationRunbookState.platform,
   checklist: {
     ...emptyChecklist(),

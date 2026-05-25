@@ -16,7 +16,7 @@ import {
 } from "@/lib/researchCycle";
 import type { ResearchCycleRun, ResearchCycleStepResult, ResearchCycleStepStatus } from "@/lib/researchCycle";
 import type { LabState } from "@/lib/types";
-import { safeArray } from "@/lib/utils";
+import { safeArray, safeTopN } from "@/lib/utils";
 
 import { formatDateTime } from "./dashboardFormatters";
 
@@ -26,10 +26,16 @@ type ResearchCycleControlProps = {
 };
 
 const statusVariant = (status?: ResearchCycleRun["status"]) =>
-  status === "completed" ? "success" : status === "failed" ? "danger" : status === "running" ? "warning" : "secondary";
+  status === "completed"
+    ? "success"
+    : status === "completed_with_warnings" || status === "running"
+      ? "warning"
+      : status === "failed"
+        ? "danger"
+        : "secondary";
 
 const stepVariant = (status: ResearchCycleStepStatus) =>
-  status === "completed"
+  status === "passed" || status === "completed"
     ? "success"
     : status === "failed"
       ? "danger"
@@ -40,7 +46,7 @@ const stepVariant = (status: ResearchCycleStepStatus) =>
           : "muted";
 
 const stepIcon = (status: ResearchCycleStepStatus) => {
-  if (status === "completed") {
+  if (status === "passed" || status === "completed") {
     return <CheckCircle2 className="h-4 w-4 text-emerald-300" aria-hidden="true" />;
   }
   if (status === "failed" || status === "warning") {
@@ -79,7 +85,7 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
 
   const progress = useMemo(() => {
     const steps = safeArray(latestRun?.steps);
-    const terminalSteps = steps.filter((step) => ["completed", "warning", "failed", "skipped"].includes(step.status)).length;
+    const terminalSteps = steps.filter((step) => ["passed", "completed", "warning", "failed", "skipped"].includes(step.status)).length;
     return {
       total: steps.length,
       done: terminalSteps,
@@ -117,7 +123,8 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
             AI Research Cycle
           </CardTitle>
           <p className="mt-1 text-sm text-cyan-100/70">
-            One safe sequence for LLM advisory, auto-research, validation, quality review, proposals, readiness, and audit logging.
+            One safe sequence for thesis generation, backtesting, LLM advisory, Auto Research, validation, quality review,
+            proposals, readiness, and audit logging.
           </p>
         </div>
         <Badge variant={statusVariant(latestRun?.status)} className="w-fit capitalize">
@@ -191,6 +198,38 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
           <div className="rounded-lg border border-red-400/25 bg-red-400/10 p-3 text-sm text-red-100">
             <p className="font-medium">Failed step details</p>
             <p className="mt-1">{latestRun.failedStepDetails}</p>
+          </div>
+        ) : null}
+
+        {latestRun ? (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Final readiness</p>
+              <p className="mt-1 font-semibold text-slate-100">{latestRun.readinessSnapshot?.state ?? "Not evaluated"}</p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Best candidate</p>
+              <p className="mt-1 truncate font-semibold text-slate-100">{latestRun.bestCandidateSummary?.label ?? "None selected"}</p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Proposal</p>
+              <p className="mt-1 truncate font-semibold text-slate-100">{latestRun.createdProposalId ?? latestRun.proposalStatus ?? "No proposal"}</p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Blockers</p>
+              <p className="mt-1 font-semibold text-slate-100">{safeArray(latestRun.blockers).length}</p>
+            </div>
+          </div>
+        ) : null}
+
+        {safeArray(latestRun?.blockers).length ? (
+          <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+            <p className="font-medium">Current blockers</p>
+            <ul className="mt-2 space-y-1">
+              {safeTopN(latestRun?.blockers, 4).map((blocker) => (
+                <li key={blocker}>{blocker}</li>
+              ))}
+            </ul>
           </div>
         ) : null}
 

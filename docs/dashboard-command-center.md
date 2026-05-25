@@ -96,18 +96,33 @@ If all research checks pass, the dashboard still reminds the user not to proceed
 
 The dashboard includes a single safe control: **Run AI Research Cycle**. It runs the research workflow in order:
 
-1. Try the local LLM advisory bridge.
-2. Continue with deterministic simulation steps if the bridge is unavailable.
-3. Run Auto Research configuration search.
-4. Run the validation suite.
-5. Run research quality review.
-6. Check for an approval-required self-improvement proposal.
-7. Recompute readiness without applying overrides.
-8. Log the result into the in-app communications audit trail.
+1. Generate or refresh the research thesis with ICT context and CIO synthesis.
+2. Run a mock-data backtest with the active Backtest Lab config.
+3. Try the local LLM advisory bridge.
+4. Continue with deterministic simulation steps if the bridge is unavailable.
+5. Run multi-pass Auto Research configuration search.
+6. Run the validation suite.
+7. Run research quality review.
+8. Check for an approval-required self-improvement proposal.
+9. Update the simulation runbook with the research pipeline timestamp without marking scheduler verification checks.
+10. Recompute readiness without applying overrides.
+11. Log the result into the in-app communications audit trail.
 
 If the local LLM bridge is not running, the cycle records a warning and continues only through safe simulation steps. It does not mark LLM advisory as passed. Any calibration proposal created by Auto Research remains approval-required and does not change active settings automatically.
 
+If the backtest fails, the cycle stops candidate scoring and marks downstream optimization as skipped, because Auto Research and validation require a valid mock-data replay foundation.
+
 The dashboard control supports quick, standard, and deep Auto Research passes. Quick tests 5 candidates, standard tests 10, and deep tests up to 25. During the Auto Research step, the UI reports candidate progress and the best stable candidate so far. If no candidate reaches Paper-Demo Candidate criteria, the final state says no safe Paper-Demo Candidate was found and recommends continued research.
+
+Final cycle status is one of:
+
+- `completed`
+- `completed_with_warnings`
+- `failed`
+
+Warnings include missing LLM advisory review, readiness blockers, skipped non-critical steps, or an approval-required proposal. A `completed_with_warnings` cycle still cannot unlock broker execution.
+
+See [research-cycle-pipeline.md](research-cycle-pipeline.md) for the full pipeline contract.
 
 ## Daily Monitoring Workflow
 

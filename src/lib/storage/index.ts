@@ -14,6 +14,7 @@ export interface LabStorageAdapter {
 }
 
 const STORAGE_KEY = "gotrader-ai-lab-state";
+export const LAB_STORAGE_UPDATED_EVENT = "gotrader-ai-lab-state-updated";
 
 const isBrowser = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 
@@ -67,6 +68,7 @@ export class LocalStorageLabAdapter implements LabStorageAdapter {
   save(state: LabState) {
     if (isBrowser()) {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      window.dispatchEvent(new CustomEvent(LAB_STORAGE_UPDATED_EVENT, { detail: state }));
     }
   }
 

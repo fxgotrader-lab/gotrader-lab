@@ -19,6 +19,9 @@ export interface SimulationRunbookChecklistDefinition {
 
 export interface SimulationRunbookState {
   verifiedAt?: string;
+  latestResearchPipelineAt?: string;
+  latestResearchCycleId?: string;
+  latestResearchPipelineStatus?: "completed" | "completed_with_warnings" | "failed";
   symbol: string;
   timeframe: string;
   signal: SimulationRunbookSignal;

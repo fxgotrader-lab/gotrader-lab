@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   approveMutation,
+  LAB_STORAGE_UPDATED_EVENT,
   labStorage,
   recordAdvisoryPacket,
   recordAdvisoryResponse,
@@ -20,6 +21,15 @@ import type {
 
 export function useLabState() {
   const [state, setState] = useState<LabState>(() => labStorage.load());
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const refresh = () => setState(labStorage.load());
+    window.addEventListener(LAB_STORAGE_UPDATED_EVENT, refresh);
+    return () => window.removeEventListener(LAB_STORAGE_UPDATED_EVENT, refresh);
+  }, []);
 
   const commit = useCallback((updater: (current: LabState) => LabState) => {
     setState((current) => {

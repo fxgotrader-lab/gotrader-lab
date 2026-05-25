@@ -1,25 +1,31 @@
 import type { AutoResearchCycle, AutoResearchProgressSnapshot, AutoResearchSearchMode } from "@/lib/autoResearch";
+import type { BacktestConfig, BacktestSummary, ResolvedBacktestConfig } from "@/lib/backtesting";
 import type { LLMAdvisoryRun } from "@/lib/llm";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
 import type { ResearchQualityReview } from "@/lib/researchQuality";
+import type { FuturesSymbol, MarketBias, Timeframe } from "@/lib/types";
 import type { ValidationSuiteReport } from "@/lib/validation";
 
-export type ResearchCycleStatus = "idle" | "running" | "completed" | "failed";
+export type ResearchCycleStatus = "idle" | "running" | "completed" | "completed_with_warnings" | "failed";
 
 export type ResearchCycleStepStatus =
   | "pending"
   | "running"
+  | "passed"
   | "completed"
   | "warning"
   | "failed"
   | "skipped";
 
 export type ResearchCycleStepId =
+  | "thesis_generation"
+  | "backtest"
   | "llm_advisory"
   | "auto_research"
   | "validation"
   | "research_quality"
   | "self_improvement"
+  | "simulation_verification"
   | "readiness_gate"
   | "communications_audit";
 
@@ -35,6 +41,69 @@ export interface ResearchCycleStepResult {
   completedAt?: string;
 }
 
+export interface ResearchCycleThesisSummary {
+  thesisId: string;
+  debateSessionId: string;
+  generatedAt: string;
+  symbol: FuturesSymbol;
+  timeframe: Timeframe;
+  bias: MarketBias;
+  confidence: number;
+  ictBias: MarketBias;
+  confluenceScore: number;
+  summary: string;
+  invalidation: number;
+  target: number;
+}
+
+export interface ResearchCycleBacktestSummary
+  extends Pick<
+    BacktestSummary,
+    "totalTrades" | "winRate" | "averageR" | "maxDrawdown" | "skippedSignals"
+  > {
+  config: Pick<
+    ResolvedBacktestConfig,
+    | "symbol"
+    | "timeframe"
+    | "sessionFilter"
+    | "minimumConfluenceThreshold"
+    | "minimumConfidenceThreshold"
+    | "targetRMultiple"
+    | "stopModel"
+  >;
+  bestTradeR?: number;
+  worstTradeR?: number;
+}
+
+export interface ResearchCycleValidationSummary {
+  validationId: string;
+  generatedAt: string;
+  readinessStatus: ValidationSuiteReport["calibration"]["readinessStatus"];
+  readinessScore: number;
+  strongestScenario: string;
+  weakestScenario: string;
+  recommendedConfluenceThreshold: number;
+  recommendedConfidenceThreshold: number;
+}
+
+export interface ResearchCycleQualitySummary {
+  reviewId: string;
+  generatedAt: string;
+  readinessGrade: ResearchQualityReview["readinessGrade"];
+  readinessScore: number;
+  topWeaknesses: string[];
+  topStrengths: string[];
+  recommendedNextStep: string;
+}
+
+export interface ResearchCycleCandidateSummary {
+  candidateId: string;
+  label: string;
+  score: number;
+  resultCategory: string;
+  readinessEstimate: string;
+}
+
 export interface ResearchCycleRun {
   cycleId: string;
   startedAt: string;
@@ -48,6 +117,13 @@ export interface ResearchCycleRun {
   validationReport?: ValidationSuiteReport;
   researchQualityReview?: ResearchQualityReview;
   readinessSnapshot?: ReadinessGateSnapshot;
+  thesisSummary?: ResearchCycleThesisSummary;
+  backtestSummary?: ResearchCycleBacktestSummary;
+  validationSummary?: ResearchCycleValidationSummary;
+  researchQualitySummary?: ResearchCycleQualitySummary;
+  bestCandidateSummary?: ResearchCycleCandidateSummary;
+  proposalStatus?: string;
+  blockers?: string[];
   createdProposalId?: string;
   failedStepId?: ResearchCycleStepId;
   failedStepDetails?: string;
@@ -66,5 +142,6 @@ export interface ResearchCycleRunOptions {
   state: import("@/lib/types").LabState;
   searchMode?: AutoResearchSearchMode;
   maxCandidateCount?: number;
+  backtestConfig?: BacktestConfig;
   onUpdate?: (run: ResearchCycleRun) => void;
 }
