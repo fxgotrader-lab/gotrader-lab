@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Database, KeyRound, Lock, ShieldAlert, ShieldCheck, SlidersHorizontal, Unplug } from "lucide-react";
+import { BridgeStatusCard } from "@/components/bridge/BridgeStatusCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -113,6 +114,8 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
           </div>
         </CardContent>
       </Card>
+
+      <BridgeStatusCard handoffExports={state.handoffExports ?? []} />
 
       <div className="grid gap-5 xl:grid-cols-4">
         <Card>

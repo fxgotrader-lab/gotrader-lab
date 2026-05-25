@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Download, FileJson, FlaskConical, Play, ShieldAlert, Sparkles } from "lucide-react";
+import { BridgeStatusCard } from "@/components/bridge/BridgeStatusCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -208,6 +209,8 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
         </div>
         <Badge variant="warning">No broker APIs, no orders</Badge>
       </div>
+
+      <BridgeStatusCard handoffExports={state.handoffExports ?? []} compact />
 
       <div className="grid gap-5 xl:grid-cols-[0.82fr_1.18fr]">
         <Card>
