@@ -86,22 +86,30 @@ Real model calls must go through a secure provider boundary:
 - Supabase Edge Function
 - future secure provider service
 
-The first preferred real path is `local_command`.
+The first preferred real path is `local_command`. A secure local GPT-5.5 provider is available at:
+
+```powershell
+node scripts/gpt55-llm-agent-provider.mjs
+```
 
 Example local command configuration outside the frontend:
 
 ```powershell
-$env:GOTRADER_LLM_AGENT_COMMAND = "openclaw run gotrader-llm-agent-review"
+$env:OPENAI_API_KEY = "..."
+$env:GOTRADER_LLM_MODEL = "gpt-5.5"
+$env:GOTRADER_LLM_AGENT_COMMAND = "node scripts/gpt55-llm-agent-provider.mjs"
 ```
 
 The local bridge should:
 
 1. read the restricted context JSON from stdin
-2. call the real provider outside the browser
+2. call the real provider outside the browser through the OpenAI Responses API
 3. return structured advisory JSON on stdout
 4. reject any execution or readiness override authority
 
 The browser frontend cannot spawn this command directly.
+
+See `docs/gpt55-api-setup.md` and `scripts/README-gpt55-llm-provider.md` for the local provider setup.
 
 ## Readiness Impact
 

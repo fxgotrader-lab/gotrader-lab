@@ -232,25 +232,40 @@ export function LLMAgentsView({ state }: { state: LabState }) {
               <TerminalSquare className="h-4 w-4 text-primary" aria-hidden="true" />
               <CardTitle>Provider Boundary</CardTitle>
             </div>
-            <CardDescription>No API keys can live in frontend code. Use a secure provider boundary.</CardDescription>
+            <CardDescription>No API keys can live in frontend code. GPT-5.5 runs through a secure local command.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <div className="rounded-lg border border-border bg-background/45 p-3">
-              <p className="text-xs text-muted-foreground">Preferred first real path</p>
-              <p className="mt-1 font-mono text-sm text-foreground">local_command</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs text-muted-foreground">Preferred first real path</p>
+                <p className="mt-1 font-mono text-sm text-foreground">local_command</p>
+              </div>
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs text-muted-foreground">Secure GPT provider script</p>
+                <p className="mt-1 break-all font-mono text-sm text-foreground">
+                  scripts/gpt55-llm-agent-provider.mjs
+                </p>
+              </div>
             </div>
             <div className="rounded-lg border border-border bg-background/45 p-3">
               <p className="text-xs text-muted-foreground">Environment variable</p>
               <p className="mt-1 break-all font-mono text-sm text-foreground">{LLM_LOCAL_COMMAND_ENV_VAR}</p>
             </div>
             <pre className="overflow-x-auto rounded-lg border border-border bg-background/75 p-3 font-mono text-xs leading-5 text-slate-200">
-{`$env:${LLM_LOCAL_COMMAND_ENV_VAR} = "openclaw run gotrader-llm-agent-review"
-# local bridge sends context JSON on stdin
-# local bridge expects structured advisory JSON on stdout`}
+{`$env:OPENAI_API_KEY = "..."
+$env:GOTRADER_LLM_MODEL = "gpt-5.5"
+$env:${LLM_LOCAL_COMMAND_ENV_VAR} = "node scripts/gpt55-llm-agent-provider.mjs"
+
+# provider reads restricted research JSON on stdin
+# provider prints validated advisory JSON on stdout only`}
             </pre>
+            <div className="rounded-lg border border-emerald-300/25 bg-emerald-300/10 p-3 text-emerald-100">
+              The OpenAI key stays in the local shell environment. The browser app only stores provider status and
+              advisory run metadata.
+            </div>
             <div className="rounded-lg border border-border bg-background/45 p-3 text-muted-foreground">
               Frontend cannot spawn local commands. A local bridge, backend endpoint, Supabase Edge Function, or future
-              secure service must own real model calls.
+              secure service must own real model calls. See docs/gpt55-api-setup.md for setup and validation.
             </div>
           </CardContent>
         </Card>

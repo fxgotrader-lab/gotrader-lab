@@ -105,7 +105,7 @@ export function providerStatusForMode(providerMode: LLMProviderMode): LLMProvide
       providerMode,
       configured: false,
       statusMessage:
-        "Local command mode must run through a secure local bridge. Configure GOTRADER_LLM_AGENT_COMMAND outside frontend code.",
+        "Local command mode must run through a secure local bridge. Configure GOTRADER_LLM_AGENT_COMMAND outside frontend code, for example node scripts/gpt55-llm-agent-provider.mjs.",
       secureBoundary: "local_command"
     };
   }
