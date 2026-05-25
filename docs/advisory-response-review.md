@@ -88,6 +88,22 @@ To produce a mock advisory response from a saved request file, run:
 node scripts/openclaw-hermes-advisory-bridge.mjs --once
 ```
 
+To call a local OpenClaw/Hermes command, set the command and use `--provider local-command`:
+
+```powershell
+$env:GOTRADER_ADVISORY_COMMAND = "openclaw run gotrader-advisory-review"
+node scripts/openclaw-hermes-advisory-bridge.mjs --once --provider local-command
+```
+
+The bridge passes request JSON to stdin and expects response JSON on stdout.
+
+The response must keep:
+
+- `mode: "advisory_only"`
+- `executionAuthority: "none"`
+- `brokerAuthority: "none"`
+- `readinessOverrideAuthority: "none"`
+
 The script writes:
 
 `advisory/responses/latest-advisory-response.json`

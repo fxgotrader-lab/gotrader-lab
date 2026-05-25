@@ -109,6 +109,19 @@ Watch mode is also available:
 node scripts/openclaw-hermes-advisory-bridge.mjs --watch
 ```
 
+To validate the request without writing a response:
+
+```bash
+node scripts/openclaw-hermes-advisory-bridge.mjs --once --dry-run
+```
+
+To call a local OpenClaw/Hermes command:
+
+```powershell
+$env:GOTRADER_ADVISORY_COMMAND = "openclaw run gotrader-advisory-review"
+node scripts/openclaw-hermes-advisory-bridge.mjs --once --provider local-command
+```
+
 The script writes `advisory/responses/latest-advisory-response.json`, copies valid requests to `advisory/processed/`,
 and writes invalid request diagnostics to `advisory/errors/`.
 

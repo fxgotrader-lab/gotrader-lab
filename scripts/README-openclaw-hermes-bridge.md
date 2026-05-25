@@ -7,10 +7,29 @@ open websocket feeds, or override readiness gates.
 
 ## Commands
 
-Run once:
+Run once with the default mock provider:
 
 ```bash
 node scripts/openclaw-hermes-advisory-bridge.mjs --once
+```
+
+Dry-run request validation without writing a response:
+
+```bash
+node scripts/openclaw-hermes-advisory-bridge.mjs --once --dry-run
+```
+
+Run once with a local OpenClaw/Hermes command:
+
+```bash
+$env:GOTRADER_ADVISORY_COMMAND = "openclaw run gotrader-advisory-review"
+node scripts/openclaw-hermes-advisory-bridge.mjs --once --provider local-command
+```
+
+Fall back to the mock response if the local command fails:
+
+```bash
+node scripts/openclaw-hermes-advisory-bridge.mjs --once --provider local-command --fallback-mock
 ```
 
 Watch for local request files:
@@ -62,6 +81,34 @@ Request files must keep:
 The generated response keeps the same authority locks and uses:
 
 `advisoryAgent: "openclaw_hermes_local_bridge_mock"`
+
+## Local Command Provider
+
+`--provider local-command` reads the advisory request JSON and passes it to the command in
+`GOTRADER_ADVISORY_COMMAND` through stdin.
+
+The local command must print advisory response JSON to stdout only. The bridge validates that response before writing
+`advisory/responses/latest-advisory-response.json`.
+
+Required local command response fields include:
+
+- `mode: "advisory_only"`
+- `executionAuthority: "none"`
+- `brokerAuthority: "none"`
+- `readinessOverrideAuthority: "none"`
+- `packetId`
+- `responseId`
+- `advisoryAgent`
+- `proceedRecommendation`
+
+Allowed proceed recommendations:
+
+- `continue_research`
+- `rerun_validation`
+- `paper_demo_candidate_review`
+
+If the local command fails or returns invalid JSON, the bridge writes an error file to `advisory/errors/`. It uses the
+mock fallback only when `--fallback-mock` is present.
 
 ## Future Upgrade Path
 

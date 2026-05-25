@@ -214,6 +214,18 @@ export function AdvisoryAgentsView({ state, actions }: { state: LabState; action
         <CardContent className="space-y-4">
           <div className="grid gap-3 md:grid-cols-2">
             <div className="rounded-md border border-border bg-background/45 p-3">
+              <p className="text-xs text-muted-foreground">Provider modes</p>
+              <p className="mt-1 break-all font-mono text-xs text-foreground">
+                {openClawHermesBridgeSpec.providerModes.join(", ")}
+              </p>
+            </div>
+            <div className="rounded-md border border-border bg-background/45 p-3">
+              <p className="text-xs text-muted-foreground">Local command env var</p>
+              <p className="mt-1 break-all font-mono text-xs text-foreground">
+                {openClawHermesBridgeSpec.localCommandEnvVar}
+              </p>
+            </div>
+            <div className="rounded-md border border-border bg-background/45 p-3">
               <p className="text-xs text-muted-foreground">Request watch contract</p>
               <p className="mt-1 break-all font-mono text-xs text-foreground">
                 {openClawHermesBridgeSpec.pathContract.requestPattern}

@@ -366,6 +366,8 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
               ["Total responses", String(state.advisoryResponses?.length ?? 0)],
               ["Latest recommendation", latestAdvisoryResponse?.proceedRecommendation ?? "none"],
               ["Bridge mode", openClawHermesBridgeSpec.mode],
+              ["Bridge provider", openClawHermesBridgeSpec.defaultProvider],
+              ["Command env var", openClawHermesBridgeSpec.localCommandEnvVar],
               ["File watcher", openClawHermesBridgeSpec.fileWatchImplemented ? "implemented" : "not implemented"],
               ["Role", openClawHermesAdvisorySpec.role],
               ["Broker authority", openClawHermesAdvisorySpec.brokerAuthority],

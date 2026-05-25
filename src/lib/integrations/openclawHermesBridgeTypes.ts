@@ -2,6 +2,7 @@ export type OpenClawHermesBridgeStatus = "planning_only" | "local_script_availab
 export type OpenClawHermesBridgeConnection = "not_connected";
 export type OpenClawHermesBridgeMode = "local_file_contract";
 export type OpenClawHermesBridgeAuthority = "none";
+export type OpenClawHermesBridgeProvider = "mock" | "local-command";
 
 export interface OpenClawHermesBridgePathContract {
   requestDirectory: string;
@@ -28,6 +29,11 @@ export interface OpenClawHermesBridgeSpec {
   brokerAuthority: OpenClawHermesBridgeAuthority;
   readinessOverrideAuthority: OpenClawHermesBridgeAuthority;
   pathContract: OpenClawHermesBridgePathContract;
+  providerModes: OpenClawHermesBridgeProvider[];
+  defaultProvider: OpenClawHermesBridgeProvider;
+  localCommandEnvVar: "GOTRADER_ADVISORY_COMMAND";
+  dryRunSupported: true;
+  fallbackMockSupported: true;
   requestValidation: string[];
   responseValidation: string[];
   lifecycle: OpenClawHermesBridgeLifecycleStep[];

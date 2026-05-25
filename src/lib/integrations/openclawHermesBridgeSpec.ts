@@ -19,6 +19,11 @@ export const openClawHermesBridgeSpec: OpenClawHermesBridgeSpec = {
     requestPattern: "advisory/requests/*.json",
     responsePattern: "advisory/responses/*.json"
   },
+  providerModes: ["mock", "local-command"],
+  defaultProvider: "mock",
+  localCommandEnvVar: "GOTRADER_ADVISORY_COMMAND",
+  dryRunSupported: true,
+  fallbackMockSupported: true,
   requestValidation: [
     'mode must be "advisory_only"',
     'executionAuthority must be "none"',

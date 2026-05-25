@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawn } from "node:child_process";
 import { watch } from "node:fs";
 import { copyFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -17,6 +18,8 @@ const allowedRecommendations = new Set([
   "rerun_validation",
   "paper_demo_candidate_review"
 ]);
+const validAgents = new Set(["OpenClaw", "Hermes", "openclaw_hermes_local_bridge_mock"]);
+const providers = new Set(["mock", "local-command"]);
 
 function logSafetyBanner() {
   console.warn("Advisory-only bridge. No execution authority. No broker control.");
@@ -25,6 +28,68 @@ function logSafetyBanner() {
 
 function timestampSlug(date = new Date()) {
   return date.toISOString().replace(/[:.]/g, "-");
+}
+
+function parseArgs(argv) {
+  const options = {
+    mode: argv.includes("--watch") ? "watch" : "once",
+    provider: "mock",
+    fallbackMock: argv.includes("--fallback-mock"),
+    dryRun: argv.includes("--dry-run")
+  };
+
+  const providerIndex = argv.indexOf("--provider");
+  if (providerIndex >= 0) {
+    options.provider = argv[providerIndex + 1] ?? "";
+  }
+
+  if (!providers.has(options.provider)) {
+    throw new Error(`Unsupported provider "${options.provider}". Use "mock" or "local-command".`);
+  }
+
+  return options;
+}
+
+function splitCommandLine(commandLine) {
+  const parts = [];
+  let current = "";
+  let quote = "";
+
+  for (const char of commandLine.trim()) {
+    if (quote) {
+      if (char === quote) {
+        quote = "";
+      } else {
+        current += char;
+      }
+      continue;
+    }
+
+    if (char === "\"" || char === "'") {
+      quote = char;
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      if (current) {
+        parts.push(current);
+        current = "";
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current) {
+    parts.push(current);
+  }
+
+  if (quote) {
+    throw new Error("GOTRADER_ADVISORY_COMMAND contains an unterminated quote.");
+  }
+
+  return parts;
 }
 
 async function ensureDirectories() {
@@ -83,6 +148,85 @@ function validateRequest(request) {
   return {
     valid: errors.length === 0,
     errors
+  };
+}
+
+function validateResponse(response, expectedPacketId) {
+  const errors = [];
+  const warnings = [];
+
+  if (!response?.packetId) {
+    errors.push("packetId is required");
+  } else if (expectedPacketId && response.packetId !== expectedPacketId) {
+    errors.push(`packetId must match request packetId "${expectedPacketId}"`);
+  }
+
+  if (!response?.responseId) {
+    errors.push("responseId is required");
+  }
+
+  if (!response?.timestamp) {
+    errors.push("timestamp is required");
+  }
+
+  if (!validAgents.has(response?.advisoryAgent ?? "")) {
+    errors.push('advisoryAgent must be "OpenClaw", "Hermes", or "openclaw_hermes_local_bridge_mock"');
+  }
+
+  if (response?.mode !== "advisory_only") {
+    errors.push('mode must remain "advisory_only"');
+  }
+
+  if (response?.executionAuthority !== "none") {
+    errors.push('executionAuthority must remain "none"');
+  }
+
+  if (response?.brokerAuthority !== "none") {
+    errors.push('brokerAuthority must remain "none"');
+  }
+
+  if (response?.readinessOverrideAuthority !== "none") {
+    errors.push('readinessOverrideAuthority must remain "none"');
+  }
+
+  if (!allowedRecommendations.has(response?.proceedRecommendation)) {
+    errors.push(
+      "proceedRecommendation must be advisory-only: continue_research, rerun_validation, or paper_demo_candidate_review"
+    );
+  }
+
+  if (typeof response?.advisoryConfidence !== "number" || !Number.isFinite(response.advisoryConfidence)) {
+    errors.push("advisoryConfidence is required");
+  } else if (response.advisoryConfidence < 0 || response.advisoryConfidence > 1) {
+    errors.push("advisoryConfidence must be between 0 and 1");
+  }
+
+  if (
+    response?.agreeWithThesis !== true &&
+    response?.agreeWithThesis !== false &&
+    response?.agreeWithThesis !== null
+  ) {
+    errors.push("agreeWithThesis must be true, false, or null");
+  }
+
+  if (!Array.isArray(response?.riskWarnings)) {
+    errors.push("riskWarnings must be an array");
+  } else if (!response.riskWarnings.length) {
+    warnings.push("riskWarnings is empty; advisory review may be shallow");
+  }
+
+  if (!Array.isArray(response?.missingEvidence)) {
+    errors.push("missingEvidence must be an array");
+  }
+
+  if (!Array.isArray(response?.recommendedCalibration)) {
+    errors.push("recommendedCalibration must be an array");
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings
   };
 }
 
@@ -172,27 +316,133 @@ async function writeErrorFile(sourcePath, errors) {
     errors
   };
   await writeFile(errorPath, `${JSON.stringify(errorPayload, null, 2)}\n`, "utf8");
-  console.error(`Invalid advisory request. Error file written: ${path.relative(repoRoot, errorPath)}`);
+  console.error(`Advisory bridge error file written: ${path.relative(repoRoot, errorPath)}`);
 }
 
-async function processRequestFile(filePath) {
+function runLocalCommand(request) {
+  const commandLine = process.env.GOTRADER_ADVISORY_COMMAND;
+  if (!commandLine) {
+    return Promise.reject(new Error("GOTRADER_ADVISORY_COMMAND is required for local-command provider."));
+  }
+
+  const [command, ...args] = splitCommandLine(commandLine);
+  if (!command) {
+    return Promise.reject(new Error("GOTRADER_ADVISORY_COMMAND is empty."));
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: repoRoot,
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true
+    });
+
+    let stdout = "";
+    let stderr = "";
+    const timeout = setTimeout(() => {
+      child.kill();
+      reject(new Error("Local advisory command timed out after 30 seconds."));
+    }, 30000);
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      if (code !== 0) {
+        reject(new Error(`Local advisory command exited with ${code}: ${stderr.trim()}`));
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(stdout));
+      } catch {
+        reject(new Error("Local advisory command stdout was not valid JSON."));
+      }
+    });
+
+    child.stdin.end(`${JSON.stringify(request, null, 2)}\n`);
+  });
+}
+
+async function buildProviderResponse(request, provider) {
+  if (provider === "local-command") {
+    return runLocalCommand(request);
+  }
+
+  return buildMockResponse(request);
+}
+
+async function processRequestFile(filePath, options) {
   const raw = await readFile(filePath, "utf8");
   let request;
 
   try {
     request = JSON.parse(raw);
   } catch {
-    await writeErrorFile(filePath, ["Request JSON could not be parsed"]);
+    if (options.dryRun) {
+      console.error("Dry run failed request validation: Request JSON could not be parsed");
+    } else {
+      await writeErrorFile(filePath, ["Request JSON could not be parsed"]);
+    }
     return false;
   }
 
   const validation = validateRequest(request);
   if (!validation.valid) {
-    await writeErrorFile(filePath, validation.errors);
+    if (options.dryRun) {
+      console.error(`Dry run failed request validation: ${validation.errors.join("; ")}`);
+    } else {
+      await writeErrorFile(filePath, validation.errors);
+    }
     return false;
   }
 
-  const response = buildMockResponse(request);
+  if (options.dryRun) {
+    console.log(`Dry run: request ${request.packetId} is valid.`);
+    console.log(`Dry run: provider=${options.provider}`);
+    if (options.provider === "local-command") {
+      console.log("Dry run: would pass request JSON to GOTRADER_ADVISORY_COMMAND through stdin.");
+    } else {
+      const mockValidation = validateResponse(buildMockResponse(request), request.packetId);
+      console.log(`Dry run: mock response validation=${mockValidation.valid ? "valid" : "invalid"}`);
+    }
+    console.log("Dry run: no response, processed copy, or error JSON was written.");
+    return true;
+  }
+
+  let response;
+  try {
+    response = await buildProviderResponse(request, options.provider);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await writeErrorFile(filePath, [`Provider ${options.provider} failed: ${message}`]);
+    if (!options.fallbackMock) {
+      return false;
+    }
+    console.warn("Local command failed; --fallback-mock enabled, generating mock advisory response.");
+    response = buildMockResponse(request);
+  }
+
+  const responseValidation = validateResponse(response, request.packetId);
+  if (!responseValidation.valid) {
+    await writeErrorFile(filePath, responseValidation.errors);
+    if (!options.fallbackMock || options.provider !== "local-command") {
+      return false;
+    }
+    console.warn("Local command returned invalid response; --fallback-mock enabled, generating mock advisory response.");
+    response = buildMockResponse(request);
+  }
+
   await writeFile(latestResponsePath, `${JSON.stringify(response, null, 2)}\n`, "utf8");
 
   const processedName = `${path.basename(filePath, ".json")}-processed-${timestampSlug()}.json`;
@@ -206,6 +456,7 @@ async function processRequestFile(filePath) {
 async function runOnce() {
   await ensureDirectories();
   logSafetyBanner();
+  const options = parseArgs(process.argv.slice(2));
 
   const requestFile = await findRequestFile();
   if (!requestFile) {
@@ -214,12 +465,13 @@ async function runOnce() {
   }
 
   console.log(`Processing advisory request: ${path.relative(repoRoot, requestFile)}`);
-  await processRequestFile(requestFile);
+  await processRequestFile(requestFile, options);
 }
 
 async function runWatch() {
   await ensureDirectories();
   logSafetyBanner();
+  const options = parseArgs(process.argv.slice(2));
   console.log("Watching advisory/requests for advisory-only JSON files.");
 
   let processing = false;
@@ -235,7 +487,7 @@ async function runWatch() {
     try {
       const requestFile = await findRequestFile();
       if (requestFile) {
-        await processRequestFile(requestFile);
+        await processRequestFile(requestFile, options);
       }
     } catch (error) {
       console.error(error instanceof Error ? error.message : String(error));

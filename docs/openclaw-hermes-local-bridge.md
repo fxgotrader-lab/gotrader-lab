@@ -68,11 +68,53 @@ Watch mode:
 node scripts/openclaw-hermes-advisory-bridge.mjs --watch
 ```
 
+Dry-run mode:
+
+```bash
+node scripts/openclaw-hermes-advisory-bridge.mjs --once --dry-run
+```
+
+Local command mode:
+
+```powershell
+$env:GOTRADER_ADVISORY_COMMAND = "openclaw run gotrader-advisory-review"
+node scripts/openclaw-hermes-advisory-bridge.mjs --once --provider local-command
+```
+
+Local command fallback mode:
+
+```bash
+node scripts/openclaw-hermes-advisory-bridge.mjs --once --provider local-command --fallback-mock
+```
+
 The script prints:
 
 ```text
 Advisory-only bridge. No execution authority. No broker control.
 ```
+
+## Provider Modes
+
+Default provider:
+
+`mock`
+
+Optional provider:
+
+`local-command`
+
+`local-command` uses `GOTRADER_ADVISORY_COMMAND`. The bridge passes request JSON to stdin and expects advisory response
+JSON on stdout. The command must not print non-JSON text to stdout.
+
+Required response authority locks:
+
+- `mode: "advisory_only"`
+- `executionAuthority: "none"`
+- `brokerAuthority: "none"`
+- `readinessOverrideAuthority: "none"`
+
+If the local command fails or returns invalid JSON, the bridge writes an error file to `advisory/errors/`. Mock fallback
+only runs when `--fallback-mock` is provided.
 
 ## Request Validation
 
@@ -112,7 +154,8 @@ The local bridge must not:
 - change live settings
 - control go-trader
 - write API keys or credentials
-- call live OpenClaw/Hermes APIs until a separate authenticated connector is explicitly designed
+- hardcode OpenClaw credentials
+- call broker or go-trader execution APIs
 
 ## Safety Boundary
 
