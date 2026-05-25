@@ -1,5 +1,7 @@
 export {
+  applyApprovedResearchCalibration,
   approveCalibrationProposal,
+  canApproveProposal,
   loadSelfImprovementState,
   rejectCalibrationProposal,
   revertCalibrationProposal,

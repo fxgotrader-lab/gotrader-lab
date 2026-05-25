@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   approveCalibrationProposal,
+  canApproveProposal,
   createCalibrationProposal,
   evaluateCalibrationProposal,
   loadSelfImprovementState,
@@ -288,21 +289,29 @@ export function SelfImprovementView() {
   const [state, setState] = useState<SelfImprovementState>(() => loadSelfImprovementState());
   const [reviewerName, setReviewerName] = useState("local user");
   const [approvalNotes, setApprovalNotes] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
   const latestValidation = loadLatestValidationReport();
   const latestQuality = loadLatestResearchQualityReview();
   const baselineConfig = useMemo(() => loadBacktestConfig(), [state.latestProposalId]);
   const latestAdvisory = labStorage.load().advisoryResponses?.[0];
   const latestProposal = state.proposals.find((proposal) => proposal.proposalId === state.latestProposalId) ?? state.proposals[0];
-  const canAccept =
-    latestProposal?.status === "testing" &&
-    latestProposal.comparisonResult?.improved &&
-    latestProposal.comparisonResult.stabilityImproved;
   const effectiveProposalIntent =
     latestProposal?.proposalIntent ??
     (latestProposal?.sourceCandidateId || latestProposal?.reason.includes("Auto Research")
       ? "research_calibration_candidate"
       : undefined);
   const isResearchCalibration = effectiveProposalIntent === "research_calibration_candidate";
+  const approvalCheck = canApproveProposal(latestProposal);
+  const canAccept = approvalCheck.canApprove;
+  const rejectDisabledReason = !latestProposal
+    ? "No proposal selected."
+    : latestProposal.status === "accepted"
+      ? "Proposal already accepted."
+      : latestProposal.status === "rejected"
+        ? "Proposal already rejected."
+        : latestProposal.status === "reverted"
+          ? "Proposal was reverted."
+          : "";
 
   useEffect(() => {
     const refresh = () => setState(loadSelfImprovementState());
@@ -317,6 +326,7 @@ export function SelfImprovementView() {
   const createProposal = () => {
     const proposal = createCalibrationProposal(latestAdvisory?.advisoryAgent === "Hermes" ? "hermes" : "openclaw");
     setState(upsertCalibrationProposal(proposal, "created", "Created calibration proposal from latest validation weakness data."));
+    setActionMessage("");
   };
 
   const testProposal = () => {
@@ -325,25 +335,27 @@ export function SelfImprovementView() {
     }
     const tested = evaluateCalibrationProposal(latestProposal);
     setState(upsertCalibrationProposal(tested, "tested", "Ran deterministic mock-data validation against proposed settings."));
+    setActionMessage("");
   };
 
   const acceptProposal = () => {
-    if (!latestProposal || !canAccept) {
+    if (!latestProposal || !approvalCheck.canApprove) {
+      setActionMessage(approvalCheck.reason ?? "Proposal cannot be approved yet.");
       return;
     }
-    const approved = window.confirm(
-      "Accept this simulation calibration proposal and update active Backtest Lab settings? Broker execution remains disabled."
-    );
-    if (approved) {
-      setState(approveCalibrationProposal(latestProposal.proposalId, reviewerName, approvalNotes));
-    }
+    setState(approveCalibrationProposal(latestProposal.proposalId, reviewerName, approvalNotes));
+    setActionMessage("Research calibration approved. Rerun AI Research Cycle to evaluate the new baseline.");
+    setApprovalNotes("");
   };
 
   const rejectProposal = () => {
-    if (!latestProposal) {
+    if (!latestProposal || rejectDisabledReason) {
+      setActionMessage(rejectDisabledReason || "Proposal cannot be rejected.");
       return;
     }
     setState(rejectCalibrationProposal(latestProposal.proposalId, reviewerName, approvalNotes));
+    setActionMessage("Research calibration rejected. No settings changed.");
+    setApprovalNotes("");
   };
 
   const revertProposal = () => {
@@ -353,6 +365,8 @@ export function SelfImprovementView() {
     const approved = window.confirm("Revert this accepted simulation calibration back to its saved baseline?");
     if (approved) {
       setState(revertCalibrationProposal(latestProposal.proposalId, reviewerName, approvalNotes));
+      setActionMessage("Calibration reverted to the saved simulation baseline.");
+      setApprovalNotes("");
     }
   };
 
@@ -371,6 +385,12 @@ export function SelfImprovementView() {
       </div>
 
       <SafetyLockBanner message="Simulation self-improvement only. No broker execution, readiness override, paper/demo enablement, or real trades." />
+
+      {actionMessage ? (
+        <Card className="border-emerald-300/25 bg-emerald-300/10">
+          <CardContent className="p-4 text-sm font-medium text-emerald-100">{actionMessage}</CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -658,7 +678,7 @@ export function SelfImprovementView() {
               <Button onClick={acceptProposal} disabled={!canAccept}>
                 {isResearchCalibration ? "Approve research calibration" : "Accept Proposal"}
               </Button>
-              <Button variant="secondary" onClick={rejectProposal} disabled={!latestProposal}>
+              <Button variant="secondary" onClick={rejectProposal} disabled={Boolean(rejectDisabledReason)}>
                 Reject calibration
               </Button>
               <Button variant="destructive" onClick={revertProposal} disabled={latestProposal?.status !== "accepted"}>
@@ -671,13 +691,21 @@ export function SelfImprovementView() {
                 Rerun cycle after approval
               </Link>
             </div>
+            {(!canAccept || rejectDisabledReason) && (
+              <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-xs text-amber-100">
+                {!canAccept ? `Approval disabled: ${approvalCheck.reason}` : null}
+                {!canAccept && rejectDisabledReason ? " " : ""}
+                {rejectDisabledReason ? `Reject disabled: ${rejectDisabledReason}` : null}
+              </div>
+            )}
           </div>
           <div className="space-y-3">
             {[
               "Proposal mode must remain simulation.",
               "Broker authority, execution authority, and readiness override authority must remain none.",
-              "A simulation test must run before acceptance.",
-              "Comparison must improve stability, not merely profit.",
+              "Proposal must include approved research/backtest setting changes.",
+              "Proposal must include simulation metrics before acceptance.",
+              "Comparison must improve trade generation or stability, not merely profit.",
               "Acceptance only updates local simulation calibration settings."
             ].map((item, index) => (
               <div key={item} className="flex items-center gap-3 rounded-lg border border-border bg-background/45 p-3 text-sm">
