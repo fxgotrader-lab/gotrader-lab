@@ -31,6 +31,7 @@ const navigation = [
   { href: "/research-quality", label: "Quality", icon: ShieldCheck },
   { href: "/simulation-runbook", label: "Runbook", icon: ClipboardList },
   { href: "/readiness-gate", label: "Readiness", icon: ShieldAlert },
+  { href: "/advisory-agents", label: "Advisory", icon: Bot },
   { href: "/performance", label: "Performance", icon: Activity },
   { href: "/prompt-lab", label: "Prompt Lab", icon: GitBranch },
   { href: "/settings", label: "Settings", icon: Settings }

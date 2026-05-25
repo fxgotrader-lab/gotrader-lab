@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  Bot,
   ClipboardCheck,
   ClipboardList,
   Database,
@@ -24,6 +25,7 @@ import {
   saveICTScoringWeights
 } from "@/lib/ict";
 import { brokerDemoBridgeSpec } from "@/lib/integrations/brokerDemoBridgeSpec";
+import { openClawHermesAdvisorySpec } from "@/lib/integrations/openclawHermesSpec";
 import { paperDemoExecutionSpec } from "@/lib/integrations/paperDemoExecutionSpec";
 import {
   evaluateReadinessGate,
@@ -330,6 +332,36 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
             </div>
             <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
               Broker execution must remain skipped and trades must stay at 0.
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Bot className="h-4 w-4 text-primary" aria-hidden="true" />
+              <CardTitle>OpenClaw/Hermes Advisory Agents</CardTitle>
+            </div>
+            <CardDescription>Future advisory review layer for research context only.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {[
+              ["Status", openClawHermesAdvisorySpec.status],
+              ["OpenClaw", openClawHermesAdvisorySpec.openClawConnection],
+              ["Hermes", openClawHermesAdvisorySpec.hermesConnection],
+              ["Role", openClawHermesAdvisorySpec.role],
+              ["Broker authority", openClawHermesAdvisorySpec.brokerAuthority],
+              ["Execution authority", openClawHermesAdvisorySpec.executionAuthority],
+              ["Readiness override", openClawHermesAdvisorySpec.readinessOverrideAuthority]
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+                <span className="text-muted-foreground">{label}</span>
+                <Badge variant={value === "none" ? "danger" : "warning"}>{formatBridgeValue(value)}</Badge>
+              </div>
+            ))}
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
+              Advisory agents cannot execute trades or override readiness gates.
             </div>
           </CardContent>
         </Card>
