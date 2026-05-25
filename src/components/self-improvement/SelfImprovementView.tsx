@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, FlaskConical, History, RefreshCw, ShieldAlert, SlidersHorizontal, XCircle } from "lucide-react";
+import { CheckCircle2, FlaskConical, History, ShieldAlert, SlidersHorizontal, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +29,9 @@ const statusVariant = (status?: string) =>
   status === "accepted" ? "success" : status === "rejected" || status === "reverted" ? "danger" : status === "testing" ? "warning" : "muted";
 const readinessVariant = (status?: string) =>
   status === "green" ? "success" : status === "yellow" ? "warning" : status === "red" ? "danger" : "muted";
+const deltaClass = (tone: "positive" | "negative" | "neutral") =>
+  tone === "positive" ? "text-emerald-200" : tone === "negative" ? "text-red-200" : "text-muted-foreground";
+const deltaPrefix = (value: number) => (value > 0 ? "+" : "");
 
 const MetricsGrid = ({ metrics }: { metrics?: CalibrationProposalMetrics }) => {
   if (!metrics) {
@@ -85,11 +88,176 @@ const ChangeList = ({ proposal }: { proposal?: CalibrationProposal }) => {
   return (
     <div className="space-y-2">
       {rows.map(([label, value]) => (
-        <div key={label} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-background/45 p-3 text-sm">
-          <span className="text-muted-foreground">{label}</span>
-          <span className="font-mono text-foreground">{String(value)}</span>
+        <div key={label} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border bg-background/45 p-3 text-sm">
+          <span className="shrink-0 text-muted-foreground">{label}</span>
+          <span className="min-w-0 max-w-full break-words text-right font-mono text-foreground">{String(value)}</span>
         </div>
       ))}
+    </div>
+  );
+};
+
+type ComparisonDirection = "higher" | "lower" | "neutral";
+
+interface ComparisonRow {
+  label: string;
+  before?: number | null;
+  after?: number | null;
+  format: (value?: number | null) => string;
+  direction: ComparisonDirection;
+  interpretation: string;
+}
+
+const countFormat = (value?: number | null) => (typeof value === "number" ? String(Math.round(value)) : "n/a");
+const percentFormat = (value?: number | null) => (typeof value === "number" ? formatPercent(value, 1) : "n/a");
+const rFormat = (value?: number | null) => (typeof value === "number" ? `${formatNumber(value)}R` : "n/a");
+const numberFormat = (value?: number | null) => (typeof value === "number" ? formatNumber(value) : "n/a");
+
+const comparisonTone = (direction: ComparisonDirection, delta: number) => {
+  if (Math.abs(delta) < 0.005 || direction === "neutral") {
+    return "neutral" as const;
+  }
+  const improved = direction === "higher" ? delta > 0 : delta < 0;
+  return improved ? ("positive" as const) : ("negative" as const);
+};
+
+const comparisonChange = (row: ComparisonRow) => {
+  if (typeof row.before !== "number" || typeof row.after !== "number") {
+    return { label: "not tested", tone: "neutral" as const };
+  }
+  const delta = row.after - row.before;
+  const tone = comparisonTone(row.direction, delta);
+  const formatted =
+    row.format === percentFormat
+      ? `${deltaPrefix(delta)}${formatPercent(delta, 1)}`
+      : row.format === rFormat
+        ? `${deltaPrefix(delta)}${formatNumber(delta)}R`
+        : `${deltaPrefix(delta)}${formatNumber(delta)}`;
+  return { label: formatted, tone };
+};
+
+const ComparisonTable = ({ before, after }: { before?: CalibrationProposalMetrics; after?: CalibrationProposalMetrics }) => {
+  const rows: ComparisonRow[] = [
+    {
+      label: "Total trades",
+      before: before?.totalTrades,
+      after: after?.totalTrades,
+      format: countFormat,
+      direction: "neutral",
+      interpretation: "Sample size should stay large enough to trust the test."
+    },
+    {
+      label: "Win rate",
+      before: before?.winRate,
+      after: after?.winRate,
+      format: percentFormat,
+      direction: "higher",
+      interpretation: "Higher is useful only if drawdown and sample size remain stable."
+    },
+    {
+      label: "Average R",
+      before: before?.averageR,
+      after: after?.averageR,
+      format: rFormat,
+      direction: "higher",
+      interpretation: "Prefer steady average R over one large simulated winner."
+    },
+    {
+      label: "Max drawdown",
+      before: before?.maxDrawdown,
+      after: after?.maxDrawdown,
+      format: rFormat,
+      direction: "lower",
+      interpretation: "Lower drawdown is the primary stability improvement."
+    },
+    {
+      label: "Profit factor",
+      before: before?.profitFactor,
+      after: after?.profitFactor,
+      format: numberFormat,
+      direction: "higher",
+      interpretation: "Higher is better, but not if it comes from too few trades."
+    },
+    {
+      label: "Skipped signals",
+      before: before?.skippedSignals,
+      after: after?.skippedSignals,
+      format: countFormat,
+      direction: "lower",
+      interpretation: "Lower can help, unless weaker filters increase false positives."
+    },
+    {
+      label: "False positives",
+      before: before?.falsePositiveCount,
+      after: after?.falsePositiveCount,
+      format: countFormat,
+      direction: "lower",
+      interpretation: "Lower means the proposal is filtering poor theses more cleanly."
+    },
+    {
+      label: "Confidence calibration",
+      before: before?.confidenceCalibration,
+      after: after?.confidenceCalibration,
+      format: percentFormat,
+      direction: "higher",
+      interpretation: "Higher means confidence is closer to realized mock outcomes."
+    },
+    {
+      label: "Readiness score",
+      before: before?.readinessScore,
+      after: after?.readinessScore,
+      format: countFormat,
+      direction: "higher",
+      interpretation: "Higher helps only after stability checks pass."
+    },
+    {
+      label: "Stability score",
+      before: before?.stabilityScore,
+      after: after?.stabilityScore,
+      format: countFormat,
+      direction: "higher",
+      interpretation: "This is the key promotion score for self-improvement."
+    }
+  ];
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <table className="w-full min-w-[860px] table-fixed text-left text-sm">
+        <colgroup>
+          <col className="w-[18%]" />
+          <col className="w-[13%]" />
+          <col className="w-[13%]" />
+          <col className="w-[13%]" />
+          <col className="w-[43%]" />
+        </colgroup>
+        <thead className="bg-muted/55 text-xs uppercase text-muted-foreground">
+          <tr>
+            {["Metric", "Before", "After", "Change", "Interpretation"].map((header) => (
+              <th key={header} className="px-3 py-2 font-medium">
+                {header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const change = comparisonChange(row);
+            return (
+              <tr key={row.label} className="border-t border-border bg-background/35 align-top">
+                <td className="px-3 py-3 font-medium text-foreground">{row.label}</td>
+                <td className="whitespace-nowrap px-3 py-3 text-right font-mono text-slate-200">{row.format(row.before)}</td>
+                <td className="whitespace-nowrap px-3 py-3 text-right font-mono text-slate-200">{row.format(row.after)}</td>
+                <td className={`whitespace-nowrap px-3 py-3 text-right font-mono ${deltaClass(change.tone)}`}>
+                  {change.label}
+                </td>
+                <td className="px-3 py-3 text-muted-foreground">
+                  <span className="block max-w-full whitespace-normal break-words leading-5">{row.interpretation}</span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 };
@@ -293,22 +461,13 @@ export function SelfImprovementView() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="xl:col-span-2">
           <CardHeader>
             <CardTitle>Before/After Comparison</CardTitle>
             <CardDescription>Promotion requires stability improvement, not merely higher profit.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <div className="grid gap-3 md:grid-cols-2">
-              <div>
-                <p className="mb-2 text-xs uppercase text-muted-foreground">Before</p>
-                <MetricsGrid metrics={latestProposal?.beforeMetrics} />
-              </div>
-              <div>
-                <p className="mb-2 text-xs uppercase text-muted-foreground">After</p>
-                <MetricsGrid metrics={latestProposal?.afterMetrics} />
-              </div>
-            </div>
+            <ComparisonTable before={latestProposal?.beforeMetrics} after={latestProposal?.afterMetrics} />
             <div className="rounded-lg border border-border bg-background/45 p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">Comparison</span>
@@ -393,11 +552,11 @@ export function SelfImprovementView() {
             ].map((item, index) => (
               <div key={item} className="flex items-center gap-3 rounded-lg border border-border bg-background/45 p-3 text-sm">
                 {index < 3 || canAccept ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-300" aria-hidden="true" />
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-300" aria-hidden="true" />
                 ) : (
-                  <XCircle className="h-4 w-4 text-amber-200" aria-hidden="true" />
+                  <XCircle className="h-4 w-4 shrink-0 text-amber-200" aria-hidden="true" />
                 )}
-                <span>{item}</span>
+                <span className="leading-5">{item}</span>
               </div>
             ))}
           </div>
@@ -414,10 +573,10 @@ export function SelfImprovementView() {
         </CardHeader>
         <CardContent className="space-y-2">
           {state.auditTrail.slice(0, 12).map((entry) => (
-            <div key={entry.id} className="grid gap-2 rounded-lg border border-border bg-background/45 p-3 text-sm md:grid-cols-[10rem_8rem_1fr]">
+            <div key={entry.id} className="grid gap-2 rounded-lg border border-border bg-background/45 p-3 text-sm md:grid-cols-[10rem_8rem_minmax(0,1fr)]">
               <span className="font-mono text-xs text-muted-foreground">{formatDate(entry.timestamp)}</span>
               <Badge variant={statusVariant(entry.action)}>{entry.action}</Badge>
-              <span className="text-muted-foreground">{entry.notes}</span>
+              <span className="min-w-0 break-words text-muted-foreground">{entry.notes}</span>
             </div>
           ))}
           {!state.auditTrail.length && (
