@@ -17,7 +17,7 @@ export interface ReadinessRequirementResult {
   requiredValue: string;
   explanation: string;
   suggestedFix: string;
-  runPage?: "/validation" | "/research-quality" | "/simulation-runbook" | "/backtest-lab" | "/readiness-gate";
+  runPage?: "/validation" | "/research-quality" | "/simulation-runbook" | "/backtest-lab" | "/readiness-gate" | "/llm-agents";
 }
 
 export interface ReadinessGateSnapshot {
@@ -58,6 +58,14 @@ export interface ReadinessGateSnapshot {
     positionsZero: boolean;
     tradesZero: boolean;
     shutdownComplete: boolean;
+  };
+  llmSnapshot?: {
+    latestRunAt?: string;
+    providerMode: string;
+    providerConfigured: boolean;
+    advisoryPassed: boolean;
+    unsafeResponseRejections: number;
+    readinessImpact: string;
   };
 }
 

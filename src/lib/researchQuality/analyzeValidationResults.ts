@@ -1,4 +1,5 @@
 import type { ValidationScenarioResult, ValidationSuiteReport } from "@/lib/validation";
+import { isLLMAdvisoryReviewPassed } from "@/lib/llm/llmProvider";
 import { analyzeDrawdownClusters } from "@/lib/researchQuality/drawdownAnalysis";
 import { analyzeFalsePositivePatterns } from "@/lib/researchQuality/falsePositiveAnalysis";
 import { compareLongShortPerformance, compareSessions } from "@/lib/researchQuality/sessionComparison";
@@ -25,7 +26,7 @@ const readinessGradeFor = (report: ValidationSuiteReport): ResearchQualityReadin
   const greenScenarios = report.scenarios.filter((scenario) => scenario.readiness === "green").length;
   const averageScenarioScore = average(report.scenarios.map((scenario) => scenario.score));
   if (report.calibration.readinessStatus === "green" && report.calibration.readinessScore >= 70 && greenScenarios >= 4) {
-    return "Paper-Demo Candidate";
+    return isLLMAdvisoryReviewPassed() ? "Paper-Demo Candidate" : "Research Ready";
   }
   if (report.calibration.readinessStatus !== "red" && averageScenarioScore >= 45) {
     return "Research Ready";
@@ -252,6 +253,9 @@ const suggestedCalibrationChangesFor = (report: ValidationSuiteReport): Suggeste
 const nextStepFor = (grade: ResearchQualityReadinessGrade) => {
   if (grade === "Paper-Demo Candidate") {
     return "Do not add broker code yet. Repeat validation on broader mock samples, then review paper-demo risk gates.";
+  }
+  if (!isLLMAdvisoryReviewPassed()) {
+    return "LLM advisory review required before Paper-Demo Candidate. Deterministic fallback can support Research Ready only.";
   }
   if (grade === "Research Ready") {
     return "Keep the strategy in simulation. Tune weak assumptions and rerun validation before paper-demo consideration.";

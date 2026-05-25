@@ -1,4 +1,10 @@
 import type { ResearchQualityReview } from "@/lib/researchQuality";
+import {
+  getLLMReadinessImpact,
+  isLLMAdvisoryReviewPassed,
+  latestLLMAdvisoryRun,
+  loadLLMResearchState
+} from "@/lib/llm/llmProvider";
 import { countCompletedRunbookItems, simulationRunbookChecklist } from "@/lib/simulationRunbook";
 import type { SimulationRunbookState } from "@/lib/simulationRunbook";
 import type { ValidationScenarioResult, ValidationSuiteReport } from "@/lib/validation";
@@ -140,6 +146,19 @@ const runbookSnapshotFor = (runbook?: SimulationRunbookState) =>
       }
     : undefined;
 
+const llmSnapshotFor = () => {
+  const state = loadLLMResearchState();
+  const latest = latestLLMAdvisoryRun(state);
+  return {
+    latestRunAt: latest?.timestamp,
+    providerMode: state.providerMode,
+    providerConfigured: Boolean(latest?.providerConfigured),
+    advisoryPassed: isLLMAdvisoryReviewPassed(state),
+    unsafeResponseRejections: state.unsafeResponseRejections,
+    readinessImpact: getLLMReadinessImpact(state)
+  };
+};
+
 export function evaluateReadinessGate({
   validation,
   quality,
@@ -154,6 +173,7 @@ export function evaluateReadinessGate({
   const averageCalibration = averageCalibrationFor(validation);
   const falsePositives = falsePositiveTotal(quality);
   const redClusters = redDrawdownClusters(quality);
+  const llmSnapshot = llmSnapshotFor();
   const requirements: ReadinessRequirementResult[] = [
     requirement(
       "validation-exists",
@@ -195,6 +215,26 @@ export function evaluateReadinessGate({
         explanation: "Paper-demo candidate status can only come from the strict research quality review.",
         suggestedFix: quality ? "Resolve the quality review weaknesses, rerun validation, then rerun research quality." : "Run /research-quality after /validation.",
         runPage: quality ? "/validation" : "/research-quality"
+      }
+    ),
+    requirement(
+      "llm-advisory-review",
+      "LLM advisory review passed through a configured provider",
+      llmSnapshot.advisoryPassed,
+      llmSnapshot.latestRunAt
+        ? `Latest LLM run ${llmSnapshot.latestRunAt}; provider=${llmSnapshot.providerMode}; passed=${llmSnapshot.advisoryPassed}.`
+        : "No configured LLM advisory run has passed.",
+      "blocker",
+      {
+        currentValue: llmSnapshot.latestRunAt
+          ? `${llmSnapshot.providerMode}; configured=${llmSnapshot.providerConfigured}; passed=${llmSnapshot.advisoryPassed}`
+          : "missing",
+        requiredValue: "configured real provider run passed with zero unsafe response rejections",
+        explanation:
+          "Real research mode requires LLM advisory review before Paper-Demo Candidate. Deterministic fallback and mock LLM runs are not sufficient.",
+        suggestedFix:
+          "Configure a secure local command, backend endpoint, Supabase Edge Function, or future provider service, then run /llm-agents.",
+        runPage: "/llm-agents"
       }
     ),
     requirement(
@@ -321,7 +361,8 @@ export function evaluateReadinessGate({
     brokerExecutionDisabled: true,
     validationSnapshot: validationSnapshotFor(validation),
     researchQualitySnapshot: researchQualitySnapshotFor(quality),
-    runbookSnapshot: runbookSnapshotFor(runbook)
+    runbookSnapshot: runbookSnapshotFor(runbook),
+    llmSnapshot
   };
 }
 

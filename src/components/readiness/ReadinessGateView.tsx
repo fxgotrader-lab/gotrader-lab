@@ -42,7 +42,8 @@ const routeLabels: Record<string, string> = {
   "/research-quality": "Run Research Quality",
   "/simulation-runbook": "Complete Simulation Runbook",
   "/backtest-lab": "Open Backtest Lab",
-  "/readiness-gate": "Review Readiness Gate"
+  "/readiness-gate": "Review Readiness Gate",
+  "/llm-agents": "Open LLM Agents"
 };
 
 const formatPercent = (value: number) => `${Math.round(value * 100)}%`;

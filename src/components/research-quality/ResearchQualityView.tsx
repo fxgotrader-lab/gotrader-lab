@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ValidationGuideCard } from "@/components/validation/ValidationGuideCard";
+import { getLLMReadinessImpact, isLLMAdvisoryReviewPassed } from "@/lib/llm";
 import {
   analyzeValidationResults,
   loadLatestResearchQualityReview,
@@ -106,6 +107,18 @@ export function ResearchQualityView() {
       </Card>
 
       <ValidationGuideCard compact />
+
+      <Card className="border-primary/25 bg-primary/10">
+        <CardContent className="flex flex-col gap-3 p-4 text-sm text-primary md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4" aria-hidden="true" />
+            <span>{getLLMReadinessImpact()}</span>
+          </div>
+          <Badge variant={isLLMAdvisoryReviewPassed() ? "success" : "warning"}>
+            {isLLMAdvisoryReviewPassed() ? "LLM passed" : "LLM required"}
+          </Badge>
+        </CardContent>
+      </Card>
 
       {!validationReport ? (
         <Card>

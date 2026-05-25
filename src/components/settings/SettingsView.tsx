@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Bot,
+  BrainCircuit,
   ClipboardCheck,
   ClipboardList,
   Database,
@@ -28,6 +29,13 @@ import { brokerDemoBridgeSpec } from "@/lib/integrations/brokerDemoBridgeSpec";
 import { openClawHermesBridgeSpec } from "@/lib/integrations/openclawHermesBridgeSpec";
 import { openClawHermesAdvisorySpec } from "@/lib/integrations/openclawHermesSpec";
 import { paperDemoExecutionSpec } from "@/lib/integrations/paperDemoExecutionSpec";
+import {
+  getLLMReadinessImpact,
+  latestLLMAdvisoryRun,
+  LLM_RESEARCH_UPDATED_EVENT,
+  loadLLMResearchState,
+  providerStatusForMode
+} from "@/lib/llm";
 import {
   evaluateReadinessGate,
   latestApprovalTimestamp,
@@ -86,6 +94,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const [simulationRunbook, setSimulationRunbook] = useState(() => loadSimulationRunbookState());
   const [readinessApproval, setReadinessApproval] = useState(() => loadManualApprovalRecord());
   const [selfImprovementState, setSelfImprovementState] = useState(() => loadSelfImprovementState());
+  const [llmResearchState, setLlmResearchState] = useState(() => loadLLMResearchState());
   const latestHandoffExport = state.handoffExports?.[0];
   const latestAdvisoryPacket = state.advisoryPackets?.[0];
   const latestAdvisoryResponse = state.advisoryResponses?.[0];
@@ -95,6 +104,8 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const lastAcceptedSelfImprovementProposal = selfImprovementState.proposals.find(
     (proposal) => proposal.proposalId === selfImprovementState.lastAcceptedProposalId
   );
+  const latestLLMRun = latestLLMAdvisoryRun(llmResearchState);
+  const llmProviderStatus = providerStatusForMode(llmResearchState.providerMode);
   const runbookCompleted = countCompletedRunbookItems(simulationRunbook);
   const runbookTotal = simulationRunbookChecklist.length;
   const readinessGate = useMemo(
@@ -154,6 +165,16 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
     return () => {
       window.removeEventListener(SELF_IMPROVEMENT_UPDATED_EVENT, refreshSelfImprovement);
       window.removeEventListener("storage", refreshSelfImprovement);
+    };
+  }, []);
+
+  useEffect(() => {
+    const refreshLLMResearch = () => setLlmResearchState(loadLLMResearchState());
+    window.addEventListener(LLM_RESEARCH_UPDATED_EVENT, refreshLLMResearch);
+    window.addEventListener("storage", refreshLLMResearch);
+    return () => {
+      window.removeEventListener(LLM_RESEARCH_UPDATED_EVENT, refreshLLMResearch);
+      window.removeEventListener("storage", refreshLLMResearch);
     };
   }, []);
 
@@ -408,6 +429,43 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
               Local bridge contract: watch `{openClawHermesBridgeSpec.pathContract.requestPattern}` and write
               `{openClawHermesBridgeSpec.pathContract.responsePattern}` in a future planning-only bridge.
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <BrainCircuit className="h-4 w-4 text-primary" aria-hidden="true" />
+              <CardTitle>LLM Research Agents</CardTitle>
+            </div>
+            <CardDescription>Required advisory LLM layer for real research mode.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {[
+              ["Provider mode", llmResearchState.providerMode],
+              ["Required status", llmResearchState.researchMode],
+              ["Provider configured", llmProviderStatus.configured ? "yes" : "no"],
+              ["Latest advisory run", latestLLMRun?.timestamp ?? "none"],
+              ["Unsafe rejections", String(llmResearchState.unsafeResponseRejections)],
+              ["Broker authority", "none"],
+              ["Execution authority", "none"]
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+                <span className="text-muted-foreground">{label}</span>
+                <Badge variant={value === "none" || value === "no" ? "danger" : value === "yes" ? "success" : "warning"}>
+                  {formatBridgeValue(value)}
+                </Badge>
+              </div>
+            ))}
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              {getLLMReadinessImpact(llmResearchState)}
+            </div>
+            <Link
+              to="/llm-agents"
+              className="inline-flex h-9 w-full items-center justify-center rounded-md border border-border bg-background/60 px-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary/70"
+            >
+              Open LLM research agents
+            </Link>
           </CardContent>
         </Card>
 

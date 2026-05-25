@@ -6,6 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { BacktestLab } from "@/components/backtest-lab/BacktestLab";
 import { DashboardOverview } from "@/components/dashboard/DashboardOverview";
 import { ICTLab } from "@/components/ict-lab/ICTLab";
+import { LLMAgentsView } from "@/components/llm-agents/LLMAgentsView";
 import { PerformanceView } from "@/components/performance/PerformanceView";
 import { PromptLab } from "@/components/prompt-lab/PromptLab";
 import { ReadinessGateView } from "@/components/readiness/ReadinessGateView";
@@ -36,6 +37,7 @@ export default function App() {
         <Route path="/research-quality" element={<ResearchQualityView />} />
         <Route path="/simulation-runbook" element={<SimulationRunbookView />} />
         <Route path="/readiness-gate" element={<ReadinessGateView />} />
+        <Route path="/llm-agents" element={<LLMAgentsView state={state} />} />
         <Route path="/advisory-agents" element={<AdvisoryAgentsView state={state} actions={actions} />} />
         <Route path="/self-improvement" element={<SelfImprovementView />} />
         <Route path="/performance" element={<PerformanceView state={state} />} />
