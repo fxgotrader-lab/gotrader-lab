@@ -14,6 +14,8 @@ const initialState = (): LLMResearchState => ({
   researchMode: "llm_required",
   providerMode: "local_command",
   runs: [],
+  totalContextExports: 0,
+  totalResponseImports: 0,
   unsafeResponseRejections: 0,
   deterministicFallbackEnabled: true,
   mockModeAllowed: true,
@@ -44,6 +46,10 @@ export function loadLLMResearchState(): LLMResearchState {
       researchMode: "llm_required",
       providerMode: parsed.providerMode ?? "local_command",
       runs: parsed.runs ?? [],
+      latestContextExportAt: parsed.latestContextExportAt,
+      latestResponseImportAt: parsed.latestResponseImportAt,
+      totalContextExports: parsed.totalContextExports ?? 0,
+      totalResponseImports: parsed.totalResponseImports ?? 0,
       unsafeResponseRejections: parsed.unsafeResponseRejections ?? 0,
       deterministicFallbackEnabled: true,
       mockModeAllowed: true,
@@ -73,6 +79,32 @@ export function saveLLMAdvisoryRun(run: LLMAdvisoryRun, providerMode?: LLMProvid
     latestRunId: run.runId,
     runs: [run, ...state.runs].slice(0, 20),
     unsafeResponseRejections: state.unsafeResponseRejections + run.unsafeResponseRejections
+  });
+}
+
+export function recordLLMContextExport(exportedAt = new Date().toISOString()): LLMResearchState {
+  const state = loadLLMResearchState();
+  return saveLLMResearchState({
+    ...state,
+    latestContextExportAt: exportedAt,
+    totalContextExports: state.totalContextExports + 1
+  });
+}
+
+export function recordLLMResponseImport(run: LLMAdvisoryRun, importedAt = new Date().toISOString()): LLMResearchState {
+  const saved = saveLLMAdvisoryRun(run, "local_command");
+  return saveLLMResearchState({
+    ...saved,
+    latestResponseImportAt: importedAt,
+    totalResponseImports: saved.totalResponseImports + 1
+  });
+}
+
+export function recordLLMUnsafeResponseRejection(count = 1): LLMResearchState {
+  const state = loadLLMResearchState();
+  return saveLLMResearchState({
+    ...state,
+    unsafeResponseRejections: state.unsafeResponseRejections + count
   });
 }
 

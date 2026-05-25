@@ -39,13 +39,13 @@ The provider script is:
 node scripts/gpt55-llm-agent-provider.mjs
 ```
 
-It reads a restricted LLM research context packet from stdin, calls the OpenAI Responses API at:
+It reads a restricted LLM research context packet from stdin or `--input-file`, calls the OpenAI Responses API at:
 
 ```text
 POST https://api.openai.com/v1/responses
 ```
 
-It requests structured JSON output and prints only validated advisory response JSON to stdout.
+It requests structured JSON output and prints only validated advisory response JSON to stdout. In file mode, it writes the validated response to `--output-file`.
 
 ## Check The Provider
 
@@ -58,10 +58,28 @@ node scripts/gpt55-llm-agent-provider.mjs --help
 Dry validation:
 
 ```powershell
-Get-Content .\advisory\requests\latest-llm-context.json -Raw | node scripts/gpt55-llm-agent-provider.mjs --dry-run
+Get-Content .\llm\requests\latest-llm-context.json -Raw | node scripts/gpt55-llm-agent-provider.mjs --dry-run
 ```
 
 If `OPENAI_API_KEY` is missing, the script exits with a safe missing-key error on stderr. It must not print or expose any secret.
+
+## Local File Workflow
+
+The recommended app workflow is:
+
+1. Open `/llm-agents`.
+2. Download the context as `latest-llm-context.json`.
+3. Save it to `llm/requests/latest-llm-context.json`.
+4. Run the provider with an input file and output file.
+5. Paste/import `llm/responses/latest-llm-response.json` back into `/llm-agents`.
+
+```powershell
+$env:OPENAI_API_KEY = "..."
+$env:GOTRADER_LLM_MODEL = "gpt-5.5"
+node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-context.json --output-file llm/responses/latest-llm-response.json
+```
+
+See `docs/llm-local-file-workflow.md` for the full workflow.
 
 ## Response Contract
 

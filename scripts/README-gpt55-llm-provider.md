@@ -2,7 +2,7 @@
 
 `scripts/gpt55-llm-agent-provider.mjs` is a secure local-command provider for GoTrader AI Lab LLM research agents.
 
-It keeps OpenAI API calls outside browser code. The frontend stores no API key, makes no model request, and cannot execute the provider directly. A future local bridge or backend process can call this script by sending the restricted LLM research context JSON on stdin and reading validated advisory JSON from stdout.
+It keeps OpenAI API calls outside browser code. The frontend stores no API key, makes no model request, and cannot execute the provider directly. A future local bridge or backend process can call this script by sending the restricted LLM research context JSON on stdin or through `--input-file` and reading validated advisory JSON from stdout or `--output-file`.
 
 This provider is research/advisory only. It does not place trades, connect to brokers, modify readiness gates, write execution configs, or control go-trader.
 
@@ -27,13 +27,19 @@ node scripts/gpt55-llm-agent-provider.mjs --help
 Normal provider execution reads request JSON from stdin:
 
 ```powershell
-Get-Content .\advisory\requests\latest-llm-context.json -Raw | node scripts/gpt55-llm-agent-provider.mjs
+Get-Content .\llm\requests\latest-llm-context.json -Raw | node scripts/gpt55-llm-agent-provider.mjs
+```
+
+Local file mode reads a request file and writes a response file:
+
+```powershell
+node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-context.json --output-file llm/responses/latest-llm-response.json
 ```
 
 Dry run validates the local setup and request packet without calling the model:
 
 ```powershell
-Get-Content .\advisory\requests\latest-llm-context.json -Raw | node scripts/gpt55-llm-agent-provider.mjs --dry-run
+Get-Content .\llm\requests\latest-llm-context.json -Raw | node scripts/gpt55-llm-agent-provider.mjs --dry-run
 ```
 
 ## Stdin Contract
@@ -53,6 +59,8 @@ The packet may include ICT context, baseline deterministic debate, CIO thesis, v
 
 On success, stdout contains JSON only: an array of seven validated advisory responses, one for each required LLM agent.
 
+In `--output-file` mode, the same validated JSON is written to the output file and stdout stays empty.
+
 Each response must include:
 
 - `mode: "advisory_only"`
@@ -68,7 +76,7 @@ Each response must include:
 - `proceedRecommendation`
 - `safetyNotes[]`
 
-Errors are written to stderr and never include API key values.
+Errors are written to stderr and never include API key values. In `--output-file` mode, sanitized error JSON is also written to `llm/errors/`.
 
 ## Safety Rejection
 

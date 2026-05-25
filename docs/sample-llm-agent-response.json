@@ -1,0 +1,185 @@
+[
+  {
+    "agentId": "llm-ict-liquidity-reviewer",
+    "agentName": "LLM ICT Liquidity Reviewer",
+    "mode": "advisory_only",
+    "executionAuthority": "none",
+    "brokerAuthority": "none",
+    "readinessOverrideAuthority": "none",
+    "bias": "bullish",
+    "confidence": 0.68,
+    "agreesWithBaseline": true,
+    "reasoningSummary": "Liquidity evidence supports the baseline because sell-side liquidity was swept and reclaimed near discount.",
+    "riskWarnings": [
+      "The sweep count is small and should be tested across more replay windows."
+    ],
+    "missingEvidence": [
+      "Need broader validation of sweep quality by session."
+    ],
+    "suggestedCalibration": [
+      "Compare NY AM only against all-session results before increasing confidence."
+    ],
+    "proceedRecommendation": "rerun_validation",
+    "safetyNotes": [
+      "Advisory only.",
+      "No execution authority."
+    ]
+  },
+  {
+    "agentId": "llm-market-structure-reviewer",
+    "agentName": "LLM Market Structure Reviewer",
+    "mode": "advisory_only",
+    "executionAuthority": "none",
+    "brokerAuthority": "none",
+    "readinessOverrideAuthority": "none",
+    "bias": "bullish",
+    "confidence": 0.64,
+    "agreesWithBaseline": true,
+    "reasoningSummary": "Bullish MSS and BOS align with the CIO thesis, but the evidence still needs conservative validation stability.",
+    "riskWarnings": [
+      "Market structure may degrade quickly if invalidation is breached."
+    ],
+    "missingEvidence": [
+      "Higher-timeframe structure confirmation is limited in the sample packet."
+    ],
+    "suggestedCalibration": [
+      "Keep conservative confluence threshold as the benchmark."
+    ],
+    "proceedRecommendation": "rerun_validation",
+    "safetyNotes": [
+      "Research review only.",
+      "No readiness override."
+    ]
+  },
+  {
+    "agentId": "llm-session-timing-reviewer",
+    "agentName": "LLM Session Timing Reviewer",
+    "mode": "advisory_only",
+    "executionAuthority": "none",
+    "brokerAuthority": "none",
+    "readinessOverrideAuthority": "none",
+    "bias": "neutral",
+    "confidence": 0.58,
+    "agreesWithBaseline": null,
+    "reasoningSummary": "NY AM context is constructive, but session consistency should be separated before promoting the setup.",
+    "riskWarnings": [
+      "False positives increase outside NY AM in the sample quality review."
+    ],
+    "missingEvidence": [
+      "London-only comparison and off-session rejection data are needed."
+    ],
+    "suggestedCalibration": [
+      "Run NY AM only and London only validation scenarios."
+    ],
+    "proceedRecommendation": "rerun_validation",
+    "safetyNotes": [
+      "No broker control.",
+      "Advisory only."
+    ]
+  },
+  {
+    "agentId": "llm-risk-reward-reviewer",
+    "agentName": "LLM Risk/Reward Reviewer",
+    "mode": "advisory_only",
+    "executionAuthority": "none",
+    "brokerAuthority": "none",
+    "readinessOverrideAuthority": "none",
+    "bias": "neutral",
+    "confidence": 0.6,
+    "agreesWithBaseline": true,
+    "reasoningSummary": "Risk/reward is plausible, but max drawdown and stop model sensitivity remain the main blockers.",
+    "riskWarnings": [
+      "Max drawdown of 2.4R is not yet clean enough for Paper-Demo Candidate."
+    ],
+    "missingEvidence": [
+      "Stop model comparison across latest swing, fixed ticks, and FVG invalidation."
+    ],
+    "suggestedCalibration": [
+      "Test FVG invalidation against latest swing stop before changing target R."
+    ],
+    "proceedRecommendation": "rerun_validation",
+    "safetyNotes": [
+      "No order placement.",
+      "No execution settings changed."
+    ]
+  },
+  {
+    "agentId": "llm-validation-reviewer",
+    "agentName": "LLM Validation Reviewer",
+    "mode": "advisory_only",
+    "executionAuthority": "none",
+    "brokerAuthority": "none",
+    "readinessOverrideAuthority": "none",
+    "bias": "no_opinion",
+    "confidence": 0.72,
+    "agreesWithBaseline": false,
+    "reasoningSummary": "Validation is not strong enough for Paper-Demo Candidate because the conservative scenario is not fully stable.",
+    "riskWarnings": [
+      "Readiness should remain blocked until conservative validation is repeatedly stable."
+    ],
+    "missingEvidence": [
+      "Walk-forward or repeated mock candle validation is not present."
+    ],
+    "suggestedCalibration": [
+      "Raise confidence threshold slightly and re-run conservative validation."
+    ],
+    "proceedRecommendation": "rerun_validation",
+    "safetyNotes": [
+      "Paper-demo approval is not granted.",
+      "Readiness gate remains authoritative."
+    ]
+  },
+  {
+    "agentId": "llm-self-improvement-reviewer",
+    "agentName": "LLM Self-Improvement Reviewer",
+    "mode": "advisory_only",
+    "executionAuthority": "none",
+    "brokerAuthority": "none",
+    "readinessOverrideAuthority": "none",
+    "bias": "no_opinion",
+    "confidence": 0.66,
+    "agreesWithBaseline": true,
+    "reasoningSummary": "The most useful next calibration is a small threshold adjustment tested in simulation only.",
+    "riskWarnings": [
+      "Changing multiple variables at once may overfit the current mock data."
+    ],
+    "missingEvidence": [
+      "Need before/after comparison after any proposed threshold change."
+    ],
+    "suggestedCalibration": [
+      "Increase minimum confidence by 0.03 and test before approval."
+    ],
+    "proceedRecommendation": "continue_research",
+    "safetyNotes": [
+      "Proposal requires simulation testing.",
+      "User approval remains required."
+    ]
+  },
+  {
+    "agentId": "llm-cio-synthesis-reviewer",
+    "agentName": "LLM CIO Synthesis Reviewer",
+    "mode": "advisory_only",
+    "executionAuthority": "none",
+    "brokerAuthority": "none",
+    "readinessOverrideAuthority": "none",
+    "bias": "neutral",
+    "confidence": 0.63,
+    "agreesWithBaseline": false,
+    "reasoningSummary": "The bullish thesis is research-valid, but the correct synthesis is to continue validation before any paper-demo review.",
+    "riskWarnings": [
+      "Do not advance to Paper-Demo Candidate until conservative validation and LLM review are consistently clean."
+    ],
+    "missingEvidence": [
+      "Repeatable validation under conservative settings."
+    ],
+    "suggestedCalibration": [
+      "Prioritize session and stop-model comparison before changing agent weights."
+    ],
+    "proceedRecommendation": "rerun_validation",
+    "safetyNotes": [
+      "No trade approval.",
+      "No readiness override.",
+      "No broker authority."
+    ]
+  }
+]

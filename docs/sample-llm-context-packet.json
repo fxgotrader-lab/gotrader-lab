@@ -1,0 +1,95 @@
+{
+  "packetId": "llm_context_sample_20260525",
+  "timestamp": "2026-05-25T00:00:00.000Z",
+  "source": "gotrader_ai_lab",
+  "mode": "advisory_only",
+  "researchMode": "llm_required",
+  "providerMode": "local_command",
+  "executionAuthority": "none",
+  "brokerAuthority": "none",
+  "readinessOverrideAuthority": "none",
+  "symbol": "NQ",
+  "timeframe": "5m",
+  "ictContextSummary": {
+    "narrativeSummary": "Mock ICT context shows bullish structure with a recent sell-side sweep and NY AM kill-zone confluence.",
+    "bias": "bullish",
+    "confluenceScore": 0.68,
+    "killZone": "NY AM",
+    "premiumDiscount": "discount",
+    "latestSwingHigh": 18750,
+    "latestSwingLow": 18640,
+    "hasBullishMSS": true,
+    "hasBearishMSS": false,
+    "hasBullishBOS": true,
+    "hasBearishBOS": false,
+    "liquiditySweepCount": 1,
+    "fairValueGapCount": 2
+  },
+  "deterministicICTFacts": [
+    "Confluence score: 0.68",
+    "Bias: bullish",
+    "MSS bullish/bearish: true/false",
+    "BOS bullish/bearish: true/false",
+    "Liquidity sweeps: 1",
+    "Fair value gaps: 2"
+  ],
+  "internalBaselineAgentDebate": [
+    {
+      "agentId": "ict-liquidity",
+      "agentName": "ICT Liquidity Agent",
+      "bias": "bullish",
+      "confidence": 0.7,
+      "reasoning": "Sell-side liquidity was swept and reclaimed near discount."
+    }
+  ],
+  "cioThesis": {
+    "thesisId": "thesis_sample_001",
+    "bias": "bullish",
+    "confidence": 0.66,
+    "summary": "Research-only bullish thesis while price holds above invalidation.",
+    "reasoningSummary": "Confluence favors a continuation attempt into buy-side liquidity, but validation remains required."
+  },
+  "validationSummary": {
+    "validationId": "validation_sample_001",
+    "generatedAt": "2026-05-25T00:00:00.000Z",
+    "readinessStatus": "Research Ready",
+    "readinessScore": 62,
+    "conservativeScenarioStatus": "yellow",
+    "maxDrawdownR": 2.4,
+    "confidenceCalibration": 0.61
+  },
+  "researchQualityGrade": {
+    "reviewId": "quality_sample_001",
+    "generatedAt": "2026-05-25T00:00:00.000Z",
+    "readinessGrade": "Research Ready",
+    "topWeaknesses": [
+      "False positives increase outside NY AM.",
+      "Fixed-tick stop model remains unstable."
+    ],
+    "falsePositiveCount": 3
+  },
+  "readinessState": {
+    "state": "Research Ready",
+    "failedRequirements": [
+      "LLM advisory review required before Paper-Demo Candidate."
+    ],
+    "brokerExecutionDisabled": true
+  },
+  "simulationRunbookStatus": {
+    "verifiedAt": "2026-05-25T00:00:00.000Z",
+    "completedChecks": 10,
+    "totalChecks": 10,
+    "brokerExecutionSkipped": true,
+    "tradesZero": true,
+    "positionsZero": true
+  },
+  "riskNotes": "Simulation-only thesis. No broker execution. Re-run validation before considering any future paper-demo planning.",
+  "safetyConstraints": [
+    "LLM agents are advisory only.",
+    "No broker execution.",
+    "No order placement.",
+    "No readiness gate override.",
+    "No API keys in frontend code.",
+    "Calibration suggestions must be simulation-tested and manually approved."
+  ]
+}

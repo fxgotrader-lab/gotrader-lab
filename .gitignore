@@ -15,3 +15,9 @@ advisory/errors/*.json
 !advisory/responses/.gitkeep
 !advisory/processed/.gitkeep
 !advisory/errors/.gitkeep
+llm/requests/*.json
+llm/responses/*.json
+llm/errors/*.json
+!llm/requests/.gitkeep
+!llm/responses/.gitkeep
+!llm/errors/.gitkeep

@@ -10,9 +10,15 @@ export {
   LLM_RESEARCH_UPDATED_EVENT,
   loadLLMResearchState,
   providerStatusForMode,
+  recordLLMContextExport,
+  recordLLMResponseImport,
+  recordLLMUnsafeResponseRejection,
   saveLLMAdvisoryRun,
   saveLLMResearchState
 } from "@/lib/llm/llmProvider";
+export { createLLMContextPacket, serializeLLMContextPacket } from "@/lib/llm/createLLMContextPacket";
+export { importLLMAgentResponse } from "@/lib/llm/importLLMAgentResponse";
+export { validateLLMContextPacket } from "@/lib/llm/validateLLMContextPacket";
 export {
   buildLocalCommandPayload,
   getLocalCommandLLMCommand,

@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import fs from "node:fs/promises";
+import path from "node:path";
+
 const OPENAI_RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses";
 const DEFAULT_MODEL = "gpt-5.5";
 
@@ -69,6 +72,7 @@ and prints validated advisory-only LLM agent response JSON to stdout.
 
 Usage:
   node scripts/gpt55-llm-agent-provider.mjs
+  node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-context.json --output-file llm/responses/latest-llm-response.json
   node scripts/gpt55-llm-agent-provider.mjs --dry-run
   node scripts/gpt55-llm-agent-provider.mjs --help
 
@@ -82,9 +86,16 @@ Safety:
 }
 
 function parseArgs(argv) {
+  const valueAfter = (flag) => {
+    const index = argv.indexOf(flag);
+    return index >= 0 ? argv[index + 1] : undefined;
+  };
+
   return {
     help: argv.includes("--help") || argv.includes("-h"),
-    dryRun: argv.includes("--dry-run")
+    dryRun: argv.includes("--dry-run"),
+    inputFile: valueAfter("--input-file"),
+    outputFile: valueAfter("--output-file")
   };
 }
 
@@ -109,6 +120,54 @@ function readStdin() {
     process.stdin.on("error", reject);
     process.stdin.on("end", () => resolve(raw));
   });
+}
+
+async function readRequestInput(args) {
+  if (args.inputFile) {
+    return fs.readFile(args.inputFile, "utf8");
+  }
+  return readStdin();
+}
+
+async function writeJsonFile(filePath, payload) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+}
+
+async function writeProviderOutput(args, responses) {
+  if (args.outputFile) {
+    await writeJsonFile(args.outputFile, responses);
+    process.stderr.write(`Wrote validated advisory response JSON to ${args.outputFile}\n`);
+    return;
+  }
+
+  process.stdout.write(`${JSON.stringify(responses, null, 2)}\n`);
+}
+
+async function writeProviderError(args, message) {
+  if (!args?.outputFile) {
+    return;
+  }
+
+  const timestamp = new Date().toISOString();
+  const safeBase = path
+    .basename(args.inputFile ?? "stdin-request", ".json")
+    .replace(/[^A-Za-z0-9._-]/g, "_");
+  const errorPath = path.join("llm", "errors", `${safeBase}-error-${Date.now()}.json`);
+  await writeJsonFile(errorPath, {
+    errorId: `llm_provider_error_${Date.now()}`,
+    timestamp,
+    provider: "gpt55_llm_agent_provider",
+    mode: "advisory_only",
+    executionAuthority: "none",
+    brokerAuthority: "none",
+    readinessOverrideAuthority: "none",
+    inputFile: args.inputFile ?? "stdin",
+    outputFile: args.outputFile,
+    message: sanitizeError(message),
+    safetyNotice: "Advisory-only provider error. No broker control. No execution authority. No readiness override."
+  });
+  process.stderr.write(`Wrote sanitized provider error JSON to ${errorPath}\n`);
 }
 
 function requireApiKey() {
@@ -418,9 +477,9 @@ async function main() {
   }
 
   const apiKey = requireApiKey();
-  const raw = await readStdin();
+  const raw = await readRequestInput(args);
   if (!raw.trim()) {
-    throw new Error("request JSON must be provided on stdin");
+    throw new Error("request JSON must be provided on stdin or with --input-file");
   }
 
   const packet = parseJson(raw, "request");
@@ -441,7 +500,15 @@ async function main() {
   const responses = normalizeModelOutput(parsedOutput);
   validateProviderResponses(responses);
 
-  process.stdout.write(`${JSON.stringify(responses, null, 2)}\n`);
+  await writeProviderOutput(args, responses);
 }
 
-main().catch((error) => fail(error?.message ?? error));
+const cliArgs = parseArgs(process.argv.slice(2));
+
+main().catch(async (error) => {
+  const message = error?.message ?? error;
+  await writeProviderError(cliArgs, message).catch((writeError) => {
+    process.stderr.write(`GPT-5.5 LLM provider error: failed to write error JSON: ${sanitizeError(writeError?.message ?? writeError)}\n`);
+  });
+  fail(message);
+});

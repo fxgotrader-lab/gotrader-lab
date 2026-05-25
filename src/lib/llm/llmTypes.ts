@@ -175,6 +175,10 @@ export interface LLMResearchState {
   providerMode: LLMProviderMode;
   latestRunId?: string;
   runs: LLMAdvisoryRun[];
+  latestContextExportAt?: string;
+  latestResponseImportAt?: string;
+  totalContextExports: number;
+  totalResponseImports: number;
   unsafeResponseRejections: number;
   deterministicFallbackEnabled: true;
   mockModeAllowed: true;

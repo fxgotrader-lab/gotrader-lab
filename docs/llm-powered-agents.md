@@ -109,7 +109,13 @@ The local bridge should:
 
 The browser frontend cannot spawn this command directly.
 
-See `docs/gpt55-api-setup.md` and `scripts/README-gpt55-llm-provider.md` for the local provider setup.
+For manual testing, use the local file workflow:
+
+```powershell
+node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-context.json --output-file llm/responses/latest-llm-response.json
+```
+
+See `docs/gpt55-api-setup.md`, `docs/llm-local-file-workflow.md`, and `scripts/README-gpt55-llm-provider.md` for the local provider setup.
 
 ## Readiness Impact
 

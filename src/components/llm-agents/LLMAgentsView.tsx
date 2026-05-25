@@ -1,20 +1,41 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bot, BrainCircuit, FileJson, Play, ShieldAlert, SlidersHorizontal, TerminalSquare } from "lucide-react";
+import {
+  Bot,
+  BrainCircuit,
+  ClipboardCheck,
+  Download,
+  FileJson,
+  Play,
+  ShieldAlert,
+  SlidersHorizontal,
+  TerminalSquare,
+  Upload
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import {
   buildLLMResearchContextPacket,
+  createLLMContextPacket,
   getLLMReadinessImpact,
+  importLLMAgentResponse,
   LLM_LOCAL_COMMAND_ENV_VAR,
   LLM_RESEARCH_UPDATED_EVENT,
   loadLLMResearchState,
   providerStatusForMode,
+  recordLLMContextExport,
+  recordLLMResponseImport,
+  recordLLMUnsafeResponseRejection,
   requiredLLMAgents,
   runLLMAgentOrchestrator,
-  saveLLMAdvisoryRun
+  saveLLMAdvisoryRun,
+  serializeLLMContextPacket,
+  validateLLMContextPacket
 } from "@/lib/llm";
 import type { LLMAdvisoryRun, LLMProviderMode, LLMResearchContextPacket, LLMResearchState } from "@/lib/llm";
+import type { LLMContextPacketValidationResult } from "@/lib/llm/validateLLMContextPacket";
+import type { LLMAgentResponseImportResult } from "@/lib/llm/importLLMAgentResponse";
 import { evaluateReadinessGate } from "@/lib/readiness";
 import { loadLatestResearchQualityReview } from "@/lib/researchQuality";
 import {
@@ -36,6 +57,21 @@ const statusVariant = (status?: string) =>
         : "muted";
 const providerVariant = (configured: boolean, providerMode: LLMProviderMode) =>
   configured && providerMode === "local_command" ? "success" : providerMode === "mock_llm" ? "warning" : "danger";
+const latestLLMContextFilename = "latest-llm-context.json";
+const llmRequestPath = "C:/Users/andre/OneDrive/Documents/gotrader/llm/requests/latest-llm-context.json";
+const llmResponsePath = "C:/Users/andre/OneDrive/Documents/gotrader/llm/responses/latest-llm-response.json";
+const sampleResponseHint = `Paste the contents of llm/responses/latest-llm-response.json here.
+
+Expected shape:
+[
+  {
+    "agentId": "llm-ict-liquidity-reviewer",
+    "mode": "advisory_only",
+    "executionAuthority": "none",
+    "brokerAuthority": "none",
+    "readinessOverrideAuthority": "none"
+  }
+]`;
 
 const RunSummary = ({ run }: { run?: LLMAdvisoryRun }) => {
   if (!run) {
@@ -67,6 +103,10 @@ const RunSummary = ({ run }: { run?: LLMAdvisoryRun }) => {
 export function LLMAgentsView({ state }: { state: LabState }) {
   const [llmState, setLlmState] = useState<LLMResearchState>(() => loadLLMResearchState());
   const [contextPacket, setContextPacket] = useState<LLMResearchContextPacket>();
+  const [contextJson, setContextJson] = useState("");
+  const [contextValidation, setContextValidation] = useState<LLMContextPacketValidationResult>();
+  const [importJson, setImportJson] = useState("");
+  const [importResult, setImportResult] = useState<LLMAgentResponseImportResult>();
   const [busy, setBusy] = useState(false);
   const latestValidation = loadLatestValidationReport();
   const latestQuality = loadLatestResearchQualityReview();
@@ -117,6 +157,53 @@ export function LLMAgentsView({ state }: { state: LabState }) {
     const run = await runLLMAgentOrchestrator(localContext, "local_command");
     setLlmState(saveLLMAdvisoryRun(run, "local_command"));
     setBusy(false);
+  };
+
+  const downloadJson = (filename: string, contents: string) => {
+    const blob = new Blob([contents], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportContextPacket = (stableFilename = false) => {
+    const packet = createLLMContextPacket({
+      state,
+      validation: latestValidation,
+      quality: latestQuality,
+      readiness,
+      runbook,
+      providerMode: "local_command"
+    });
+    const validation = validateLLMContextPacket(packet);
+    const json = serializeLLMContextPacket(packet);
+
+    setContextPacket(packet);
+    setContextJson(json);
+    setContextValidation(validation);
+    setLlmState(recordLLMContextExport(packet.timestamp));
+    downloadJson(stableFilename ? latestLLMContextFilename : `llm-context-${packet.packetId}.json`, json);
+  };
+
+  const validateImportedResponse = () => {
+    const result = importLLMAgentResponse(importJson, contextPacket?.packetId ?? llmState.latestRunId ?? "manual_file_import");
+    setImportResult(result);
+    return result;
+  };
+
+  const importResponse = () => {
+    const result = validateImportedResponse();
+    if (!result.run || !result.valid) {
+      setLlmState(recordLLMUnsafeResponseRejection(Math.max(1, result.unsafeResponseRejections)));
+      return;
+    }
+
+    setLlmState(recordLLMResponseImport(result.run, result.run.timestamp));
   };
 
   const createSelfImprovementProposal = () => {
@@ -270,6 +357,199 @@ $env:${LLM_LOCAL_COMMAND_ENV_VAR} = "node scripts/gpt55-llm-agent-provider.mjs"
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <FileJson className="h-4 w-4 text-primary" aria-hidden="true" />
+                <CardTitle>Local GPT File Workflow</CardTitle>
+              </div>
+              <CardDescription>
+                Export context from the app, run GPT-5.5 in PowerShell, then import validated advisory responses.
+              </CardDescription>
+            </div>
+            <Badge variant="warning">file bridge</Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+            <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
+            Browser code cannot call GPT or hold API keys. This workflow keeps the key in PowerShell and imports only
+            advisory-only JSON.
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {[
+              ["Latest context export", llmState.latestContextExportAt ?? "none"],
+              ["Latest response import", llmState.latestResponseImportAt ?? "none"],
+              ["Contexts exported", String(llmState.totalContextExports)],
+              ["Responses imported", String(llmState.totalResponseImports)]
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs text-muted-foreground">{label}</p>
+                <p className="mt-1 break-words font-mono text-xs text-foreground">{value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="rounded-md border border-border bg-background/45 p-3">
+              <p className="text-xs text-muted-foreground">Recommended request path</p>
+              <p className="mt-1 break-all font-mono text-xs text-foreground">{llmRequestPath}</p>
+            </div>
+            <div className="rounded-md border border-border bg-background/45 p-3">
+              <p className="text-xs text-muted-foreground">Recommended response path</p>
+              <p className="mt-1 break-all font-mono text-xs text-foreground">{llmResponsePath}</p>
+            </div>
+          </div>
+
+          <pre className="overflow-x-auto rounded-lg border border-border bg-background/75 p-3 font-mono text-xs leading-5 text-slate-200">
+{`$env:OPENAI_API_KEY = "..."
+$env:GOTRADER_LLM_MODEL = "gpt-5.5"
+node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-context.json --output-file llm/responses/latest-llm-response.json`}
+          </pre>
+
+          <div className="flex flex-wrap gap-3">
+            <Button onClick={() => exportContextPacket(false)}>
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Export LLM Context Packet
+            </Button>
+            <Button variant="secondary" onClick={() => exportContextPacket(true)}>
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Download as latest-llm-context.json
+            </Button>
+          </div>
+
+          {contextValidation ? (
+            <div className="rounded-lg border border-border bg-background/45 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold">Context Export Validation</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    The packet must remain advisory-only before it leaves the browser.
+                  </p>
+                </div>
+                <Badge variant={contextValidation.valid ? "success" : "danger"}>
+                  {contextValidation.valid ? "valid" : "invalid"}
+                </Badge>
+              </div>
+              {contextValidation.errors.length ? (
+                <div className="mt-3 space-y-1">
+                  {contextValidation.errors.map((error) => (
+                    <div key={error} className="rounded-md border border-rose-400/20 bg-rose-400/5 px-2 py-1 text-xs text-rose-100">
+                      {error}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {contextValidation.warnings.length ? (
+                <div className="mt-3 space-y-1">
+                  {contextValidation.warnings.map((warning) => (
+                    <div key={warning} className="rounded-md border border-amber-300/25 bg-amber-300/10 px-2 py-1 text-xs text-amber-100">
+                      {warning}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="grid gap-4 xl:grid-cols-[1fr_0.8fr]">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Upload className="h-4 w-4 text-primary" aria-hidden="true" />
+                <h3 className="text-sm font-semibold">Import LLM Agent Response</h3>
+              </div>
+              <Textarea
+                value={importJson}
+                onChange={(event) => setImportJson(event.target.value)}
+                placeholder={sampleResponseHint}
+                className="min-h-[300px] font-mono text-xs"
+                aria-label="LLM agent response JSON"
+              />
+              <div className="flex flex-wrap gap-3">
+                <Button variant="secondary" onClick={validateImportedResponse}>
+                  <ClipboardCheck className="h-4 w-4" aria-hidden="true" />
+                  Validate imported response
+                </Button>
+                <Button onClick={importResponse}>
+                  <Upload className="h-4 w-4" aria-hidden="true" />
+                  Import response locally
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs text-muted-foreground">Latest imported response summary</p>
+                <p className="mt-2 text-sm text-foreground">
+                  {llmState.latestResponseImportAt
+                    ? `${latestRun?.responses.length ?? 0} LLM agent responses imported.`
+                    : "No real local-command LLM response has been imported yet."}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Badge variant={latestRun?.advisoryPassed ? "success" : "warning"}>
+                    {latestRun?.advisoryPassed ? "advisory passed" : "pending valid import"}
+                  </Badge>
+                  <Badge variant={llmState.unsafeResponseRejections ? "danger" : "success"}>
+                    unsafe rejections {llmState.unsafeResponseRejections}
+                  </Badge>
+                </div>
+              </div>
+
+              {importResult ? (
+                <div className="rounded-lg border border-border bg-background/45 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold">Response Import Validation</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Imported JSON must be advisory-only and include all required LLM agents.
+                      </p>
+                    </div>
+                    <Badge variant={importResult.valid ? "success" : "danger"}>
+                      {importResult.valid ? "valid" : "invalid"}
+                    </Badge>
+                  </div>
+                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                    <div className="rounded-md border border-border bg-card/45 p-2 text-xs">
+                      responses {importResult.responses.length}
+                    </div>
+                    <div className="rounded-md border border-border bg-card/45 p-2 text-xs">
+                      unsafe rejections {importResult.unsafeResponseRejections}
+                    </div>
+                  </div>
+                  {importResult.errors.length ? (
+                    <div className="mt-3 space-y-1">
+                      {importResult.errors.map((error) => (
+                        <div key={error} className="rounded-md border border-rose-400/20 bg-rose-400/5 px-2 py-1 text-xs text-rose-100">
+                          {error}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {importResult.warnings.length ? (
+                    <div className="mt-3 space-y-1">
+                      {importResult.warnings.map((warning) => (
+                        <div key={warning} className="rounded-md border border-amber-300/25 bg-amber-300/10 px-2 py-1 text-xs text-amber-100">
+                          {warning}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          {contextJson ? (
+            <pre className="max-h-[420px] overflow-auto rounded-lg border border-border bg-background/75 p-4 font-mono text-xs leading-5 text-slate-200">
+              {contextJson}
+            </pre>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
