@@ -2,6 +2,7 @@ import type {
   BacktestAgentWeights,
   BacktestConfig,
   BacktestResult,
+  TradeGenerationDiagnostic,
   ResolvedBacktestConfig
 } from "@/lib/backtesting";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
@@ -180,6 +181,13 @@ export interface AutoResearchCycle {
   adaptivePasses?: AutoResearchAdaptivePass[];
   failedGates?: AutoResearchFailedGate[];
   finalOutcome?: AutoResearchAdaptiveOutcome;
+  tradeGenerationDiagnostics?: TradeGenerationDiagnostic[];
+  recoveryAttempted?: boolean;
+  recoveryCandidates?: AutoResearchCandidateConfig[];
+  recoveryResult?: AutoResearchCandidateResult;
+  tradesBeforeRecovery?: number;
+  tradesAfterRecovery?: number;
+  recoveryFailureReasons?: string[];
   scoringCriteria: AutoResearchScoringCriteria;
   safetyNotes: string[];
   createdProposalId?: string;

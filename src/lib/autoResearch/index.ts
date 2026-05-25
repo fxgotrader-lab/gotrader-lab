@@ -18,7 +18,11 @@ export {
   safeAutoResearchSearchSpace
 } from "@/lib/autoResearch/configSearchSpace";
 export { createSelfImprovementFromCandidate } from "@/lib/autoResearch/createSelfImprovementFromCandidate";
-export { generateAdaptiveCandidateConfigs, generateCandidateConfigs } from "@/lib/autoResearch/generateCandidateConfigs";
+export {
+  generateAdaptiveCandidateConfigs,
+  generateCandidateConfigs,
+  generateTradeRecoveryCandidateConfigs
+} from "@/lib/autoResearch/generateCandidateConfigs";
 export { scoreCandidateConfig } from "@/lib/autoResearch/scoreCandidateConfig";
 export { selectBestCandidate } from "@/lib/autoResearch/selectBestCandidate";
 export type {

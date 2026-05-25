@@ -44,6 +44,9 @@ const changesFor = (
 
 const targetProblemFor = (candidate: AutoResearchCandidateResult): CalibrationTargetProblem => {
   const scores = candidate.scoreBreakdown;
+  if (candidate.metrics.totalTrades < 3 || candidate.rejectionReasons.some((reason) => reason.toLowerCase().includes("simulated trades"))) {
+    return "trade_generation_issue";
+  }
   if (scores.drawdownScore < 60) {
     return "high_drawdown";
   }

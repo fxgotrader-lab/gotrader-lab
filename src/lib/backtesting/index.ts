@@ -15,6 +15,15 @@ export type {
   SimulatedTradeOutcome,
   SimulatedTradeRecord
 } from "@/lib/backtesting/backtestTypes";
+export {
+  diagnoseTradeGeneration,
+  topTradeGenerationDiagnostic
+} from "@/lib/backtesting/tradeGenerationDiagnostics";
+export type {
+  TradeGenerationDiagnostic,
+  TradeGenerationDiagnosticSeverity,
+  TradeGenerationReasonCode
+} from "@/lib/backtesting/tradeGenerationDiagnostics";
 export { scoreSimulatedTradeOutcome } from "@/lib/backtesting/outcomeScoring";
 export {
   backtestSessionFilters,

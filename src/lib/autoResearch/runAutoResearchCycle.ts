@@ -3,7 +3,11 @@ import {
   autoResearchSafetyNotes
 } from "@/lib/autoResearch/configSearchSpace";
 import { createSelfImprovementFromCandidate } from "@/lib/autoResearch/createSelfImprovementFromCandidate";
-import { generateAdaptiveCandidateConfigs, generateCandidateConfigs } from "@/lib/autoResearch/generateCandidateConfigs";
+import {
+  generateAdaptiveCandidateConfigs,
+  generateCandidateConfigs,
+  generateTradeRecoveryCandidateConfigs
+} from "@/lib/autoResearch/generateCandidateConfigs";
 import { scoreCandidateConfig } from "@/lib/autoResearch/scoreCandidateConfig";
 import { selectBestCandidate } from "@/lib/autoResearch/selectBestCandidate";
 import type {
@@ -17,6 +21,7 @@ import type {
 } from "@/lib/autoResearch/autoResearchTypes";
 import {
   loadBacktestConfig,
+  diagnoseTradeGeneration,
   runBacktest
 } from "@/lib/backtesting";
 import {
@@ -231,7 +236,11 @@ export function compactAutoResearchCycle(cycle: AutoResearchCycle): AutoResearch
       rejectionReasons: safeTopN(score.rejectionReasons, 3)
     })),
     adaptivePasses: safeArray(cycle.adaptivePasses).map(compactAdaptivePass),
-    failedGates: safeTopN(cycle.failedGates, 6)
+    failedGates: safeTopN(cycle.failedGates, 6),
+    tradeGenerationDiagnostics: safeTopN(cycle.tradeGenerationDiagnostics, 6),
+    recoveryCandidates: safeTopN(cycle.recoveryCandidates, 7),
+    recoveryResult: cycle.recoveryResult ? compactCandidate(cycle.recoveryResult) : undefined,
+    recoveryFailureReasons: safeTopN(cycle.recoveryFailureReasons, 6)
   };
 }
 
@@ -579,10 +588,33 @@ const reasonForAdaptivePass = (passNumber: number, failedGates: AutoResearchFail
     ? "Initial bounded configuration search."
     : `Targeted follow-up for ${failedGates.map((gate) => failedGateLabels[gate]).join(", ")}.`;
 
+const recoveryFailureReasonsFor = (
+  diagnostics: ReturnType<typeof diagnoseTradeGeneration>,
+  recoveryResults: AutoResearchCandidateResult[]
+) => {
+  const maxTrades = Math.max(0, ...safeArray(recoveryResults).map((candidate) => candidate.metrics.totalTrades));
+  const reasons = safeArray(diagnostics)
+    .filter((item) => item.severity === "blocking")
+    .map((item) => `${item.reasonCode.replace(/_/g, " ")}: ${item.suggestedFix}`);
+  if (maxTrades === 0) {
+    reasons.unshift("Recovery candidates still produced zero simulated trades.");
+  }
+  return safeTopN(reasons, 6);
+};
+
 export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResearchCycle {
   const cycleId = uid("auto_cycle");
   try {
     const baselineConfig = loadBacktestConfig();
+    const baselineBacktest = runBacktest(mockCandles, baselineConfig);
+    const tradesBeforeRecovery = baselineBacktest.summary.totalTrades;
+    const tradeGenerationDiagnostics = tradesBeforeRecovery === 0
+      ? diagnoseTradeGeneration({
+          candles: mockCandles,
+          config: baselineConfig,
+          result: baselineBacktest
+        })
+      : [];
     const baselineValidation = runValidationSuite(mockCandles, baselineConfig);
     const baselineMetrics = summarizeValidationMetrics(baselineValidation);
     const maxAdaptivePasses = Math.max(0, Math.min(2, options.maxAdaptivePasses ?? 2));
@@ -596,6 +628,11 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
     let candidateResults: AutoResearchCandidateResult[] = [];
     let closestCandidates: AutoResearchCandidateResult[] = [];
     let rejectedCandidates: AutoResearchCandidateResult[] = [];
+    let recoveryAttempted = false;
+    let recoveryCandidates: ReturnType<typeof generateTradeRecoveryCandidateConfigs> = [];
+    let recoveryResult: AutoResearchCandidateResult | undefined;
+    let tradesAfterRecovery = 0;
+    let recoveryFailureReasons: string[] = [];
 
     for (let passIndex = 0; passIndex < totalPasses; passIndex += 1) {
       const passNumber = passIndex + 1;
@@ -668,6 +705,43 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
         break;
       }
     }
+
+    if (tradesBeforeRecovery === 0) {
+      recoveryAttempted = true;
+      recoveryCandidates = generateTradeRecoveryCandidateConfigs(baselineConfig);
+      const recoveryResults: AutoResearchCandidateResult[] = [];
+      for (const candidate of recoveryCandidates) {
+        const candidateResult = evaluateCandidate(candidate, baselineMetrics);
+        evaluatedCandidateResults.push(candidateResult);
+        recoveryResults.push(candidateResult);
+        const { bestCandidate: bestCandidateSoFar } = selectBestCandidate(evaluatedCandidateResults, baselineMetrics);
+        options.onCandidateEvaluated?.({
+          currentCandidate: evaluatedCandidateResults.length,
+          totalCandidates: allCandidateConfigs.length + recoveryCandidates.length,
+          passNumber: totalPasses,
+          totalPasses,
+          passLabel: "trade generation recovery",
+          failedGatesTargeted: ["trade_count_too_low"],
+          candidateId: candidateResult.candidateId,
+          candidateLabel: candidateResult.label,
+          candidateScore: candidateResult.scoreBreakdown.totalScore,
+          bestCandidateId: bestCandidateSoFar?.candidateId,
+          bestCandidateLabel: bestCandidateSoFar?.label,
+          bestCandidateScore: bestCandidateSoFar?.scoreBreakdown.totalScore,
+          bestCandidateCategory: bestCandidateSoFar?.resultCategory
+        });
+      }
+      allCandidateConfigs.push(...recoveryCandidates);
+      const recoverySelection = selectBestCandidate(recoveryResults, baselineMetrics);
+      const allSelection = selectBestCandidate(evaluatedCandidateResults, baselineMetrics);
+      recoveryResult = recoverySelection.bestCandidate ?? recoverySelection.closestCandidates[0];
+      tradesAfterRecovery = Math.max(0, ...recoveryResults.map((candidate) => candidate.metrics.totalTrades));
+      recoveryFailureReasons = recoveryFailureReasonsFor(tradeGenerationDiagnostics, recoveryResults);
+      bestCandidate = allSelection.bestCandidate;
+      candidateResults = allSelection.candidateResults;
+      closestCandidates = allSelection.closestCandidates;
+      rejectedCandidates = allSelection.rejectedCandidates;
+    }
     let createdProposalId: string | undefined;
     const selectedCandidateId = bestCandidate?.candidateId;
     const candidateScores = candidateResults.map((candidate) => ({
@@ -683,12 +757,13 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       failedGates,
       adaptivePasses.length >= totalPasses && !shouldStopAdaptiveSearch(bestCandidate)
     );
-    const finalResultCategory = bestCandidate?.resultCategory ?? finalOutcome;
+    const recoveryStillZero = recoveryAttempted && tradesAfterRecovery === 0;
+    const finalResultCategory = recoveryStillZero ? "no_safe_candidate_found" : bestCandidate?.resultCategory ?? finalOutcome;
     const noSafePaperDemoCandidateFound = !candidateResults.some(
       (candidate) => candidate.resultCategory === "paper_demo_candidate"
-    );
+    ) || recoveryStillZero;
 
-    if (bestCandidate && options.createProposal !== false && shouldCreateProposal(bestCandidate)) {
+    if (!recoveryStillZero && bestCandidate && options.createProposal !== false && shouldCreateProposal(bestCandidate)) {
       const advisorySource = (labStorage.load().advisoryResponses?.length ?? 0) > 0 ? "openclaw" : "internal";
       const proposal = createSelfImprovementFromCandidate({
         baselineConfig,
@@ -729,7 +804,14 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       noSafePaperDemoCandidateFound,
       adaptivePasses,
       failedGates,
-      finalOutcome
+      finalOutcome: recoveryStillZero ? "no_safe_candidate_found" : finalOutcome,
+      tradeGenerationDiagnostics,
+      recoveryAttempted,
+      recoveryCandidates,
+      recoveryResult,
+      tradesBeforeRecovery,
+      tradesAfterRecovery,
+      recoveryFailureReasons
     };
 
     saveAutoResearchCycle(cycle);

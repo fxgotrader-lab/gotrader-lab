@@ -16,6 +16,7 @@ import {
   backtestSessionFilters,
   backtestStopModels,
   defaultBacktestAgentWeights,
+  diagnoseTradeGeneration,
   describeBacktestConfig,
   loadBacktestConfig,
   resetBacktestConfig,
@@ -84,6 +85,9 @@ export function BacktestLab() {
   const [draftConfig, setDraftConfig] = useState<ResolvedBacktestConfig>(() => loadBacktestConfig());
   const [result, setResult] = useState(() => runBacktest(mockCandles, loadBacktestConfig()));
   const summary = result.summary;
+  const zeroTradeDiagnostics = summary.totalTrades === 0
+    ? diagnoseTradeGeneration({ candles: mockCandles, config: result.config, result })
+    : [];
   const lastEquity = summary.equityCurve[summary.equityCurve.length - 1]?.equityR ?? 0;
   const agentWeightTotal = useMemo(
     () => Object.values(draftConfig.agentWeights).reduce((sum, value) => sum + value, 0),
@@ -337,6 +341,29 @@ export function BacktestLab() {
               <MetricCard label="Best trade" value={`${formatSigned(summary.bestTrade?.rMultiple ?? 0, 2)}R`} detail={summary.bestTrade?.outcome.replace("_", " ") ?? "n/a"} tone="positive" />
               <MetricCard label="Worst trade" value={`${formatSigned(summary.worstTrade?.rMultiple ?? 0, 2)}R`} detail={summary.worstTrade?.outcome.replace("_", " ") ?? "n/a"} tone="danger" />
             </div>
+
+            {summary.totalTrades === 0 ? (
+              <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">Why no trades?</p>
+                    <p className="mt-1">
+                      {zeroTradeDiagnostics[0]?.explanation ??
+                        "The current settings did not produce any valid simulated trade records."}
+                    </p>
+                  </div>
+                  <Badge variant="warning">cannot evaluate</Badge>
+                </div>
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  {zeroTradeDiagnostics.slice(0, 4).map((item) => (
+                    <div key={`${item.reasonCode}-${item.currentValue}`} className="rounded-md border border-amber-200/20 bg-amber-200/5 p-2">
+                      <p className="font-medium">{item.reasonCode.replace(/_/g, " ")}</p>
+                      <p className="mt-1 text-xs text-amber-100/80">{item.suggestedFix}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="rounded-lg border border-border bg-background/45 p-3">
               <div className="flex flex-wrap items-center justify-between gap-3">

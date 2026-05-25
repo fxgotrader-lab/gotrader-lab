@@ -690,3 +690,83 @@ export function generateAdaptiveCandidateConfigs({
 
   return dedupeCandidates(candidates).slice(0, Math.max(1, Math.min(10, maxCandidateCount)));
 }
+
+export function generateTradeRecoveryCandidateConfigs(
+  baseline: ResolvedBacktestConfig,
+  maxCandidateCount = 7
+): AutoResearchCandidateConfig[] {
+  const candidates: AutoResearchCandidateConfig[] = [];
+  const lowerConfluence = round(Math.max(0.12, baseline.minimumConfluenceThreshold - 0.08), 2);
+  const lowerConfidence = round(Math.max(0.25, baseline.minimumConfidenceThreshold - 0.06), 2);
+
+  pushAdaptiveCandidate(
+    candidates,
+    baseline,
+    "Recovery lower evidence gates",
+    "Zero trades were generated, so this bounded recovery slightly lowers confluence and confidence.",
+    {
+      minimumConfluenceThreshold: lowerConfluence,
+      minimumConfidenceThreshold: lowerConfidence
+    },
+    ["confluenceThreshold", "confidenceThreshold"]
+  );
+  pushAdaptiveCandidate(
+    candidates,
+    baseline,
+    "Recovery all-session scan",
+    "Zero trades were generated, so this recovery widens the session filter to all mock-data sessions.",
+    { sessionFilter: "all" },
+    ["sessionFilter"]
+  );
+  pushAdaptiveCandidate(
+    candidates,
+    baseline,
+    "Recovery both directions",
+    "Zero trades were generated, so this recovery allows both bullish and bearish simulated theses.",
+    { allowLong: true, allowShort: true },
+    ["allowLong", "allowShort"]
+  );
+  pushAdaptiveCandidate(
+    candidates,
+    baseline,
+    "Recovery latest-swing stop",
+    "Zero trades were generated, so this recovery tests structure-based invalidation.",
+    { stopModel: "latest swing" },
+    ["stopModel"]
+  );
+  pushAdaptiveCandidate(
+    candidates,
+    baseline,
+    "Recovery FVG invalidation",
+    "Zero trades were generated, so this recovery tests FVG invalidation.",
+    { stopModel: "FVG invalidation" },
+    ["stopModel"]
+  );
+  pushAdaptiveCandidate(
+    candidates,
+    baseline,
+    "Recovery longer resolution",
+    "Zero trades were generated, so this recovery extends the max bars to resolve a simulated outcome.",
+    {
+      maxBarsToResolveTrade: Math.min(48, Math.max(12, baseline.maxBarsToResolveTrade + 6)),
+      lookaheadCandles: Math.min(48, Math.max(12, baseline.maxBarsToResolveTrade + 6))
+    },
+    ["maxBarsToResolveTrade"]
+  );
+  pushAdaptiveCandidate(
+    candidates,
+    baseline,
+    "Recovery combined sample unlock",
+    "Zero trades were generated, so this recovery combines small threshold relief with all sessions and both directions.",
+    {
+      minimumConfluenceThreshold: lowerConfluence,
+      minimumConfidenceThreshold: lowerConfidence,
+      sessionFilter: "all",
+      allowLong: true,
+      allowShort: true
+    },
+    ["confluenceThreshold", "confidenceThreshold", "sessionFilter", "allowLong", "allowShort"]
+  );
+
+  return dedupeCandidates(candidates).slice(0, Math.max(1, Math.min(7, maxCandidateCount)));
+}

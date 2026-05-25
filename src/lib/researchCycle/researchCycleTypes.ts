@@ -1,5 +1,5 @@
 import type { AutoResearchCycle, AutoResearchProgressSnapshot, AutoResearchSearchMode } from "@/lib/autoResearch";
-import type { BacktestConfig, BacktestSummary, ResolvedBacktestConfig } from "@/lib/backtesting";
+import type { BacktestConfig, BacktestSummary, ResolvedBacktestConfig, TradeGenerationDiagnostic } from "@/lib/backtesting";
 import type { LLMAdvisoryRun } from "@/lib/llm";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
 import type { ResearchQualityReview } from "@/lib/researchQuality";
@@ -119,6 +119,7 @@ export interface ResearchCycleRun {
   readinessSnapshot?: ReadinessGateSnapshot;
   thesisSummary?: ResearchCycleThesisSummary;
   backtestSummary?: ResearchCycleBacktestSummary;
+  backtestDiagnostics?: TradeGenerationDiagnostic[];
   validationSummary?: ResearchCycleValidationSummary;
   researchQualitySummary?: ResearchCycleQualitySummary;
   bestCandidateSummary?: ResearchCycleCandidateSummary;

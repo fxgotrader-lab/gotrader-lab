@@ -19,7 +19,8 @@ export type CalibrationTargetProblem =
   | "poor_session_performance"
   | "poor_confidence_calibration"
   | "unstable_agent_weight"
-  | "overfitting_risk";
+  | "overfitting_risk"
+  | "trade_generation_issue";
 
 export type CalibrationComparisonRecommendation = "accept" | "reject" | "keep_testing";
 

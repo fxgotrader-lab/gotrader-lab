@@ -59,6 +59,9 @@ const falsePositiveTotal = (quality?: ResearchQualityReview) =>
 const redDrawdownClusters = (quality?: ResearchQualityReview) =>
   quality?.drawdownClusters.filter((cluster) => cluster.clusterRisk === "red").length ?? 0;
 
+const totalValidationTrades = (validation?: ValidationSuiteReport) =>
+  validation?.scenarios.reduce((sum, scenario) => sum + scenario.totalTrades, 0) ?? 0;
+
 const runbookComplete = (runbook?: SimulationRunbookState) =>
   Boolean(
     runbook?.verifiedAt &&
@@ -171,6 +174,7 @@ export function evaluateReadinessGate({
   const conservative = conservativeScenarioFor(validation);
   const maxDrawdown = maxDrawdownFor(validation);
   const averageCalibration = averageCalibrationFor(validation);
+  const validationTrades = totalValidationTrades(validation);
   const falsePositives = falsePositiveTotal(quality);
   const redClusters = redDrawdownClusters(quality);
   const llmSnapshot = llmSnapshotFor();
@@ -201,6 +205,21 @@ export function evaluateReadinessGate({
         explanation: "The gate needs the quality review to identify false positives, weak sessions, and readiness grade.",
         suggestedFix: "Run Research Quality after validation is complete.",
         runPage: "/research-quality"
+      }
+    ),
+    requirement(
+      "simulated-trade-sample",
+      "Insufficient simulated trades. Readiness cannot be evaluated.",
+      Boolean(validation) && validationTrades > 0,
+      validation ? `${validationTrades} total simulated trades across validation scenarios.` : "Validation suite is missing.",
+      "blocker",
+      {
+        currentValue: validation ? `${validationTrades} total simulated trades` : "missing",
+        requiredValue: "> 0 simulated trades before readiness evaluation",
+        explanation:
+          "Zero trades is not a strategy pass or failure; it means there is no outcome sample to evaluate readiness.",
+        suggestedFix: "Open Backtest Lab or Auto Research, review zero-trade diagnostics, and run bounded recovery settings.",
+        runPage: "/backtest-lab"
       }
     ),
     requirement(

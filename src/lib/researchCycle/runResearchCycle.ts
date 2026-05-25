@@ -1,6 +1,12 @@
 import { compactAutoResearchCycle, runAutoResearchCycle } from "@/lib/autoResearch";
 import type { AutoResearchCandidateResult } from "@/lib/autoResearch";
-import { loadBacktestConfig, runBacktest, sanitizeBacktestConfig } from "@/lib/backtesting";
+import {
+  diagnoseTradeGeneration,
+  loadBacktestConfig,
+  runBacktest,
+  sanitizeBacktestConfig,
+  topTradeGenerationDiagnostic
+} from "@/lib/backtesting";
 import type { BacktestResult, ResolvedBacktestConfig } from "@/lib/backtesting";
 import { recordResearchCycleCommunication } from "@/lib/communications/communicationSpec";
 import {
@@ -238,6 +244,9 @@ const nextActionFor = (run: ResearchCycleRun) => {
   if (!run.llmRun?.advisoryPassed) {
     return "Start the local LLM bridge and rerun GPT advisory review before expecting Paper-Demo Candidate readiness.";
   }
+  if (run.backtestSummary?.totalTrades === 0) {
+    return "Review zero-trade diagnostics and recovery results. Strategy cannot be evaluated until simulated trades exist.";
+  }
   if (run.createdProposalId) {
     return "Review the new self-improvement proposal. Approval is still required before settings change.";
   }
@@ -257,6 +266,7 @@ const resultSummaryFor = (run: ResearchCycleRun) => {
     counts.warnings ? `${counts.warnings} warning${counts.warnings === 1 ? "" : "s"}` : "no blocking warnings",
     counts.skipped ? `${counts.skipped} skipped` : undefined,
     run.backtestSummary ? `${run.backtestSummary.totalTrades} backtest trades` : undefined,
+    run.backtestSummary?.totalTrades === 0 ? "No valid simulated trades were generated" : undefined,
     run.autoResearchCycle?.noSafePaperDemoCandidateFound ? "No safe Paper-Demo Candidate found" : undefined,
     run.bestCandidateSummary ? `best candidate: ${run.bestCandidateSummary.label}` : undefined,
     run.createdProposalId ? `proposal ${run.createdProposalId} created` : "no proposal created",
@@ -408,10 +418,29 @@ export async function runResearchCycle({
     try {
       backtestResult = runBacktest(mockCandles, activeConfig);
       run.backtestSummary = summarizeBacktest(backtestResult);
-      passStep("backtest", {
-        summary: `Backtest completed with ${backtestResult.summary.totalTrades} simulated trades.`,
-        detail: `Win rate ${Math.round(backtestResult.summary.winRate * 100)}%, average R ${backtestResult.summary.averageR.toFixed(2)}, max drawdown ${backtestResult.summary.maxDrawdown.toFixed(2)}R.`
-      });
+      if (backtestResult.summary.totalTrades === 0) {
+        run.backtestDiagnostics = diagnoseTradeGeneration({
+          candles: mockCandles,
+          config: backtestResult.config,
+          result: backtestResult,
+          thesis: generatedThesis.thesis
+        });
+        const topDiagnostic = topTradeGenerationDiagnostic(run.backtestDiagnostics);
+        warnStep("backtest", {
+          summary: "No trades generated. Strategy cannot be evaluated from this backtest yet.",
+          warning:
+            topDiagnostic?.explanation ??
+            "No simulated trades were generated. Auto Research will try bounded trade-generation recovery.",
+          detail: topDiagnostic
+            ? `${topDiagnostic.reasonCode.replace(/_/g, " ")}: ${topDiagnostic.suggestedFix}`
+            : "Auto Research will try threshold, session, direction, stop-model, and resolution-window recovery candidates."
+        });
+      } else {
+        passStep("backtest", {
+          summary: `Backtest completed with ${backtestResult.summary.totalTrades} simulated trades.`,
+          detail: `Win rate ${Math.round(backtestResult.summary.winRate * 100)}%, average R ${backtestResult.summary.averageR.toFixed(2)}, max drawdown ${backtestResult.summary.maxDrawdown.toFixed(2)}R.`
+        });
+      }
     } catch (error) {
       failStep(
         "backtest",
@@ -512,7 +541,9 @@ export async function runResearchCycle({
           ? `Best candidate: ${autoResearchCycle.bestCandidate.label}.`
           : "Auto Research completed without a viable best candidate.",
         detail: autoResearchCycle.noSafePaperDemoCandidateFound
-          ? `${safeArray(autoResearchCycle.adaptivePasses).length || 1} adaptive pass${safeArray(autoResearchCycle.adaptivePasses).length === 1 ? "" : "es"} completed. No safe Paper-Demo Candidate found. Continue research.`
+          ? autoResearchCycle.recoveryAttempted
+            ? `${safeArray(autoResearchCycle.adaptivePasses).length || 1} adaptive pass${safeArray(autoResearchCycle.adaptivePasses).length === 1 ? "" : "es"} plus recovery completed. Trades after recovery: ${autoResearchCycle.tradesAfterRecovery ?? 0}. Continue research.`
+            : `${safeArray(autoResearchCycle.adaptivePasses).length || 1} adaptive pass${safeArray(autoResearchCycle.adaptivePasses).length === 1 ? "" : "es"} completed. No safe Paper-Demo Candidate found. Continue research.`
           : `${safeArray(autoResearchCycle.adaptivePasses).length || 1} adaptive pass${safeArray(autoResearchCycle.adaptivePasses).length === 1 ? "" : "es"} completed. Final category: ${autoResearchCycle.finalResultCategory}.`
       });
     }

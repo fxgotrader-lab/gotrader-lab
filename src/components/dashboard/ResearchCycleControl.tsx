@@ -239,6 +239,38 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
           </div>
         ) : null}
 
+        {latestRun?.backtestSummary?.totalTrades === 0 ? (
+          <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-medium">No trades generated</p>
+                <p className="mt-1">
+                  {safeArray(latestRun.backtestDiagnostics)[0]?.explanation ??
+                    "The strategy cannot be evaluated until at least one simulated trade is generated."}
+                </p>
+              </div>
+              <Badge variant="warning">cannot evaluate</Badge>
+            </div>
+            <div className="mt-3 grid gap-2 md:grid-cols-3">
+              <div className="rounded-md border border-amber-200/20 bg-amber-200/5 p-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Top reason</p>
+                <p className="mt-1">{safeArray(latestRun.backtestDiagnostics)[0]?.reasonCode.replace(/_/g, " ") ?? "unknown"}</p>
+              </div>
+              <div className="rounded-md border border-amber-200/20 bg-amber-200/5 p-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Recovery attempted</p>
+                <p className="mt-1">{latestRun.autoResearchCycle?.recoveryAttempted ? "yes" : "not yet"}</p>
+              </div>
+              <div className="rounded-md border border-amber-200/20 bg-amber-200/5 p-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Trades after recovery</p>
+                <p className="mt-1">{latestRun.autoResearchCycle?.tradesAfterRecovery ?? 0}</p>
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-amber-100/80">
+              Next action: {safeArray(latestRun.backtestDiagnostics)[0]?.suggestedFix ?? "Run bounded recovery in Auto Research, then rerun validation."}
+            </p>
+          </div>
+        ) : null}
+
         {safeArray(latestRun?.autoResearchCycle?.adaptivePasses).length ? (
           <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">

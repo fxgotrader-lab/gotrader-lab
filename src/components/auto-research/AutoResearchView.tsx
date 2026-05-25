@@ -476,13 +476,99 @@ export function AutoResearchView() {
           <div className="rounded-lg border border-border bg-background/45 p-3 text-sm">
             <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Final recommendation</p>
             <p className="mt-1 text-foreground">
-              {latestCycle?.noSafePaperDemoCandidateFound
+              {latestCycle?.recoveryAttempted && (latestCycle.tradesAfterRecovery ?? 0) === 0
+                ? "No valid simulated trades were generated. Strategy cannot be evaluated yet."
+                : latestCycle?.noSafePaperDemoCandidateFound
                 ? "No safe Paper-Demo Candidate found. Continue research with the closest stable candidates and review failed gates."
                 : latestCycle?.bestCandidate
                   ? `Review ${latestCycle.bestCandidate.label}. Approval is still required before any simulation setting changes.`
                   : "No adaptive result yet."}
             </p>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Trade Generation Diagnostics</CardTitle>
+              <CardDescription>
+                When zero trades occur, Auto Research explains the blockage and runs bounded recovery candidates before declaring Not Ready.
+              </CardDescription>
+            </div>
+            <Badge variant={latestCycle?.recoveryAttempted ? "warning" : "muted"}>
+              {latestCycle?.recoveryAttempted ? "recovery attempted" : "no recovery needed"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {safeArray(latestCycle?.tradeGenerationDiagnostics).length ? (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {safeArray(latestCycle?.tradeGenerationDiagnostics).map((item) => (
+                <div key={`${item.reasonCode}-${item.currentValue}`} className="rounded-lg border border-border bg-background/45 p-3 text-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="font-medium">{formatToken(item.reasonCode)}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{item.explanation}</p>
+                    </div>
+                    <Badge variant={item.severity === "blocking" ? "danger" : item.severity === "warning" ? "warning" : "muted"}>
+                      {item.severity}
+                    </Badge>
+                  </div>
+                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                    <div className="rounded-md border border-border bg-card/45 p-2">
+                      <p className="text-xs text-muted-foreground">Current</p>
+                      <p className="mt-1 font-mono text-xs">{item.currentValue}</p>
+                    </div>
+                    <div className="rounded-md border border-border bg-card/45 p-2">
+                      <p className="text-xs text-muted-foreground">Suggested</p>
+                      <p className="mt-1 font-mono text-xs">{item.requiredOrSuggestedValue}</p>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs text-amber-100">{item.suggestedFix}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-border bg-background/45 p-3 text-sm text-muted-foreground">
+              No zero-trade diagnostics are active for the latest cycle.
+            </div>
+          )}
+
+          {latestCycle?.recoveryAttempted ? (
+            <div className="rounded-lg border border-border bg-background/45 p-3 text-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-medium">Recovery result</p>
+                  <p className="mt-1 text-muted-foreground">
+                    Trades before recovery: {latestCycle.tradesBeforeRecovery ?? 0}; trades after recovery: {latestCycle.tradesAfterRecovery ?? 0}.
+                  </p>
+                </div>
+                <Badge variant={(latestCycle.tradesAfterRecovery ?? 0) > 0 ? "success" : "danger"}>
+                  {(latestCycle.tradesAfterRecovery ?? 0) > 0 ? "trades generated" : "still zero"}
+                </Badge>
+              </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                {safeArray(latestCycle.recoveryCandidates).map((candidate) => (
+                  <div key={candidate.candidateId} className="rounded-md border border-border bg-card/45 p-2">
+                    <p className="font-medium">{candidate.label}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{candidate.rationale}</p>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {safeArray(candidate.changedParameters).map((item) => (
+                        <Badge key={item} variant="secondary">{item}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {safeArray(latestCycle.recoveryFailureReasons).length ? (
+                <div className="mt-3 rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-xs text-amber-100">
+                  {safeArray(latestCycle.recoveryFailureReasons).join(" ")}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
