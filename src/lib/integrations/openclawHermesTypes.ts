@@ -4,6 +4,17 @@ export type AdvisoryAgentName = "OpenClaw" | "Hermes";
 export type AdvisoryConnectionStatus = "not_connected";
 export type AdvisoryPlanningStatus = "planning_only";
 export type AdvisoryProceedRecommendation = "continue_research" | "rerun_validation" | "paper_demo_candidate_review";
+export type AdvisoryRequestMode = "advisory_only";
+export type AdvisoryAuthority = "none";
+export type AdvisoryPacketSource = "gotrader_ai_lab";
+export type AdvisoryRequestedTask =
+  | "review_thesis"
+  | "identify_missing_confluence"
+  | "identify_risk_concerns"
+  | "suggest_calibration_change"
+  | "recommend_continue_research"
+  | "recommend_rerun_validation"
+  | "recommend_paper_demo_candidate_review";
 
 export interface AdvisoryValidationSummary {
   validationId?: string;
@@ -71,4 +82,69 @@ export interface OpenClawHermesAdvisorySpec {
   prohibitedActions: string[];
   exampleRequest: OpenClawHermesAdvisoryRequest;
   exampleResponse: OpenClawHermesAdvisoryResponse;
+}
+
+export interface AdvisoryICTContextSummary {
+  narrativeSummary: string;
+  bias: MarketBias;
+  confluenceScore: number;
+  killZone: string;
+  premiumDiscount: string;
+  latestSwingHigh?: number;
+  latestSwingLow?: number;
+  hasBullishMSS: boolean;
+  hasBearishMSS: boolean;
+  hasBullishBOS: boolean;
+  hasBearishBOS: boolean;
+  liquiditySweepCount: number;
+  fairValueGapCount: number;
+}
+
+export interface AdvisoryAgentDebateSummary {
+  agentId: string;
+  agentName: string;
+  bias: MarketBias;
+  confidence: number;
+  weight?: number;
+  reasoning: string;
+  recommendation?: string;
+  supportingFactors: string[];
+  warningFactors: string[];
+}
+
+export interface AdvisoryCIOThesisSummary {
+  bias: MarketBias;
+  confidence: number;
+  thesisSummary: string;
+  reasoningSummary: string;
+  invalidationLevel: number;
+  targetLiquidity: number;
+}
+
+export interface AdvisoryRequestPacket {
+  packetId: string;
+  timestamp: string;
+  source: AdvisoryPacketSource;
+  mode: AdvisoryRequestMode;
+  executionAuthority: AdvisoryAuthority;
+  brokerAuthority: AdvisoryAuthority;
+  readinessOverrideAuthority: AdvisoryAuthority;
+  thesisId: string;
+  symbol: FuturesSymbol;
+  timeframe: Timeframe;
+  ictContextSummary: AdvisoryICTContextSummary;
+  internalAgentDebateSummaries: AdvisoryAgentDebateSummary[];
+  cioThesis: AdvisoryCIOThesisSummary;
+  validationSummary?: AdvisoryValidationSummary;
+  researchQualityGrade?: AdvisoryResearchQualitySummary;
+  readinessStatus?: AdvisoryReadinessSummary;
+  riskNotes: string;
+  requestedAdvisoryTasks: AdvisoryRequestedTask[];
+  safetyNotice: "This packet is advisory only. It cannot execute trades or override readiness gates.";
+}
+
+export interface AdvisoryRequestPacketValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
 }

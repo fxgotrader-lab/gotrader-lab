@@ -1,0 +1,91 @@
+{
+  "packetId": "advisory_packet_sample_20260525",
+  "timestamp": "2026-05-25T00:00:00.000Z",
+  "source": "gotrader_ai_lab",
+  "mode": "advisory_only",
+  "executionAuthority": "none",
+  "brokerAuthority": "none",
+  "readinessOverrideAuthority": "none",
+  "thesisId": "thesis_sim_001",
+  "symbol": "NQ",
+  "timeframe": "5m",
+  "ictContextSummary": {
+    "narrativeSummary": "Mock ICT context shows a buy-side sweep, bearish market structure shift, and price rejecting from premium during NY AM.",
+    "bias": "bearish",
+    "confluenceScore": 0.62,
+    "killZone": "NY AM",
+    "premiumDiscount": "premium",
+    "latestSwingHigh": 18892.5,
+    "latestSwingLow": 18818.25,
+    "hasBullishMSS": false,
+    "hasBearishMSS": true,
+    "hasBullishBOS": false,
+    "hasBearishBOS": true,
+    "liquiditySweepCount": 1,
+    "fairValueGapCount": 2
+  },
+  "internalAgentDebateSummaries": [
+    {
+      "agentId": "ict_liquidity",
+      "agentName": "ICT Liquidity Agent",
+      "bias": "bearish",
+      "confidence": 0.7,
+      "weight": 0.22,
+      "reasoning": "Buy-side liquidity sweep rejected and reclaimed back below the swept high.",
+      "recommendation": "Favor continued research on short thesis toward sell-side liquidity.",
+      "supportingFactors": [
+        "Sweep reclaimed",
+        "Premium location"
+      ],
+      "warningFactors": [
+        "Validation remains research-ready, not paper-demo candidate"
+      ]
+    }
+  ],
+  "cioThesis": {
+    "bias": "bearish",
+    "confidence": 0.68,
+    "thesisSummary": "CIO favors a simulated short thesis if premium rejection holds.",
+    "reasoningSummary": "Liquidity, structure, and session timing lean bearish, but readiness gate is not yet paper-demo candidate.",
+    "invalidationLevel": 18905,
+    "targetLiquidity": 18818.25
+  },
+  "validationSummary": {
+    "validationId": "validation_001",
+    "generatedAt": "2026-05-25T00:00:00.000Z",
+    "readinessStatus": "yellow",
+    "readinessScore": 58,
+    "conservativeScenarioStatus": "yellow",
+    "maxDrawdownR": 2.4,
+    "confidenceCalibration": 0.61
+  },
+  "researchQualityGrade": {
+    "reviewId": "research_quality_001",
+    "generatedAt": "2026-05-25T00:00:00.000Z",
+    "readinessGrade": "Research Ready",
+    "falsePositiveCount": 2,
+    "topWeaknesses": [
+      "London session sample remains thin",
+      "FVG invalidation model underperformed"
+    ]
+  },
+  "readinessStatus": {
+    "state": "Research Ready",
+    "failedRequirements": [
+      "Research Quality is not Paper-Demo Candidate",
+      "Conservative scenario stability failed"
+    ],
+    "brokerExecutionDisabled": true
+  },
+  "riskNotes": "Invalid above swept high. Advisory packet cannot execute trades.",
+  "requestedAdvisoryTasks": [
+    "review_thesis",
+    "identify_missing_confluence",
+    "identify_risk_concerns",
+    "suggest_calibration_change",
+    "recommend_continue_research",
+    "recommend_rerun_validation",
+    "recommend_paper_demo_candidate_review"
+  ],
+  "safetyNotice": "This packet is advisory only. It cannot execute trades or override readiness gates."
+}

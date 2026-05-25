@@ -1,5 +1,5 @@
 import { createInitialLabState } from "@/lib/mockData";
-import type { GoTraderHandoffAuditEntry, LabState } from "@/lib/types";
+import type { AdvisoryPacketAuditEntry, GoTraderHandoffAuditEntry, LabState } from "@/lib/types";
 import { uid } from "@/lib/utils";
 
 export interface LabStorageAdapter {
@@ -26,6 +26,7 @@ const normalizeLabState = (state: Partial<LabState>): LabState => {
     debateSessions: state.debateSessions ?? seeded.debateSessions,
     tradeTheses: state.tradeTheses ?? seeded.tradeTheses,
     handoffExports: state.handoffExports ?? [],
+    advisoryPackets: state.advisoryPackets ?? [],
     userApprovals: state.userApprovals ?? seeded.userApprovals
   };
 };
@@ -46,7 +47,7 @@ export class LocalStorageLabAdapter implements LabStorageAdapter {
     try {
       const parsed = JSON.parse(raw) as Partial<LabState>;
       const normalized = normalizeLabState(parsed);
-      if (!parsed.handoffExports) {
+      if (!parsed.handoffExports || !parsed.advisoryPackets) {
         this.save(normalized);
       }
       return normalized;
@@ -213,6 +214,22 @@ export function recordHandoffExport(
         ...entry
       },
       ...(state.handoffExports ?? [])
+    ]
+  };
+}
+
+export function recordAdvisoryPacket(
+  state: LabState,
+  entry: Omit<AdvisoryPacketAuditEntry, "id">
+): LabState {
+  return {
+    ...state,
+    advisoryPackets: [
+      {
+        id: uid("advisory_packet_audit"),
+        ...entry
+      },
+      ...(state.advisoryPackets ?? [])
     ]
   };
 }

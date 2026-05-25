@@ -405,6 +405,16 @@ export interface GoTraderHandoffAuditEntry {
   mode: "simulation";
 }
 
+export interface AdvisoryPacketAuditEntry {
+  id: string;
+  packetId: string;
+  thesisId: string;
+  generatedAt: string;
+  validationStatus: "valid" | "invalid";
+  warningCount: number;
+  mode: "advisory_only";
+}
+
 export interface LabState {
   agents: Agent[];
   promptVersions: AgentPromptVersion[];
@@ -415,6 +425,7 @@ export interface LabState {
   debateSessions: DebateSession[];
   tradeTheses: TradeThesis[];
   handoffExports: GoTraderHandoffAuditEntry[];
+  advisoryPackets: AdvisoryPacketAuditEntry[];
   userApprovals: Array<{
     id: string;
     createdAt: string;

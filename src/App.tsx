@@ -35,7 +35,7 @@ export default function App() {
         <Route path="/research-quality" element={<ResearchQualityView />} />
         <Route path="/simulation-runbook" element={<SimulationRunbookView />} />
         <Route path="/readiness-gate" element={<ReadinessGateView />} />
-        <Route path="/advisory-agents" element={<AdvisoryAgentsView />} />
+        <Route path="/advisory-agents" element={<AdvisoryAgentsView state={state} actions={actions} />} />
         <Route path="/performance" element={<PerformanceView state={state} />} />
         <Route path="/prompt-lab" element={<PromptLab state={state} actions={actions} />} />
         <Route path="/settings" element={<SettingsView state={state} onReset={actions.reset} />} />
