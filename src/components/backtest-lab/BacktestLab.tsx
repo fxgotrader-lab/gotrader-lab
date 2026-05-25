@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { ValidationGuideCard } from "@/components/validation/ValidationGuideCard";
 import {
   backtestSessionFilters,
   backtestStopModels,
@@ -145,6 +146,8 @@ export function BacktestLab() {
         <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
         Simulation only. No broker connection. No real trades.
       </div>
+
+      <ValidationGuideCard compact />
 
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Card>

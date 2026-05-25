@@ -3,6 +3,7 @@ import { Activity, AlertTriangle, BarChart3, Download, Play, ShieldCheck, Slider
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ValidationGuideCard } from "@/components/validation/ValidationGuideCard";
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import {
   loadLatestValidationReport,
@@ -95,6 +96,8 @@ export function StrategyValidationView() {
           <Badge variant="warning">Mock OHLC only</Badge>
         </CardContent>
       </Card>
+
+      <ValidationGuideCard />
 
       {!report ? (
         <Card>

@@ -14,6 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ValidationGuideCard } from "@/components/validation/ValidationGuideCard";
 import {
   analyzeValidationResults,
   loadLatestResearchQualityReview,
@@ -103,6 +104,8 @@ export function ResearchQualityView() {
           <Badge variant="warning">No execution path</Badge>
         </CardContent>
       </Card>
+
+      <ValidationGuideCard compact />
 
       {!validationReport ? (
         <Card>
