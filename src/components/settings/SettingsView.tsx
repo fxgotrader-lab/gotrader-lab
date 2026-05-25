@@ -24,6 +24,10 @@ import {
 } from "@/lib/ict";
 import { brokerDemoBridgeSpec } from "@/lib/integrations/brokerDemoBridgeSpec";
 import { paperDemoExecutionSpec } from "@/lib/integrations/paperDemoExecutionSpec";
+import {
+  loadLatestResearchQualityReview,
+  RESEARCH_QUALITY_UPDATED_EVENT
+} from "@/lib/researchQuality";
 import type { ICTScoringWeights, LabState } from "@/lib/types";
 import {
   loadLatestValidationReport,
@@ -50,6 +54,7 @@ const validationVariant = (status?: string) =>
 export function SettingsView({ state, onReset }: { state: LabState; onReset: () => void }) {
   const [ictWeights, setIctWeights] = useState<ICTScoringWeights>(() => loadICTScoringWeights());
   const [latestValidationReport, setLatestValidationReport] = useState(() => loadLatestValidationReport());
+  const [latestQualityReview, setLatestQualityReview] = useState(() => loadLatestResearchQualityReview());
   const latestHandoffExport = state.handoffExports?.[0];
 
   useEffect(() => {
@@ -59,6 +64,16 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
     return () => {
       window.removeEventListener(VALIDATION_REPORT_UPDATED_EVENT, refreshValidationReport);
       window.removeEventListener("storage", refreshValidationReport);
+    };
+  }, []);
+
+  useEffect(() => {
+    const refreshQualityReview = () => setLatestQualityReview(loadLatestResearchQualityReview());
+    window.addEventListener(RESEARCH_QUALITY_UPDATED_EVENT, refreshQualityReview);
+    window.addEventListener("storage", refreshQualityReview);
+    return () => {
+      window.removeEventListener(RESEARCH_QUALITY_UPDATED_EVENT, refreshQualityReview);
+      window.removeEventListener("storage", refreshQualityReview);
     };
   }, []);
 
@@ -252,6 +267,34 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
             <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
               <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
               No broker code exists yet. No API keys, broker connection, websocket feed, or order placement is present.
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <ClipboardCheck className="h-4 w-4 text-primary" aria-hidden="true" />
+              <CardTitle>Research Quality Review</CardTitle>
+            </div>
+            <CardDescription>Latest simulated readiness grade from validation review.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+              <span className="text-muted-foreground">Latest review</span>
+              <span className="max-w-[11rem] truncate font-mono text-xs text-foreground">
+                {latestQualityReview?.generatedAt ?? "none"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+              <span className="text-muted-foreground">Readiness grade</span>
+              <Badge variant={validationVariant(latestQualityReview?.readinessStatus)}>
+                {latestQualityReview?.readinessGrade ?? "not run"}
+              </Badge>
+            </div>
+            <div className="rounded-md border border-border bg-background/45 p-3 text-muted-foreground">
+              {latestQualityReview?.recommendedNextStep ??
+                "Run research quality review after strategy validation is complete."}
             </div>
           </CardContent>
         </Card>

@@ -26,6 +26,7 @@ const navigation = [
   { href: "/replay", label: "Replay", icon: RefreshCw },
   { href: "/backtest-lab", label: "Backtest Lab", icon: Beaker },
   { href: "/validation", label: "Validation", icon: ClipboardCheck },
+  { href: "/research-quality", label: "Quality", icon: ShieldCheck },
   { href: "/performance", label: "Performance", icon: Activity },
   { href: "/prompt-lab", label: "Prompt Lab", icon: GitBranch },
   { href: "/settings", label: "Settings", icon: Settings }

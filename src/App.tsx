@@ -8,6 +8,7 @@ import { ICTLab } from "@/components/ict-lab/ICTLab";
 import { PerformanceView } from "@/components/performance/PerformanceView";
 import { PromptLab } from "@/components/prompt-lab/PromptLab";
 import { ResearchWorkbench } from "@/components/research/ResearchWorkbench";
+import { ResearchQualityView } from "@/components/research-quality/ResearchQualityView";
 import { ReplayView } from "@/components/replay/ReplayView";
 import { SettingsView } from "@/components/settings/SettingsView";
 import { StrategyValidationView } from "@/components/validation/StrategyValidationView";
@@ -28,6 +29,7 @@ export default function App() {
         <Route path="/replay" element={<ReplayView />} />
         <Route path="/backtest-lab" element={<BacktestLab />} />
         <Route path="/validation" element={<StrategyValidationView />} />
+        <Route path="/research-quality" element={<ResearchQualityView />} />
         <Route path="/performance" element={<PerformanceView state={state} />} />
         <Route path="/prompt-lab" element={<PromptLab state={state} actions={actions} />} />
         <Route path="/settings" element={<SettingsView state={state} onReset={actions.reset} />} />
