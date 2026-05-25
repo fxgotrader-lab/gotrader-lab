@@ -5,6 +5,7 @@ import type {
   CalibrationProposalMetrics,
   CalibrationProposal,
   CalibrationProposalChanges,
+  CalibrationProposalIntent,
   CalibrationTargetProblem
 } from "@/lib/selfImprovement";
 import type { ICTScoringWeights } from "@/lib/types";
@@ -68,31 +69,45 @@ export function createSelfImprovementFromCandidate({
   baselineConfig,
   baselineMetrics,
   candidate,
-  source = "internal"
+  source = "internal",
+  proposalIntent = candidate.resultCategory === "paper_demo_candidate"
+    ? "paper_demo_candidate_review"
+    : "research_calibration_candidate"
 }: {
   baselineConfig: ResolvedBacktestConfig;
   baselineMetrics: CalibrationProposalMetrics;
   candidate: AutoResearchCandidateResult;
   source?: "internal" | "openclaw";
+  proposalIntent?: CalibrationProposalIntent;
 }): CalibrationProposal {
   const comparisonResult = compareProposalToBaseline(baselineMetrics, candidate.metrics);
+  const intentLabel =
+    proposalIntent === "paper_demo_candidate_review"
+      ? "paper-demo candidate review"
+      : "research calibration candidate";
 
   return {
     proposalId: uid("calibration_proposal"),
     timestamp: new Date().toISOString(),
     source,
     status: "proposed",
+    proposalIntent,
     mode: "simulation",
     executionAuthority: "none",
     brokerAuthority: "none",
     readinessOverrideAuthority: "none",
-    reason: `Auto Research selected ${candidate.label}: ${candidate.scoreBreakdown.rationale}`,
+    reason: `Auto Research selected ${candidate.label} as a ${intentLabel}: ${candidate.scoreBreakdown.rationale}`,
     targetProblem: targetProblemFor(candidate),
     proposedChanges: changesFor(baselineConfig, candidate),
     expectedImprovement:
-      "Improve stability-first validation metrics without changing broker settings, execution authority, or readiness gates.",
+      proposalIntent === "paper_demo_candidate_review"
+        ? "Review a Paper-Demo Candidate calibration in simulation. Approval remains required and broker/demo execution stays disabled."
+        : "Improve stability-first validation metrics as a research calibration candidate without changing broker settings, execution authority, or readiness gates.",
     safetyNotes: [
       "Auto Research cannot execute trades.",
+      proposalIntent === "paper_demo_candidate_review"
+        ? "Paper-demo candidate review does not enable paper, demo, or live trading."
+        : "Research calibration candidate is not approved and does not mark Paper-Demo Candidate readiness.",
       "Candidate must be accepted manually in the Self-Improvement workflow.",
       "No broker, execution, live mode, demo mode, API key, or readiness permission can be changed."
     ],

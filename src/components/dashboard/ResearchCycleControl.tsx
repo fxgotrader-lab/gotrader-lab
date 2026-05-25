@@ -160,8 +160,14 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
             </p>
             {latestRun?.candidateProgress ? (
               <div className="mt-3 rounded-md border border-cyan-400/15 bg-cyan-400/5 p-2 text-xs text-cyan-100/80">
-                Candidate {latestRun.candidateProgress.currentCandidate}/{latestRun.candidateProgress.totalCandidates}{" "}
-                tested. Best so far: {latestRun.candidateProgress.bestCandidateLabel ?? "none"}.
+                Pass {latestRun.candidateProgress.passNumber ?? 1}/{latestRun.candidateProgress.totalPasses ?? 1} - candidate{" "}
+                {latestRun.candidateProgress.currentCandidate}/{latestRun.candidateProgress.totalCandidates} tested. Best so far:{" "}
+                {latestRun.candidateProgress.bestCandidateLabel ?? "none"}.
+                {safeArray(latestRun.candidateProgress.failedGatesTargeted).length ? (
+                  <span className="block pt-1">
+                    Targeting: {safeArray(latestRun.candidateProgress.failedGatesTargeted).map((gate) => gate.replace(/_/g, " ")).join(", ")}
+                  </span>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -230,6 +236,41 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
                 <li key={blocker}>{blocker}</li>
               ))}
             </ul>
+          </div>
+        ) : null}
+
+        {safeArray(latestRun?.autoResearchCycle?.adaptivePasses).length ? (
+          <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs uppercase tracking-[0.16em] text-cyan-200/70">Adaptive improvement</p>
+                <p className="mt-1 text-sm font-medium text-cyan-50">
+                  Final result: {formatStatus(latestRun?.autoResearchCycle?.finalOutcome ?? latestRun?.autoResearchCycle?.finalResultCategory)}
+                </p>
+              </div>
+              <Badge variant={latestRun?.autoResearchCycle?.noSafePaperDemoCandidateFound ? "warning" : "success"}>
+                {latestRun?.autoResearchCycle?.noSafePaperDemoCandidateFound ? "continue research" : "candidate found"}
+              </Badge>
+            </div>
+            <div className="mt-3 grid gap-2 md:grid-cols-3">
+              {safeArray(latestRun?.autoResearchCycle?.adaptivePasses).map((pass) => (
+                <div key={pass.passNumber} className="rounded-md border border-white/10 bg-slate-950/45 p-2 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-slate-100">Pass {pass.passNumber}</span>
+                    <Badge variant={pass.improvementOverPriorPass ? "success" : "muted"}>
+                      {pass.improvementOverPriorPass ? "improved" : "no lift"}
+                    </Badge>
+                  </div>
+                  <p className="mt-2 text-slate-400">{pass.reasonForPass}</p>
+                  <p className="mt-2 text-cyan-100/80">
+                    Tried: {safeArray(pass.targetedChanges).length ? safeArray(pass.targetedChanges).join(", ") : "bounded baseline candidates"}
+                  </p>
+                  <p className="mt-1 text-slate-400">
+                    Best: {pass.bestCandidatePerPass?.label ?? "none"} ({formatStatus(pass.finalOutcome)})
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
         ) : null}
 

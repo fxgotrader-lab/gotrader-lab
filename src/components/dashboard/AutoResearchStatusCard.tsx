@@ -17,6 +17,7 @@ export function AutoResearchStatusCard({ cycle }: AutoResearchStatusCardProps) {
   const bestCandidate = cycle?.bestCandidate;
   const rejectedCount = safeArray(cycle?.rejectedCandidates).length;
   const finalCategory = cycle?.finalResultCategory?.replace(/_/g, " ") ?? "Not run";
+  const adaptivePassCount = safeArray(cycle?.adaptivePasses).length;
 
   return (
     <Card className="border-white/10 bg-slate-950/70">
@@ -37,7 +38,22 @@ export function AutoResearchStatusCard({ cycle }: AutoResearchStatusCardProps) {
           <StatusLine label="Rejected candidates" value={String(rejectedCount)} />
           <StatusLine label="Proposal created" value={cycle?.createdProposalId ?? "None"} />
           <StatusLine label="Final category" value={finalCategory} />
+          <StatusLine label="Adaptive passes" value={adaptivePassCount ? String(adaptivePassCount) : "Not run"} />
         </div>
+        {adaptivePassCount ? (
+          <div className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm">
+            <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Targeted gates</div>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {safeArray(cycle?.failedGates).length ? (
+                safeArray(cycle?.failedGates).map((gate) => (
+                  <Badge key={gate} variant="warning">{gate.replace(/_/g, " ")}</Badge>
+                ))
+              ) : (
+                <Badge variant="muted">none</Badge>
+              )}
+            </div>
+          </div>
+        ) : null}
         {cycle?.noSafePaperDemoCandidateFound ? (
           <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
             No safe Paper-Demo Candidate found. Continue research.

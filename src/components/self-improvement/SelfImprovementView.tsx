@@ -27,6 +27,12 @@ import { loadLatestValidationReport } from "@/lib/validation";
 const formatNumber = (value: number, digits = 2) => value.toFixed(digits);
 const formatDate = (value?: string) => (value ? new Date(value).toLocaleString() : "none");
 const problemLabel = (value: string) => value.replace(/_/g, " ");
+const intentLabel = (value?: string) =>
+  value === "paper_demo_candidate_review"
+    ? "Paper-demo candidate review"
+    : value === "research_calibration_candidate"
+      ? "Research calibration candidate"
+      : "Manual calibration proposal";
 const statusVariant = (status?: string) =>
   status === "accepted" ? "success" : status === "rejected" || status === "reverted" ? "danger" : status === "testing" ? "warning" : "muted";
 const readinessVariant = (status?: string) =>
@@ -359,6 +365,38 @@ export function SelfImprovementView() {
 
       <SafetyLockBanner message="Simulation self-improvement only. No broker execution, readiness override, paper/demo enablement, or real trades." />
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Current Proposal</CardTitle>
+          <CardDescription>
+            Auto Research proposals remain proposal-ready only until the user tests and approves them.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-[0.8fr_1.2fr]">
+          <div className="rounded-lg border border-border bg-background/45 p-3">
+            <p className="text-xs text-muted-foreground">Intent</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Badge variant={latestProposal?.proposalIntent === "paper_demo_candidate_review" ? "warning" : "secondary"}>
+                {intentLabel(latestProposal?.proposalIntent)}
+              </Badge>
+              <Badge variant={statusVariant(latestProposal?.status)}>{latestProposal?.status ?? "none"}</Badge>
+            </div>
+          </div>
+          <div className="rounded-lg border border-border bg-background/45 p-3">
+            <p className="text-xs text-muted-foreground">Approval posture</p>
+            <p className="mt-1 text-sm text-foreground">
+              {latestProposal
+                ? latestProposal.proposalIntent === "research_calibration_candidate"
+                  ? "Research calibration candidate only. It is not approved and does not mark Paper-Demo Candidate readiness."
+                  : latestProposal.proposalIntent === "paper_demo_candidate_review"
+                    ? "Paper-demo candidate review only. It still cannot enable demo execution or bypass readiness."
+                    : "Manual proposal. It still requires simulation testing and explicit approval."
+                : "No proposal has been created yet."}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       <TechnicalDetails
         title="View baseline and detected weaknesses"
         description="Open for active local simulation settings and the evidence used to generate proposals."
@@ -452,6 +490,17 @@ export function SelfImprovementView() {
             <div className="flex items-center justify-between rounded-lg border border-border bg-background/45 p-3">
               <span className="text-sm text-muted-foreground">Status</span>
               <Badge variant={statusVariant(latestProposal?.status)}>{latestProposal?.status ?? "none"}</Badge>
+            </div>
+            <div className="rounded-lg border border-border bg-background/45 p-3">
+              <p className="text-xs text-muted-foreground">Proposal intent</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Badge variant={latestProposal?.proposalIntent === "paper_demo_candidate_review" ? "warning" : "secondary"}>
+                  {intentLabel(latestProposal?.proposalIntent)}
+                </Badge>
+                {latestProposal?.proposalIntent === "research_calibration_candidate" ? (
+                  <span className="text-xs text-muted-foreground">Proposal-ready, not approved, and not Paper-Demo Candidate.</span>
+                ) : null}
+              </div>
             </div>
             <div className="rounded-lg border border-border bg-background/45 p-3">
               <p className="text-xs text-muted-foreground">Target problem</p>

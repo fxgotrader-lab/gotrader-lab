@@ -30,10 +30,33 @@ export type AutoResearchSearchMode =
 
 export type AutoResearchResultCategory =
   | "rejected"
+  | "no_safe_candidate_found"
   | "improved_but_not_ready"
   | "research_ready"
+  | "research_ready_candidate"
   | "paper_demo_candidate"
-  | "unsafe_overfit";
+  | "unsafe_overfit"
+  | "max_passes_exhausted";
+
+export type AutoResearchFailedGate =
+  | "max_drawdown_too_high"
+  | "false_positives_too_high"
+  | "average_r_too_low"
+  | "win_rate_too_low"
+  | "trade_count_too_low"
+  | "confidence_calibration_weak"
+  | "session_consistency_weak"
+  | "conservative_scenario_unstable"
+  | "skipped_signal_imbalance"
+  | "overfitting_risk";
+
+export type AutoResearchAdaptiveOutcome =
+  | "no_safe_candidate_found"
+  | "improved_but_not_ready"
+  | "research_ready_candidate"
+  | "paper_demo_candidate"
+  | "unsafe_overfit"
+  | "max_passes_exhausted";
 
 export type AutoResearchCycleStatus =
   | "idle"
@@ -115,6 +138,10 @@ export interface AutoResearchCandidateScoreSummary {
 export interface AutoResearchProgressSnapshot {
   currentCandidate: number;
   totalCandidates: number;
+  passNumber?: number;
+  totalPasses?: number;
+  passLabel?: string;
+  failedGatesTargeted?: AutoResearchFailedGate[];
   candidateId: string;
   candidateLabel: string;
   candidateScore: number;
@@ -122,6 +149,17 @@ export interface AutoResearchProgressSnapshot {
   bestCandidateLabel?: string;
   bestCandidateScore?: number;
   bestCandidateCategory?: AutoResearchResultCategory;
+}
+
+export interface AutoResearchAdaptivePass {
+  passNumber: number;
+  reasonForPass: string;
+  failedGatesTargeted: AutoResearchFailedGate[];
+  generatedCandidates: AutoResearchCandidateConfig[];
+  bestCandidatePerPass?: AutoResearchCandidateResult;
+  improvementOverPriorPass: boolean;
+  finalOutcome: AutoResearchAdaptiveOutcome;
+  targetedChanges: string[];
 }
 
 export interface AutoResearchCycle {
@@ -139,6 +177,9 @@ export interface AutoResearchCycle {
   selectedCandidateId?: string;
   finalResultCategory: AutoResearchResultCategory | "no_safe_paper_demo_candidate_found";
   noSafePaperDemoCandidateFound: boolean;
+  adaptivePasses?: AutoResearchAdaptivePass[];
+  failedGates?: AutoResearchFailedGate[];
+  finalOutcome?: AutoResearchAdaptiveOutcome;
   scoringCriteria: AutoResearchScoringCriteria;
   safetyNotes: string[];
   createdProposalId?: string;
@@ -149,6 +190,7 @@ export interface AutoResearchCycle {
 export interface AutoResearchRunOptions {
   searchMode: AutoResearchSearchMode;
   maxCandidateCount: number;
+  maxAdaptivePasses?: number;
   createProposal?: boolean;
   onCandidateEvaluated?: (progress: AutoResearchProgressSnapshot) => void;
 }

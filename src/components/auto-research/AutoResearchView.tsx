@@ -59,7 +59,7 @@ const formatBytes = (bytes?: number) => {
 const categoryVariant = (category?: string) =>
   category === "paper_demo_candidate"
     ? "success"
-    : category === "research_ready" || category === "improved_but_not_ready"
+    : category === "research_ready" || category === "research_ready_candidate" || category === "improved_but_not_ready"
       ? "warning"
       : category === "unsafe_overfit"
         ? "danger"
@@ -398,6 +398,91 @@ export function AutoResearchView() {
               Run a multi-pass search to see closest candidates.
             </div>
           ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Adaptive Improvement</CardTitle>
+              <CardDescription>
+                If the best candidate fails stability, Auto Research diagnoses the failed gates and runs up to two targeted follow-up passes.
+              </CardDescription>
+            </div>
+            <Badge variant={latestCycle?.finalOutcome === "paper_demo_candidate" ? "success" : latestCycle?.finalOutcome === "unsafe_overfit" ? "danger" : "warning"}>
+              {formatToken(latestCycle?.finalOutcome ?? latestCycle?.finalResultCategory)}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+            Auto Research can optimize simulation settings only. It cannot execute trades, enable demo/live mode, or override readiness.
+          </div>
+          {safeArray(latestCycle?.adaptivePasses).length ? (
+            <div className="grid gap-3 lg:grid-cols-3">
+              {safeArray(latestCycle?.adaptivePasses).map((pass) => (
+                <div key={pass.passNumber} className="rounded-lg border border-border bg-background/45 p-3 text-sm">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-medium">Pass {pass.passNumber}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{pass.reasonForPass}</p>
+                    </div>
+                    <Badge variant={pass.improvementOverPriorPass ? "success" : "muted"}>
+                      {pass.improvementOverPriorPass ? "improved" : "no lift"}
+                    </Badge>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Failed gates targeted</p>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {safeArray(pass.failedGatesTargeted).length ? (
+                          safeArray(pass.failedGatesTargeted).map((gate) => (
+                            <Badge key={gate} variant="warning">{formatToken(gate)}</Badge>
+                          ))
+                        ) : (
+                          <Badge variant="muted">initial search</Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Targeted changes</p>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {safeArray(pass.targetedChanges).length ? (
+                          safeArray(pass.targetedChanges).map((change) => (
+                            <Badge key={change} variant="secondary">{change}</Badge>
+                          ))
+                        ) : (
+                          <Badge variant="muted">bounded baseline set</Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-md border border-border bg-background/60 p-2">
+                      <p className="text-xs text-muted-foreground">Best candidate this pass</p>
+                      <p className="mt-1 font-medium">{pass.bestCandidatePerPass?.label ?? "none"}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Score {scoreValue(pass.bestCandidatePerPass)} / {formatToken(pass.finalOutcome)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-border bg-background/45 p-3 text-sm text-muted-foreground">
+              Run Auto Research to see adaptive passes and targeted follow-up attempts.
+            </div>
+          )}
+          <div className="rounded-lg border border-border bg-background/45 p-3 text-sm">
+            <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Final recommendation</p>
+            <p className="mt-1 text-foreground">
+              {latestCycle?.noSafePaperDemoCandidateFound
+                ? "No safe Paper-Demo Candidate found. Continue research with the closest stable candidates and review failed gates."
+                : latestCycle?.bestCandidate
+                  ? `Review ${latestCycle.bestCandidate.label}. Approval is still required before any simulation setting changes.`
+                  : "No adaptive result yet."}
+            </p>
+          </div>
         </CardContent>
       </Card>
 

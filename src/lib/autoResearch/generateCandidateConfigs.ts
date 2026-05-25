@@ -2,6 +2,7 @@ import { sanitizeBacktestConfig } from "@/lib/backtesting";
 import type { BacktestAgentWeightId, ResolvedBacktestConfig } from "@/lib/backtesting";
 import type {
   AutoResearchCandidateConfig,
+  AutoResearchFailedGate,
   AutoResearchSafeConfigPatch,
   AutoResearchSearchMode
 } from "@/lib/autoResearch/autoResearchTypes";
@@ -428,4 +429,264 @@ export function generateCandidateConfigs(
   }
 
   return dedupeCandidates(candidates).slice(0, Math.max(1, Math.min(25, maxCandidateCount)));
+}
+
+const pushAdaptiveCandidate = (
+  candidates: AutoResearchCandidateConfig[],
+  baseline: ResolvedBacktestConfig,
+  label: string,
+  rationale: string,
+  patch: AutoResearchSafeConfigPatch,
+  changedParameters: string[]
+) => {
+  candidates.push(candidate(baseline, "standard", label, rationale, patch, changedParameters));
+};
+
+export function generateAdaptiveCandidateConfigs({
+  baseline,
+  failedGates,
+  passNumber,
+  maxCandidateCount
+}: {
+  baseline: ResolvedBacktestConfig;
+  failedGates: AutoResearchFailedGate[];
+  passNumber: number;
+  maxCandidateCount: number;
+}): AutoResearchCandidateConfig[] {
+  const candidates: AutoResearchCandidateConfig[] = [];
+  const gateSet = new Set(failedGates);
+  const stricterConfluence = round(clamp01(baseline.minimumConfluenceThreshold + (passNumber === 1 ? 0.06 : 0.1)), 2);
+  const stricterConfidence = round(clamp01(baseline.minimumConfidenceThreshold + (passNumber === 1 ? 0.05 : 0.08)), 2);
+  const looserConfluence = round(Math.max(0.18, baseline.minimumConfluenceThreshold - 0.04), 2);
+  const looserConfidence = round(Math.max(0.3, baseline.minimumConfidenceThreshold - 0.03), 2);
+
+  if (gateSet.has("max_drawdown_too_high")) {
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive drawdown guard",
+      "Drawdown was too high, so this pass requires stronger confluence and confidence before a thesis can count.",
+      { minimumConfluenceThreshold: stricterConfluence, minimumConfidenceThreshold: stricterConfidence },
+      ["confluenceThreshold", "confidenceThreshold"]
+    );
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive structure stop",
+      "Drawdown was too high, so this pass tests latest-swing invalidation without changing execution authority.",
+      { stopModel: "latest swing" },
+      ["stopModel"]
+    );
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive FVG invalidation",
+      "Drawdown was too high, so this pass tests FVG invalidation boundaries.",
+      { stopModel: "FVG invalidation" },
+      ["stopModel"]
+    );
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive NY AM risk filter",
+      "Drawdown was too high, so this pass restricts research to the highest-quality NY AM window.",
+      { sessionFilter: "NY AM Kill Zone", minimumConfluenceThreshold: Math.max(0.5, baseline.minimumConfluenceThreshold) },
+      ["sessionFilter", "confluenceThreshold"]
+    );
+  }
+
+  if (gateSet.has("false_positives_too_high")) {
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive false-positive filter",
+      "False positives were too high, so this pass raises confluence without broadening the search.",
+      { minimumConfluenceThreshold: stricterConfluence },
+      ["confluenceThreshold"]
+    );
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive confidence filter",
+      "False positives were too high, so this pass raises minimum confidence.",
+      { minimumConfidenceThreshold: stricterConfidence },
+      ["confidenceThreshold"]
+    );
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive NY AM false-positive check",
+      "False positives were too high, so this pass removes weaker session exposure.",
+      { sessionFilter: "NY AM Kill Zone" },
+      ["sessionFilter"]
+    );
+  }
+
+  if (gateSet.has("average_r_too_low")) {
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive target lift",
+      "Average R was weak, so this pass tests a modestly higher target.",
+      { targetRMultiple: round(Math.min(3.25, baseline.targetRMultiple + 0.25), 2) },
+      ["targetRMultiple"]
+    );
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive target stability",
+      "Average R was weak, so this pass tests whether a smaller target improves resolution quality.",
+      { targetRMultiple: round(Math.max(1.25, baseline.targetRMultiple - 0.25), 2) },
+      ["targetRMultiple"]
+    );
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive low-R session cut",
+      "Average R was weak, so this pass restricts the test to NY AM.",
+      { sessionFilter: "NY AM Kill Zone" },
+      ["sessionFilter"]
+    );
+  }
+
+  if (gateSet.has("win_rate_too_low")) {
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive long-only win-rate check",
+      "Win rate was weak, so this pass isolates bullish thesis behavior.",
+      { allowLong: true, allowShort: false },
+      ["allowLong", "allowShort"]
+    );
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive short-only win-rate check",
+      "Win rate was weak, so this pass isolates bearish thesis behavior.",
+      { allowLong: false, allowShort: true },
+      ["allowLong", "allowShort"]
+    );
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive win-rate confidence gate",
+      "Win rate was weak, so this pass requires higher confidence.",
+      { minimumConfidenceThreshold: stricterConfidence },
+      ["confidenceThreshold"]
+    );
+  }
+
+  if (gateSet.has("trade_count_too_low")) {
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive sample-size relief",
+      "Trade count was too low, so this pass slightly lowers thresholds while staying simulation-only.",
+      { minimumConfluenceThreshold: looserConfluence, minimumConfidenceThreshold: looserConfidence },
+      ["confluenceThreshold", "confidenceThreshold"]
+    );
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive wider session sample",
+      "Trade count was too low, so this pass widens the session filter.",
+      { sessionFilter: "all", allowLong: true, allowShort: true },
+      ["sessionFilter", "allowLong", "allowShort"]
+    );
+  }
+
+  if (gateSet.has("confidence_calibration_weak")) {
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive confidence penalty",
+      "Confidence calibration was weak, so this pass raises minimum confidence.",
+      { minimumConfidenceThreshold: stricterConfidence },
+      ["confidenceThreshold"]
+    );
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive evidence confirmation",
+      "Confidence calibration was weak, so this pass raises both evidence thresholds.",
+      { minimumConfluenceThreshold: stricterConfluence, minimumConfidenceThreshold: stricterConfidence },
+      ["confluenceThreshold", "confidenceThreshold"]
+    );
+  }
+
+  if (gateSet.has("session_consistency_weak")) {
+    pushAdaptiveCandidate(candidates, baseline, "Adaptive NY AM consistency", "Session consistency was weak, so this pass isolates NY AM.", { sessionFilter: "NY AM Kill Zone" }, ["sessionFilter"]);
+    pushAdaptiveCandidate(candidates, baseline, "Adaptive London consistency", "Session consistency was weak, so this pass isolates London.", { sessionFilter: "London" }, ["sessionFilter"]);
+    pushAdaptiveCandidate(candidates, baseline, "Adaptive New York consistency", "Session consistency was weak, so this pass isolates New York.", { sessionFilter: "New York" }, ["sessionFilter"]);
+  }
+
+  if (gateSet.has("conservative_scenario_unstable")) {
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive conservative-only gate",
+      "The conservative scenario was unstable, so this pass uses stricter evidence and structure-based invalidation.",
+      { minimumConfluenceThreshold: Math.max(0.58, stricterConfluence), minimumConfidenceThreshold: Math.max(0.58, stricterConfidence), stopModel: "latest swing" },
+      ["confluenceThreshold", "confidenceThreshold", "stopModel"]
+    );
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive conservative NY AM",
+      "The conservative scenario was unstable, so this pass tests only NY AM under strict thresholds.",
+      { sessionFilter: "NY AM Kill Zone", minimumConfluenceThreshold: Math.max(0.58, stricterConfluence), minimumConfidenceThreshold: Math.max(0.58, stricterConfidence) },
+      ["sessionFilter", "confluenceThreshold", "confidenceThreshold"]
+    );
+  }
+
+  if (gateSet.has("skipped_signal_imbalance")) {
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive skipped-signal balance",
+      "Skipped signals were imbalanced, so this pass slightly relaxes the evidence gate.",
+      { minimumConfluenceThreshold: looserConfluence },
+      ["confluenceThreshold"]
+    );
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive confidence balance",
+      "Skipped signals were imbalanced, so this pass slightly relaxes confidence only.",
+      { minimumConfidenceThreshold: looserConfidence },
+      ["confidenceThreshold"]
+    );
+  }
+
+  if (gateSet.has("overfitting_risk")) {
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive simple confidence nudge",
+      "Overfitting risk was detected, so this pass tries a single-variable confidence nudge.",
+      { minimumConfidenceThreshold: round(clamp01(baseline.minimumConfidenceThreshold + 0.03), 2) },
+      ["confidenceThreshold"]
+    );
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive simple target trim",
+      "Overfitting risk was detected, so this pass trims target ambition without changing other settings.",
+      { targetRMultiple: round(Math.max(1.25, baseline.targetRMultiple - 0.25), 2) },
+      ["targetRMultiple"]
+    );
+  }
+
+  if (!candidates.length) {
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive conservative fallback",
+      "No specific failed gate was available, so this pass tries one conservative evidence nudge.",
+      { minimumConfluenceThreshold: stricterConfluence },
+      ["confluenceThreshold"]
+    );
+  }
+
+  return dedupeCandidates(candidates).slice(0, Math.max(1, Math.min(10, maxCandidateCount)));
 }

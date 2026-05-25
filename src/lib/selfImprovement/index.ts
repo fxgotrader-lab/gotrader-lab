@@ -20,6 +20,7 @@ export type {
   CalibrationComparisonResult,
   CalibrationProposal,
   CalibrationProposalChanges,
+  CalibrationProposalIntent,
   CalibrationProposalMetrics,
   CalibrationProposalSource,
   CalibrationProposalStatus,

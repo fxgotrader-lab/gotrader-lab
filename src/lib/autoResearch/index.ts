@@ -18,14 +18,17 @@ export {
   safeAutoResearchSearchSpace
 } from "@/lib/autoResearch/configSearchSpace";
 export { createSelfImprovementFromCandidate } from "@/lib/autoResearch/createSelfImprovementFromCandidate";
-export { generateCandidateConfigs } from "@/lib/autoResearch/generateCandidateConfigs";
+export { generateAdaptiveCandidateConfigs, generateCandidateConfigs } from "@/lib/autoResearch/generateCandidateConfigs";
 export { scoreCandidateConfig } from "@/lib/autoResearch/scoreCandidateConfig";
 export { selectBestCandidate } from "@/lib/autoResearch/selectBestCandidate";
 export type {
   AutoResearchCandidateConfig,
   AutoResearchCandidateResult,
+  AutoResearchAdaptiveOutcome,
+  AutoResearchAdaptivePass,
   AutoResearchCycle,
   AutoResearchCycleStatus,
+  AutoResearchFailedGate,
   AutoResearchProgressSnapshot,
   AutoResearchResultCategory,
   AutoResearchRunOptions,

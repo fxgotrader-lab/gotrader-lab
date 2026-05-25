@@ -87,7 +87,7 @@ const categoryFor = (
     candidate.researchQualityReview?.readinessGrade === "Research Ready" ||
     candidate.researchQualityReview?.readinessGrade === "Paper-Demo Candidate"
   ) {
-    return "research_ready";
+    return "research_ready_candidate";
   }
   if (candidate.scoreBreakdown.stabilityImproved && candidate.comparisonResult.stabilityImproved) {
     return "improved_but_not_ready";
@@ -105,7 +105,7 @@ export function selectBestCandidate(
     return {
       ...candidate,
       resultCategory,
-      promotionEligible: ["improved_but_not_ready", "research_ready", "paper_demo_candidate"].includes(resultCategory),
+      promotionEligible: ["improved_but_not_ready", "research_ready", "research_ready_candidate", "paper_demo_candidate"].includes(resultCategory),
       rejectionReasons
     };
   });

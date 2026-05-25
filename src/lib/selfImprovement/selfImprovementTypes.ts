@@ -9,6 +9,7 @@ import type { ValidationReadinessStatus } from "@/lib/validation";
 
 export type CalibrationProposalSource = "openclaw" | "hermes" | "internal";
 export type CalibrationProposalStatus = "proposed" | "testing" | "accepted" | "rejected" | "reverted";
+export type CalibrationProposalIntent = "research_calibration_candidate" | "paper_demo_candidate_review";
 
 export type CalibrationTargetProblem =
   | "high_drawdown"
@@ -66,6 +67,7 @@ export interface CalibrationProposal {
   timestamp: string;
   source: CalibrationProposalSource;
   status: CalibrationProposalStatus;
+  proposalIntent?: CalibrationProposalIntent;
   mode: "simulation";
   executionAuthority: "none";
   brokerAuthority: "none";

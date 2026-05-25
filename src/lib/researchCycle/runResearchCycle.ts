@@ -490,9 +490,13 @@ export async function runResearchCycle({
         run.candidateProgress = progress;
         setStep("auto_research", {
           status: "running",
-          summary: `Candidate ${progress.currentCandidate}/${progress.totalCandidates}: ${progress.candidateLabel}.`,
+          summary: `Pass ${progress.passNumber ?? 1}/${progress.totalPasses ?? 1}: candidate ${progress.currentCandidate}/${progress.totalCandidates}: ${progress.candidateLabel}.`,
           detail: progress.bestCandidateLabel
-            ? `Best so far: ${progress.bestCandidateLabel} (${progress.bestCandidateCategory}, score ${progress.bestCandidateScore}).`
+            ? `Best so far: ${progress.bestCandidateLabel} (${progress.bestCandidateCategory}, score ${progress.bestCandidateScore}). Targeting: ${
+                safeArray(progress.failedGatesTargeted).length
+                  ? safeArray(progress.failedGatesTargeted).map((gate) => gate.replace(/_/g, " ")).join(", ")
+                  : "initial bounded search"
+              }.`
             : "No stable best candidate selected yet."
         });
       }
@@ -508,8 +512,8 @@ export async function runResearchCycle({
           ? `Best candidate: ${autoResearchCycle.bestCandidate.label}.`
           : "Auto Research completed without a viable best candidate.",
         detail: autoResearchCycle.noSafePaperDemoCandidateFound
-          ? `Candidate ${autoResearchCycle.candidatesTested}/${autoResearchCycle.candidatesTested}. No safe Paper-Demo Candidate found. Continue research.`
-          : `Candidate ${autoResearchCycle.candidatesTested}/${autoResearchCycle.candidatesTested}. Final category: ${autoResearchCycle.finalResultCategory}.`
+          ? `${safeArray(autoResearchCycle.adaptivePasses).length || 1} adaptive pass${safeArray(autoResearchCycle.adaptivePasses).length === 1 ? "" : "es"} completed. No safe Paper-Demo Candidate found. Continue research.`
+          : `${safeArray(autoResearchCycle.adaptivePasses).length || 1} adaptive pass${safeArray(autoResearchCycle.adaptivePasses).length === 1 ? "" : "es"} completed. Final category: ${autoResearchCycle.finalResultCategory}.`
       });
     }
 
