@@ -415,6 +415,18 @@ export interface AdvisoryPacketAuditEntry {
   mode: "advisory_only";
 }
 
+export interface AdvisoryResponseAuditEntry {
+  id: string;
+  responseId: string;
+  packetId: string;
+  importedAt: string;
+  advisoryAgent: "OpenClaw" | "Hermes";
+  proceedRecommendation: "continue_research" | "rerun_validation" | "paper_demo_candidate_review";
+  validationStatus: "valid" | "invalid";
+  warningCount: number;
+  mode: "advisory_only";
+}
+
 export interface LabState {
   agents: Agent[];
   promptVersions: AgentPromptVersion[];
@@ -426,6 +438,7 @@ export interface LabState {
   tradeTheses: TradeThesis[];
   handoffExports: GoTraderHandoffAuditEntry[];
   advisoryPackets: AdvisoryPacketAuditEntry[];
+  advisoryResponses: AdvisoryResponseAuditEntry[];
   userApprovals: Array<{
     id: string;
     createdAt: string;

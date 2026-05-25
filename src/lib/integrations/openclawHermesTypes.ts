@@ -148,3 +148,32 @@ export interface AdvisoryRequestPacketValidationResult {
   errors: string[];
   warnings: string[];
 }
+
+export interface AdvisoryResponse {
+  responseId: string;
+  packetId: string;
+  timestamp: string;
+  advisoryAgent: AdvisoryAgentName;
+  mode: AdvisoryRequestMode;
+  executionAuthority: AdvisoryAuthority;
+  brokerAuthority: AdvisoryAuthority;
+  readinessOverrideAuthority: AdvisoryAuthority;
+  agreeWithThesis: boolean | null;
+  advisoryConfidence: number;
+  riskWarnings: string[];
+  missingEvidence: string[];
+  recommendedCalibration: string[];
+  proceedRecommendation: AdvisoryProceedRecommendation;
+  notes: string;
+}
+
+export interface AdvisoryResponseValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface AdvisoryResponseImportResult {
+  response?: AdvisoryResponse;
+  validation: AdvisoryResponseValidationResult;
+}

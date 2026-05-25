@@ -1,0 +1,28 @@
+{
+  "responseId": "advisory_response_sample_20260525",
+  "packetId": "advisory_packet_sample_20260525",
+  "timestamp": "2026-05-25T00:00:00.000Z",
+  "advisoryAgent": "OpenClaw",
+  "mode": "advisory_only",
+  "executionAuthority": "none",
+  "brokerAuthority": "none",
+  "readinessOverrideAuthority": "none",
+  "agreeWithThesis": false,
+  "advisoryConfidence": 0.72,
+  "riskWarnings": [
+    "Conservative validation has not reached Paper-Demo Candidate.",
+    "False-positive patterns remain present in recent simulation review."
+  ],
+  "missingEvidence": [
+    "Repeatable NY AM session stability",
+    "Clear stop-model selection",
+    "Confirmation that drawdown clusters are understood"
+  ],
+  "recommendedCalibration": [
+    "Rerun validation with conservative confluence threshold at or above 0.55.",
+    "Compare latest swing and FVG invalidation before changing target R.",
+    "Keep broker execution disabled until readiness gate passes without override."
+  ],
+  "proceedRecommendation": "rerun_validation",
+  "notes": "Advisory review only. This response cannot execute trades, approve trades, or override readiness gates."
+}

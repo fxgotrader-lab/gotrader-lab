@@ -82,6 +82,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const [readinessApproval, setReadinessApproval] = useState(() => loadManualApprovalRecord());
   const latestHandoffExport = state.handoffExports?.[0];
   const latestAdvisoryPacket = state.advisoryPackets?.[0];
+  const latestAdvisoryResponse = state.advisoryResponses?.[0];
   const runbookCompleted = countCompletedRunbookItems(simulationRunbook);
   const runbookTotal = simulationRunbookChecklist.length;
   const readinessGate = useMemo(
@@ -252,6 +253,10 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
               <span className="font-mono text-foreground">{state.advisoryPackets?.length ?? 0}</span>
             </div>
             <div className="flex justify-between gap-3">
+              <span>Advisory responses</span>
+              <span className="font-mono text-foreground">{state.advisoryResponses?.length ?? 0}</span>
+            </div>
+            <div className="flex justify-between gap-3">
               <span>Latest handoff</span>
               <span className="max-w-[11rem] truncate font-mono text-foreground">
                 {latestHandoffExport?.exportedAt ?? "none"}
@@ -356,6 +361,9 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
               ["Hermes", openClawHermesAdvisorySpec.hermesConnection],
               ["Latest packet", latestAdvisoryPacket?.generatedAt ?? "none"],
               ["Total packets", String(state.advisoryPackets?.length ?? 0)],
+              ["Latest response", latestAdvisoryResponse?.importedAt ?? "none"],
+              ["Total responses", String(state.advisoryResponses?.length ?? 0)],
+              ["Latest recommendation", latestAdvisoryResponse?.proceedRecommendation ?? "none"],
               ["Role", openClawHermesAdvisorySpec.role],
               ["Broker authority", openClawHermesAdvisorySpec.brokerAuthority],
               ["Execution authority", openClawHermesAdvisorySpec.executionAuthority],

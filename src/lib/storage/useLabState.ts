@@ -3,13 +3,20 @@ import {
   approveMutation,
   labStorage,
   recordAdvisoryPacket,
+  recordAdvisoryResponse,
   recordHandoffExport,
   recordSignalExportDecision,
   rejectMutation,
   rollbackPromptVersion
 } from "@/lib/storage";
 import { applySimulatedOutcome, generateThesis } from "@/lib/simulation";
-import type { AdvisoryPacketAuditEntry, GoTraderHandoffAuditEntry, LabState, ThesisInput } from "@/lib/types";
+import type {
+  AdvisoryPacketAuditEntry,
+  AdvisoryResponseAuditEntry,
+  GoTraderHandoffAuditEntry,
+  LabState,
+  ThesisInput
+} from "@/lib/types";
 
 export function useLabState() {
   const [state, setState] = useState<LabState>(() => labStorage.load());
@@ -53,6 +60,9 @@ export function useLabState() {
       },
       recordAdvisoryPacket(entry: Omit<AdvisoryPacketAuditEntry, "id">) {
         commit((current) => recordAdvisoryPacket(current, entry));
+      },
+      recordAdvisoryResponse(entry: Omit<AdvisoryResponseAuditEntry, "id">) {
+        commit((current) => recordAdvisoryResponse(current, entry));
       },
       scoreThesis(thesisId: string) {
         commit((current) => {

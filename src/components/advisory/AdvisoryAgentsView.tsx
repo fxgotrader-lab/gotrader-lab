@@ -3,10 +3,12 @@ import { Bot, Download, FileJson, PackageCheck, ShieldAlert, Unplug, XCircle } f
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { AdvisoryResponseReview } from "@/components/advisory/AdvisoryResponseReview";
 import { createAdvisoryRequestPacket } from "@/lib/integrations/createAdvisoryRequestPacket";
 import { openClawHermesAdvisorySpec } from "@/lib/integrations/openclawHermesSpec";
 import type {
   AdvisoryPacketAuditEntry,
+  AdvisoryResponseAuditEntry,
   LabState
 } from "@/lib/types";
 import type {
@@ -21,6 +23,7 @@ import { loadLatestValidationReport } from "@/lib/validation";
 
 interface AdvisoryActions {
   recordAdvisoryPacket(entry: Omit<AdvisoryPacketAuditEntry, "id">): void;
+  recordAdvisoryResponse(entry: Omit<AdvisoryResponseAuditEntry, "id">): void;
 }
 
 const formatValue = (value: string) => value.replace(/_/g, " ");
@@ -289,6 +292,12 @@ export function AdvisoryAgentsView({ state, actions }: { state: LabState; action
           ) : null}
         </CardContent>
       </Card>
+
+      <AdvisoryResponseReview
+        latestPacketId={latestPacketAudit?.packetId}
+        importedResponses={state.advisoryResponses ?? []}
+        onImport={actions.recordAdvisoryResponse}
+      />
 
       <div className="grid gap-5 xl:grid-cols-2">
         <Card>
