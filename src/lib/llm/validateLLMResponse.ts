@@ -11,25 +11,55 @@ const allowedRecommendations = new Set<LLMProceedRecommendation>([
   "paper_demo_candidate_review"
 ]);
 
-const unsafePatterns = [
-  /place\s+(an\s+)?order/i,
-  /execute\s+(the\s+)?trade/i,
-  /send\s+(the\s+)?order/i,
-  /connect\s+to\s+(a\s+)?broker/i,
-  /bypass\s+(the\s+)?readiness/i,
-  /override\s+(the\s+)?readiness/i,
-  /approve\s+(paper|demo|live)/i,
-  /enable\s+(paper|demo|live)\s+trading/i,
-  /modify\s+broker/i,
-  /increase\s+contracts/i,
-  /api\s*key/i
+const unsafeTextMatchers = [
+  { reason: "direct trade execution", pattern: /\b(?:execute|place|send)\s+(?:a\s+|an\s+|the\s+)?(?:trade|order)s?\b/i },
+  { reason: "position control", pattern: /\b(?:open|close)\s+(?:a\s+|an\s+|the\s+)?position\b/i },
+  { reason: "broker connection or control", pattern: /\b(?:connect|route|submit|control)\s+(?:to\s+)?(?:a\s+)?broker\b/i },
+  { reason: "broker connection or control", pattern: /\bbroker\s+(?:connection|control|execution|routing)\b/i },
+  { reason: "readiness bypass", pattern: /\b(?:bypass|override|ignore|skip)\s+(?:the\s+)?readiness\b/i },
+  { reason: "readiness bypass", pattern: /\breadiness\s+(?:bypass|override)\b/i },
+  { reason: "approval authority", pattern: /\bapprove\s+(?:the\s+)?(?:trade|order|paper|demo|live|execution)\b/i },
+  { reason: "trading enablement", pattern: /\benable\s+(?:paper\s+|demo\s+|live\s+)?trading\b/i },
+  { reason: "API key handling", pattern: /\b(?:api\s*key|secret\s+key|openai_api_key)\b/i }
 ];
 
 const arrayOfStrings = (value: unknown) => Array.isArray(value) && value.every((item) => typeof item === "string");
 
-const includesUnsafeLanguage = (response: Partial<LLMAgentResponse>) => {
-  const text = JSON.stringify(response).toLowerCase();
-  return unsafePatterns.some((pattern) => pattern.test(text));
+const freeTextFieldsFor = (response: Partial<LLMAgentResponse>) => {
+  const fields: Array<[string, string]> = [];
+  if (typeof response.reasoningSummary === "string") {
+    fields.push(["reasoningSummary", response.reasoningSummary]);
+  }
+  for (const field of ["riskWarnings", "missingEvidence", "suggestedCalibration", "safetyNotes"] as const) {
+    const value = response[field];
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => {
+        if (typeof item === "string") {
+          fields.push([`${field}[${index}]`, item]);
+        }
+      });
+    }
+  }
+  return fields;
+};
+
+const isSafelyNegated = (text: string, matchIndex: number) => {
+  const prefix = text.slice(Math.max(0, matchIndex - 32), matchIndex).toLowerCase();
+  return /\b(?:no|not|cannot|can not|must not|do not|does not|without)\s+[\w\s-]*$/.test(prefix);
+};
+
+const unsafeLanguageFindings = (response: Partial<LLMAgentResponse>) => {
+  const findings: string[] = [];
+  for (const [field, text] of freeTextFieldsFor(response)) {
+    for (const matcher of unsafeTextMatchers) {
+      matcher.pattern.lastIndex = 0;
+      const match = matcher.pattern.exec(text);
+      if (match && !isSafelyNegated(text, match.index)) {
+        findings.push(`${field} contains unsafe phrase "${match[0]}" (${matcher.reason})`);
+      }
+    }
+  }
+  return findings;
 };
 
 export function parseLLMResponseJson(raw: string): { response?: Partial<LLMAgentResponse>; error?: string } {
@@ -95,9 +125,7 @@ export function validateLLMResponse(response: Partial<LLMAgentResponse>): LLMRes
   if (!arrayOfStrings(response.safetyNotes)) {
     errors.push("safetyNotes must be an array of strings");
   }
-  if (includesUnsafeLanguage(response)) {
-    errors.push("response suggests execution, broker control, key handling, or readiness bypass");
-  }
+  errors.push(...unsafeLanguageFindings(response));
 
   return {
     valid: errors.length === 0,

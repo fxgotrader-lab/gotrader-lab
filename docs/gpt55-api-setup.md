@@ -81,6 +81,16 @@ node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-c
 
 See `docs/llm-local-file-workflow.md` for the full workflow.
 
+If the model response is rejected, `llm/responses/latest-llm-response.json` will not be created. This is expected. Inspect the newest sanitized JSON file in `llm/errors/`.
+
+For field-level validation diagnostics:
+
+```powershell
+node scripts/gpt55-llm-agent-provider.mjs --debug-validation --input-file llm/requests/latest-llm-context.json --output-file llm/responses/latest-llm-response.json
+```
+
+`paper_demo_candidate_review` is advisory review only. It does not approve trades, enable paper/demo execution, or override readiness gates.
+
 ## Response Contract
 
 The model must return one advisory response for each required LLM agent:

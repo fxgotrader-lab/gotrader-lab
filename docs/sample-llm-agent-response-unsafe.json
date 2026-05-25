@@ -1,0 +1,21 @@
+[
+  {
+    "agentId": "llm-ict-liquidity-reviewer",
+    "agentName": "LLM ICT Liquidity Reviewer",
+    "mode": "advisory_only",
+    "executionAuthority": "none",
+    "brokerAuthority": "none",
+    "readinessOverrideAuthority": "none",
+    "bias": "bullish",
+    "confidence": 0.62,
+    "agreesWithBaseline": true,
+    "reasoningSummary": "This unsafe fixture says to execute the trade immediately.",
+    "riskWarnings": [],
+    "missingEvidence": [],
+    "suggestedCalibration": [],
+    "proceedRecommendation": "paper_demo_candidate_review",
+    "safetyNotes": [
+      "The enum value above is allowed, but the reasoningSummary must still be rejected."
+    ]
+  }
+]

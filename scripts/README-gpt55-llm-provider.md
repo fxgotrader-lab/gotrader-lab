@@ -36,6 +36,18 @@ Local file mode reads a request file and writes a response file:
 node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-context.json --output-file llm/responses/latest-llm-response.json
 ```
 
+Validation debug mode writes sanitized raw model output and rejected field names to `llm/errors/`:
+
+```powershell
+node scripts/gpt55-llm-agent-provider.mjs --debug-validation --input-file llm/requests/latest-llm-context.json --output-file llm/responses/latest-llm-response.json
+```
+
+Validate a saved response fixture without an API key:
+
+```powershell
+node scripts/gpt55-llm-agent-provider.mjs --validate-response-file docs/sample-llm-agent-response.json
+```
+
 Dry run validates the local setup and request packet without calling the model:
 
 ```powershell
@@ -78,6 +90,8 @@ Each response must include:
 
 Errors are written to stderr and never include API key values. In `--output-file` mode, sanitized error JSON is also written to `llm/errors/`.
 
+If validation fails, `llm/responses/latest-llm-response.json` is not created. This is expected and prevents stale accepted responses from being imported.
+
 ## Safety Rejection
 
 The provider rejects model responses that:
@@ -92,3 +106,5 @@ The provider rejects model responses that:
 - recommend modifying broker permissions or contract size
 
 Rejected responses are not printed to stdout.
+
+The allowed enum `paper_demo_candidate_review` means readiness review only. It does not approve trades, enable paper/demo execution, or bypass readiness gates.

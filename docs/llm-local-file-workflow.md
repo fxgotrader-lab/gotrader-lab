@@ -82,7 +82,23 @@ node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-c
 
 The API key stays in PowerShell. It is not stored in the browser, React source, docs, localStorage, or committed files.
 
-If the key is missing or the response is unsafe, the provider exits with a safe error and writes sanitized error JSON to `llm/errors/`.
+If the key is missing or the response is unsafe, the provider exits with a safe nonzero status and writes sanitized error JSON to `llm/errors/`.
+
+If `llm/responses/latest-llm-response.json` is missing after a run, that is expected when validation rejects the model output. The provider removes the requested output file before a new file-mode run so stale responses are not mistaken for a fresh valid result.
+
+To inspect the failure, open the newest JSON file in:
+
+```text
+llm/errors/
+```
+
+For deeper validation debugging, run:
+
+```powershell
+node scripts/gpt55-llm-agent-provider.mjs --debug-validation --input-file llm/requests/latest-llm-context.json --output-file llm/responses/latest-llm-response.json
+```
+
+Debug validation writes sanitized raw model output and rejected field names into `llm/errors/` only. It must not print API keys.
 
 ## Step 3: Import Response Back Into AI Lab
 
@@ -100,6 +116,8 @@ Import response locally
 ```
 
 The imported response must include all required LLM agents and pass advisory-only validation.
+
+`paper_demo_candidate_review` is an allowed advisory enum value. It means "review whether readiness evidence is sufficient." It is not approval to trade, not paper execution, and not permission to bypass readiness gates.
 
 ## What Gets Tracked
 

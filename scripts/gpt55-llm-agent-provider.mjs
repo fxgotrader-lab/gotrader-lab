@@ -50,19 +50,25 @@ const allowedRecommendations = new Set([
   "rerun_validation",
   "paper_demo_candidate_review"
 ]);
-const unsafePatterns = [
-  /place\s+(an\s+)?order/i,
-  /execute\s+(the\s+)?trade/i,
-  /send\s+(the\s+)?order/i,
-  /connect\s+to\s+(a\s+)?broker/i,
-  /bypass\s+(the\s+)?readiness/i,
-  /override\s+(the\s+)?readiness/i,
-  /approve\s+(paper|demo|live)/i,
-  /enable\s+(paper|demo|live)\s+trading/i,
-  /modify\s+broker/i,
-  /increase\s+contracts/i,
-  /api\s*key/i
+const unsafeTextMatchers = [
+  { reason: "direct trade execution", pattern: /\b(?:execute|place|send)\s+(?:a\s+|an\s+|the\s+)?(?:trade|order)s?\b/i },
+  { reason: "position control", pattern: /\b(?:open|close)\s+(?:a\s+|an\s+|the\s+)?position\b/i },
+  { reason: "broker connection or control", pattern: /\b(?:connect|route|submit|control)\s+(?:to\s+)?(?:a\s+)?broker\b/i },
+  { reason: "broker connection or control", pattern: /\bbroker\s+(?:connection|control|execution|routing)\b/i },
+  { reason: "readiness bypass", pattern: /\b(?:bypass|override|ignore|skip)\s+(?:the\s+)?readiness\b/i },
+  { reason: "readiness bypass", pattern: /\breadiness\s+(?:bypass|override)\b/i },
+  { reason: "approval authority", pattern: /\bapprove\s+(?:the\s+)?(?:trade|order|paper|demo|live|execution)\b/i },
+  { reason: "trading enablement", pattern: /\benable\s+(?:paper\s+|demo\s+|live\s+)?trading\b/i },
+  { reason: "API key handling", pattern: /\b(?:api\s*key|secret\s+key|openai_api_key)\b/i }
 ];
+
+class ProviderValidationError extends Error {
+  constructor(message, details = {}) {
+    super(message);
+    this.name = "ProviderValidationError";
+    this.details = details;
+  }
+}
 
 function printHelp() {
   process.stdout.write(`GoTrader AI Lab GPT-5.5 LLM agent provider
@@ -73,6 +79,8 @@ and prints validated advisory-only LLM agent response JSON to stdout.
 Usage:
   node scripts/gpt55-llm-agent-provider.mjs
   node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-context.json --output-file llm/responses/latest-llm-response.json
+  node scripts/gpt55-llm-agent-provider.mjs --validate-response-file docs/sample-llm-agent-response.json
+  node scripts/gpt55-llm-agent-provider.mjs --debug-validation --validate-response-file docs/sample-llm-agent-response-unsafe.json
   node scripts/gpt55-llm-agent-provider.mjs --dry-run
   node scripts/gpt55-llm-agent-provider.mjs --help
 
@@ -94,20 +102,22 @@ function parseArgs(argv) {
   return {
     help: argv.includes("--help") || argv.includes("-h"),
     dryRun: argv.includes("--dry-run"),
+    debugValidation: argv.includes("--debug-validation"),
     inputFile: valueAfter("--input-file"),
-    outputFile: valueAfter("--output-file")
+    outputFile: valueAfter("--output-file"),
+    validateResponseFile: valueAfter("--validate-response-file")
   };
 }
 
 function sanitizeError(value) {
   return String(value ?? "Unknown error")
     .replace(/Bearer\s+[A-Za-z0-9._\-]+/g, "Bearer [redacted]")
-    .replace(/sk-[A-Za-z0-9._\-]+/g, "sk-[redacted]");
+    .replace(/\bsk-[A-Za-z0-9._\-]{16,}\b/g, "sk-[redacted]");
 }
 
-function fail(message, exitCode = 1) {
+function fail(message) {
   process.stderr.write(`GPT-5.5 LLM provider error: ${sanitizeError(message)}\n`);
-  process.exit(exitCode);
+  process.exitCode = 1;
 }
 
 function readStdin() {
@@ -144,14 +154,25 @@ async function writeProviderOutput(args, responses) {
   process.stdout.write(`${JSON.stringify(responses, null, 2)}\n`);
 }
 
-async function writeProviderError(args, message) {
+async function removeOutputFile(args) {
   if (!args?.outputFile) {
+    return;
+  }
+  await fs.rm(args.outputFile, { force: true }).catch(() => {});
+}
+
+async function writeProviderError(args, error) {
+  const message = error?.message ?? error;
+  const shouldWriteErrorFile = Boolean(
+    args?.outputFile || args?.debugValidation || error?.name === "ProviderValidationError"
+  );
+  if (!shouldWriteErrorFile) {
     return;
   }
 
   const timestamp = new Date().toISOString();
   const safeBase = path
-    .basename(args.inputFile ?? "stdin-request", ".json")
+    .basename(args.inputFile ?? args.validateResponseFile ?? "stdin-request", ".json")
     .replace(/[^A-Za-z0-9._-]/g, "_");
   const errorPath = path.join("llm", "errors", `${safeBase}-error-${Date.now()}.json`);
   await writeJsonFile(errorPath, {
@@ -165,6 +186,15 @@ async function writeProviderError(args, message) {
     inputFile: args.inputFile ?? "stdin",
     outputFile: args.outputFile,
     message: sanitizeError(message),
+    validationDetails: error?.details
+      ? {
+          ...error.details,
+          rawModelResponse:
+            args?.debugValidation && error.details.rawModelResponse
+              ? sanitizeError(error.details.rawModelResponse)
+              : undefined
+        }
+      : undefined,
     safetyNotice: "Advisory-only provider error. No broker control. No execution authority. No readiness override."
   });
   process.stderr.write(`Wrote sanitized provider error JSON to ${errorPath}\n`);
@@ -225,15 +255,53 @@ function validateRequestPacket(packet) {
   }
 }
 
-function includesUnsafeLanguage(response) {
-  const text = JSON.stringify(response).toLowerCase();
-  return unsafePatterns.some((pattern) => pattern.test(text));
+function freeTextFieldsFor(response) {
+  const fields = [];
+  if (typeof response.reasoningSummary === "string") {
+    fields.push(["reasoningSummary", response.reasoningSummary]);
+  }
+  for (const field of ["riskWarnings", "missingEvidence", "suggestedCalibration", "safetyNotes"]) {
+    const value = response[field];
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => {
+        if (typeof item === "string") {
+          fields.push([`${field}[${index}]`, item]);
+        }
+      });
+    }
+  }
+  return fields;
+}
+
+function isSafelyNegated(text, matchIndex) {
+  const prefix = text.slice(Math.max(0, matchIndex - 32), matchIndex).toLowerCase();
+  return /\b(?:no|not|cannot|can not|must not|do not|does not|without)\s+[\w\s-]*$/.test(prefix);
+}
+
+function unsafeLanguageFindings(response) {
+  const findings = [];
+  for (const [field, text] of freeTextFieldsFor(response)) {
+    for (const matcher of unsafeTextMatchers) {
+      matcher.pattern.lastIndex = 0;
+      const match = matcher.pattern.exec(text);
+      if (match && !isSafelyNegated(text, match.index)) {
+        findings.push({
+          field,
+          phrase: match[0],
+          reason: matcher.reason,
+          message: `${field} contains unsafe phrase "${match[0]}" (${matcher.reason})`
+        });
+      }
+    }
+  }
+  return findings;
 }
 
 function validateAgentResponse(response) {
   const errors = [];
+  const rejectedFields = [];
   if (!response || typeof response !== "object" || Array.isArray(response)) {
-    return ["response must be a JSON object"];
+    return { errors: ["response must be a JSON object"], rejectedFields };
   }
   if (!response.agentId) {
     errors.push("agentId is required");
@@ -278,24 +346,33 @@ function validateAgentResponse(response) {
     errors.push("proceedRecommendation must be advisory-only");
   }
   ensureArrayOfStrings(response.safetyNotes, "safetyNotes", errors);
-  if (includesUnsafeLanguage(response)) {
-    errors.push("response suggests execution, broker control, key handling, or readiness bypass");
+  const unsafeFindings = unsafeLanguageFindings(response);
+  if (unsafeFindings.length > 0) {
+    rejectedFields.push(...unsafeFindings);
+    errors.push(...unsafeFindings.map((finding) => finding.message));
   }
-  return errors;
+  return { errors, rejectedFields };
 }
 
-function validateProviderResponses(responses) {
+function validateProviderResponses(responses, debugContext = {}) {
   if (!Array.isArray(responses)) {
-    throw new Error("model output must contain a responses array");
+    throw new ProviderValidationError("model output must contain a responses array", debugContext);
   }
   const requiredIds = new Set(requiredAgents.map((agent) => agent.agentId));
   const seenIds = new Set();
   const errors = [];
+  const rejectedFields = [];
 
   for (const response of responses) {
-    const responseErrors = validateAgentResponse(response);
-    if (responseErrors.length > 0) {
-      errors.push(`${response?.agentId ?? "unknown"}: ${responseErrors.join(", ")}`);
+    const responseValidation = validateAgentResponse(response);
+    if (responseValidation.errors.length > 0) {
+      errors.push(`${response?.agentId ?? "unknown"}: ${responseValidation.errors.join(", ")}`);
+      rejectedFields.push(
+        ...responseValidation.rejectedFields.map((finding) => ({
+          agentId: response?.agentId ?? "unknown",
+          ...finding
+        }))
+      );
     }
     if (typeof response?.agentId === "string") {
       seenIds.add(response.agentId);
@@ -309,7 +386,11 @@ function validateProviderResponses(responses) {
   }
 
   if (errors.length > 0) {
-    throw new Error(`response validation failed: ${errors.join("; ")}`);
+    throw new ProviderValidationError(`response validation failed: ${errors.join("; ")}`, {
+      ...debugContext,
+      errors,
+      rejectedFields
+    });
   }
 }
 
@@ -390,6 +471,9 @@ function buildSystemPrompt() {
     "You review simulation-only trading research context and return structured JSON only.",
     "You have no execution authority, no broker authority, and no readiness override authority.",
     "You must not place trades, approve trades, call brokers, ask for API keys, or change execution settings.",
+    "Avoid free-text words and phrases such as execute, place trade, open position, close position, send order, broker control, override readiness, or approve trade.",
+    "Use proceedRecommendation only as one of: continue_research, rerun_validation, paper_demo_candidate_review.",
+    "paper_demo_candidate_review means review readiness only. It is not approval to trade, execute, route, or enable paper/demo/live trading.",
     "Return one response for each required LLM agent.",
     "Prefer stability and evidence quality over profit-only conclusions.",
     "If evidence is missing, recommend continue_research or rerun_validation.",
@@ -476,6 +560,25 @@ async function main() {
     return;
   }
 
+  await removeOutputFile(args);
+
+  if (args.validateResponseFile) {
+    const rawResponse = await fs.readFile(args.validateResponseFile, "utf8");
+    const parsedResponse = parseJson(rawResponse, "response file");
+    const responses = normalizeModelOutput(parsedResponse);
+    validateProviderResponses(responses, {
+      source: "validate-response-file",
+      responseFile: args.validateResponseFile,
+      rawModelResponse: rawResponse
+    });
+    if (args.outputFile) {
+      await writeProviderOutput(args, responses);
+    } else {
+      process.stderr.write(`Response file validation passed: ${args.validateResponseFile}\n`);
+    }
+    return;
+  }
+
   const apiKey = requireApiKey();
   const raw = await readRequestInput(args);
   if (!raw.trim()) {
@@ -498,7 +601,10 @@ async function main() {
   const outputText = extractOutputText(apiResponse);
   const parsedOutput = parseJson(outputText, "model output");
   const responses = normalizeModelOutput(parsedOutput);
-  validateProviderResponses(responses);
+  validateProviderResponses(responses, {
+    source: "openai_response",
+    rawModelResponse: outputText
+  });
 
   await writeProviderOutput(args, responses);
 }
@@ -507,7 +613,7 @@ const cliArgs = parseArgs(process.argv.slice(2));
 
 main().catch(async (error) => {
   const message = error?.message ?? error;
-  await writeProviderError(cliArgs, message).catch((writeError) => {
+  await writeProviderError(cliArgs, error).catch((writeError) => {
     process.stderr.write(`GPT-5.5 LLM provider error: failed to write error JSON: ${sanitizeError(writeError?.message ?? writeError)}\n`);
   });
   fail(message);
