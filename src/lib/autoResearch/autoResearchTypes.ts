@@ -92,9 +92,9 @@ export interface AutoResearchCandidateResult {
   config: ResolvedBacktestConfig;
   ictScoringWeights?: Partial<ICTScoringWeights>;
   changedParameters: string[];
-  backtestResult: BacktestResult;
-  validationReport: ValidationSuiteReport;
-  researchQualityReview: ResearchQualityReview;
+  backtestResult?: BacktestResult;
+  validationReport?: ValidationSuiteReport;
+  researchQualityReview?: ResearchQualityReview;
   readinessEstimate: ReadinessGateSnapshot;
   metrics: CalibrationProposalMetrics;
   scoreBreakdown: AutoResearchScoreBreakdown;
@@ -168,6 +168,9 @@ export interface AutoResearchState {
     notes: string;
   }>;
   latestCycleId?: string;
+  lastStoredBytes?: number;
+  storageWarning?: string;
+  storageEmergencyMode?: boolean;
   safetyNotice: "Auto Research is simulation-only and cannot execute trades or override readiness gates.";
 }
 

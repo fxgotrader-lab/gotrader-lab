@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Bot, BrainCircuit, ClipboardList, Play, ShieldAlert, SlidersHorizontal, Trophy } from "lucide-react";
+import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +11,8 @@ import {
   AUTO_RESEARCH_UPDATED_EVENT,
   autoResearchSearchModeDefaults,
   autoResearchSearchModes,
+  clearAutoResearchHistory,
+  estimateAutoResearchStateSize,
   latestAutoResearchCycle,
   loadAutoResearchState,
   runAutoResearchCycle
@@ -44,6 +47,15 @@ const statusVariant = (status?: string) =>
         : "muted";
 
 const formatProfitFactor = (value: number | null) => (value === null ? "n/a" : value >= 99 ? "uncapped" : value.toFixed(2));
+const formatBytes = (bytes?: number) => {
+  if (typeof bytes !== "number" || Number.isNaN(bytes)) {
+    return "N/A";
+  }
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  return `${(bytes / 1024).toFixed(1)} KB`;
+};
 const categoryVariant = (category?: string) =>
   category === "paper_demo_candidate"
     ? "success"
@@ -134,6 +146,8 @@ export function AutoResearchView() {
   const topCandidates = latestCycle?.closestCandidates?.length
     ? latestCycle.closestCandidates
     : [...(latestCycle?.candidateResults ?? [])].sort((a, b) => b.scoreBreakdown.totalScore - a.scoreBreakdown.totalScore).slice(0, 3);
+  const storedSize = estimateAutoResearchStateSize(state);
+  const candidateSummaryCount = state.cycles.reduce((sum, cycle) => sum + cycle.candidateResults.length, 0);
 
   useEffect(() => {
     const refresh = () => setState(loadAutoResearchState());
@@ -157,6 +171,13 @@ export function AutoResearchView() {
     if (cycle.status === "failed") {
       window.alert(cycle.error ?? "Auto Research cycle failed.");
     }
+  };
+
+  const clearHistory = () => {
+    if (!window.confirm("Clear Auto Research history? Validation, readiness, and self-improvement data will not be deleted.")) {
+      return;
+    }
+    setState(clearAutoResearchHistory());
   };
 
   return (
@@ -188,6 +209,14 @@ export function AutoResearchView() {
           <Badge variant="warning">Approval required</Badge>
         </CardContent>
       </Card>
+
+      {state.storageWarning ? (
+        <Card className="border-amber-300/25 bg-amber-300/10">
+          <CardContent className="p-4 text-sm text-amber-100">
+            {state.storageWarning}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Card>
@@ -342,6 +371,34 @@ export function AutoResearchView() {
           ) : null}
         </CardContent>
       </Card>
+
+      <TechnicalDetails
+        title="Advanced storage details"
+        description="Shows compact Auto Research storage size and lets you clear only Auto Research history."
+      >
+        <div className="grid gap-3 md:grid-cols-4">
+          {[
+            ["Approx stored size", formatBytes(state.lastStoredBytes ?? storedSize)],
+            ["Retained cycles", String(state.cycles.length)],
+            ["Candidate summaries", String(candidateSummaryCount)],
+            ["Emergency mode", state.storageEmergencyMode ? "yes" : "no"]
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-lg border border-border bg-background/45 p-3">
+              <p className="text-xs text-muted-foreground">{label}</p>
+              <p className="mt-1 font-mono text-sm text-foreground">{value}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-col gap-3 rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100 md:flex-row md:items-center md:justify-between">
+          <span>
+            Clearing Auto Research history removes stored candidate summaries only. It does not delete validation,
+            readiness, self-improvement, or broker-safety data.
+          </span>
+          <Button variant="destructive" onClick={clearHistory} className="w-full md:w-auto">
+            Clear Auto Research History
+          </Button>
+        </div>
+      </TechnicalDetails>
 
       <Card>
         <CardHeader>

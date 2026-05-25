@@ -26,6 +26,7 @@ import {
 import {
   evaluateReadinessGate
 } from "@/lib/readiness";
+import type { ReadinessGateSnapshot } from "@/lib/readiness";
 import {
   compareProposalToBaseline,
   summarizeValidationMetrics,
@@ -48,6 +49,162 @@ const initialState = (): AutoResearchState => ({
   safetyNotice: "Auto Research is simulation-only and cannot execute trades or override readiness gates."
 });
 
+const bytesFor = (value: unknown) => new Blob([JSON.stringify(value)]).size;
+
+const fallbackReadinessEstimate = (): ReadinessGateSnapshot => ({
+  id: uid("auto_research_readiness_compact"),
+  evaluatedAt: new Date().toISOString(),
+  state: "Not Ready",
+  passedRequirements: [],
+  failedRequirements: [],
+  warnings: ["Readiness estimate was unavailable in this stored compact summary."],
+  recommendedNextStep: "Rerun Auto Research to regenerate readiness evidence.",
+  brokerExecutionDisabled: true
+});
+
+const compactReadinessEstimate = (readiness?: AutoResearchCandidateResult["readinessEstimate"]) => ({
+  ...(readiness ?? fallbackReadinessEstimate()),
+  passedRequirements: [],
+  failedRequirements: (readiness?.failedRequirements ?? []).slice(0, 3),
+  warnings: (readiness?.warnings ?? []).slice(0, 3)
+});
+
+const compactComparison = (comparison?: AutoResearchCandidateResult["comparisonResult"]) =>
+  comparison
+    ? {
+        ...comparison,
+        positiveChanges: comparison.positiveChanges.slice(0, 3),
+        negativeChanges: comparison.negativeChanges.slice(0, 3),
+        neutralChanges: comparison.neutralChanges.slice(0, 3)
+      }
+    : {
+        improved: false,
+        stabilityImproved: false,
+        recommendation: "keep_testing" as const,
+        summary: "Comparison summary unavailable in compact stored history.",
+        positiveChanges: [],
+        negativeChanges: [],
+        neutralChanges: []
+      };
+
+const compactCandidate = (candidate: AutoResearchCandidateResult): AutoResearchCandidateResult => ({
+  candidateId: candidate.candidateId,
+  label: candidate.label,
+  rationale: candidate.rationale,
+  config: candidate.config,
+  ictScoringWeights: candidate.ictScoringWeights,
+  changedParameters: candidate.changedParameters,
+  readinessEstimate: compactReadinessEstimate(candidate.readinessEstimate),
+  metrics: {
+    validationId: candidate.metrics.validationId,
+    validationTimestamp: candidate.metrics.validationTimestamp,
+    totalTrades: candidate.metrics.totalTrades,
+    winRate: candidate.metrics.winRate,
+    averageR: candidate.metrics.averageR,
+    maxDrawdown: candidate.metrics.maxDrawdown,
+    profitFactor: candidate.metrics.profitFactor,
+    skippedSignals: candidate.metrics.skippedSignals,
+    falsePositiveCount: candidate.metrics.falsePositiveCount,
+    confidenceCalibration: candidate.metrics.confidenceCalibration,
+    readinessScore: candidate.metrics.readinessScore,
+    readinessStatus: candidate.metrics.readinessStatus,
+    stabilityScore: candidate.metrics.stabilityScore,
+    conservativeScenarioStable: candidate.metrics.conservativeScenarioStable,
+    strongestScenario: candidate.metrics.strongestScenario,
+    weakestScenario: candidate.metrics.weakestScenario
+  },
+  scoreBreakdown: candidate.scoreBreakdown,
+  comparisonResult: compactComparison(candidate.comparisonResult),
+  resultCategory: candidate.resultCategory,
+  promotionEligible: candidate.promotionEligible,
+  rejectionReasons: candidate.rejectionReasons.slice(0, 3)
+});
+
+const minimalCandidate = (candidate: AutoResearchCandidateResult): AutoResearchCandidateResult => ({
+  ...compactCandidate(candidate),
+  config: {
+    ...candidate.config,
+    agentWeights: candidate.config.agentWeights
+  },
+  scoreBreakdown: {
+    ...candidate.scoreBreakdown,
+    rationale: candidate.scoreBreakdown.rationale.slice(0, 140)
+  }
+});
+
+export function compactAutoResearchCycle(cycle: AutoResearchCycle): AutoResearchCycle {
+  const compactCandidates = cycle.candidateResults.map(compactCandidate);
+  const candidateById = new Map(compactCandidates.map((candidate) => [candidate.candidateId, candidate]));
+  return {
+    ...cycle,
+    candidateConfigs: cycle.candidateConfigs.slice(0, 25),
+    candidateResults: compactCandidates,
+    bestCandidate: cycle.bestCandidate ? candidateById.get(cycle.bestCandidate.candidateId) ?? compactCandidate(cycle.bestCandidate) : undefined,
+    closestCandidates: cycle.closestCandidates
+      .slice(0, 3)
+      .map((candidate) => candidateById.get(candidate.candidateId) ?? compactCandidate(candidate)),
+    rejectedCandidates: cycle.rejectedCandidates
+      .slice(0, 25)
+      .map((candidate) => candidateById.get(candidate.candidateId) ?? compactCandidate(candidate)),
+    candidateScores: cycle.candidateScores.map((score) => ({
+      ...score,
+      rejectionReasons: score.rejectionReasons.slice(0, 3)
+    }))
+  };
+}
+
+const emergencyAutoResearchCycle = (cycle: AutoResearchCycle): AutoResearchCycle => {
+  const compact = compactAutoResearchCycle(cycle);
+  const essentialIds = new Set([
+    compact.bestCandidate?.candidateId,
+    ...compact.closestCandidates.map((candidate) => candidate.candidateId)
+  ].filter(Boolean));
+  const emergencyCandidates = compact.candidateResults
+    .filter((candidate) => essentialIds.has(candidate.candidateId))
+    .map(minimalCandidate);
+
+  return {
+    ...compact,
+    candidateResults: emergencyCandidates,
+    candidateConfigs: compact.candidateConfigs.slice(0, 3),
+    closestCandidates: compact.closestCandidates.map(minimalCandidate),
+    rejectedCandidates: compact.rejectedCandidates.slice(0, 3).map(minimalCandidate),
+    candidateScores: compact.candidateScores.slice(0, 25)
+  };
+};
+
+export function pruneAutoResearchHistory(state: AutoResearchState): AutoResearchState {
+  return {
+    ...state,
+    cycles: state.cycles.slice(0, 5).map(compactAutoResearchCycle),
+    auditTrail: state.auditTrail
+      .slice(0, 30)
+      .map((entry) => ({
+        ...entry,
+        candidateScores: entry.candidateScores?.slice(0, 25).map((score) => ({
+          ...score,
+          rejectionReasons: score.rejectionReasons.slice(0, 3)
+        }))
+      })),
+    safetyNotice: "Auto Research is simulation-only and cannot execute trades or override readiness gates."
+  };
+}
+
+const emergencyStateFor = (state: AutoResearchState, warning: string): AutoResearchState => {
+  const latestCycle = state.cycles.find((cycle) => cycle.cycleId === state.latestCycleId) ?? state.cycles[0];
+  return {
+    ...initialState(),
+    latestCycleId: latestCycle?.cycleId,
+    cycles: latestCycle ? [emergencyAutoResearchCycle(latestCycle)] : [],
+    auditTrail: state.auditTrail.slice(0, 5).map((entry) => ({
+      ...entry,
+      candidateScores: entry.candidateScores?.slice(0, 10)
+    })),
+    storageWarning: warning,
+    storageEmergencyMode: true
+  };
+};
+
 const audit = (
   cycleId: string,
   action: AutoResearchState["auditTrail"][number]["action"],
@@ -64,8 +221,47 @@ const audit = (
 
 const publish = (state: AutoResearchState) => {
   if (isBrowser()) {
-    window.localStorage.setItem(AUTO_RESEARCH_STORAGE_KEY, JSON.stringify(state));
-    window.dispatchEvent(new CustomEvent(AUTO_RESEARCH_UPDATED_EVENT, { detail: state }));
+    const compactState = pruneAutoResearchHistory(state);
+    const write = (candidate: AutoResearchState) => {
+      const bytes = bytesFor(candidate);
+      const nextState = {
+        ...candidate,
+        lastStoredBytes: bytes
+      };
+      window.localStorage.setItem(AUTO_RESEARCH_STORAGE_KEY, JSON.stringify(nextState));
+      window.dispatchEvent(new CustomEvent(AUTO_RESEARCH_UPDATED_EVENT, { detail: nextState }));
+      return nextState;
+    };
+
+    try {
+      return write(compactState);
+    } catch (error) {
+      const warning = "Auto Research history was pruned because browser storage quota was reached.";
+      try {
+        return write({
+          ...pruneAutoResearchHistory({
+            ...compactState,
+            cycles: compactState.cycles.slice(0, 1),
+            auditTrail: compactState.auditTrail.slice(0, 10),
+            storageWarning: warning
+          }),
+          storageWarning: warning
+        });
+      } catch {
+        const emergencyState = emergencyStateFor(compactState, `${warning} Stored minimal latest-cycle summary only.`);
+        try {
+          return write(emergencyState);
+        } catch {
+          window.localStorage.removeItem(AUTO_RESEARCH_STORAGE_KEY);
+          window.dispatchEvent(new CustomEvent(AUTO_RESEARCH_UPDATED_EVENT, { detail: emergencyState }));
+          return {
+            ...emergencyState,
+            storageWarning: "Auto Research history could not be saved. Clear browser storage or Auto Research history.",
+            storageEmergencyMode: true
+          };
+        }
+      }
+    }
   }
   return state;
 };
@@ -84,7 +280,10 @@ export function loadAutoResearchState(): AutoResearchState {
       ...initialState(),
       ...parsed,
       cycles: parsed.cycles ?? [],
-      auditTrail: parsed.auditTrail ?? []
+      auditTrail: parsed.auditTrail ?? [],
+      lastStoredBytes: parsed.lastStoredBytes,
+      storageWarning: parsed.storageWarning,
+      storageEmergencyMode: parsed.storageEmergencyMode
     };
   } catch {
     return publish(initialState());
@@ -96,7 +295,7 @@ export function saveAutoResearchCycle(cycle: AutoResearchCycle): AutoResearchSta
   return publish({
     ...state,
     latestCycleId: cycle.cycleId,
-    cycles: [cycle, ...state.cycles.filter((item) => item.cycleId !== cycle.cycleId)].slice(0, 12),
+    cycles: [compactAutoResearchCycle(cycle), ...state.cycles.filter((item) => item.cycleId !== cycle.cycleId)].slice(0, 5),
     auditTrail: [
       audit(
         cycle.cycleId,
@@ -116,6 +315,14 @@ export function saveAutoResearchCycle(cycle: AutoResearchCycle): AutoResearchSta
       ...state.auditTrail
     ].slice(0, 80)
   });
+}
+
+export function clearAutoResearchHistory(): AutoResearchState {
+  return publish(initialState());
+}
+
+export function estimateAutoResearchStateSize(state = loadAutoResearchState()) {
+  return bytesFor(state);
 }
 
 export function latestAutoResearchCycle(state = loadAutoResearchState()) {

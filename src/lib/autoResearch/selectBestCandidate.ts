@@ -6,7 +6,7 @@ import type {
 import type { CalibrationProposalMetrics } from "@/lib/selfImprovement";
 
 const conservativeScenarioFor = (candidate: AutoResearchCandidateResult) =>
-  candidate.validationReport.scenarios.find((scenario) => scenario.id === "conservative-confluence");
+  candidate.validationReport?.scenarios.find((scenario) => scenario.id === "conservative-confluence");
 
 const skippedSignalImbalanceFor = (candidate: AutoResearchCandidateResult) =>
   candidate.metrics.skippedSignals / Math.max(1, candidate.metrics.totalTrades + candidate.metrics.skippedSignals);
@@ -39,7 +39,7 @@ const rejectionReasonsFor = (
   if (!candidate.metrics.conservativeScenarioStable || conservative?.readiness === "red") {
     reasons.push("Conservative scenario is unstable.");
   }
-  if (candidate.readinessEstimate.state === "Not Ready") {
+  if ((candidate.readinessEstimate?.state ?? "Not Ready") === "Not Ready") {
     reasons.push("Readiness estimate remains Not Ready.");
   }
   if (!reasons.length && candidate.scoreBreakdown.totalScore < 45) {
@@ -67,7 +67,7 @@ const categoryFor = (
     candidate.scoreBreakdown.totalScore >= 70 &&
     (candidate.metrics.totalTrades < 4 ||
       skippedSignalImbalanceFor(candidate) > 0.82 ||
-      candidate.metrics.maxDrawdown > baselineMetrics.maxDrawdown + 1.25);
+    candidate.metrics.maxDrawdown > baselineMetrics.maxDrawdown + 1.25);
 
   if (likelyOverfit) {
     return "unsafe_overfit";
@@ -76,15 +76,15 @@ const categoryFor = (
     return "rejected";
   }
   if (
-    candidate.readinessEstimate.state === "Paper-Demo Candidate" &&
-    candidate.researchQualityReview.readinessGrade === "Paper-Demo Candidate"
+    candidate.readinessEstimate?.state === "Paper-Demo Candidate" &&
+    candidate.researchQualityReview?.readinessGrade === "Paper-Demo Candidate"
   ) {
     return "paper_demo_candidate";
   }
   if (
-    candidate.readinessEstimate.state === "Research Ready" ||
-    candidate.researchQualityReview.readinessGrade === "Research Ready" ||
-    candidate.researchQualityReview.readinessGrade === "Paper-Demo Candidate"
+    candidate.readinessEstimate?.state === "Research Ready" ||
+    candidate.researchQualityReview?.readinessGrade === "Research Ready" ||
+    candidate.researchQualityReview?.readinessGrade === "Paper-Demo Candidate"
   ) {
     return "research_ready";
   }

@@ -1,4 +1,4 @@
-import { runAutoResearchCycle } from "@/lib/autoResearch";
+import { compactAutoResearchCycle, runAutoResearchCycle } from "@/lib/autoResearch";
 import { loadBacktestConfig } from "@/lib/backtesting";
 import { recordResearchCycleCommunication } from "@/lib/communications/communicationSpec";
 import {
@@ -149,10 +149,14 @@ export function loadResearchCycleState(): ResearchCycleState {
 
 export function saveResearchCycleRun(run: ResearchCycleRun): ResearchCycleState {
   const state = loadResearchCycleState();
+  const compactRun: ResearchCycleRun = {
+    ...run,
+    autoResearchCycle: run.autoResearchCycle ? compactAutoResearchCycle(run.autoResearchCycle) : undefined
+  };
   return publish({
     ...state,
-    latestRunId: run.cycleId,
-    runs: [run, ...state.runs.filter((item) => item.cycleId !== run.cycleId)].slice(0, 20)
+    latestRunId: compactRun.cycleId,
+    runs: [compactRun, ...state.runs.filter((item) => item.cycleId !== compactRun.cycleId)].slice(0, 20)
   });
 }
 

@@ -1,8 +1,12 @@
 export {
   AUTO_RESEARCH_STORAGE_KEY,
   AUTO_RESEARCH_UPDATED_EVENT,
+  clearAutoResearchHistory,
+  compactAutoResearchCycle,
+  estimateAutoResearchStateSize,
   latestAutoResearchCycle,
   loadAutoResearchState,
+  pruneAutoResearchHistory,
   runAutoResearchCycle,
   saveAutoResearchCycle
 } from "@/lib/autoResearch/runAutoResearchCycle";
