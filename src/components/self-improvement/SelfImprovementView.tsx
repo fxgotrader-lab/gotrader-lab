@@ -222,7 +222,7 @@ const ComparisonTable = ({ before, after }: { before?: CalibrationProposalMetric
 
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
-      <table className="w-full min-w-[860px] table-fixed text-left text-sm">
+      <table className="w-full min-w-[900px] table-fixed border-separate border-spacing-0 text-left text-sm">
         <colgroup>
           <col className="w-[18%]" />
           <col className="w-[13%]" />
@@ -233,7 +233,16 @@ const ComparisonTable = ({ before, after }: { before?: CalibrationProposalMetric
         <thead className="bg-muted/55 text-xs uppercase text-muted-foreground">
           <tr>
             {["Metric", "Before", "After", "Change", "Interpretation"].map((header) => (
-              <th key={header} className="px-3 py-2 font-medium">
+              <th
+                key={header}
+                className={
+                  header === "Metric"
+                    ? "px-3 py-2 text-left font-medium"
+                    : header === "Interpretation"
+                      ? "border-l border-border/70 px-3 py-2 text-left font-medium"
+                      : "border-l border-border/70 px-3 py-2 text-right font-medium tabular-nums"
+                }
+              >
                 {header}
               </th>
             ))}
@@ -245,12 +254,16 @@ const ComparisonTable = ({ before, after }: { before?: CalibrationProposalMetric
             return (
               <tr key={row.label} className="border-t border-border bg-background/35 align-top">
                 <td className="px-3 py-3 font-medium text-foreground">{row.label}</td>
-                <td className="whitespace-nowrap px-3 py-3 text-right font-mono text-slate-200">{row.format(row.before)}</td>
-                <td className="whitespace-nowrap px-3 py-3 text-right font-mono text-slate-200">{row.format(row.after)}</td>
-                <td className={`whitespace-nowrap px-3 py-3 text-right font-mono ${deltaClass(change.tone)}`}>
+                <td className="whitespace-nowrap border-l border-border/70 px-3 py-3 text-right font-mono tabular-nums text-slate-200">
+                  {row.format(row.before)}
+                </td>
+                <td className="whitespace-nowrap border-l border-border/70 px-3 py-3 text-right font-mono tabular-nums text-slate-200">
+                  {row.format(row.after)}
+                </td>
+                <td className={`whitespace-nowrap border-l border-border/70 px-3 py-3 text-right font-mono tabular-nums ${deltaClass(change.tone)}`}>
                   {change.label}
                 </td>
-                <td className="px-3 py-3 text-muted-foreground">
+                <td className="border-l border-border/70 px-3 py-3 text-muted-foreground">
                   <span className="block max-w-full whitespace-normal break-words leading-5">{row.interpretation}</span>
                 </td>
               </tr>
