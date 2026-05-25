@@ -5,7 +5,7 @@ import { AdvisoryAgentsView } from "@/components/advisory/AdvisoryAgentsView";
 import { AppShell } from "@/components/AppShell";
 import { AutoResearchView } from "@/components/auto-research/AutoResearchView";
 import { BacktestLab } from "@/components/backtest-lab/BacktestLab";
-import { DashboardOverview } from "@/components/dashboard/DashboardOverview";
+import { ResearchCommandCenter } from "@/components/dashboard/ResearchCommandCenter";
 import { ICTLab } from "@/components/ict-lab/ICTLab";
 import { LLMAgentsView } from "@/components/llm-agents/LLMAgentsView";
 import { PerformanceView } from "@/components/performance/PerformanceView";
@@ -27,7 +27,7 @@ export default function App() {
     <AppShell>
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<DashboardOverview state={state} />} />
+            <Route path="/dashboard" element={<ResearchCommandCenter state={state} />} />
         <Route path="/agents" element={<AgentRoster state={state} />} />
         <Route path="/agents/:id" element={<AgentDetail state={state} />} />
         <Route path="/research" element={<ResearchWorkbench state={state} actions={actions} />} />
