@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import {
   latestAutoResearchCycle,
   loadAutoResearchState,
@@ -153,7 +154,11 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
         <RunSequenceGuide />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+      <TechnicalDetails
+        title="View automation timeline and readiness details"
+        description="Open for event history, gate blocker counts, and latest handoff debug context."
+      >
+        <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
         <AutomationTimeline events={timelineEvents} />
         <Card className="border-white/10 bg-slate-950/70">
           <CardHeader>
@@ -172,7 +177,8 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
             </div>
           </CardContent>
         </Card>
-      </div>
+        </div>
+      </TechnicalDetails>
     </div>
   );
 }

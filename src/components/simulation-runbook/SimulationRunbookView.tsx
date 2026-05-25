@@ -3,6 +3,8 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
+import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -43,6 +45,7 @@ export function SimulationRunbookView() {
   const completed = countCompletedRunbookItems(runbook);
   const total = simulationRunbookChecklist.length;
   const progress = (completed / total) * 100;
+  const failedItems = simulationRunbookChecklist.filter((item) => !runbook.checklist[item.id]);
 
   const persist = (next: SimulationRunbookState) => {
     setRunbook(next);
@@ -100,17 +103,27 @@ export function SimulationRunbookView() {
         </div>
       </div>
 
-      <Card className="border-amber-300/25 bg-amber-300/10">
-        <CardContent className="flex flex-col gap-3 p-4 text-sm text-amber-100 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-            <span>Simulation verification only. Broker execution must remain skipped. No real trades.</span>
-          </div>
-          <Badge variant="warning">0 live orders</Badge>
-        </CardContent>
-      </Card>
+      <SafetyLockBanner message="Simulation verification only. Broker execution must remain skipped. No real trades." />
+
+      {failedItems.length ? (
+        <Card className="border-amber-300/25 bg-amber-300/10">
+          <CardContent className="space-y-2 p-4 text-sm text-amber-100">
+            <div className="font-medium">Failed checklist items</div>
+            <div className="flex flex-wrap gap-2">
+              {failedItems.slice(0, 5).map((item) => (
+                <Badge key={item.id} variant="warning">{item.label}</Badge>
+              ))}
+              {failedItems.length > 5 ? <Badge variant="muted">+{failedItems.length - 5} more</Badge> : null}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+        <TechnicalDetails
+          title="View full verification checklist"
+          description="Open to mark each simulation bridge verification item."
+        >
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
@@ -147,6 +160,7 @@ export function SimulationRunbookView() {
             </div>
           </CardContent>
         </Card>
+        </TechnicalDetails>
 
         <Card>
           <CardHeader>
@@ -216,6 +230,10 @@ export function SimulationRunbookView() {
         </Card>
       </div>
 
+      <TechnicalDetails
+        title="View verification commands"
+        description="Open for reader and scheduler commands from the separate go-trader repo."
+      >
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -239,6 +257,7 @@ export function SimulationRunbookView() {
           </div>
         </CardContent>
       </Card>
+      </TechnicalDetails>
     </div>
   );
 }

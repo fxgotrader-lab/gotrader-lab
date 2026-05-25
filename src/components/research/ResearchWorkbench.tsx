@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Download, FileJson, FlaskConical, Play, ShieldAlert, Sparkles } from "lucide-react";
 import { BridgeStatusCard } from "@/components/bridge/BridgeStatusCard";
+import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -386,6 +387,10 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
                 Simulation-only handoff. No broker execution.
               </div>
 
+              <TechnicalDetails
+                title="View handoff workflow and export JSON"
+                description="Open for local file paths, validation diagnostics, and raw simulated handoff payloads."
+              >
               <div className="rounded-lg border border-border bg-background/45 p-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
@@ -452,11 +457,16 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
                   {handoffJson}
                 </pre>
               ) : null}
+              </TechnicalDetails>
             </CardContent>
           </Card>
         ) : null}
       </div>
 
+      <TechnicalDetails
+        title="View structured ICT context"
+        description="Open for raw ICT facts, confluence factor details, and scoring weights."
+      >
       {structuredIct ? (
         <Card>
           <CardHeader>
@@ -585,7 +595,12 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
           </CardContent>
         </Card>
       ) : null}
+      </TechnicalDetails>
 
+      <TechnicalDetails
+        title="View full agent debate"
+        description="Open for every internal agent opinion, confidence, support factor, and warning factor."
+      >
       {activeDebate ? (
         <Card>
           <CardHeader>
@@ -661,6 +676,7 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
           </CardContent>
         </Card>
       ) : null}
+      </TechnicalDetails>
     </div>
   );
 }

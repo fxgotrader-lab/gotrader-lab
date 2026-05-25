@@ -3,6 +3,8 @@ import { CheckCircle2, FlaskConical, History, ShieldAlert, SlidersHorizontal, XC
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
+import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -355,12 +357,12 @@ export function SelfImprovementView() {
         <Badge variant="warning">Simulation research only</Badge>
       </div>
 
-      <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">
-        <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
-        Simulation self-improvement only. No broker execution, no readiness override, no paper/demo enablement, and no
-        real trades.
-      </div>
+      <SafetyLockBanner message="Simulation self-improvement only. No broker execution, readiness override, paper/demo enablement, or real trades." />
 
+      <TechnicalDetails
+        title="View baseline and detected weaknesses"
+        description="Open for active local simulation settings and the evidence used to generate proposals."
+      >
       <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
         <Card>
           <CardHeader>
@@ -421,7 +423,12 @@ export function SelfImprovementView() {
           </CardContent>
         </Card>
       </div>
+      </TechnicalDetails>
 
+      <TechnicalDetails
+        title="View full change history"
+        description="Open for the local audit trail for calibration proposals and decisions."
+      >
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -462,6 +469,7 @@ export function SelfImprovementView() {
           <ChangeList proposal={latestProposal} />
         </CardContent>
       </Card>
+      </TechnicalDetails>
 
       <div className="grid gap-5 xl:grid-cols-2">
         <Card>

@@ -3,6 +3,8 @@ import { Bot, Download, FileJson, MessageSquareText, PackageCheck, ShieldAlert, 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
+import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { AdvisoryResponseReview } from "@/components/advisory/AdvisoryResponseReview";
 import { createAdvisoryRequestPacket } from "@/lib/integrations/createAdvisoryRequestPacket";
 import { openClawHermesBridgeSpec } from "@/lib/integrations/openclawHermesBridgeSpec";
@@ -116,15 +118,7 @@ export function AdvisoryAgentsView({ state, actions }: { state: LabState; action
         </div>
       </div>
 
-      <Card className="border-amber-300/25 bg-amber-300/10">
-        <CardContent className="flex flex-col gap-3 p-4 text-sm text-amber-100 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-2">
-            <ShieldAlert className="h-4 w-4" aria-hidden="true" />
-            <span>This packet is advisory only. It cannot execute trades or override readiness gates.</span>
-          </div>
-          <Badge variant="warning">No broker authority</Badge>
-        </CardContent>
-      </Card>
+      <SafetyLockBanner message="Advisory only. OpenClaw/Hermes cannot execute trades, control brokers, or override readiness gates." />
 
       <Card>
         <CardHeader>
@@ -151,6 +145,10 @@ export function AdvisoryAgentsView({ state, actions }: { state: LabState; action
       </Card>
 
       <div className="grid gap-5 xl:grid-cols-3">
+        <TechnicalDetails
+          title="View allowed inputs and prohibited actions"
+          description="Open for planning specs that define what advisory agents can review and what they can never control."
+        >
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
@@ -212,8 +210,13 @@ export function AdvisoryAgentsView({ state, actions }: { state: LabState; action
             ))}
           </CardContent>
         </Card>
+        </TechnicalDetails>
       </div>
 
+      <TechnicalDetails
+        title="View local bridge planning contract"
+        description="Open for file-watch paths, lifecycle, provider modes, and bridge safety boundaries."
+      >
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -305,7 +308,12 @@ export function AdvisoryAgentsView({ state, actions }: { state: LabState; action
           </div>
         </CardContent>
       </Card>
+      </TechnicalDetails>
 
+      <TechnicalDetails
+        title="View advisory packet generator and local file workflow"
+        description="Open for request file paths, generated packet JSON, validation output, and stable filename downloads."
+      >
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -460,6 +468,7 @@ export function AdvisoryAgentsView({ state, actions }: { state: LabState; action
           ) : null}
         </CardContent>
       </Card>
+      </TechnicalDetails>
 
       <AdvisoryResponseReview
         latestPacketId={latestPacketAudit?.packetId}
@@ -467,6 +476,10 @@ export function AdvisoryAgentsView({ state, actions }: { state: LabState; action
         onImport={actions.recordAdvisoryResponse}
       />
 
+      <TechnicalDetails
+        title="View sample advisory JSON"
+        description="Open for example request and response payloads used by the planning contract."
+      >
       <div className="grid gap-5 xl:grid-cols-2">
         <Card>
           <CardHeader>
@@ -492,6 +505,7 @@ export function AdvisoryAgentsView({ state, actions }: { state: LabState; action
           </CardContent>
         </Card>
       </div>
+      </TechnicalDetails>
 
       <Card>
         <CardHeader>

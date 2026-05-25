@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import { Activity, AlertTriangle, BarChart3, Download, Play, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
+import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -87,17 +89,14 @@ export function StrategyValidationView() {
         </div>
       </div>
 
-      <Card className="border-amber-300/25 bg-amber-300/10">
-        <CardContent className="flex flex-col gap-3 p-4 text-sm text-amber-100 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-            <span>Simulation validation only. No broker connection. No real trades.</span>
-          </div>
-          <Badge variant="warning">Mock OHLC only</Badge>
-        </CardContent>
-      </Card>
+      <SafetyLockBanner message="Simulation validation only. Mock OHLC only. No broker connection and no real trades." />
 
-      <ValidationGuideCard />
+      <TechnicalDetails
+        title="View validation methodology"
+        description="Open for the full beginner workflow, weekly routine, and anti-overfitting guidance."
+      >
+        <ValidationGuideCard />
+      </TechnicalDetails>
 
       {!report ? (
         <Card>
@@ -175,6 +174,10 @@ export function StrategyValidationView() {
             </CardContent>
           </Card>
 
+          <TechnicalDetails
+            title="View full scenario comparison"
+            description="Open for all validation scenario rows, raw metrics, top agent, and confidence calibration."
+          >
           <Card>
             <CardHeader>
               <div className="flex items-center gap-2">
@@ -242,6 +245,7 @@ export function StrategyValidationView() {
               </div>
             </CardContent>
           </Card>
+          </TechnicalDetails>
 
           <div className="grid gap-5 xl:grid-cols-3">
             <Card className="xl:col-span-2">
@@ -292,6 +296,10 @@ export function StrategyValidationView() {
               </CardContent>
             </Card>
 
+            <TechnicalDetails
+              title="View agent weight guidance"
+              description="Open for suggested agent weight increases and decreases."
+            >
             <Card>
               <CardHeader>
                 <CardTitle>Agent Weight Guidance</CardTitle>
@@ -334,8 +342,13 @@ export function StrategyValidationView() {
                 </div>
               </CardContent>
             </Card>
+            </TechnicalDetails>
           </div>
 
+          <TechnicalDetails
+            title="View weak ICT rule signals"
+            description="Open for detailed ICT assumptions that need more simulation evidence."
+          >
           <Card>
             <CardHeader>
               <CardTitle>Weak ICT Rule Signals</CardTitle>
@@ -349,6 +362,7 @@ export function StrategyValidationView() {
               ))}
             </CardContent>
           </Card>
+          </TechnicalDetails>
         </>
       )}
     </div>

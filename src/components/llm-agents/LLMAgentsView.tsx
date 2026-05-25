@@ -14,6 +14,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
+import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Textarea } from "@/components/ui/textarea";
 import {
   buildLLMResearchContextPacket,
@@ -307,6 +309,10 @@ export function LLMAgentsView({ state }: { state: LabState }) {
         </div>
       </div>
 
+      <TechnicalDetails
+        title="View supported research modes"
+        description="Open for the definitions of llm_required, fallback, mock, local command, and future API modes."
+      >
       <Card>
         <CardHeader>
           <CardTitle>Supported Research Modes</CardTitle>
@@ -327,19 +333,9 @@ export function LLMAgentsView({ state }: { state: LabState }) {
           ))}
         </CardContent>
       </Card>
+      </TechnicalDetails>
 
-      <Card className="border-amber-300/25 bg-amber-300/10">
-        <CardContent className="flex flex-col gap-3 p-4 text-sm text-amber-100 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-2">
-            <ShieldAlert className="h-4 w-4" aria-hidden="true" />
-            <span>
-              LLM agents are required for real research mode, but advisory only. They cannot execute trades or override
-              readiness gates.
-            </span>
-          </div>
-          <Badge variant="warning">No execution authority</Badge>
-        </CardContent>
-      </Card>
+      <SafetyLockBanner message="LLM agents are required for real research mode, but advisory only. They cannot execute trades or override readiness gates." />
 
       <Card>
         <CardHeader>
@@ -407,6 +403,10 @@ node scripts/llm-local-bridge-server.mjs`}
       </Card>
 
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+        <TechnicalDetails
+          title="View provider setup instructions"
+          description="Open for local command, PowerShell environment, and secure provider boundary details."
+        >
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
@@ -482,8 +482,13 @@ $env:${LLM_LOCAL_COMMAND_ENV_VAR} = "node scripts/gpt55-llm-agent-provider.mjs"
             </div>
           </CardContent>
         </Card>
+        </TechnicalDetails>
       </div>
 
+      <TechnicalDetails
+        title="View manual file workflow"
+        description="Open for context export/import, local file paths, command snippets, validation messages, and raw JSON."
+      >
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -676,7 +681,12 @@ node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-c
           ) : null}
         </CardContent>
       </Card>
+      </TechnicalDetails>
 
+      <TechnicalDetails
+        title="View required agent roster"
+        description="Open for the complete list of required LLM reviewers and mock/local command controls."
+      >
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -715,6 +725,7 @@ node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-c
           <RunSummary run={latestRun} />
         </CardContent>
       </Card>
+      </TechnicalDetails>
 
       <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
         <Card>
@@ -793,6 +804,10 @@ node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-c
         </Card>
       </div>
 
+      <TechnicalDetails
+        title="View restricted context packet"
+        description="Open for the full research context JSON sent to a secure provider boundary."
+      >
       <Card>
         <CardHeader>
           <CardTitle>Restricted Context Packet</CardTitle>
@@ -804,6 +819,7 @@ node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-c
           </pre>
         </CardContent>
       </Card>
+      </TechnicalDetails>
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, ClipboardList, PauseCircle, RotateCcw, ShieldAlert, ShieldCheck, XCircle } from "lucide-react";
+import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
+import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -153,15 +155,7 @@ export function ReadinessGateView() {
         </div>
       </div>
 
-      <Card className="border-amber-300/25 bg-amber-300/10">
-        <CardContent className="flex flex-col gap-3 p-4 text-sm text-amber-100 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-            <span>Simulation-only readiness gating. Broker execution remains disabled.</span>
-          </div>
-          <Badge variant="warning">No execution enabled</Badge>
-        </CardContent>
-      </Card>
+      <SafetyLockBanner message="Simulation-only readiness gating. Broker execution remains disabled." />
 
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Card>
@@ -288,7 +282,7 @@ export function ReadinessGateView() {
         </CardHeader>
         <CardContent className="space-y-3">
           {gate.failedRequirements.length ? (
-            gate.failedRequirements.map((item) => (
+            gate.failedRequirements.slice(0, 3).map((item) => (
               <div key={item.id} className="rounded-lg border border-border bg-background/45 p-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
@@ -325,9 +319,18 @@ export function ReadinessGateView() {
               Approval is not blocked by gate evidence. Manual approval still does not enable broker execution.
             </div>
           )}
+          {gate.failedRequirements.length > 3 ? (
+            <div className="rounded-lg border border-border bg-background/45 p-3 text-sm text-muted-foreground">
+              {gate.failedRequirements.length - 3} additional blocker(s) are available in advanced readiness details.
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
+      <TechnicalDetails
+        title="View all readiness inputs and audit trail"
+        description="Open for debug inputs, every requirement row, evidence snapshots, and manual approval history."
+      >
       <Card>
         <CardHeader>
           <CardTitle>Debug Readiness Inputs</CardTitle>
@@ -478,6 +481,7 @@ export function ReadinessGateView() {
           )}
         </CardContent>
       </Card>
+      </TechnicalDetails>
     </div>
   );
 }

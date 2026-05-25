@@ -11,6 +11,8 @@ import {
   SlidersHorizontal,
   Target
 } from "lucide-react";
+import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
+import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -96,17 +98,14 @@ export function ResearchQualityView() {
         </div>
       </div>
 
-      <Card className="border-amber-300/25 bg-amber-300/10">
-        <CardContent className="flex flex-col gap-3 p-4 text-sm text-amber-100 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-            <span>Simulation/backtesting review only. No broker connection. No real trades.</span>
-          </div>
-          <Badge variant="warning">No execution path</Badge>
-        </CardContent>
-      </Card>
+      <SafetyLockBanner message="Simulation/backtesting review only. No broker connection, no real trades, and no execution path." />
 
-      <ValidationGuideCard compact />
+      <TechnicalDetails
+        title="View validation guide"
+        description="Open for the longer validation workflow and anti-overfitting guidance."
+      >
+        <ValidationGuideCard compact />
+      </TechnicalDetails>
 
       <Card className="border-primary/25 bg-primary/10">
         <CardContent className="flex flex-col gap-3 p-4 text-sm text-primary md:flex-row md:items-center md:justify-between">
@@ -199,15 +198,14 @@ export function ResearchQualityView() {
               Do not proceed to broker demo unless readiness is Paper-Demo Candidate.
             </CardContent>
           </Card>
-
           <div className="grid gap-5 xl:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Top 5 Weaknesses</CardTitle>
+                <CardTitle>Top 3 Weaknesses</CardTitle>
                 <CardDescription>Assumptions that need more simulated evidence or calibration.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {review.topWeaknesses.map((item) => (
+                {review.topWeaknesses.slice(0, 3).map((item) => (
                   <div key={`${item.title}-${item.evidence}`} className="rounded-lg border border-border bg-background/45 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -224,11 +222,11 @@ export function ResearchQualityView() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Top 5 Strengths</CardTitle>
+                <CardTitle>Top 3 Strengths</CardTitle>
                 <CardDescription>Current evidence that can be preserved while calibrating.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {review.topStrengths.map((item) => (
+                {review.topStrengths.slice(0, 3).map((item) => (
                   <div key={`${item.title}-${item.evidence}`} className="rounded-lg border border-border bg-background/45 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -268,6 +266,10 @@ export function ResearchQualityView() {
             </CardContent>
           </Card>
 
+          <TechnicalDetails
+            title="View detailed quality analysis"
+            description="Open for session tables, threshold sensitivity, false positives, drawdown clusters, agent analysis, and target quality."
+          >
           <div className="grid gap-5 xl:grid-cols-2">
             <Card>
               <CardHeader>
@@ -482,6 +484,7 @@ export function ResearchQualityView() {
               ))}
             </CardContent>
           </Card>
+          </TechnicalDetails>
         </>
       )}
     </div>

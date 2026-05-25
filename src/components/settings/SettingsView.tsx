@@ -15,6 +15,8 @@ import {
   Unplug
 } from "lucide-react";
 import { BridgeStatusCard } from "@/components/bridge/BridgeStatusCard";
+import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
+import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -232,6 +234,8 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
         </div>
         <Badge variant="success">Simulation mode locked</Badge>
       </div>
+
+      <SafetyLockBanner message="Settings are local-first and simulation-only. Broker execution, live trading, and API keys remain outside the browser." />
 
       <Card>
         <CardHeader>
@@ -774,6 +778,10 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
         </Card>
       </div>
 
+      <TechnicalDetails
+        title="View future go-trader export contract"
+        description="Open for the technical JSON contract reference and upstream scheduler field mapping."
+      >
       <Card>
         <CardHeader>
           <CardTitle>Future go-trader Export Contract</CardTitle>
@@ -825,6 +833,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
           </pre>
         </CardContent>
       </Card>
+      </TechnicalDetails>
     </div>
   );
 }
