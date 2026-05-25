@@ -1,6 +1,6 @@
 import type { ICTContext, MarketBias, Timeframe, FuturesSymbol } from "@/lib/types";
 
-export type AdvisoryAgentName = "OpenClaw" | "Hermes";
+export type AdvisoryAgentName = "OpenClaw" | "Hermes" | "openclaw_hermes_local_bridge_mock";
 export type AdvisoryConnectionStatus = "not_connected";
 export type AdvisoryPlanningStatus = "planning_only";
 export type AdvisoryProceedRecommendation = "continue_research" | "rerun_validation" | "paper_demo_candidate_review";

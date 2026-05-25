@@ -1,4 +1,4 @@
-export type OpenClawHermesBridgeStatus = "planning_only";
+export type OpenClawHermesBridgeStatus = "planning_only" | "local_script_available";
 export type OpenClawHermesBridgeConnection = "not_connected";
 export type OpenClawHermesBridgeMode = "local_file_contract";
 export type OpenClawHermesBridgeAuthority = "none";
@@ -23,7 +23,7 @@ export interface OpenClawHermesBridgeSpec {
   mode: OpenClawHermesBridgeMode;
   openClawConnection: OpenClawHermesBridgeConnection;
   hermesConnection: OpenClawHermesBridgeConnection;
-  fileWatchImplemented: false;
+  fileWatchImplemented: boolean;
   executionAuthority: OpenClawHermesBridgeAuthority;
   brokerAuthority: OpenClawHermesBridgeAuthority;
   readinessOverrideAuthority: OpenClawHermesBridgeAuthority;

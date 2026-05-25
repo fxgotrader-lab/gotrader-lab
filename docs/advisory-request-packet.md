@@ -95,6 +95,23 @@ Workflow:
 
 Advisory-only. No execution authority. No broker control. No readiness override.
 
+## Local Bridge Script
+
+The local bridge can generate a mock advisory response from the request file:
+
+```bash
+node scripts/openclaw-hermes-advisory-bridge.mjs --once
+```
+
+Watch mode is also available:
+
+```bash
+node scripts/openclaw-hermes-advisory-bridge.mjs --watch
+```
+
+The script writes `advisory/responses/latest-advisory-response.json`, copies valid requests to `advisory/processed/`,
+and writes invalid request diagnostics to `advisory/errors/`.
+
 ## Future Automation
 
 The local file workflow is the stepping stone before a local OpenClaw bridge or authenticated API. API automation must

@@ -205,7 +205,9 @@ export function AdvisoryAgentsView({ state, actions }: { state: LabState; action
             </div>
             <div className="flex flex-wrap gap-2">
               <Badge variant="warning">{formatValue(openClawHermesBridgeSpec.status)}</Badge>
-              <Badge variant="muted">watcher not implemented</Badge>
+              <Badge variant="muted">
+                watcher {openClawHermesBridgeSpec.fileWatchImplemented ? "script available" : "not implemented"}
+              </Badge>
             </div>
           </div>
         </CardHeader>

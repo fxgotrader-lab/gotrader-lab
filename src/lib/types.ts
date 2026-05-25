@@ -420,7 +420,7 @@ export interface AdvisoryResponseAuditEntry {
   responseId: string;
   packetId: string;
   importedAt: string;
-  advisoryAgent: "OpenClaw" | "Hermes";
+  advisoryAgent: "OpenClaw" | "Hermes" | "openclaw_hermes_local_bridge_mock";
   proceedRecommendation: "continue_research" | "rerun_validation" | "paper_demo_candidate_review";
   validationStatus: "valid" | "invalid";
   warningCount: number;

@@ -80,6 +80,25 @@ Workflow:
 
 Advisory-only. No execution authority. No broker control. No readiness override.
 
+## Local Bridge Script
+
+To produce a mock advisory response from a saved request file, run:
+
+```bash
+node scripts/openclaw-hermes-advisory-bridge.mjs --once
+```
+
+The script writes:
+
+`advisory/responses/latest-advisory-response.json`
+
+It uses:
+
+`advisoryAgent: "openclaw_hermes_local_bridge_mock"`
+
+That mock agent is accepted by the AI Lab response validator only as advisory feedback. It still has no execution,
+broker, or readiness override authority.
+
 ## Future Automation
 
 The local file workflow is the stepping stone before a local OpenClaw bridge or authenticated API. Any future automation

@@ -1,11 +1,11 @@
 import type { OpenClawHermesBridgeSpec } from "@/lib/integrations/openclawHermesBridgeTypes";
 
 export const openClawHermesBridgeSpec: OpenClawHermesBridgeSpec = {
-  status: "planning_only",
+  status: "local_script_available",
   mode: "local_file_contract",
   openClawConnection: "not_connected",
   hermesConnection: "not_connected",
-  fileWatchImplemented: false,
+  fileWatchImplemented: true,
   executionAuthority: "none",
   brokerAuthority: "none",
   readinessOverrideAuthority: "none",

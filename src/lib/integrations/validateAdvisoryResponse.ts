@@ -10,7 +10,7 @@ const allowedProceedRecommendations = new Set<AdvisoryProceedRecommendation>([
   "paper_demo_candidate_review"
 ]);
 
-const validAgents = new Set(["OpenClaw", "Hermes"]);
+const validAgents = new Set(["OpenClaw", "Hermes", "openclaw_hermes_local_bridge_mock"]);
 
 export function validateAdvisoryResponse(
   response: Partial<AdvisoryResponse>
@@ -31,7 +31,7 @@ export function validateAdvisoryResponse(
   }
 
   if (!validAgents.has(response.advisoryAgent ?? "")) {
-    errors.push('advisoryAgent must be "OpenClaw" or "Hermes"');
+    errors.push('advisoryAgent must be "OpenClaw", "Hermes", or "openclaw_hermes_local_bridge_mock"');
   }
 
   if (response.mode !== "advisory_only") {
