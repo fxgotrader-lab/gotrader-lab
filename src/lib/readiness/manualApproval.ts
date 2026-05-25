@@ -118,6 +118,23 @@ export function pauseReadiness(gate: ReadinessGateSnapshot, reviewerName: string
   });
 }
 
+export function allowResearchOverride(gate: ReadinessGateSnapshot, reviewerName: string, notes: string) {
+  const current = loadManualApprovalRecord();
+  const entry = {
+    ...auditEntry("research_override", { ...gate, state: "Research Ready" }, reviewerName, notes),
+    readinessState: "Research Ready" as const
+  };
+  return save({
+    ...current,
+    status: "research_override",
+    reviewerName: entry.reviewerName,
+    pausedAt: undefined,
+    researchOverrideAt: entry.timestamp,
+    latestGate: gate,
+    auditTrail: [entry, ...current.auditTrail]
+  });
+}
+
 export function resetReadinessApproval(gate: ReadinessGateSnapshot, reviewerName = "local user", notes = "Manual readiness reset.") {
   const current = loadManualApprovalRecord();
   const entry = auditEntry("reset", gate, reviewerName, notes);
@@ -130,5 +147,5 @@ export function resetReadinessApproval(gate: ReadinessGateSnapshot, reviewerName
 }
 
 export function latestApprovalTimestamp(record: ManualApprovalRecord) {
-  return record.approvedAt ?? record.rejectedAt ?? record.pausedAt ?? record.resetAt;
+  return record.approvedAt ?? record.rejectedAt ?? record.pausedAt ?? record.researchOverrideAt ?? record.resetAt;
 }

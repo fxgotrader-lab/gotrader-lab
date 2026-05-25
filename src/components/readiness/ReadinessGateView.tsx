@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, ClipboardList, PauseCircle, RotateCcw, ShieldAlert, ShieldCheck, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  allowResearchOverride,
   approveDemoCandidate,
   evaluateReadinessGate,
   latestApprovalTimestamp,
@@ -17,7 +19,7 @@ import {
 } from "@/lib/readiness";
 import type { ManualApprovalRecord, ReadinessRequirementResult, ReadinessState } from "@/lib/readiness";
 import { loadLatestResearchQualityReview } from "@/lib/researchQuality";
-import { loadSimulationRunbookState } from "@/lib/simulationRunbook";
+import { countCompletedRunbookItems, loadSimulationRunbookState, simulationRunbookChecklist } from "@/lib/simulationRunbook";
 import { loadLatestValidationReport } from "@/lib/validation";
 
 const stateVariant = (state: ReadinessState) =>
@@ -27,7 +29,23 @@ const requirementVariant = (requirement: ReadinessRequirementResult) =>
   requirement.passed ? "success" : requirement.severity === "blocker" ? "danger" : "warning";
 
 const approvalVariant = (status: ManualApprovalRecord["status"]) =>
-  status === "approved" ? "success" : status === "rejected" ? "danger" : status === "paused" ? "warning" : "muted";
+  status === "approved"
+    ? "success"
+    : status === "rejected"
+      ? "danger"
+      : status === "paused" || status === "research_override"
+        ? "warning"
+        : "muted";
+
+const routeLabels: Record<string, string> = {
+  "/validation": "Run Validation",
+  "/research-quality": "Run Research Quality",
+  "/simulation-runbook": "Complete Simulation Runbook",
+  "/backtest-lab": "Open Backtest Lab",
+  "/readiness-gate": "Review Readiness Gate"
+};
+
+const formatPercent = (value: number) => `${Math.round(value * 100)}%`;
 
 export function ReadinessGateView() {
   const [validation, setValidation] = useState(() => loadLatestValidationReport());
@@ -46,6 +64,23 @@ export function ReadinessGateView() {
       }),
     [validation, quality, runbook]
   );
+
+  const conservative = validation?.scenarios.find((scenario) => scenario.id === "conservative-confluence");
+  const maxDrawdown = validation?.scenarios.reduce((max, scenario) => Math.max(max, scenario.maxDrawdown), 0) ?? 0;
+  const falsePositiveCount = quality?.falsePositivePatterns.reduce((sum, item) => sum + item.estimatedFalsePositives, 0) ?? 0;
+  const averageCalibration = validation?.scenarios.length
+    ? validation.scenarios.reduce((sum, scenario) => sum + scenario.confidenceCalibration.score, 0) / validation.scenarios.length
+    : 0;
+  const sessionConsistency = Boolean(
+    quality?.sessionComparison.some((session) => session.readiness !== "red" && session.totalTrades > 0 && session.averageR >= -0.1)
+  );
+  const runbookCompleted = countCompletedRunbookItems(runbook);
+  const runbookCompletionPercent = Math.round((runbookCompleted / simulationRunbookChecklist.length) * 100);
+  const missingPages = [
+    !validation ? "/validation" : undefined,
+    validation && !quality ? "/research-quality" : undefined,
+    !runbook.verifiedAt || runbookCompleted < simulationRunbookChecklist.length ? "/simulation-runbook" : undefined
+  ].filter((item): item is keyof typeof routeLabels => Boolean(item));
 
   const refresh = () => {
     setValidation(loadLatestValidationReport());
@@ -78,6 +113,17 @@ export function ReadinessGateView() {
 
   const pause = () => {
     setApproval(pauseReadiness(gate, reviewerName, notes));
+    setNotes("");
+  };
+
+  const researchOverride = () => {
+    setApproval(
+      allowResearchOverride(
+        gate,
+        reviewerName,
+        notes || "Research-only override recorded. Paper-Demo Candidate remains blocked."
+      )
+    );
     setNotes("");
   };
 
@@ -210,6 +256,10 @@ export function ReadinessGateView() {
                 <PauseCircle className="h-4 w-4" aria-hidden="true" />
                 Pause Readiness
               </Button>
+              <Button variant="outline" onClick={researchOverride}>
+                <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                Allow Research Override
+              </Button>
               <Button variant="outline" onClick={reset}>
                 <RotateCcw className="h-4 w-4" aria-hidden="true" />
                 Reset Readiness
@@ -219,9 +269,104 @@ export function ReadinessGateView() {
               Approve is disabled unless the evidence gate is Paper-Demo Candidate. Broker execution remains disabled
               even after approval.
             </div>
+            <div className="rounded-md border border-primary/25 bg-primary/10 p-3 text-sm text-primary">
+              Research Override can mark this as Research Ready for simulation notes only. It cannot mark Paper-Demo
+              Candidate and does not permit broker/demo execution.
+            </div>
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Why Approval Is Blocked</CardTitle>
+          <CardDescription>
+            Each gate requirement shows the current value, required value, explanation, and suggested fix. The actual
+            Paper-Demo Candidate gate is unchanged.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {gate.failedRequirements.length ? (
+            gate.failedRequirements.map((item) => (
+              <div key={item.id} className="rounded-lg border border-border bg-background/45 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium">{item.label}</div>
+                    <div className="mt-1 text-sm text-muted-foreground">{item.explanation}</div>
+                  </div>
+                  <Badge variant={requirementVariant(item)}>failed</Badge>
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div className="rounded-md border border-border bg-card/45 p-3 text-sm">
+                    <div className="text-xs uppercase text-muted-foreground">Current value</div>
+                    <div className="mt-1 font-mono">{item.currentValue}</div>
+                  </div>
+                  <div className="rounded-md border border-border bg-card/45 p-3 text-sm">
+                    <div className="text-xs uppercase text-muted-foreground">Required value</div>
+                    <div className="mt-1 font-mono">{item.requiredValue}</div>
+                  </div>
+                </div>
+                <div className="mt-3 rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+                  {item.suggestedFix}
+                  {item.runPage ? (
+                    <Link
+                      to={item.runPage}
+                      className="ml-2 inline-flex rounded-md border border-amber-200/25 px-2 py-1 text-xs font-medium text-amber-50 transition-colors hover:bg-amber-200/10"
+                    >
+                      {routeLabels[item.runPage]}
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-lg border border-emerald-400/25 bg-emerald-400/10 p-3 text-sm text-emerald-100">
+              Approval is not blocked by gate evidence. Manual approval still does not enable broker execution.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Debug Readiness Inputs</CardTitle>
+          <CardDescription>Raw local inputs used by the readiness debugger.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {missingPages.length ? (
+            <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+              Missing required data. Run:{" "}
+              {missingPages.map((page, index) => (
+                <span key={page}>
+                  <Link to={page} className="font-semibold underline decoration-amber-100/40 underline-offset-4">
+                    {page}
+                  </Link>
+                  {index < missingPages.length - 1 ? ", " : ""}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {[
+              ["Latest validation", validation?.generatedAt ?? "missing"],
+              ["Latest research quality", quality?.generatedAt ?? "missing"],
+              ["Latest simulation runbook", runbook.verifiedAt ?? "missing"],
+              ["Current readiness grade", quality?.readinessGrade ?? "missing"],
+              ["Conservative scenario", conservative ? `${conservative.readiness}; ${conservative.averageR.toFixed(2)}R` : "missing"],
+              ["Max drawdown", `${maxDrawdown.toFixed(2)}R`],
+              ["False positives", String(falsePositiveCount)],
+              ["Confidence calibration", formatPercent(averageCalibration)],
+              ["Session consistency", sessionConsistency ? "pass" : "fail"],
+              ["Runbook completion", `${runbookCompletionPercent}%`]
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-border bg-background/45 p-3 text-sm">
+                <div className="text-xs uppercase text-muted-foreground">{label}</div>
+                <div className="mt-1 font-mono">{value}</div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-5 xl:grid-cols-2">
         <Card>

@@ -4,8 +4,8 @@ import type { ValidationSuiteReport } from "@/lib/validation";
 
 export type ReadinessState = "Not Ready" | "Research Ready" | "Paper-Demo Candidate";
 export type ReadinessRequirementSeverity = "blocker" | "warning";
-export type ManualApprovalStatus = "none" | "approved" | "rejected" | "paused";
-export type ManualApprovalAction = "approved" | "rejected" | "paused" | "reset";
+export type ManualApprovalStatus = "none" | "approved" | "rejected" | "paused" | "research_override";
+export type ManualApprovalAction = "approved" | "rejected" | "paused" | "reset" | "research_override";
 
 export interface ReadinessRequirementResult {
   id: string;
@@ -13,6 +13,11 @@ export interface ReadinessRequirementResult {
   passed: boolean;
   severity: ReadinessRequirementSeverity;
   detail: string;
+  currentValue: string;
+  requiredValue: string;
+  explanation: string;
+  suggestedFix: string;
+  runPage?: "/validation" | "/research-quality" | "/simulation-runbook" | "/backtest-lab" | "/readiness-gate";
 }
 
 export interface ReadinessGateSnapshot {
@@ -73,6 +78,7 @@ export interface ManualApprovalRecord {
   approvedAt?: string;
   rejectedAt?: string;
   pausedAt?: string;
+  researchOverrideAt?: string;
   resetAt?: string;
   latestGate?: ReadinessGateSnapshot;
   latestValidationSnapshot?: ValidationSuiteReport;

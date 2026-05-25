@@ -1,5 +1,6 @@
 export { evaluateReadinessGate, summarizeScenarioForGate } from "@/lib/readiness/readinessGate";
 export {
+  allowResearchOverride,
   approveDemoCandidate,
   defaultManualApprovalRecord,
   latestApprovalTimestamp,
