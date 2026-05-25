@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ClipboardCheck,
   ClipboardList,
@@ -24,6 +24,12 @@ import {
 } from "@/lib/ict";
 import { brokerDemoBridgeSpec } from "@/lib/integrations/brokerDemoBridgeSpec";
 import { paperDemoExecutionSpec } from "@/lib/integrations/paperDemoExecutionSpec";
+import {
+  evaluateReadinessGate,
+  latestApprovalTimestamp,
+  loadManualApprovalRecord,
+  READINESS_APPROVAL_UPDATED_EVENT
+} from "@/lib/readiness";
 import {
   loadLatestResearchQualityReview,
   RESEARCH_QUALITY_UPDATED_EVENT
@@ -56,15 +62,27 @@ const formatWeightLabel = (key: string) => weightLabels[key] ?? key;
 const formatBridgeValue = (value: string) => value.replace(/_/g, " ");
 const validationVariant = (status?: string) =>
   status === "green" ? "success" : status === "yellow" ? "warning" : status === "red" ? "danger" : "muted";
+const readinessStateVariant = (state?: string) =>
+  state === "Paper-Demo Candidate" ? "success" : state === "Research Ready" ? "warning" : state === "Not Ready" ? "danger" : "muted";
 
 export function SettingsView({ state, onReset }: { state: LabState; onReset: () => void }) {
   const [ictWeights, setIctWeights] = useState<ICTScoringWeights>(() => loadICTScoringWeights());
   const [latestValidationReport, setLatestValidationReport] = useState(() => loadLatestValidationReport());
   const [latestQualityReview, setLatestQualityReview] = useState(() => loadLatestResearchQualityReview());
   const [simulationRunbook, setSimulationRunbook] = useState(() => loadSimulationRunbookState());
+  const [readinessApproval, setReadinessApproval] = useState(() => loadManualApprovalRecord());
   const latestHandoffExport = state.handoffExports?.[0];
   const runbookCompleted = countCompletedRunbookItems(simulationRunbook);
   const runbookTotal = simulationRunbookChecklist.length;
+  const readinessGate = useMemo(
+    () =>
+      evaluateReadinessGate({
+        validation: latestValidationReport,
+        quality: latestQualityReview,
+        runbook: simulationRunbook
+      }),
+    [latestValidationReport, latestQualityReview, simulationRunbook]
+  );
 
   useEffect(() => {
     const refreshValidationReport = () => setLatestValidationReport(loadLatestValidationReport());
@@ -93,6 +111,16 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
     return () => {
       window.removeEventListener(SIMULATION_RUNBOOK_UPDATED_EVENT, refreshRunbook);
       window.removeEventListener("storage", refreshRunbook);
+    };
+  }, []);
+
+  useEffect(() => {
+    const refreshApproval = () => setReadinessApproval(loadManualApprovalRecord());
+    window.addEventListener(READINESS_APPROVAL_UPDATED_EVENT, refreshApproval);
+    window.addEventListener("storage", refreshApproval);
+    return () => {
+      window.removeEventListener(READINESS_APPROVAL_UPDATED_EVENT, refreshApproval);
+      window.removeEventListener("storage", refreshApproval);
     };
   }, []);
 
@@ -295,6 +323,40 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
             </div>
             <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
               Broker execution must remain skipped and trades must stay at 0.
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="h-4 w-4 text-amber-200" aria-hidden="true" />
+              <CardTitle>Readiness Gate</CardTitle>
+            </div>
+            <CardDescription>Manual approval layer for future paper-demo consideration.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+              <span className="text-muted-foreground">Current state</span>
+              <Badge variant={readinessStateVariant(readinessGate.state)}>{readinessGate.state}</Badge>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+              <span className="text-muted-foreground">Manual approval</span>
+              <Badge variant={readinessApproval.status === "approved" ? "success" : readinessApproval.status === "rejected" ? "danger" : readinessApproval.status === "paused" ? "warning" : "muted"}>
+                {readinessApproval.status}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+              <span className="text-muted-foreground">Latest action</span>
+              <span className="max-w-[11rem] truncate font-mono text-xs text-foreground">
+                {latestApprovalTimestamp(readinessApproval) ?? "none"}
+              </span>
+            </div>
+            <div className="rounded-md border border-border bg-background/45 p-3 text-muted-foreground">
+              {readinessGate.recommendedNextStep}
+            </div>
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              Broker execution remains disabled.
             </div>
           </CardContent>
         </Card>

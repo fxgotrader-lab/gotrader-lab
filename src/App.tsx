@@ -7,6 +7,7 @@ import { DashboardOverview } from "@/components/dashboard/DashboardOverview";
 import { ICTLab } from "@/components/ict-lab/ICTLab";
 import { PerformanceView } from "@/components/performance/PerformanceView";
 import { PromptLab } from "@/components/prompt-lab/PromptLab";
+import { ReadinessGateView } from "@/components/readiness/ReadinessGateView";
 import { ResearchWorkbench } from "@/components/research/ResearchWorkbench";
 import { ResearchQualityView } from "@/components/research-quality/ResearchQualityView";
 import { ReplayView } from "@/components/replay/ReplayView";
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="/validation" element={<StrategyValidationView />} />
         <Route path="/research-quality" element={<ResearchQualityView />} />
         <Route path="/simulation-runbook" element={<SimulationRunbookView />} />
+        <Route path="/readiness-gate" element={<ReadinessGateView />} />
         <Route path="/performance" element={<PerformanceView state={state} />} />
         <Route path="/prompt-lab" element={<PromptLab state={state} actions={actions} />} />
         <Route path="/settings" element={<SettingsView state={state} onReset={actions.reset} />} />
