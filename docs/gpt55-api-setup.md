@@ -65,7 +65,17 @@ If `OPENAI_API_KEY` is missing, the script exits with a safe missing-key error o
 
 ## Local File Workflow
 
-The recommended app workflow is:
+The recommended app workflow is now the automated localhost bridge:
+
+```powershell
+$env:OPENAI_API_KEY = "..."
+$env:GOTRADER_LLM_MODEL = "gpt-5.5"
+node scripts/llm-local-bridge-server.mjs
+```
+
+Then use `/llm-agents` and click `Run GPT Advisory Review`.
+
+The manual fallback workflow is:
 
 1. Open `/llm-agents`.
 2. Download the context as `latest-llm-context.json`.
@@ -79,7 +89,7 @@ $env:GOTRADER_LLM_MODEL = "gpt-5.5"
 node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-context.json --output-file llm/responses/latest-llm-response.json
 ```
 
-See `docs/llm-local-file-workflow.md` for the full workflow.
+See `docs/llm-automated-local-bridge.md` and `docs/llm-local-file-workflow.md` for the full workflows.
 
 If the model response is rejected, `llm/responses/latest-llm-response.json` will not be created. This is expected. Inspect the newest sanitized JSON file in `llm/errors/`.
 

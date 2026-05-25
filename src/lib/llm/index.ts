@@ -25,6 +25,7 @@ export {
   LLM_LOCAL_COMMAND_ENV_VAR,
   localCommandLLMProvider
 } from "@/lib/llm/localCommandLLMProvider";
+export { LLM_LOCAL_BRIDGE_URL, runLocalBridgeAdvisory } from "@/lib/llm/localBridgeClient";
 export { mockLLMProvider } from "@/lib/llm/mockLLMProvider";
 export {
   llmRestrictedContextInstructions,

@@ -2,6 +2,8 @@
 
 This workflow lets GoTrader AI Lab test real GPT-5.5 advisory responses without exposing API keys to browser code.
 
+For the smoother automated path, use `docs/llm-automated-local-bridge.md` and start `scripts/llm-local-bridge-server.mjs`. The file workflow remains the advanced manual fallback.
+
 The browser exports a restricted research context packet. PowerShell runs the local GPT provider with `OPENAI_API_KEY` from the shell environment. The browser then imports the validated response JSON.
 
 ## Safety Scope

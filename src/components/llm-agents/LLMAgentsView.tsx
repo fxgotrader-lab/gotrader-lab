@@ -28,6 +28,7 @@ import {
   recordLLMResponseImport,
   recordLLMUnsafeResponseRejection,
   requiredLLMAgents,
+  runLocalBridgeAdvisory,
   runLLMAgentOrchestrator,
   saveLLMAdvisoryRun,
   serializeLLMContextPacket,
@@ -58,6 +59,7 @@ const statusVariant = (status?: string) =>
 const providerVariant = (configured: boolean, providerMode: LLMProviderMode) =>
   configured && providerMode === "local_command" ? "success" : providerMode === "mock_llm" ? "warning" : "danger";
 const latestLLMContextFilename = "latest-llm-context.json";
+const localBridgeEndpoint = "http://127.0.0.1:8787/llm/run-advisory";
 const llmRequestPath = "C:/Users/andre/OneDrive/Documents/gotrader/llm/requests/latest-llm-context.json";
 const llmResponsePath = "C:/Users/andre/OneDrive/Documents/gotrader/llm/responses/latest-llm-response.json";
 const sampleResponseHint = `Paste the contents of llm/responses/latest-llm-response.json here.
@@ -107,6 +109,11 @@ export function LLMAgentsView({ state }: { state: LabState }) {
   const [contextValidation, setContextValidation] = useState<LLMContextPacketValidationResult>();
   const [importJson, setImportJson] = useState("");
   const [importResult, setImportResult] = useState<LLMAgentResponseImportResult>();
+  const [bridgeStatus, setBridgeStatus] = useState<{
+    state: "idle" | "running" | "complete" | "error";
+    message?: string;
+    responseFile?: string;
+  }>({ state: "idle" });
   const [busy, setBusy] = useState(false);
   const latestValidation = loadLatestValidationReport();
   const latestQuality = loadLatestResearchQualityReview();
@@ -206,6 +213,60 @@ export function LLMAgentsView({ state }: { state: LabState }) {
     setLlmState(recordLLMResponseImport(result.run, result.run.timestamp));
   };
 
+  const runBridgeAdvisory = async () => {
+    setBusy(true);
+    setBridgeStatus({ state: "running", message: "Sending advisory context to the local LLM bridge." });
+    const packet = createLLMContextPacket({
+      state,
+      validation: latestValidation,
+      quality: latestQuality,
+      readiness,
+      runbook,
+      providerMode: "local_command"
+    });
+    const validation = validateLLMContextPacket(packet);
+    const json = serializeLLMContextPacket(packet);
+    setContextPacket(packet);
+    setContextJson(json);
+    setContextValidation(validation);
+
+    if (!validation.valid) {
+      setBridgeStatus({ state: "error", message: validation.errors.join(" ") });
+      setBusy(false);
+      return;
+    }
+
+    try {
+      const bridgeResult = await runLocalBridgeAdvisory(packet);
+      const responseJson = JSON.stringify(bridgeResult.responses, null, 2);
+      setImportJson(responseJson);
+      const result = importLLMAgentResponse(responseJson, packet.packetId);
+      setImportResult(result);
+      if (!result.run || !result.valid) {
+        setLlmState(recordLLMUnsafeResponseRejection(Math.max(1, result.unsafeResponseRejections)));
+        setBridgeStatus({
+          state: "error",
+          message: "Local bridge returned a response that failed frontend advisory validation.",
+          responseFile: bridgeResult.responseFile
+        });
+      } else {
+        setLlmState(recordLLMResponseImport(result.run, result.run.timestamp));
+        setBridgeStatus({
+          state: "complete",
+          message: "GPT advisory review imported successfully.",
+          responseFile: bridgeResult.responseFile
+        });
+      }
+    } catch (error) {
+      setBridgeStatus({
+        state: "error",
+        message: error instanceof Error ? error.message : "Local LLM bridge request failed."
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const createSelfImprovementProposal = () => {
     const hasSuggestion = latestRun?.responses.some((response) => response.suggestedCalibration.length > 0);
     if (!hasSuggestion) {
@@ -277,6 +338,71 @@ export function LLMAgentsView({ state }: { state: LabState }) {
             </span>
           </div>
           <Badge variant="warning">No execution authority</Badge>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <BrainCircuit className="h-4 w-4 text-primary" aria-hidden="true" />
+                <CardTitle>Automated Local GPT Bridge</CardTitle>
+              </div>
+              <CardDescription>
+                Calls the localhost bridge so GPT advisory output is generated, validated, saved, and imported
+                automatically.
+              </CardDescription>
+            </div>
+            <Badge variant={bridgeStatus.state === "complete" ? "success" : bridgeStatus.state === "error" ? "danger" : "warning"}>
+              {bridgeStatus.state}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+            <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
+            LLM agents are advisory only. They cannot execute trades, approve trades, or override readiness gates.
+          </div>
+          <div className="grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
+            <div className="space-y-3">
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs text-muted-foreground">Bridge endpoint</p>
+                <p className="mt-1 break-all font-mono text-xs text-foreground">{localBridgeEndpoint}</p>
+              </div>
+              <Button onClick={runBridgeAdvisory} disabled={busy}>
+                <BrainCircuit className="h-4 w-4" aria-hidden="true" />
+                Run GPT Advisory Review
+              </Button>
+              {bridgeStatus.message ? (
+                <div
+                  className={`rounded-lg border p-3 text-sm ${
+                    bridgeStatus.state === "error"
+                      ? "border-rose-400/25 bg-rose-400/10 text-rose-100"
+                      : bridgeStatus.state === "complete"
+                        ? "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
+                        : "border-border bg-background/45 text-muted-foreground"
+                  }`}
+                >
+                  {bridgeStatus.message}
+                  {bridgeStatus.responseFile ? (
+                    <p className="mt-2 break-all font-mono text-xs">{bridgeStatus.responseFile}</p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            <div className="rounded-lg border border-border bg-background/45 p-3">
+              <p className="text-sm font-semibold">Start the local bridge in PowerShell</p>
+              <pre className="mt-3 overflow-x-auto rounded-lg border border-border bg-background/75 p-3 font-mono text-xs leading-5 text-slate-200">
+{`$env:OPENAI_API_KEY = "..."
+$env:GOTRADER_LLM_MODEL = "gpt-5.5"
+node scripts/llm-local-bridge-server.mjs`}
+              </pre>
+              <p className="mt-3 text-xs text-muted-foreground">
+                If the server is not running, the app will show “Local LLM bridge server is not running.”
+              </p>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -364,13 +490,13 @@ $env:${LLM_LOCAL_COMMAND_ENV_VAR} = "node scripts/gpt55-llm-agent-provider.mjs"
             <div>
               <div className="flex items-center gap-2">
                 <FileJson className="h-4 w-4 text-primary" aria-hidden="true" />
-                <CardTitle>Local GPT File Workflow</CardTitle>
+                <CardTitle>Advanced Manual Workflow</CardTitle>
               </div>
               <CardDescription>
-                Export context from the app, run GPT-5.5 in PowerShell, then import validated advisory responses.
+                Fallback path: export context from the app, run GPT-5.5 in PowerShell, then import validated advisory responses.
               </CardDescription>
             </div>
-            <Badge variant="warning">file bridge</Badge>
+            <Badge variant="warning">manual fallback</Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
