@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
+import { loadAgentAuditState, summarizeAgentAudit } from "@/lib/agentAudit";
 import {
   latestAutoResearchCycle,
   loadAutoResearchState,
@@ -71,6 +72,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
   });
   const latestHandoff = state.handoffExports[0];
   const communicationSummary = getCommunicationSummary(loadCommunicationMessages());
+  const agentAuditSummary = summarizeAgentAudit(loadAgentAuditState());
 
   const recommendedAction = getRecommendedAction({
     completedRunbookItems,
@@ -150,6 +152,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
 
       <div className="grid gap-5 xl:grid-cols-2">
         <AICommunicationsCard summary={communicationSummary} />
+        <AgentAuditCard summary={agentAuditSummary} />
         <LLMAgentStatusCard latestRun={latestLLMRun} providerStatus={providerStatus} state={llmState} />
         <AutoResearchStatusCard cycle={latestAutoResearch} />
         <ValidationStatusCard report={validationReport} qualityReview={researchQuality} />
@@ -191,6 +194,39 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
         </div>
       </TechnicalDetails>
     </div>
+  );
+}
+
+function AgentAuditCard({ summary }: { summary: ReturnType<typeof summarizeAgentAudit> }) {
+  return (
+    <Card className="border-white/10 bg-slate-950/70">
+      <CardHeader className="flex flex-row items-start justify-between gap-3">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base text-slate-100">
+            <ClipboardCheck className="h-4 w-4 text-violet-300" aria-hidden="true" />
+            Agent Decision Audit
+          </CardTitle>
+          <p className="mt-1 text-xs text-slate-500">Explainability and reliability scoring for agent decisions.</p>
+        </div>
+        <Badge variant={summary.needsReviewCount > 0 ? "warning" : "secondary"}>
+          {summary.needsReviewCount} need review
+        </Badge>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 text-sm sm:grid-cols-2">
+          <StatusLine label="Latest audit" value={formatDateTime(summary.latestAuditAt)} />
+          <StatusLine label="Weakest agent" value={summary.weakestAgent?.agentName ?? "None"} />
+          <StatusLine label="Strongest agent" value={summary.strongestAgent?.agentName ?? "None"} />
+          <StatusLine label="Unsafe rejected" value={String(summary.unsafeRejectedCount)} />
+        </div>
+        <Link to="/agent-audit">
+          <Button variant="secondary" className="w-full justify-between">
+            Open agent audit
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </Link>
+      </CardContent>
+    </Card>
   );
 }
 

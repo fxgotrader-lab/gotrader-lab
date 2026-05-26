@@ -1,6 +1,14 @@
 import { compactAutoResearchCycle, runAutoResearchCycle } from "@/lib/autoResearch";
 import type { AutoResearchCandidateResult } from "@/lib/autoResearch";
 import {
+  auditAutoResearchDecision,
+  auditCioSynthesis,
+  auditReadinessGate,
+  auditSelfImprovementDecision,
+  buildAgentAuditTraces,
+  saveAgentAuditTraces
+} from "@/lib/agentAudit";
+import {
   diagnoseTradeGeneration,
   runBacktest,
   sanitizeBacktestConfig,
@@ -40,6 +48,7 @@ import {
 } from "@/lib/simulationRunbook";
 import type { SimulationRunbookSignal } from "@/lib/simulationRunbook";
 import {
+  type CalibrationProposal,
   loadSelfImprovementState,
   resolveActiveBacktestConfig,
   upsertCalibrationProposal
@@ -393,6 +402,7 @@ export async function runResearchCycle({
   try {
     startStep("thesis_generation");
     let generatedThesis: ReturnType<typeof generateThesis> | undefined;
+    let latestSelfImprovementProposal: CalibrationProposal | undefined;
     try {
       generatedThesis = generateThesis(thesisInputFor(activeConfig, cycleId), workingState);
       workingState = {
@@ -617,6 +627,7 @@ export async function runResearchCycle({
         : undefined) ??
       safeArray(improvementState.proposals).find((proposal) => proposal.proposalId === improvementState.latestProposalId) ??
       safeArray(improvementState.proposals)[0];
+    latestSelfImprovementProposal = latestProposal;
     run.latestGeneratedProposal =
       run.latestGeneratedProposal ??
       (run.createdProposalId
@@ -684,6 +695,18 @@ export async function runResearchCycle({
       summary: `Readiness remains ${readinessSnapshot.state}.`,
       detail: `${safeArray(readinessSnapshot.failedRequirements).length} failed requirement${safeArray(readinessSnapshot.failedRequirements).length === 1 ? "" : "s"}; no override applied.`
     });
+
+    saveAgentAuditTraces([
+      ...buildAgentAuditTraces({
+        thesis: generatedThesis.thesis,
+        debateMessages: generatedThesis.debateSession.messages,
+        llmRun: run.llmRun
+      }),
+      ...auditCioSynthesis(generatedThesis.thesis, generatedThesis.debateSession.messages),
+      ...auditAutoResearchDecision(autoResearchCycle),
+      ...auditSelfImprovementDecision(latestSelfImprovementProposal),
+      ...auditReadinessGate(readinessSnapshot)
+    ]);
 
     run.status = finalStatusFor(run);
     run.completedAt = now();
