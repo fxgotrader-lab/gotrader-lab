@@ -92,6 +92,16 @@ export interface CalibrationProposal {
   approvalNotes?: string;
   tradesBeforeRecovery?: number;
   tradesAfterRecovery?: number;
+  observedICTConfluence?: number;
+  activeConfluenceThreshold?: number;
+  proposedConfluenceThreshold?: number;
+  recoveryCandidateId?: string;
+  recoveryConfluenceThreshold?: number;
+  recoveryConfidenceThreshold?: number;
+  recoverySessionFilter?: BacktestSessionFilter;
+  recoveryStopModel?: BacktestStopModel;
+  recoveryTradesProduced?: number;
+  thresholdCalculation?: string;
   qualityGatesPassed?: string[];
   sourceCandidateId?: string;
   sourceCandidateLabel?: string;

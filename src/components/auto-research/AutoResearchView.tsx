@@ -69,6 +69,8 @@ const categoryVariant = (category?: string) =>
         ? "danger"
         : "muted";
 const formatToken = (value?: string) => (value ?? "none").replace(/_/g, " ");
+const formatOptionalPercent = (value?: number) =>
+  typeof value === "number" && Number.isFinite(value) ? formatPercent(value) : "n/a";
 const metricValue = (candidate: AutoResearchCandidateResult) => ({
   totalTrades: candidate.metrics?.totalTrades ?? 0,
   winRate: candidate.metrics?.winRate ?? 0,
@@ -582,6 +584,10 @@ export function AutoResearchView() {
 
           {latestCycle?.recoveryAttempted ? (
             <div className="rounded-lg border border-border bg-background/45 p-3 text-sm">
+              {(() => {
+                const recoveryMetadata = latestCycle.recoveryMetadata;
+                return (
+                  <>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="font-medium">Recovery result</p>
@@ -593,6 +599,35 @@ export function AutoResearchView() {
                   {(latestCycle.tradesAfterRecovery ?? 0) > 0 ? "trades generated" : "still zero"}
                 </Badge>
               </div>
+              {recoveryMetadata ? (
+                <div className="mt-3 grid gap-2 md:grid-cols-5">
+                  <div className="rounded-md border border-border bg-card/45 p-2">
+                    <p className="text-xs text-muted-foreground">Observed confluence</p>
+                    <p className="mt-1 font-mono text-sm">{formatOptionalPercent(recoveryMetadata.observedICTConfluence)}</p>
+                  </div>
+                  <div className="rounded-md border border-border bg-card/45 p-2">
+                    <p className="text-xs text-muted-foreground">Active threshold</p>
+                    <p className="mt-1 font-mono text-sm">{formatPercent(recoveryMetadata.activeConfluenceThreshold)}</p>
+                  </div>
+                  <div className="rounded-md border border-border bg-card/45 p-2">
+                    <p className="text-xs text-muted-foreground">Recovery threshold</p>
+                    <p className="mt-1 font-mono text-sm">{formatOptionalPercent(recoveryMetadata.recoveryConfluenceThreshold ?? recoveryMetadata.proposedConfluenceThreshold)}</p>
+                  </div>
+                  <div className="rounded-md border border-border bg-card/45 p-2">
+                    <p className="text-xs text-muted-foreground">Proposed threshold</p>
+                    <p className="mt-1 font-mono text-sm">{formatPercent(recoveryMetadata.proposedConfluenceThreshold)}</p>
+                  </div>
+                  <div className="rounded-md border border-border bg-card/45 p-2">
+                    <p className="text-xs text-muted-foreground">Trades produced</p>
+                    <p className="mt-1 font-mono text-sm">{recoveryMetadata.tradesProduced}</p>
+                  </div>
+                </div>
+              ) : null}
+              {recoveryMetadata?.calculation ? (
+                <p className="mt-3 rounded-md border border-border bg-card/45 p-2 text-xs text-muted-foreground">
+                  {recoveryMetadata.calculation}
+                </p>
+              ) : null}
               <div className="mt-3 grid gap-2 md:grid-cols-2">
                 {safeArray(latestCycle.recoveryCandidates).map((candidate) => (
                   <div key={candidate.candidateId} className="rounded-md border border-border bg-card/45 p-2">
@@ -608,7 +643,7 @@ export function AutoResearchView() {
               </div>
               {latestCycle.createdProposalId && (latestCycle.tradesAfterRecovery ?? 0) > 0 ? (
                 <div className="mt-3 rounded-md border border-emerald-300/25 bg-emerald-300/10 p-3 text-sm text-emerald-100">
-                  Recovery produced {latestCycle.tradesAfterRecovery ?? 0} trades; proposal created.
+                  Recovery produced {latestCycle.tradesAfterRecovery ?? 0} trades; proposal created to calibrate threshold to the recovery-tested level.
                 </div>
               ) : null}
               {safeArray(latestCycle.recoveryFailureReasons).length ? (
@@ -616,6 +651,9 @@ export function AutoResearchView() {
                   {safeArray(latestCycle.recoveryFailureReasons).join(" ")}
                 </div>
               ) : null}
+                  </>
+                );
+              })()}
             </div>
           ) : null}
         </CardContent>

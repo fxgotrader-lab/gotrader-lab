@@ -31,6 +31,10 @@ export interface TradeGenerationDiagnostic {
   explanation: string;
   suggestedFix: string;
   severity: TradeGenerationDiagnosticSeverity;
+  observedConfluenceScore?: number;
+  activeConfluenceThreshold?: number;
+  suggestedConfluenceThreshold?: number;
+  thresholdCalculation?: string;
 }
 
 const diagnostic = (
@@ -39,14 +43,19 @@ const diagnostic = (
   requiredOrSuggestedValue: string,
   explanation: string,
   suggestedFix: string,
-  severity: TradeGenerationDiagnosticSeverity
+  severity: TradeGenerationDiagnosticSeverity,
+  metadata: Partial<Pick<
+    TradeGenerationDiagnostic,
+    "observedConfluenceScore" | "activeConfluenceThreshold" | "suggestedConfluenceThreshold" | "thresholdCalculation"
+  >> = {}
 ): TradeGenerationDiagnostic => ({
   reasonCode,
   currentValue,
   requiredOrSuggestedValue,
   explanation,
   suggestedFix,
-  severity
+  severity,
+  ...metadata
 });
 
 const hasFiniteNumber = (value: unknown) => typeof value === "number" && Number.isFinite(value);
@@ -84,6 +93,23 @@ export function diagnoseTradeGeneration({
   const directionSkips = reasonCount(result, "disabled");
   const neutralSkips = reasonCount(result, "neutral");
   const requiredCandles = config.warmupCandles + config.decisionInterval + Math.max(1, config.maxBarsToResolveTrade);
+  const confluenceSkippedSignals = safeArray(result?.skippedSignals).filter((skip) =>
+    skip.reason.toLowerCase().includes("ict confluence")
+  );
+  const observedConfluenceScore = Math.max(
+    0,
+    ...confluenceSkippedSignals.map((skip) => skip.confluenceScore),
+    ...nonNeutralDecisions.map((decision) => decision.ictContext.confluenceScore)
+  );
+  const suggestedConfluenceThreshold = observedConfluenceScore > 0
+    ? Math.min(
+        Math.max(0.4, Number((observedConfluenceScore - 0.03).toFixed(2))),
+        Number(Math.max(0.01, config.minimumConfluenceThreshold - 0.01).toFixed(2))
+      )
+    : Number(Math.max(0.4, config.minimumConfluenceThreshold - 0.08).toFixed(2));
+  const confluenceThresholdCalculation = observedConfluenceScore > 0
+    ? `max(40%, observed ${(observedConfluenceScore * 100).toFixed(0)}% - 3%) capped below active ${(config.minimumConfluenceThreshold * 100).toFixed(0)}%`
+    : `observed confluence unavailable; bounded fallback below active ${(config.minimumConfluenceThreshold * 100).toFixed(0)}% with 40% floor`;
 
   if (!candleCount) {
     diagnostics.push(
@@ -190,11 +216,17 @@ export function diagnoseTradeGeneration({
     diagnostics.push(
       diagnostic(
         "confluence_threshold_too_high",
-        `${confluenceSkips}/${Math.max(1, skippedSignals)} skips; threshold ${config.minimumConfluenceThreshold}`,
-        "slightly lower confluence threshold or stronger ICT confluence",
+        `${confluenceSkips}/${Math.max(1, skippedSignals)} skips; threshold ${config.minimumConfluenceThreshold}; observed confluence ${Number(observedConfluenceScore.toFixed(2))}`,
+        `threshold <= ${suggestedConfluenceThreshold} or stronger ICT confluence`,
         "ICT confluence filtering blocked the decision points before outcome scoring.",
-        "Lower confluence slightly for recovery, or improve ICT facts before expecting readiness.",
-        confluenceSkips === skippedSignals ? "blocking" : "warning"
+        "Calibrate threshold to recovery-tested level, or improve ICT facts before expecting readiness.",
+        confluenceSkips === skippedSignals ? "blocking" : "warning",
+        {
+          observedConfluenceScore: Number(observedConfluenceScore.toFixed(4)),
+          activeConfluenceThreshold: config.minimumConfluenceThreshold,
+          suggestedConfluenceThreshold,
+          thresholdCalculation: confluenceThresholdCalculation
+        }
       )
     );
   }
@@ -303,4 +335,3 @@ export function diagnoseTradeGeneration({
 
 export const topTradeGenerationDiagnostic = (diagnostics: TradeGenerationDiagnostic[]) =>
   safeArray(diagnostics).find((item) => item.severity === "blocking") ?? safeArray(diagnostics)[0];
-

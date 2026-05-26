@@ -5,6 +5,7 @@ import type {
   TradeGenerationDiagnostic,
   ResolvedBacktestConfig
 } from "@/lib/backtesting";
+import type { BacktestSessionFilter, BacktestStopModel } from "@/lib/backtesting/backtestTypes";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
 import type { ResearchQualityReview } from "@/lib/researchQuality";
 import type {
@@ -163,6 +164,21 @@ export interface AutoResearchAdaptivePass {
   targetedChanges: string[];
 }
 
+export interface AutoResearchRecoveryMetadata {
+  recoveryCandidateId?: string;
+  recoveryCandidateLabel?: string;
+  recoveryConfluenceThreshold?: number;
+  recoveryConfidenceThreshold?: number;
+  recoverySessionFilter?: BacktestSessionFilter;
+  recoveryStopModel?: BacktestStopModel;
+  tradesProduced: number;
+  observedICTConfluence?: number;
+  activeConfluenceThreshold: number;
+  proposedConfluenceThreshold: number;
+  thresholdSource: "recovery_candidate" | "observed_confluence_buffer";
+  calculation: string;
+}
+
 export interface AutoResearchCycle {
   cycleId: string;
   timestamp: string;
@@ -185,6 +201,7 @@ export interface AutoResearchCycle {
   recoveryAttempted?: boolean;
   recoveryCandidates?: AutoResearchCandidateConfig[];
   recoveryResult?: AutoResearchCandidateResult;
+  recoveryMetadata?: AutoResearchRecoveryMetadata;
   tradesBeforeRecovery?: number;
   tradesAfterRecovery?: number;
   recoveryFailureReasons?: string[];

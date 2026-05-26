@@ -693,11 +693,26 @@ export function generateAdaptiveCandidateConfigs({
 
 export function generateTradeRecoveryCandidateConfigs(
   baseline: ResolvedBacktestConfig,
-  maxCandidateCount = 7
+  maxCandidateCount = 8,
+  options: { suggestedConfluenceThreshold?: number } = {}
 ): AutoResearchCandidateConfig[] {
   const candidates: AutoResearchCandidateConfig[] = [];
   const lowerConfluence = round(Math.max(0.12, baseline.minimumConfluenceThreshold - 0.08), 2);
   const lowerConfidence = round(Math.max(0.25, baseline.minimumConfidenceThreshold - 0.06), 2);
+  const diagnosticConfluence = typeof options.suggestedConfluenceThreshold === "number"
+    ? round(Math.min(baseline.minimumConfluenceThreshold - 0.01, Math.max(0.4, options.suggestedConfluenceThreshold)), 2)
+    : undefined;
+
+  if (diagnosticConfluence !== undefined && diagnosticConfluence < baseline.minimumConfluenceThreshold) {
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Recovery observed-confluence unlock",
+      "Zero trades were generated, so this recovery tests the diagnostic threshold below the observed ICT confluence.",
+      { minimumConfluenceThreshold: diagnosticConfluence },
+      ["confluenceThreshold"]
+    );
+  }
 
   pushAdaptiveCandidate(
     candidates,
@@ -768,5 +783,5 @@ export function generateTradeRecoveryCandidateConfigs(
     ["confluenceThreshold", "confidenceThreshold", "sessionFilter", "allowLong", "allowShort"]
   );
 
-  return dedupeCandidates(candidates).slice(0, Math.max(1, Math.min(7, maxCandidateCount)));
+  return dedupeCandidates(candidates).slice(0, Math.max(1, Math.min(8, maxCandidateCount)));
 }

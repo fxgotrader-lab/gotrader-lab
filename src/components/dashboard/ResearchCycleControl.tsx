@@ -65,6 +65,8 @@ const stepIcon = (status: ResearchCycleStepStatus) => {
 };
 
 const formatStatus = (status?: string) => (status ?? "idle").replace(/_/g, " ");
+const formatPercent = (value?: number) =>
+  typeof value === "number" && Number.isFinite(value) ? `${(value * 100).toFixed(0)}%` : "n/a";
 const dashboardSearchModes: Array<{ label: string; value: AutoResearchSearchMode; count: number }> = [
   { label: "Quick - 5 candidates", value: "quick", count: 5 },
   { label: "Standard - 10 candidates", value: "standard", count: 10 },
@@ -310,6 +312,16 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
 
         {latestRun?.backtestSummary?.totalTrades === 0 ? (
           <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+            {(() => {
+              const recoveryMetadata = latestRun.autoResearchCycle?.recoveryMetadata;
+              const topDiagnostic = safeArray(latestRun.backtestDiagnostics)[0];
+              const observedConfluence = recoveryMetadata?.observedICTConfluence ?? topDiagnostic?.observedConfluenceScore;
+              const proposedThreshold = recoveryMetadata?.proposedConfluenceThreshold ?? topDiagnostic?.suggestedConfluenceThreshold;
+              const recoveryThreshold =
+                recoveryMetadata?.recoveryConfluenceThreshold ??
+                latestRun.autoResearchCycle?.recoveryResult?.config.minimumConfluenceThreshold;
+              return (
+                <>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="font-medium">No trades generated</p>
@@ -339,7 +351,15 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
               </div>
               <div className="rounded-md border border-amber-200/20 bg-amber-200/5 p-2">
                 <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Recovery threshold</p>
-                <p className="mt-1">{latestRun.autoResearchCycle?.recoveryResult?.config.minimumConfluenceThreshold !== undefined ? `${(latestRun.autoResearchCycle.recoveryResult.config.minimumConfluenceThreshold * 100).toFixed(0)}%` : "n/a"}</p>
+                <p className="mt-1">{formatPercent(recoveryThreshold)}</p>
+              </div>
+              <div className="rounded-md border border-amber-200/20 bg-amber-200/5 p-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Observed ICT confluence</p>
+                <p className="mt-1">{formatPercent(observedConfluence)}</p>
+              </div>
+              <div className="rounded-md border border-amber-200/20 bg-amber-200/5 p-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Proposed threshold</p>
+                <p className="mt-1">{formatPercent(proposedThreshold)}</p>
               </div>
               <div className="rounded-md border border-amber-200/20 bg-amber-200/5 p-2">
                 <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Config merge</p>
@@ -356,9 +376,12 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
             </p>
             {latestRun.createdProposalId && latestRun.autoResearchCycle?.recoveryAttempted && (latestRun.autoResearchCycle.tradesAfterRecovery ?? 0) > 0 ? (
               <div className="mt-3 rounded-md border border-emerald-300/25 bg-emerald-300/10 p-3 text-sm text-emerald-100">
-                Research calibration proposal available: lower confluence threshold slightly.
+                Research calibration proposal available: calibrate threshold to recovery-tested level.
               </div>
             ) : null}
+                </>
+              );
+            })()}
           </div>
         ) : null}
 

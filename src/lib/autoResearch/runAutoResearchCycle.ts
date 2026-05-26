@@ -16,6 +16,7 @@ import type {
   AutoResearchAdaptiveOutcome,
   AutoResearchAdaptivePass,
   AutoResearchFailedGate,
+  AutoResearchRecoveryMetadata,
   AutoResearchRunOptions,
   AutoResearchState
 } from "@/lib/autoResearch/autoResearchTypes";
@@ -120,6 +121,13 @@ const failedGateLabels: Record<AutoResearchFailedGate, string> = {
   skipped_signal_imbalance: "skipped signal imbalance",
   overfitting_risk: "overfitting risk"
 };
+
+const ZERO_TRADE_CONFLUENCE_FLOOR = 0.4;
+const ZERO_TRADE_CONFLUENCE_BUFFER = 0.03;
+
+const roundThreshold = (value: number) => Number(value.toFixed(2));
+
+const formatThresholdPercent = (value: number) => `${(value * 100).toFixed(0)}%`;
 
 const uniqueFailedGates = (gates: AutoResearchFailedGate[]) => [...new Set(gates)];
 
@@ -648,31 +656,112 @@ const isZeroTradeRecoveryProposalEligible = ({
   tradesAfterRecovery > 0 &&
   isConfluenceBlockedZeroTradeRun(diagnostics);
 
-const recoveryConfluenceThresholdFor = (
+const confluenceDiagnosticFor = (diagnostics: ReturnType<typeof diagnoseTradeGeneration>) =>
+  safeArray(diagnostics).find((item) => item.reasonCode === "confluence_threshold_too_high");
+
+const observedConfluenceFor = (diagnostics: ReturnType<typeof diagnoseTradeGeneration>) => {
+  const observed = confluenceDiagnosticFor(diagnostics)?.observedConfluenceScore;
+  return typeof observed === "number" && Number.isFinite(observed) && observed > 0
+    ? roundThreshold(observed)
+    : undefined;
+};
+
+const selectTradeProducingRecoveryResult = (
   baselineConfig: ReturnType<typeof loadBacktestConfig>,
-  recoveryResult?: AutoResearchCandidateResult
+  recoveryResults: AutoResearchCandidateResult[]
 ) => {
-  const recoveredThreshold = recoveryResult?.config.minimumConfluenceThreshold;
-  if (typeof recoveredThreshold === "number" && recoveredThreshold < baselineConfig.minimumConfluenceThreshold) {
-    return Number(recoveredThreshold.toFixed(2));
+  const producing = safeArray(recoveryResults).filter((candidate) => candidate.metrics.totalTrades > 0);
+  if (!producing.length) {
+    return undefined;
   }
-  return Number(Math.max(0.12, baselineConfig.minimumConfluenceThreshold - 0.04).toFixed(2));
+  const thresholdUnlocks = producing.filter(
+    (candidate) =>
+      candidate.config.minimumConfluenceThreshold < baselineConfig.minimumConfluenceThreshold &&
+      safeArray(candidate.changedParameters).includes("confluenceThreshold")
+  );
+  const pool = thresholdUnlocks.length ? thresholdUnlocks : producing;
+  return [...pool].sort(
+    (a, b) =>
+      b.metrics.totalTrades - a.metrics.totalTrades ||
+      b.scoreBreakdown.totalScore - a.scoreBreakdown.totalScore ||
+      a.config.minimumConfluenceThreshold - b.config.minimumConfluenceThreshold
+  )[0];
+};
+
+const recoveryMetadataFor = ({
+  baselineConfig,
+  diagnostics,
+  recoveryResult,
+  tradesAfterRecovery
+}: {
+  baselineConfig: ReturnType<typeof loadBacktestConfig>;
+  diagnostics: ReturnType<typeof diagnoseTradeGeneration>;
+  recoveryResult?: AutoResearchCandidateResult;
+  tradesAfterRecovery: number;
+}): AutoResearchRecoveryMetadata | undefined => {
+  if (!recoveryResult || tradesAfterRecovery <= 0) {
+    return undefined;
+  }
+
+  const activeThreshold = baselineConfig.minimumConfluenceThreshold;
+  const observedICTConfluence = observedConfluenceFor(diagnostics);
+  const recoveryThreshold = recoveryResult.config.minimumConfluenceThreshold;
+  const hasUsableRecoveryThreshold =
+    typeof recoveryThreshold === "number" &&
+    Number.isFinite(recoveryThreshold) &&
+    recoveryThreshold < activeThreshold &&
+    (observedICTConfluence === undefined || recoveryThreshold <= observedICTConfluence);
+
+  const proposedFromObserved =
+    observedICTConfluence !== undefined
+      ? Math.max(ZERO_TRADE_CONFLUENCE_FLOOR, observedICTConfluence - ZERO_TRADE_CONFLUENCE_BUFFER)
+      : Math.max(ZERO_TRADE_CONFLUENCE_FLOOR, activeThreshold - 0.08);
+  const rawProposedThreshold = hasUsableRecoveryThreshold ? recoveryThreshold : proposedFromObserved;
+  const proposedConfluenceThreshold = roundThreshold(
+    Math.min(
+      rawProposedThreshold,
+      Math.max(0.01, activeThreshold - 0.01)
+    )
+  );
+  const thresholdSource = hasUsableRecoveryThreshold ? "recovery_candidate" : "observed_confluence_buffer";
+  const calculation = hasUsableRecoveryThreshold
+    ? `Used trade-producing recovery candidate ${recoveryResult.candidateId} threshold ${formatThresholdPercent(recoveryThreshold)}.`
+    : observedICTConfluence !== undefined
+      ? `Computed max(${formatThresholdPercent(ZERO_TRADE_CONFLUENCE_FLOOR)}, observed ${formatThresholdPercent(observedICTConfluence)} - ${formatThresholdPercent(ZERO_TRADE_CONFLUENCE_BUFFER)}) and capped below active ${formatThresholdPercent(activeThreshold)}.`
+      : `Observed confluence unavailable; used bounded fallback below active ${formatThresholdPercent(activeThreshold)} with floor ${formatThresholdPercent(ZERO_TRADE_CONFLUENCE_FLOOR)}.`;
+
+  return {
+    recoveryCandidateId: recoveryResult.candidateId,
+    recoveryCandidateLabel: recoveryResult.label,
+    recoveryConfluenceThreshold: recoveryThreshold,
+    recoveryConfidenceThreshold: recoveryResult.config.minimumConfidenceThreshold,
+    recoverySessionFilter: recoveryResult.config.sessionFilter,
+    recoveryStopModel: recoveryResult.config.stopModel,
+    tradesProduced: recoveryResult.metrics.totalTrades,
+    observedICTConfluence,
+    activeConfluenceThreshold: activeThreshold,
+    proposedConfluenceThreshold,
+    thresholdSource,
+    calculation
+  };
 };
 
 const createZeroTradeRecoveryProposal = ({
   baselineConfig,
   baselineMetrics,
   recoveryResult,
+  recoveryMetadata,
   tradesBeforeRecovery,
   tradesAfterRecovery
 }: {
   baselineConfig: ReturnType<typeof loadBacktestConfig>;
   baselineMetrics: CalibrationProposalMetrics;
   recoveryResult: AutoResearchCandidateResult;
+  recoveryMetadata: AutoResearchRecoveryMetadata;
   tradesBeforeRecovery: number;
   tradesAfterRecovery: number;
 }): CalibrationProposal => {
-  const confluenceThreshold = recoveryConfluenceThresholdFor(baselineConfig, recoveryResult);
+  const confluenceThreshold = recoveryMetadata.proposedConfluenceThreshold;
   const proposedConfig = {
     ...baselineConfig,
     minimumConfluenceThreshold: confluenceThreshold
@@ -694,9 +783,10 @@ const createZeroTradeRecoveryProposal = ({
     brokerAuthority: "none",
     readinessOverrideAuthority: "none",
     reason:
-      "Confluence threshold blocked all trades before outcome scoring. Recovery generated " +
-      `${tradesAfterRecovery} simulated trades after lowering confluence from ` +
-      `${baselineConfig.minimumConfluenceThreshold} to ${confluenceThreshold}.`,
+      `Active threshold ${formatThresholdPercent(recoveryMetadata.activeConfluenceThreshold)} exceeded ` +
+      `${recoveryMetadata.observedICTConfluence !== undefined ? `observed ICT confluence ${formatThresholdPercent(recoveryMetadata.observedICTConfluence)}` : "the observed ICT confluence evidence"}, ` +
+      `blocking all trades. Recovery produced ${tradesAfterRecovery} trades using threshold ` +
+      `${formatThresholdPercent(recoveryMetadata.recoveryConfluenceThreshold ?? confluenceThreshold)}.`,
     targetProblem: "trade_generation_blocked",
     proposedChanges: {
       confluenceThreshold
@@ -717,11 +807,23 @@ const createZeroTradeRecoveryProposal = ({
     approvalRequired: true,
     tradesBeforeRecovery,
     tradesAfterRecovery,
+    observedICTConfluence: recoveryMetadata.observedICTConfluence,
+    activeConfluenceThreshold: recoveryMetadata.activeConfluenceThreshold,
+    proposedConfluenceThreshold: recoveryMetadata.proposedConfluenceThreshold,
+    recoveryCandidateId: recoveryMetadata.recoveryCandidateId,
+    recoveryConfluenceThreshold: recoveryMetadata.recoveryConfluenceThreshold,
+    recoveryConfidenceThreshold: recoveryMetadata.recoveryConfidenceThreshold,
+    recoverySessionFilter: recoveryMetadata.recoverySessionFilter,
+    recoveryStopModel: recoveryMetadata.recoveryStopModel,
+    recoveryTradesProduced: recoveryMetadata.tradesProduced,
+    thresholdCalculation: recoveryMetadata.calculation,
     qualityGatesPassed,
     sourceCandidateId: recoveryResult.candidateId,
     sourceCandidateLabel: recoveryResult.label,
     improvementSummary: [
       `Trades before recovery: ${tradesBeforeRecovery}; trades after recovery: ${tradesAfterRecovery}.`,
+      `Confluence threshold: active ${formatThresholdPercent(recoveryMetadata.activeConfluenceThreshold)}, observed ${recoveryMetadata.observedICTConfluence !== undefined ? formatThresholdPercent(recoveryMetadata.observedICTConfluence) : "n/a"}, proposed ${formatThresholdPercent(confluenceThreshold)}.`,
+      `Recovery evidence: ${recoveryMetadata.recoveryCandidateLabel ?? "candidate"} produced ${recoveryMetadata.tradesProduced} trades at ${formatThresholdPercent(recoveryMetadata.recoveryConfluenceThreshold ?? confluenceThreshold)}.`,
       `Stability score: ${baselineMetrics.stabilityScore} -> ${recoveryResult.metrics.stabilityScore}.`,
       `Readiness: ${baselineMetrics.readinessStatus} -> ${recoveryResult.metrics.readinessStatus}.`
     ],
@@ -742,14 +844,25 @@ const patchesMatch = (left: CalibrationProposal["proposedChanges"], right: Calib
 const duplicateActiveCalibrationMessage = (
   proposal: CalibrationProposal,
   activeCalibration = loadActiveResearchCalibration()
-) =>
-  activeCalibration &&
-  (patchesMatch(proposal.proposedChanges, activeCalibration.appliedConfigPatch) ||
-    (proposal.targetProblem === "trade_generation_blocked" &&
-      proposal.proposedChanges.confluenceThreshold !== undefined &&
-      activeCalibration.appliedConfigPatch.confluenceThreshold !== undefined))
-    ? "Approved confluence calibration is already active; trade generation remains blocked, so a different adjustment is needed."
-    : undefined;
+) => {
+  if (!activeCalibration) {
+    return undefined;
+  }
+  if (patchesMatch(proposal.proposedChanges, activeCalibration.appliedConfigPatch)) {
+    return "Approved confluence calibration is already active; trade generation remains blocked, so a different adjustment is needed.";
+  }
+  const proposedThreshold = proposal.proposedChanges.confluenceThreshold;
+  const activeThreshold = activeCalibration.appliedConfigPatch.confluenceThreshold;
+  if (
+    proposal.targetProblem === "trade_generation_blocked" &&
+    typeof proposedThreshold === "number" &&
+    typeof activeThreshold === "number" &&
+    proposedThreshold >= activeThreshold
+  ) {
+    return "Approved confluence calibration is already active; trade generation remains blocked, so a different adjustment is needed.";
+  }
+  return undefined;
+};
 
 const candidateImprovedForResearch = (
   candidate: AutoResearchCandidateResult | undefined,
@@ -913,6 +1026,7 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
     let recoveryAttempted = false;
     let recoveryCandidates: ReturnType<typeof generateTradeRecoveryCandidateConfigs> = [];
     let recoveryResult: AutoResearchCandidateResult | undefined;
+    let recoveryMetadata: AutoResearchRecoveryMetadata | undefined;
     let tradesAfterRecovery = 0;
     let recoveryFailureReasons: string[] = [];
 
@@ -990,7 +1104,9 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
 
     if (tradesBeforeRecovery === 0) {
       recoveryAttempted = true;
-      recoveryCandidates = generateTradeRecoveryCandidateConfigs(baselineConfig);
+      recoveryCandidates = generateTradeRecoveryCandidateConfigs(baselineConfig, 8, {
+        suggestedConfluenceThreshold: confluenceDiagnosticFor(tradeGenerationDiagnostics)?.suggestedConfluenceThreshold
+      });
       const recoveryResults: AutoResearchCandidateResult[] = [];
       for (const candidate of recoveryCandidates) {
         const candidateResult = evaluateCandidate(candidate, baselineMetrics);
@@ -1016,8 +1132,17 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       allCandidateConfigs.push(...recoveryCandidates);
       const recoverySelection = selectBestCandidate(recoveryResults, baselineMetrics);
       const allSelection = selectBestCandidate(evaluatedCandidateResults, baselineMetrics);
-      recoveryResult = recoverySelection.bestCandidate ?? recoverySelection.closestCandidates[0];
       tradesAfterRecovery = Math.max(0, ...recoveryResults.map((candidate) => candidate.metrics.totalTrades));
+      recoveryResult =
+        selectTradeProducingRecoveryResult(baselineConfig, recoveryResults) ??
+        recoverySelection.bestCandidate ??
+        recoverySelection.closestCandidates[0];
+      recoveryMetadata = recoveryMetadataFor({
+        baselineConfig,
+        diagnostics: tradeGenerationDiagnostics,
+        recoveryResult,
+        tradesAfterRecovery
+      });
       recoveryFailureReasons = recoveryFailureReasonsFor(tradeGenerationDiagnostics, recoveryResults);
       bestCandidate = allSelection.bestCandidate;
       candidateResults = allSelection.candidateResults;
@@ -1047,6 +1172,7 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
 
     if (
       recoveryResult &&
+      recoveryMetadata &&
       options.createProposal !== false &&
       isZeroTradeRecoveryProposalEligible({
         diagnostics: tradeGenerationDiagnostics,
@@ -1059,6 +1185,7 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
         baselineConfig,
         baselineMetrics,
         recoveryResult,
+        recoveryMetadata,
         tradesBeforeRecovery,
         tradesAfterRecovery
       });
@@ -1066,7 +1193,7 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       if (duplicateMessage) {
         recoveryFailureReasons = safeTopN([
           duplicateMessage,
-          `Active threshold ${(baselineConfig.minimumConfluenceThreshold * 100).toFixed(0)}%; recovery threshold ${((recoveryResult.config.minimumConfluenceThreshold ?? baselineConfig.minimumConfluenceThreshold) * 100).toFixed(0)}%.`,
+          `Active threshold ${formatThresholdPercent(recoveryMetadata.activeConfluenceThreshold)}; observed confluence ${recoveryMetadata.observedICTConfluence !== undefined ? formatThresholdPercent(recoveryMetadata.observedICTConfluence) : "n/a"}; proposed threshold ${formatThresholdPercent(recoveryMetadata.proposedConfluenceThreshold)}.`,
           ...safeArray(recoveryFailureReasons)
         ], 6);
       } else {
@@ -1159,6 +1286,7 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       recoveryAttempted,
       recoveryCandidates,
       recoveryResult,
+      recoveryMetadata,
       tradesBeforeRecovery,
       tradesAfterRecovery,
       recoveryFailureReasons
