@@ -10,20 +10,11 @@
     "confidence": 0.68,
     "agreesWithBaseline": true,
     "reasoningSummary": "Liquidity evidence supports the baseline because sell-side liquidity was swept and reclaimed near discount.",
-    "riskWarnings": [
-      "The sweep count is small and should be tested across more replay windows."
-    ],
-    "missingEvidence": [
-      "Need broader validation of sweep quality by session."
-    ],
-    "suggestedCalibration": [
-      "Compare NY AM only against all-session results before increasing confidence."
-    ],
+    "riskWarnings": ["The sweep count is small and should be tested across more replay windows."],
+    "missingEvidence": ["Need broader validation of sweep quality by session."],
+    "suggestedCalibration": ["Compare NY AM only against all-session results before increasing confidence."],
     "proceedRecommendation": "rerun_validation",
-    "safetyNotes": [
-      "Advisory only.",
-      "No execution authority."
-    ]
+    "safetyNotes": ["Advisory only.", "Execution authority is none."]
   },
   {
     "agentId": "llm-market-structure-reviewer",
@@ -36,20 +27,11 @@
     "confidence": 0.64,
     "agreesWithBaseline": true,
     "reasoningSummary": "Bullish MSS and BOS align with the CIO thesis, but the evidence still needs conservative validation stability.",
-    "riskWarnings": [
-      "Market structure may degrade quickly if invalidation is breached."
-    ],
-    "missingEvidence": [
-      "Higher-timeframe structure confirmation is limited in the sample packet."
-    ],
-    "suggestedCalibration": [
-      "Keep conservative confluence threshold as the benchmark."
-    ],
+    "riskWarnings": ["Market structure may degrade quickly if invalidation is breached."],
+    "missingEvidence": ["Higher-timeframe structure confirmation is limited in the sample packet."],
+    "suggestedCalibration": ["Keep conservative confluence threshold as the benchmark."],
     "proceedRecommendation": "rerun_validation",
-    "safetyNotes": [
-      "Research review only.",
-      "No readiness override."
-    ]
+    "safetyNotes": ["Research review only.", "Authority fields remain none."]
   },
   {
     "agentId": "llm-session-timing-reviewer",
@@ -62,20 +44,11 @@
     "confidence": 0.58,
     "agreesWithBaseline": null,
     "reasoningSummary": "NY AM context is constructive, but session consistency should be separated before promoting the setup.",
-    "riskWarnings": [
-      "False positives increase outside NY AM in the sample quality review."
-    ],
-    "missingEvidence": [
-      "London-only comparison and off-session rejection data are needed."
-    ],
-    "suggestedCalibration": [
-      "Run NY AM only and London only validation scenarios."
-    ],
+    "riskWarnings": ["False positives increase outside NY AM in the sample quality review."],
+    "missingEvidence": ["London-only comparison and off-session rejection data are needed."],
+    "suggestedCalibration": ["Run NY AM only and London only validation scenarios."],
     "proceedRecommendation": "rerun_validation",
-    "safetyNotes": [
-      "No broker control.",
-      "Advisory only."
-    ]
+    "safetyNotes": ["Authority fields remain none.", "Advisory only."]
   },
   {
     "agentId": "llm-risk-reward-reviewer",
@@ -87,21 +60,12 @@
     "bias": "neutral",
     "confidence": 0.6,
     "agreesWithBaseline": true,
-    "reasoningSummary": "Risk/reward is plausible, but max drawdown and stop model sensitivity remain the main blockers.",
-    "riskWarnings": [
-      "Max drawdown of 2.4R is not yet clean enough for Paper-Demo Candidate."
-    ],
-    "missingEvidence": [
-      "Stop model comparison across latest swing, fixed ticks, and FVG invalidation."
-    ],
-    "suggestedCalibration": [
-      "Test FVG invalidation against latest swing stop before changing target R."
-    ],
+    "reasoningSummary": "Risk and reward are plausible, but max drawdown and stop model sensitivity remain the main blockers.",
+    "riskWarnings": ["Max drawdown of 2.4R is not yet clean enough for Paper-Demo Candidate review."],
+    "missingEvidence": ["Stop model comparison across latest swing, fixed ticks, and FVG invalidation."],
+    "suggestedCalibration": ["Test FVG invalidation against latest swing stop before changing target R."],
     "proceedRecommendation": "rerun_validation",
-    "safetyNotes": [
-      "No order placement.",
-      "No execution settings changed."
-    ]
+    "safetyNotes": ["Order routing authority is none.", "Execution settings are unchanged."]
   },
   {
     "agentId": "llm-validation-reviewer",
@@ -113,21 +77,12 @@
     "bias": "no_opinion",
     "confidence": 0.72,
     "agreesWithBaseline": false,
-    "reasoningSummary": "Validation is not strong enough for Paper-Demo Candidate because the conservative scenario is not fully stable.",
-    "riskWarnings": [
-      "Readiness should remain blocked until conservative validation is repeatedly stable."
-    ],
-    "missingEvidence": [
-      "Walk-forward or repeated mock candle validation is not present."
-    ],
-    "suggestedCalibration": [
-      "Raise confidence threshold slightly and re-run conservative validation."
-    ],
+    "reasoningSummary": "Validation is not strong enough for Paper-Demo Candidate review because the conservative scenario is not fully stable.",
+    "riskWarnings": ["Readiness should remain blocked until conservative validation is repeatedly stable."],
+    "missingEvidence": ["Walk-forward or repeated mock candle validation is not present."],
+    "suggestedCalibration": ["Raise confidence threshold slightly and re-run conservative validation."],
     "proceedRecommendation": "rerun_validation",
-    "safetyNotes": [
-      "Paper-demo approval is not granted.",
-      "Readiness gate remains authoritative."
-    ]
+    "safetyNotes": ["Paper-demo review is not authorization.", "Readiness gate remains authoritative."]
   },
   {
     "agentId": "llm-self-improvement-reviewer",
@@ -140,20 +95,11 @@
     "confidence": 0.66,
     "agreesWithBaseline": true,
     "reasoningSummary": "The most useful next calibration is a small threshold adjustment tested in simulation only.",
-    "riskWarnings": [
-      "Changing multiple variables at once may overfit the current mock data."
-    ],
-    "missingEvidence": [
-      "Need before/after comparison after any proposed threshold change."
-    ],
-    "suggestedCalibration": [
-      "Increase minimum confidence by 0.03 and test before approval."
-    ],
+    "riskWarnings": ["Changing multiple variables at once may overfit the current mock data."],
+    "missingEvidence": ["Need before and after comparison after any proposed threshold change."],
+    "suggestedCalibration": ["Increase minimum confidence by 0.03 and test before user approval."],
     "proceedRecommendation": "continue_research",
-    "safetyNotes": [
-      "Proposal requires simulation testing.",
-      "User approval remains required."
-    ]
+    "safetyNotes": ["Proposal requires simulation testing.", "User approval remains required."]
   },
   {
     "agentId": "llm-cio-synthesis-reviewer",
@@ -166,20 +112,129 @@
     "confidence": 0.63,
     "agreesWithBaseline": false,
     "reasoningSummary": "The bullish thesis is research-valid, but the correct synthesis is to continue validation before any paper-demo review.",
-    "riskWarnings": [
-      "Do not advance to Paper-Demo Candidate until conservative validation and LLM review are consistently clean."
-    ],
-    "missingEvidence": [
-      "Repeatable validation under conservative settings."
-    ],
-    "suggestedCalibration": [
-      "Prioritize session and stop-model comparison before changing agent weights."
-    ],
+    "riskWarnings": ["Do not advance until conservative validation and LLM review are consistently clean."],
+    "missingEvidence": ["Repeatable validation under conservative settings."],
+    "suggestedCalibration": ["Prioritize session and stop-model comparison before changing agent weights."],
     "proceedRecommendation": "rerun_validation",
-    "safetyNotes": [
-      "No trade approval.",
-      "No readiness override.",
-      "No broker authority."
-    ]
+    "safetyNotes": ["No trade authorization.", "No readiness override.", "Broker authority is none."]
+  },
+  {
+    "agentId": "llm-session-levels-reviewer",
+    "agentName": "LLM Session Levels Reviewer",
+    "mode": "advisory_only",
+    "executionAuthority": "none",
+    "brokerAuthority": "none",
+    "readinessOverrideAuthority": "none",
+    "bias": "neutral",
+    "confidence": 0.57,
+    "agreesWithBaseline": null,
+    "reasoningSummary": "Session levels need more evidence because prior day, overnight, Globex, and opening-range context are only partially available.",
+    "riskWarnings": ["Liquidity sweeps are weaker when they are not tied to meaningful futures reference levels."],
+    "missingEvidence": ["Prior day high and low.", "Overnight high and low.", "Opening range."],
+    "suggestedCalibration": ["Treat missing session-level context as a confidence cap until imported data supplies those levels."],
+    "proceedRecommendation": "continue_research",
+    "safetyNotes": ["Advisory only.", "Execution authority is none."]
+  },
+  {
+    "agentId": "llm-auction-volume-profile-reviewer",
+    "agentName": "LLM Auction/Volume Profile Reviewer",
+    "mode": "advisory_only",
+    "executionAuthority": "none",
+    "brokerAuthority": "none",
+    "readinessOverrideAuthority": "none",
+    "bias": "no_opinion",
+    "confidence": 0.52,
+    "agreesWithBaseline": null,
+    "reasoningSummary": "Auction context is incomplete; VWAP, anchored VWAP, VPOC, VAH, and VAL should be treated as missing evidence.",
+    "riskWarnings": ["Without acceptance or rejection context, target and invalidation quality are less certain."],
+    "missingEvidence": ["VWAP.", "Anchored VWAP.", "VPOC.", "VAH.", "VAL."],
+    "suggestedCalibration": ["Add a missing-auction-context warning rather than increasing thesis confidence."],
+    "proceedRecommendation": "continue_research",
+    "safetyNotes": ["Advisory review only.", "Broker authority is none."]
+  },
+  {
+    "agentId": "llm-macro-event-risk-reviewer",
+    "agentName": "LLM Macro Event Risk Reviewer",
+    "mode": "advisory_only",
+    "executionAuthority": "none",
+    "brokerAuthority": "none",
+    "readinessOverrideAuthority": "none",
+    "bias": "neutral",
+    "confidence": 0.55,
+    "agreesWithBaseline": null,
+    "reasoningSummary": "Macro event risk is not fully known, so scheduled event proximity should cap confidence until a calendar adapter exists.",
+    "riskWarnings": ["FOMC, CPI, NFP, PPI, retail sales, or Fed speaker proximity can distort normal ICT behavior."],
+    "missingEvidence": ["Economic calendar.", "Fed speaker schedule.", "Event time proximity."],
+    "suggestedCalibration": ["Add a macro-risk caution when event data is missing."],
+    "proceedRecommendation": "continue_research",
+    "safetyNotes": ["No live data required for this planning review.", "Authority fields remain none."]
+  },
+  {
+    "agentId": "llm-intermarket-confirmation-reviewer",
+    "agentName": "LLM Intermarket Confirmation Reviewer",
+    "mode": "advisory_only",
+    "executionAuthority": "none",
+    "brokerAuthority": "none",
+    "readinessOverrideAuthority": "none",
+    "bias": "no_opinion",
+    "confidence": 0.51,
+    "agreesWithBaseline": null,
+    "reasoningSummary": "Intermarket confirmation cannot be verified because ES/NQ, YM/ES, VIX, DXY, yields, bonds, crude, and gold context are not present.",
+    "riskWarnings": ["A directional thesis has lower confidence when broader index and macro relationships are unconfirmed."],
+    "missingEvidence": ["ES/NQ ratio.", "VIX.", "DXY.", "2-year and 10-year yields."],
+    "suggestedCalibration": ["Keep intermarket evidence as neutral until future adapters provide context."],
+    "proceedRecommendation": "continue_research",
+    "safetyNotes": ["Advisory only.", "No external control authority."]
+  },
+  {
+    "agentId": "llm-positioning-gamma-reviewer",
+    "agentName": "LLM Positioning/Gamma Reviewer",
+    "mode": "advisory_only",
+    "executionAuthority": "none",
+    "brokerAuthority": "none",
+    "readinessOverrideAuthority": "none",
+    "bias": "no_opinion",
+    "confidence": 0.49,
+    "agreesWithBaseline": null,
+    "reasoningSummary": "Positioning and gamma context are unavailable, so higher-timeframe dealer-flow pressure should not boost conviction.",
+    "riskWarnings": ["Missing gamma flip and positioning context can hide mean-reversion or trend-extension risk."],
+    "missingEvidence": ["COT.", "Put/call ratio.", "Gamma levels.", "Dealer gamma flip."],
+    "suggestedCalibration": ["Use no-opinion bias for positioning until manual import or a future provider is added."],
+    "proceedRecommendation": "continue_research",
+    "safetyNotes": ["Advisory only.", "Execution authority is none."]
+  },
+  {
+    "agentId": "llm-volatility-regime-reviewer",
+    "agentName": "LLM Volatility Regime Reviewer",
+    "mode": "advisory_only",
+    "executionAuthority": "none",
+    "brokerAuthority": "none",
+    "readinessOverrideAuthority": "none",
+    "bias": "neutral",
+    "confidence": 0.6,
+    "agreesWithBaseline": true,
+    "reasoningSummary": "Volatility context should shape target and stop assumptions, but current evidence is mostly ATR/range based.",
+    "riskWarnings": ["Range expansion can make fixed stops too tight or target assumptions too optimistic."],
+    "missingEvidence": ["VIX.", "Realized volatility regime comparison."],
+    "suggestedCalibration": ["Compare fixed-tick and latest-swing stops under high-volatility windows."],
+    "proceedRecommendation": "rerun_validation",
+    "safetyNotes": ["Advisory review only.", "Readiness gate remains separate."]
+  },
+  {
+    "agentId": "llm-order-flow-planning-reviewer",
+    "agentName": "LLM Order Flow Planning Reviewer",
+    "mode": "advisory_only",
+    "executionAuthority": "none",
+    "brokerAuthority": "none",
+    "readinessOverrideAuthority": "none",
+    "bias": "no_opinion",
+    "confidence": 0.45,
+    "agreesWithBaseline": null,
+    "reasoningSummary": "Order-flow evidence is a later planning layer only; the current review should note missing DOM, footprint, delta, cumulative delta, and large-print context.",
+    "riskWarnings": ["Do not treat missing order-flow data as confirmation or rejection of the thesis yet."],
+    "missingEvidence": ["DOM.", "Footprint.", "Delta.", "Cumulative delta.", "Large prints."],
+    "suggestedCalibration": ["Keep order-flow reviewer in planning mode until export/import or a future adapter exists."],
+    "proceedRecommendation": "continue_research",
+    "safetyNotes": ["Planning only.", "No execution authority.", "No readiness override."]
   }
 ]

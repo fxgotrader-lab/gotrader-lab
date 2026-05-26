@@ -129,6 +129,10 @@ export function LLMAgentsView({ state }: { state: LabState }) {
   const llmRuns = safeArray(llmState.runs);
   const latestRun = llmRuns.find((run) => run.runId === llmState.latestRunId) ?? llmRuns[0];
   const latestResponses = safeArray(latestRun?.responses);
+  const receivedReviewerIds = new Set(latestResponses.map((response) => response.agentId));
+  const missingLatestReviewers = latestRun
+    ? requiredLLMAgents.filter((agent) => !receivedReviewerIds.has(agent.agentId))
+    : [];
   const providerStatus = providerStatusForMode(llmState.providerMode);
   const context = useMemo(
     () =>
@@ -340,6 +344,30 @@ export function LLMAgentsView({ state }: { state: LabState }) {
       </TechnicalDetails>
 
       <SafetyLockBanner message="LLM agents are required for real research mode, but advisory only. They cannot execute trades or override readiness gates." />
+
+      {missingLatestReviewers.length ? (
+        <Card className="border-amber-300/25 bg-amber-300/10">
+          <CardHeader>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle>Missing Required Futures Reviewers</CardTitle>
+                <CardDescription className="text-amber-100/75">
+                  The latest LLM advisory response cannot pass until every futures market-context reviewer is returned.
+                </CardDescription>
+              </div>
+              <Badge variant="warning">{missingLatestReviewers.length} missing</Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {missingLatestReviewers.map((agent) => (
+              <div key={agent.agentId} className="rounded-md border border-amber-300/25 bg-background/50 p-3">
+                <p className="text-sm font-medium text-amber-50">{agent.agentName}</p>
+                <p className="mt-1 break-all font-mono text-xs text-amber-100/75">{agent.agentId}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -664,6 +692,18 @@ node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-c
                       ))}
                     </div>
                   ) : null}
+                  {safeArray(importResult.missingRequiredAgents).length ? (
+                    <div className="mt-3 rounded-lg border border-amber-300/25 bg-amber-300/10 p-3">
+                      <p className="text-xs font-semibold uppercase text-amber-100">Missing reviewer names</p>
+                      <div className="mt-2 grid gap-2">
+                        {safeArray(importResult.missingRequiredAgents).map((agent) => (
+                          <div key={agent.agentId} className="rounded-md border border-amber-300/20 bg-background/45 px-2 py-1 text-xs text-amber-50">
+                            {agent.agentName} <span className="font-mono text-amber-100/70">({agent.agentId})</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   {safeArray(importResult.warnings).length ? (
                     <div className="mt-3 space-y-1">
                       {safeArray(importResult.warnings).map((warning) => (
@@ -721,7 +761,9 @@ node scripts/gpt55-llm-agent-provider.mjs --input-file llm/requests/latest-llm-c
                     <p className="font-medium">{agent.agentName}</p>
                     <p className="mt-2 text-xs text-muted-foreground">{agent.role}</p>
                   </div>
-                  <Badge variant="warning">required</Badge>
+                  <Badge variant={latestRun ? receivedReviewerIds.has(agent.agentId) ? "success" : "warning" : "warning"}>
+                    {latestRun ? receivedReviewerIds.has(agent.agentId) ? "received" : "missing" : "required"}
+                  </Badge>
                 </div>
               </div>
             ))}

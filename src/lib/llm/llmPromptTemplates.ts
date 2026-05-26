@@ -20,6 +20,30 @@ export const requiredLLMAgents: LLMAgentDefinition[] = [
     role: "Review session tag, ICT kill zone, time-of-day quality, and session-specific fragility."
   },
   {
+    agentId: "llm-risk-reward-reviewer",
+    agentName: "LLM Risk/Reward Reviewer",
+    required: true,
+    role: "Review invalidation, target, average R, drawdown pressure, and stop-model quality."
+  },
+  {
+    agentId: "llm-validation-reviewer",
+    agentName: "LLM Validation Reviewer",
+    required: true,
+    role: "Review validation results, conservative scenario stability, false positives, and confidence calibration."
+  },
+  {
+    agentId: "llm-self-improvement-reviewer",
+    agentName: "LLM Self-Improvement Reviewer",
+    required: true,
+    role: "Suggest calibration improvements that stay simulation-only and change one variable or small grouped set."
+  },
+  {
+    agentId: "llm-cio-synthesis-reviewer",
+    agentName: "LLM CIO Synthesis Reviewer",
+    required: true,
+    role: "Synthesize the advisory review without approving execution or bypassing readiness."
+  },
+  {
     agentId: "llm-session-levels-reviewer",
     agentName: "LLM Session Levels Reviewer",
     required: true,
@@ -60,32 +84,14 @@ export const requiredLLMAgents: LLMAgentDefinition[] = [
     agentName: "LLM Order Flow Planning Reviewer",
     required: true,
     role: "Review missing DOM, footprint, delta, cumulative delta, and large-print evidence as planned later context only."
-  },
-  {
-    agentId: "llm-risk-reward-reviewer",
-    agentName: "LLM Risk/Reward Reviewer",
-    required: true,
-    role: "Review invalidation, target, average R, drawdown pressure, and stop-model quality."
-  },
-  {
-    agentId: "llm-validation-reviewer",
-    agentName: "LLM Validation Reviewer",
-    required: true,
-    role: "Review validation results, conservative scenario stability, false positives, and confidence calibration."
-  },
-  {
-    agentId: "llm-self-improvement-reviewer",
-    agentName: "LLM Self-Improvement Reviewer",
-    required: true,
-    role: "Suggest calibration improvements that stay simulation-only and change one variable or small grouped set."
-  },
-  {
-    agentId: "llm-cio-synthesis-reviewer",
-    agentName: "LLM CIO Synthesis Reviewer",
-    required: true,
-    role: "Synthesize the advisory review without approving execution or bypassing readiness."
   }
 ];
+
+export const requiredLLMAgentIds = requiredLLMAgents.map((agent) => agent.agentId);
+
+export const requiredLLMReviewerRosterPrompt = requiredLLMAgents
+  .map((agent, index) => `${index + 1}. ${agent.agentId} - ${agent.agentName}: ${agent.role}`)
+  .join("\n");
 
 export const llmSystemSafetyPrompt = [
   "You are an advisory-only research reviewer for GoTrader AI Lab.",
@@ -100,22 +106,31 @@ export const llmSystemSafetyPrompt = [
 
 export const llmResponseSchemaPrompt = `Return JSON with:
 {
-  "agentId": "string",
-  "agentName": "string",
-  "mode": "advisory_only",
-  "executionAuthority": "none",
-  "brokerAuthority": "none",
-  "readinessOverrideAuthority": "none",
-  "bias": "bullish | bearish | neutral | no_opinion",
-  "confidence": 0.0,
-  "agreesWithBaseline": true,
-  "reasoningSummary": "string",
-  "riskWarnings": [],
-  "missingEvidence": [],
-  "suggestedCalibration": [],
-  "proceedRecommendation": "continue_research | rerun_validation | paper_demo_candidate_review",
-  "safetyNotes": []
-}`;
+  "responses": [
+    {
+      "agentId": "one of the required reviewer IDs",
+      "agentName": "string",
+      "mode": "advisory_only",
+      "executionAuthority": "none",
+      "brokerAuthority": "none",
+      "readinessOverrideAuthority": "none",
+      "bias": "bullish | bearish | neutral | no_opinion",
+      "confidence": 0.0,
+      "agreesWithBaseline": true,
+      "reasoningSummary": "string",
+      "riskWarnings": [],
+      "missingEvidence": [],
+      "suggestedCalibration": [],
+      "proceedRecommendation": "continue_research | rerun_validation | paper_demo_candidate_review",
+      "safetyNotes": []
+    }
+  ]
+}
+
+Return exactly ${requiredLLMAgents.length} reviewer objects. Required reviewers:
+${requiredLLMReviewerRosterPrompt}
+
+The order-flow planning reviewer is advisory/planning only. It should identify missing order-flow evidence and must not require live DOM, footprint, delta, cumulative delta, or large-print feeds yet.`;
 
 export const llmRestrictedContextInstructions = [
   "Context packet is restricted to research data only.",

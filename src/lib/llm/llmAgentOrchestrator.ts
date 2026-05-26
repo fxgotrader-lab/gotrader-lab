@@ -9,7 +9,7 @@ import type {
   LLMResearchContextPacket,
   LLMResponseValidationResult
 } from "@/lib/llm/llmTypes";
-import { validateLLMResponse } from "@/lib/llm/validateLLMResponse";
+import { missingRequiredLLMAgents, validateLLMResponse } from "@/lib/llm/validateLLMResponse";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
 import { buildMarketContext, summarizeMarketContext } from "@/lib/marketData";
 import type { ResearchQualityReview } from "@/lib/researchQuality";
@@ -202,13 +202,23 @@ export async function runLLMAgentOrchestrator(
       for (const response of responses) {
         validationResults[response.agentId] = validateLLMResponse(response);
       }
+      const missingAgents = missingRequiredLLMAgents(responses);
+      for (const agent of missingAgents) {
+        validationResults[agent.agentId] = {
+          valid: false,
+          errors: [`${agent.agentName} (${agent.agentId}) is missing from the required futures-context reviewer set.`],
+          warnings: []
+        };
+      }
       const invalidCount = Object.values(validationResults).filter((result) => !result.valid).length;
       status = invalidCount ? "rejected" : providerMode === "mock_llm" ? "mock_complete" : "complete";
       readinessImpact =
         providerMode === "mock_llm"
           ? "Mock LLM review completed for UI testing only; real research mode still requires a configured provider."
           : invalidCount
-            ? "Unsafe or invalid LLM responses were rejected."
+            ? missingAgents.length
+              ? `LLM advisory response is missing ${missingAgents.length} required futures-context reviewer${missingAgents.length === 1 ? "" : "s"}.`
+              : "Unsafe or invalid LLM responses were rejected."
             : "Configured LLM advisory review passed validation.";
     }
   } catch (error) {

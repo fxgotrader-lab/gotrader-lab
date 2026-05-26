@@ -3,8 +3,10 @@ import type {
   LLMProceedRecommendation,
   LLMResponseValidationResult
 } from "@/lib/llm/llmTypes";
+import { requiredLLMAgents, requiredLLMAgentIds } from "@/lib/llm/llmPromptTemplates";
 
 const allowedBiases = new Set(["bullish", "bearish", "neutral", "no_opinion"]);
+const allowedAgentIds = new Set(requiredLLMAgentIds);
 const allowedRecommendations = new Set<LLMProceedRecommendation>([
   "continue_research",
   "rerun_validation",
@@ -76,6 +78,8 @@ export function validateLLMResponse(response: Partial<LLMAgentResponse>): LLMRes
 
   if (!response.agentId) {
     errors.push("agentId is required");
+  } else if (!allowedAgentIds.has(response.agentId)) {
+    errors.push(`agentId must be one of the ${requiredLLMAgents.length} required futures-context reviewers`);
   }
   if (!response.agentName) {
     errors.push("agentName is required");
@@ -126,6 +130,47 @@ export function validateLLMResponse(response: Partial<LLMAgentResponse>): LLMRes
     errors.push("safetyNotes must be an array of strings");
   }
   errors.push(...unsafeLanguageFindings(response));
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings
+  };
+}
+
+export function missingRequiredLLMAgents(responses: Array<Partial<LLMAgentResponse>>) {
+  const receivedIds = new Set(responses.map((response) => response.agentId).filter(Boolean));
+  return requiredLLMAgents.filter((agent) => !receivedIds.has(agent.agentId));
+}
+
+export function validateLLMResponseSet(responses: Array<Partial<LLMAgentResponse>>): LLMResponseValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!Array.isArray(responses)) {
+    return {
+      valid: false,
+      errors: ["responses must be an array"],
+      warnings
+    };
+  }
+
+  const seenIds = new Set<string>();
+  for (const response of responses) {
+    if (response.agentId && seenIds.has(response.agentId)) {
+      errors.push(`${response.agentId}: duplicate LLM reviewer response`);
+    }
+    if (response.agentId) {
+      seenIds.add(response.agentId);
+    }
+    const result = validateLLMResponse(response);
+    errors.push(...result.errors.map((error) => `${response.agentId ?? "unknown"}: ${error}`));
+    warnings.push(...result.warnings.map((warning) => `${response.agentId ?? "unknown"}: ${warning}`));
+  }
+
+  for (const agent of missingRequiredLLMAgents(responses)) {
+    errors.push(`${agent.agentName} (${agent.agentId}): required futures-context reviewer response is missing`);
+  }
 
   return {
     valid: errors.length === 0,

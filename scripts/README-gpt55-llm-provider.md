@@ -67,9 +67,31 @@ The request must be a GoTrader AI Lab `LLMResearchContextPacket`:
 
 The packet may include ICT context, baseline deterministic debate, CIO thesis, validation summary, research quality grade, readiness state, simulation runbook status, and risk notes.
 
+## Required Reviewers
+
+The provider must return all 14 advisory reviewers:
+
+1. LLM ICT Liquidity Reviewer
+2. LLM Market Structure Reviewer
+3. LLM Session Timing Reviewer
+4. LLM Risk/Reward Reviewer
+5. LLM Validation Reviewer
+6. LLM Self-Improvement Reviewer
+7. LLM CIO Synthesis Reviewer
+8. LLM Session Levels Reviewer
+9. LLM Auction/Volume Profile Reviewer
+10. LLM Macro Event Risk Reviewer
+11. LLM Intermarket Confirmation Reviewer
+12. LLM Positioning/Gamma Reviewer
+13. LLM Volatility Regime Reviewer
+14. LLM Order Flow Planning Reviewer
+
+The futures market-context reviewers still return advisory responses when data is missing. The order-flow reviewer is
+planning-only until DOM, footprint, delta, cumulative delta, or large-print data exists.
+
 ## Stdout Contract
 
-On success, stdout contains JSON only: an array of seven validated advisory responses, one for each required LLM agent.
+On success, stdout contains JSON only: an array of 14 validated advisory responses, one for each required LLM agent.
 
 In `--output-file` mode, the same validated JSON is written to the output file and stdout stays empty.
 

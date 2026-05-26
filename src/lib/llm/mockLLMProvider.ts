@@ -23,7 +23,7 @@ export const mockLLMProvider: LLMProvider = {
       reasoningSummary: `${agent.agentName} mock review found the context usable for UI testing only. This is not a real LLM advisory review.`,
       riskWarnings: [
         "Mock response only; do not use for Paper-Demo Candidate readiness.",
-        "Broker execution remains disabled."
+        "Execution authority remains none."
       ],
       missingEvidence: context.validationSummary ? [] : ["Validation summary is missing."],
       suggestedCalibration:

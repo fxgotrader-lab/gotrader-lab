@@ -25,13 +25,42 @@
     "liquiditySweepCount": 1,
     "fairValueGapCount": 2
   },
+  "marketContextSummary": {
+    "mode": "mock",
+    "availableModules": [
+      "mock price and volume",
+      "mock session levels",
+      "mock volatility regime"
+    ],
+    "missingModules": [
+      "VWAP",
+      "anchored VWAP",
+      "volume profile",
+      "economic calendar",
+      "intermarket ratios",
+      "positioning and gamma",
+      "order-flow exports"
+    ],
+    "vwap": 18702.5,
+    "vpoc": 18692.25,
+    "overnightHigh": 18735,
+    "overnightLow": 18642,
+    "globexHigh": 18740,
+    "globexLow": 18636,
+    "macroRiskBias": "neutral",
+    "positioningBias": "neutral",
+    "orderFlowStatus": "planned_later",
+    "safetyNotice": "Market context is research input only. No broker execution or live trading."
+  },
   "deterministicICTFacts": [
     "Confluence score: 0.68",
     "Bias: bullish",
     "MSS bullish/bearish: true/false",
     "BOS bullish/bearish: true/false",
     "Liquidity sweeps: 1",
-    "Fair value gaps: 2"
+    "Fair value gaps: 2",
+    "Market context mode: mock",
+    "Market context missing modules: VWAP, anchored VWAP, volume profile, economic calendar, intermarket ratios, positioning and gamma, order-flow exports"
   ],
   "internalBaselineAgentDebate": [
     {

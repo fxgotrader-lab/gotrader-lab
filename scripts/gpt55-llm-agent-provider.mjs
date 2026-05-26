@@ -41,6 +41,41 @@ const requiredAgents = [
     agentId: "llm-cio-synthesis-reviewer",
     agentName: "LLM CIO Synthesis Reviewer",
     role: "Synthesize the advisory review without approving execution or bypassing readiness."
+  },
+  {
+    agentId: "llm-session-levels-reviewer",
+    agentName: "LLM Session Levels Reviewer",
+    role: "Review prior day/week/month, overnight, Globex, and opening-range levels for meaningful futures liquidity sweeps."
+  },
+  {
+    agentId: "llm-auction-volume-profile-reviewer",
+    agentName: "LLM Auction/Volume Profile Reviewer",
+    role: "Review VWAP, anchored VWAP, VPOC, VAH, VAL, and acceptance/rejection evidence."
+  },
+  {
+    agentId: "llm-macro-event-risk-reviewer",
+    agentName: "LLM Macro Event Risk Reviewer",
+    role: "Review scheduled macro risk, Fed speakers, and event proximity that can distort normal ICT behavior."
+  },
+  {
+    agentId: "llm-intermarket-confirmation-reviewer",
+    agentName: "LLM Intermarket Confirmation Reviewer",
+    role: "Review ES/NQ, YM/ES, VIX, DXY, yields, bonds, crude, and gold context for confirmation or conflict."
+  },
+  {
+    agentId: "llm-positioning-gamma-reviewer",
+    agentName: "LLM Positioning/Gamma Reviewer",
+    role: "Review COT, put/call, gamma levels, dealer gamma flip, and higher-timeframe positioning risk."
+  },
+  {
+    agentId: "llm-volatility-regime-reviewer",
+    agentName: "LLM Volatility Regime Reviewer",
+    role: "Review VIX, ATR/range expansion, realized volatility, stop assumptions, and target expectations."
+  },
+  {
+    agentId: "llm-order-flow-planning-reviewer",
+    agentName: "LLM Order Flow Planning Reviewer",
+    role: "Review missing DOM, footprint, delta, cumulative delta, and large-print evidence as planned later context only."
   }
 ];
 
@@ -474,7 +509,9 @@ function buildSystemPrompt() {
     "Avoid free-text words and phrases such as execute, place trade, open position, close position, send order, broker control, override readiness, or approve trade.",
     "Use proceedRecommendation only as one of: continue_research, rerun_validation, paper_demo_candidate_review.",
     "paper_demo_candidate_review means review readiness only. It is not approval to trade, execute, route, or enable paper/demo/live trading.",
-    "Return one response for each required LLM agent.",
+    `Return exactly ${requiredAgents.length} responses, one response for each required LLM agent ID listed below.`,
+    "Do not omit futures market-context reviewers.",
+    "Order-flow planning reviewer is planning/advisory only. It should flag missing order-flow evidence and must not require live DOM, footprint, delta, cumulative delta, or large-print feeds.",
     "Prefer stability and evidence quality over profit-only conclusions.",
     "If evidence is missing, recommend continue_research or rerun_validation.",
     "",

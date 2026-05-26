@@ -4,9 +4,10 @@ import {
 import type {
   LLMAgentResponse,
   LLMAdvisoryRun,
+  LLMAgentDefinition,
   LLMResponseValidationResult
 } from "@/lib/llm/llmTypes";
-import { validateLLMResponse } from "@/lib/llm/validateLLMResponse";
+import { missingRequiredLLMAgents, validateLLMResponse } from "@/lib/llm/validateLLMResponse";
 import { uid } from "@/lib/utils";
 
 export interface LLMAgentResponseImportResult {
@@ -16,6 +17,7 @@ export interface LLMAgentResponseImportResult {
   errors: string[];
   warnings: string[];
   unsafeResponseRejections: number;
+  missingRequiredAgents: LLMAgentDefinition[];
 }
 
 const normalizeResponses = (parsed: unknown): LLMAgentResponse[] => {
@@ -56,7 +58,8 @@ export function importLLMAgentResponse(rawJson: string, contextPacketId = "manua
       valid: false,
       errors: ["response is not valid JSON"],
       warnings,
-      unsafeResponseRejections: 1
+      unsafeResponseRejections: 1,
+      missingRequiredAgents: requiredLLMAgents
     };
   }
 
@@ -73,16 +76,13 @@ export function importLLMAgentResponse(rawJson: string, contextPacketId = "manua
     warnings.push(...result.warnings.map((warning) => `${response.agentId ?? "unknown"}: ${warning}`));
   }
 
-  const requiredIds = new Set(requiredLLMAgents.map((agent) => agent.agentId));
-  const receivedIds = new Set(responses.map((response) => response.agentId));
-  for (const requiredId of requiredIds) {
-    if (!receivedIds.has(requiredId)) {
-      errors.push(`${requiredId}: required LLM agent response is missing`);
-    }
+  const missingRequiredAgents = missingRequiredLLMAgents(responses);
+  for (const agent of missingRequiredAgents) {
+    errors.push(`${agent.agentName} (${agent.agentId}): required futures-context reviewer response is missing`);
   }
 
   const unsafeResponseRejections = Object.values(validationResults).filter((result) => !result.valid).length;
-  const valid = errors.length === 0 && responses.length === requiredLLMAgents.length;
+  const valid = errors.length === 0 && missingRequiredAgents.length === 0 && responses.length === requiredLLMAgents.length;
   const run: LLMAdvisoryRun | undefined = responses.length
     ? {
         runId: uid("llm_run_import"),
@@ -110,6 +110,7 @@ export function importLLMAgentResponse(rawJson: string, contextPacketId = "manua
     valid,
     errors,
     warnings,
-    unsafeResponseRejections: responses.length ? unsafeResponseRejections : 1
+    unsafeResponseRejections: responses.length ? unsafeResponseRejections : 1,
+    missingRequiredAgents
   };
 }

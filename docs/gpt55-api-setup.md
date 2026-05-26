@@ -112,6 +112,17 @@ The model must return one advisory response for each required LLM agent:
 5. LLM Validation Reviewer
 6. LLM Self-Improvement Reviewer
 7. LLM CIO Synthesis Reviewer
+8. LLM Session Levels Reviewer
+9. LLM Auction/Volume Profile Reviewer
+10. LLM Macro Event Risk Reviewer
+11. LLM Intermarket Confirmation Reviewer
+12. LLM Positioning/Gamma Reviewer
+13. LLM Volatility Regime Reviewer
+14. LLM Order Flow Planning Reviewer
+
+The futures market-context reviewers are required even when data is still mock or missing. They should identify missing
+evidence and keep confidence appropriately capped. The Order Flow Planning Reviewer is advisory/planning only and must not
+require live DOM, footprint, delta, cumulative delta, or large-print feeds yet.
 
 Every response must include:
 

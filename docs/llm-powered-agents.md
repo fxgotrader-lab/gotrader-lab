@@ -21,21 +21,26 @@ This layer is research/advisory only. It does not add broker execution, Tradovat
 1. LLM ICT Liquidity Reviewer
 2. LLM Market Structure Reviewer
 3. LLM Session Timing Reviewer
-4. LLM Session Levels Reviewer
-5. LLM Auction/Volume Profile Reviewer
-6. LLM Macro Event Risk Reviewer
-7. LLM Intermarket Confirmation Reviewer
-8. LLM Positioning/Gamma Reviewer
-9. LLM Volatility Regime Reviewer
-10. LLM Order Flow Planning Reviewer
-11. LLM Risk/Reward Reviewer
-12. LLM Validation Reviewer
-13. LLM Self-Improvement Reviewer
-14. LLM CIO Synthesis Reviewer
+4. LLM Risk/Reward Reviewer
+5. LLM Validation Reviewer
+6. LLM Self-Improvement Reviewer
+7. LLM CIO Synthesis Reviewer
+8. LLM Session Levels Reviewer
+9. LLM Auction/Volume Profile Reviewer
+10. LLM Macro Event Risk Reviewer
+11. LLM Intermarket Confirmation Reviewer
+12. LLM Positioning/Gamma Reviewer
+13. LLM Volatility Regime Reviewer
+14. LLM Order Flow Planning Reviewer
 
 Equity-style sector reviewers are deprecated for the main futures workflow. ES/NQ/YM/MES/MNQ research gets more
 useful signal from direct futures context: session levels, auction/volume profile, macro event risk, intermarket
 confirmation, positioning/gamma, volatility regime, and later order flow.
+
+The futures market-context reviewers are required even when the relevant provider data is still mock, imported, or
+missing. In that case they should return `no_opinion`, name the missing evidence, and recommend continued research or
+validation. The Order Flow Planning Reviewer is advisory/planning only and does not require live DOM, footprint, delta,
+cumulative delta, or large-print feeds yet.
 
 Each agent receives a restricted research context packet:
 
