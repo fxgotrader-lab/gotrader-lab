@@ -22,11 +22,16 @@ import type {
   AutoResearchSearchMode,
   AutoResearchState
 } from "@/lib/autoResearch";
-import { describeBacktestConfig } from "@/lib/backtesting";
+import { describeBacktestConfig, sanitizeBacktestConfig } from "@/lib/backtesting";
 import {
   ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
   resolveActiveBacktestConfig
 } from "@/lib/selfImprovement";
+import {
+  loadActiveCandleSource,
+  MARKET_DATA_IMPORT_UPDATED_EVENT,
+  type CandleDataSource
+} from "@/lib/marketData";
 import { formatPercent, formatSigned, safeArray, safeTopN } from "@/lib/utils";
 
 const searchModeOptions = autoResearchSearchModes.map((mode) => ({
@@ -71,6 +76,7 @@ const categoryVariant = (category?: string) =>
 const formatToken = (value?: string) => (value ?? "none").replace(/_/g, " ");
 const formatOptionalPercent = (value?: number) =>
   typeof value === "number" && Number.isFinite(value) ? formatPercent(value) : "n/a";
+const fallbackCandleSource: CandleDataSource = { mode: "mock", label: "Mock candles", candles: [] };
 const metricValue = (candidate: AutoResearchCandidateResult) => ({
   totalTrades: candidate.metrics?.totalTrades ?? 0,
   winRate: candidate.metrics?.winRate ?? 0,
@@ -158,7 +164,19 @@ export function AutoResearchView() {
   const [maxCandidateCount, setMaxCandidateCount] = useState("10");
   const [isRunning, setIsRunning] = useState(false);
   const [configRefreshKey, setConfigRefreshKey] = useState(0);
-  const baselineResolution = useMemo(() => resolveActiveBacktestConfig(), [state.latestCycleId, configRefreshKey]);
+  const [activeCandleSource, setActiveCandleSource] = useState<CandleDataSource>(fallbackCandleSource);
+  const baselineResolution = useMemo(() => {
+    const resolved = resolveActiveBacktestConfig();
+    if (!activeCandleSource.metadata) {
+      return resolved;
+    }
+    const sourceConfig = sanitizeBacktestConfig({
+      ...resolved.config,
+      symbol: activeCandleSource.metadata.symbol,
+      timeframe: activeCandleSource.metadata.timeframe ?? resolved.config.timeframe
+    });
+    return { ...resolved, config: sourceConfig };
+  }, [state.latestCycleId, configRefreshKey, activeCandleSource]);
   const baselineConfig = baselineResolution.config;
   const latestCycle = latestAutoResearchCycle(state);
   const bestCandidate = latestCycle?.bestCandidate;
@@ -182,16 +200,26 @@ export function AutoResearchView() {
   );
 
   useEffect(() => {
+    let mounted = true;
     const refresh = () => {
       setState(loadAutoResearchState());
       setConfigRefreshKey((value) => value + 1);
+      loadActiveCandleSource().then((source) => {
+        if (mounted) {
+          setActiveCandleSource(source);
+        }
+      });
     };
+    refresh();
     window.addEventListener(AUTO_RESEARCH_UPDATED_EVENT, refresh);
     window.addEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
+    window.addEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
+      mounted = false;
       window.removeEventListener(AUTO_RESEARCH_UPDATED_EVENT, refresh);
       window.removeEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
+      window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
   }, []);
@@ -201,7 +229,9 @@ export function AutoResearchView() {
     const cycle = runAutoResearchCycle({
       searchMode,
       maxCandidateCount: Number(maxCandidateCount),
-      createProposal: true
+      createProposal: true,
+      candles: activeCandleSource.candles,
+      baselineConfig
     });
     setState(loadAutoResearchState());
     setIsRunning(false);
@@ -224,13 +254,16 @@ export function AutoResearchView() {
           <p className="text-sm uppercase text-primary">Autonomous research</p>
           <h2 className="mt-1 text-3xl font-semibold tracking-normal">Auto Research Supervisor</h2>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Search bounded research configurations, run mock-data validation, compare stability, and create
+            Search bounded research configurations, run active candle-source validation, compare stability, and create
             approval-gated calibration proposals.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant="warning">Simulation only</Badge>
           <Badge variant="muted">No execution authority</Badge>
+          <Badge variant={activeCandleSource.mode === "imported" ? "success" : "muted"}>
+            {activeCandleSource.mode === "imported" ? "Imported history active" : "Mock candles"}
+          </Badge>
         </div>
       </div>
 

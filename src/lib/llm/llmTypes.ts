@@ -85,7 +85,7 @@ export interface LLMSimulationRunbookSummary {
 }
 
 export interface LLMMarketContextSummary {
-  mode: "mock" | "planning_only" | "future_provider";
+  mode: "mock" | "imported" | "planning_only" | "future_provider";
   availableModules: string[];
   missingModules: string[];
   vwap?: number;

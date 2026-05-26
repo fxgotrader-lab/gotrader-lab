@@ -158,11 +158,11 @@ function buildDecision(
     timeframe: config.timeframe,
     session: config.session ?? sessionFromCandle(candle),
     marketRegime: config.marketRegime,
-    notes: `Replay decision at candle ${decisionIndex + 1} using local mock OHLC only.`
+    notes: `Replay decision at candle ${decisionIndex + 1} using local simulation OHLC only.`
   };
   const historicalCandles = candles.slice(0, decisionIndex + 1);
   const ictContext = buildICTContext(historicalCandles, input);
-  const agentOpinions = runAgents(input, ictContext).map((opinion) => ({
+  const agentOpinions = runAgents(input, ictContext, historicalCandles).map((opinion) => ({
     ...opinion,
     weight: config.agentWeights[opinion.agentId as BacktestAgentWeightId] ?? opinion.weight
   }));

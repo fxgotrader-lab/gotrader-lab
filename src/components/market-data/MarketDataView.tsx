@@ -1,12 +1,23 @@
-import { useMemo, useState } from "react";
-import { BarChart3, DatabaseZap, PlugZap, RadioTower, ShieldCheck } from "lucide-react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { BarChart3, DatabaseZap, FileSpreadsheet, RadioTower, ShieldCheck, Upload } from "lucide-react";
 
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
-import { buildMarketContext } from "@/lib/marketData";
+import {
+  buildMarketContext,
+  importHistoricalCandleFile,
+  listImportedCandleMetadata,
+  loadActiveCandleSource,
+  MARKET_DATA_IMPORT_UPDATED_EVENT,
+  saveImportedCandleSet,
+  setActiveImportedCandleSet,
+  type CandleDataSource,
+  type ImportedCandleMetadata
+} from "@/lib/marketData";
 import type { FuturesSymbol, Timeframe } from "@/lib/types";
 
 const symbolOptions = ["ES", "NQ", "MES", "MNQ"].map((value) => ({ label: value, value }));
@@ -21,10 +32,103 @@ const statusVariant = (status: string) =>
         ? "danger"
         : "secondary";
 
+const fallbackSource: CandleDataSource = {
+  mode: "mock",
+  label: "Mock candles",
+  candles: []
+};
+
+const formatDate = (value?: string) => (value ? new Date(value).toLocaleString() : "n/a");
+
 export function MarketDataView() {
   const [symbol, setSymbol] = useState<FuturesSymbol>("NQ");
   const [timeframe, setTimeframe] = useState<Timeframe>("5m");
-  const context = useMemo(() => buildMarketContext({ symbol, timeframe, mode: "mock" }), [symbol, timeframe]);
+  const [imports, setImports] = useState<ImportedCandleMetadata[]>([]);
+  const [activeSource, setActiveSource] = useState<CandleDataSource>(fallbackSource);
+  const [importMessage, setImportMessage] = useState<string>();
+  const [importError, setImportError] = useState<string>();
+  const [importing, setImporting] = useState(false);
+  const contextSymbol = activeSource.metadata?.symbol ?? symbol;
+  const contextTimeframe = activeSource.metadata?.timeframe ?? timeframe;
+  const context = useMemo(
+    () =>
+      buildMarketContext({
+        symbol: contextSymbol,
+        timeframe: contextTimeframe,
+        mode: activeSource.mode === "imported" ? "imported" : "mock",
+        candles: activeSource.candles
+      }),
+    [activeSource, contextSymbol, contextTimeframe]
+  );
+  const importOptions = [
+    { label: "Mock candles", value: "mock" },
+    ...imports.map((item) => ({
+      label: `${item.sourceLabel} - ${item.candleCount.toLocaleString()} candles`,
+      value: item.importId
+    }))
+  ];
+
+  const refreshImports = async () => {
+    const [metadata, source] = await Promise.all([listImportedCandleMetadata(), loadActiveCandleSource()]);
+    setImports(metadata);
+    setActiveSource(source);
+    if (source.metadata) {
+      setSymbol(source.metadata.symbol);
+      if (source.metadata.timeframe) {
+        setTimeframe(source.metadata.timeframe);
+      }
+    }
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    const refresh = () => {
+      refreshImports().catch((error) => {
+        if (mounted) {
+          setImportError(error instanceof Error ? error.message : "Unable to refresh imported candle metadata.");
+        }
+      });
+    };
+    refresh();
+    window.addEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      mounted = false;
+      window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
+
+  const handleImport = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    setImporting(true);
+    setImportError(undefined);
+    setImportMessage(undefined);
+    try {
+      const result = await importHistoricalCandleFile(file, "MNQ");
+      await saveImportedCandleSet(result);
+      setActiveImportedCandleSet(result.metadata.importId);
+      await refreshImports();
+      setImportMessage(
+        `Imported ${result.metadata.candleCount.toLocaleString()} ${result.metadata.timeframe ?? "detected"} candle(s) from ${result.metadata.sheetName ?? file.name}.`
+      );
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Historical candle import failed.");
+    } finally {
+      setImporting(false);
+      event.target.value = "";
+    }
+  };
+
+  const handleSourceChange = async (value: string) => {
+    setImportError(undefined);
+    setImportMessage(undefined);
+    setActiveImportedCandleSet(value === "mock" ? undefined : value);
+    await refreshImports();
+  };
 
   return (
     <div className="space-y-5">
@@ -33,14 +137,81 @@ export function MarketDataView() {
           <p className="text-sm uppercase text-primary">Market data architecture</p>
           <h2 className="mt-1 text-3xl font-semibold tracking-normal">Market Data Context</h2>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Planning layer for future real market data APIs. Current mode uses mock context only so agent logic can be
-            designed without live feeds, broker connections, or API keys in the browser.
+            Planning layer for future market data APIs plus local historical file imports. Excel/CSV candles are used
+            only as simulation research inputs, never as live feeds or broker execution instructions.
           </p>
         </div>
-        <Badge variant="warning">mock / planning only</Badge>
+        <Badge variant={activeSource.mode === "imported" ? "success" : "warning"}>
+          {activeSource.mode === "imported" ? "imported historical data active" : "mock / planning only"}
+        </Badge>
       </div>
 
       <SafetyLockBanner message="Market data adapters are research inputs only. No broker execution or live trading." />
+
+      <Card className={activeSource.mode === "imported" ? "border-emerald-300/25 bg-emerald-300/10" : ""}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileSpreadsheet className="h-4 w-4 text-emerald-300" aria-hidden="true" />
+            Historical Candle Import
+          </CardTitle>
+          <CardDescription>
+            Import local `.xlsx` or `.csv` OHLCV files. Imported candles stay in browser IndexedDB and are used by
+            Backtest Lab and the dashboard AI Research Cycle when selected.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-foreground">Import Excel/CSV OHLCV</span>
+              <input
+                type="file"
+                accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                onChange={handleImport}
+                disabled={importing}
+                className="block w-full rounded-md border border-input bg-background/70 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-sm file:text-secondary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-foreground">Active candle source</span>
+              <Select
+                value={activeSource.metadata?.importId ?? "mock"}
+                options={importOptions}
+                onChange={(event) => void handleSourceChange(event.target.value)}
+                aria-label="Active candle source"
+              />
+            </label>
+            <Button
+              variant="secondary"
+              onClick={() => void refreshImports()}
+              disabled={importing}
+              className="justify-center"
+            >
+              <Upload className="h-4 w-4" aria-hidden="true" />
+              {importing ? "Importing" : "Refresh"}
+            </Button>
+          </div>
+
+          {importMessage ? (
+            <div className="rounded-md border border-emerald-300/25 bg-emerald-300/10 p-3 text-sm text-emerald-100">
+              {importMessage}
+            </div>
+          ) : null}
+          {importError ? (
+            <div className="rounded-md border border-red-300/25 bg-red-300/10 p-3 text-sm text-red-100">
+              {importError}
+            </div>
+          ) : null}
+
+          <div className="grid gap-3 md:grid-cols-4">
+            <StatusTile label="Source mode" value={activeSource.mode === "imported" ? "imported history" : "mock"} />
+            <StatusTile label="Active label" value={activeSource.label} />
+            <StatusTile label="Candles" value={String(activeSource.candles.length || context.priceVolume.ohlcv.candles.length)} />
+            <StatusTile label="Validation" value={activeSource.metadata?.status.replace(/_/g, " ") ?? "mock data"} />
+          </div>
+
+          {activeSource.metadata ? <ImportMetadataPanel metadata={activeSource.metadata} /> : null}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
         <Card>
@@ -49,7 +220,7 @@ export function MarketDataView() {
               <DatabaseZap className="h-4 w-4 text-primary" aria-hidden="true" />
               Context Selector
             </CardTitle>
-            <CardDescription>Mock context picker used to preview adapter contracts.</CardDescription>
+            <CardDescription>Preview the active adapter context. Imported candles override the mock picker while active.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
@@ -68,12 +239,13 @@ export function MarketDataView() {
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <StatusTile label="Mode" value={context.mode} />
-              <StatusTile label="Mock candles" value={String(context.priceVolume.ohlcv.candles.length)} />
+              <StatusTile label="OHLCV candles" value={String(context.priceVolume.ohlcv.candles.length)} />
               <StatusTile label="VWAP" value={String(context.priceVolume.volumeProfile.vwap ?? "planned")} />
               <StatusTile label="VPOC" value={String(context.priceVolume.volumeProfile.vpoc ?? "planned")} />
             </div>
             <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
-              Real providers are roadmap items only. No API calls, websocket feeds, or broker feeds are active.
+              File imports are local historical data only. Real providers are roadmap items; no API calls, websocket
+              feeds, broker feeds, or order routing are active.
             </div>
           </CardContent>
         </Card>
@@ -101,7 +273,7 @@ export function MarketDataView() {
         <ContextCard
           title="Price & Volume"
           items={[
-            ["OHLCV", `${context.priceVolume.ohlcv.candles.length} mock candles`],
+            ["OHLCV", `${context.priceVolume.ohlcv.candles.length} ${context.priceVolume.ohlcv.source.replace(/_/g, " ")} candles`],
             ["Tick data", context.priceVolume.tickDataStatus],
             ["VWAP", String(context.priceVolume.volumeProfile.vwap)],
             ["Anchored VWAP", String(context.priceVolume.volumeProfile.anchoredVwap)],
@@ -212,6 +384,51 @@ function ModuleRow({ name, status, summary }: { name: string; status: string; su
         <Badge variant={statusVariant(status)}>{status.replace(/_/g, " ")}</Badge>
       </div>
       <p className="mt-2 text-sm text-muted-foreground">{summary}</p>
+    </div>
+  );
+}
+
+function ImportMetadataPanel({ metadata }: { metadata: ImportedCandleMetadata }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/45 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-semibold">{metadata.sourceLabel}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Sheet {metadata.sheetName ?? "n/a"} from {metadata.fileName}
+          </p>
+        </div>
+        <Badge variant={metadata.status === "valid" ? "success" : metadata.status === "invalid" ? "danger" : "warning"}>
+          {metadata.status.replace(/_/g, " ")}
+        </Badge>
+      </div>
+      <div className="mt-3 grid gap-2 text-sm md:grid-cols-3">
+        <StatusTile label="Symbol / contract" value={`${metadata.symbol}${metadata.contract ? ` ${metadata.contract}` : ""}`} />
+        <StatusTile label="Detected timeframe" value={metadata.timeframe ?? "not detected"} />
+        <StatusTile label="Dominant interval" value={metadata.dominantIntervalMinutes ? `${metadata.dominantIntervalMinutes}m` : "n/a"} />
+        <StatusTile label="First timestamp" value={formatDate(metadata.firstTimestamp)} />
+        <StatusTile label="Last timestamp" value={formatDate(metadata.lastTimestamp)} />
+        <StatusTile label="Duplicates skipped" value={String(metadata.duplicateTimestampsHandled)} />
+      </div>
+      <div className="mt-3 rounded-md border border-border bg-card/45 p-2 text-xs text-muted-foreground">
+        <span className="text-foreground">Columns:</span> {metadata.columnNames.join(", ")}
+      </div>
+      {metadata.validationWarnings.length ? (
+        <div className="mt-3 space-y-2">
+          {metadata.validationWarnings.map((warning) => (
+            <div
+              key={warning.code}
+              className="rounded-md border border-amber-300/20 bg-amber-300/10 p-2 text-xs text-amber-100"
+            >
+              <span className="font-semibold">{warning.code.replace(/_/g, " ")}:</span> {warning.message}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-3 rounded-md border border-emerald-300/20 bg-emerald-300/10 p-2 text-xs text-emerald-100">
+          No validation warnings detected.
+        </div>
+      )}
     </div>
   );
 }

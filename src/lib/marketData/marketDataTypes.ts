@@ -1,6 +1,6 @@
 import type { Candle, FuturesSymbol, MarketBias, Timeframe } from "@/lib/types";
 
-export type MarketDataMode = "mock" | "planning_only" | "future_provider";
+export type MarketDataMode = "mock" | "imported" | "planning_only" | "future_provider";
 
 export type MarketDataModuleStatus = "available_mock" | "missing" | "planned" | "later_advanced";
 
@@ -10,7 +10,7 @@ export interface OHLCVSeries {
   symbol: FuturesSymbol;
   timeframe: Timeframe;
   candles: Candle[];
-  source: "mock" | "csv_import" | "future_provider";
+  source: "mock" | "historical_import" | "csv_import" | "xlsx_import" | "future_provider";
   updatedAt: string;
 }
 

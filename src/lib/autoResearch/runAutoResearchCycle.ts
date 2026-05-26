@@ -50,6 +50,7 @@ import type {
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import { labStorage } from "@/lib/storage";
 import { loadSimulationRunbookState } from "@/lib/simulationRunbook";
+import type { Candle } from "@/lib/types";
 import { safeArray, safeTopN, uid } from "@/lib/utils";
 import { runValidationSuite } from "@/lib/validation";
 
@@ -442,7 +443,8 @@ export function latestAutoResearchCycle(state = loadAutoResearchState()) {
 
 const evaluateCandidate = (
   candidate: ReturnType<typeof generateCandidateConfigs>[number],
-  baselineMetrics: ReturnType<typeof summarizeValidationMetrics>
+  baselineMetrics: ReturnType<typeof summarizeValidationMetrics>,
+  candles: Candle[]
 ): AutoResearchCandidateResult => {
   const originalWeights = loadICTScoringWeights();
   const hasICTWeightPatch = Boolean(candidate.ictScoringWeights);
@@ -455,8 +457,8 @@ const evaluateCandidate = (
   }
 
   try {
-    const backtestResult = runBacktest(mockCandles, candidate.config);
-    const validationReport = runValidationSuite(mockCandles, candidate.config);
+    const backtestResult = runBacktest(candles, candidate.config);
+    const validationReport = runValidationSuite(candles, candidate.config);
     const researchQualityReview = analyzeValidationResults(validationReport);
     const readinessEstimate = evaluateReadinessGate({
       validation: validationReport,
@@ -999,18 +1001,19 @@ const createResearchCalibrationCandidateProposal = ({
 export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResearchCycle {
   const cycleId = uid("auto_cycle");
   try {
+    const activeCandles = options.candles?.length ? options.candles : mockCandles;
     const activeResearchConfig = resolveActiveBacktestConfig();
-    const baselineConfig = activeResearchConfig.config;
-    const baselineBacktest = runBacktest(mockCandles, baselineConfig);
+    const baselineConfig = options.baselineConfig ? resolveActiveBacktestConfig(options.baselineConfig).config : activeResearchConfig.config;
+    const baselineBacktest = runBacktest(activeCandles, baselineConfig);
     const tradesBeforeRecovery = baselineBacktest.summary.totalTrades;
     const tradeGenerationDiagnostics = tradesBeforeRecovery === 0
       ? diagnoseTradeGeneration({
-          candles: mockCandles,
+          candles: activeCandles,
           config: baselineConfig,
           result: baselineBacktest
         })
       : [];
-    const baselineValidation = runValidationSuite(mockCandles, baselineConfig);
+    const baselineValidation = runValidationSuite(activeCandles, baselineConfig);
     const baselineMetrics = summarizeValidationMetrics(baselineValidation);
     const maxAdaptivePasses = Math.max(0, Math.min(2, options.maxAdaptivePasses ?? 2));
     const totalPasses = 1 + maxAdaptivePasses;
@@ -1047,7 +1050,7 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
 
       const passResults: AutoResearchCandidateResult[] = [];
       for (const candidate of passCandidateConfigs) {
-        const candidateResult = evaluateCandidate(candidate, baselineMetrics);
+        const candidateResult = evaluateCandidate(candidate, baselineMetrics, activeCandles);
         evaluatedCandidateResults.push(candidateResult);
         passResults.push(candidateResult);
         const { bestCandidate: bestCandidateSoFar } = selectBestCandidate(evaluatedCandidateResults, baselineMetrics);
@@ -1109,7 +1112,7 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       });
       const recoveryResults: AutoResearchCandidateResult[] = [];
       for (const candidate of recoveryCandidates) {
-        const candidateResult = evaluateCandidate(candidate, baselineMetrics);
+        const candidateResult = evaluateCandidate(candidate, baselineMetrics, activeCandles);
         evaluatedCandidateResults.push(candidateResult);
         recoveryResults.push(candidateResult);
         const { bestCandidate: bestCandidateSoFar } = selectBestCandidate(evaluatedCandidateResults, baselineMetrics);

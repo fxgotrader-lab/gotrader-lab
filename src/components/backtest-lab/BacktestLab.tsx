@@ -31,6 +31,11 @@ import {
   loadActiveResearchCalibration,
   resolveActiveBacktestConfig
 } from "@/lib/selfImprovement";
+import {
+  loadActiveCandleSource,
+  MARKET_DATA_IMPORT_UPDATED_EVENT,
+  type CandleDataSource
+} from "@/lib/marketData";
 import type { FuturesSymbol, MarketRegime, Timeframe } from "@/lib/types";
 import { formatPercent, formatSigned } from "@/lib/utils";
 
@@ -92,14 +97,32 @@ const biasVariant = (bias?: string) => {
   return "warning" as const;
 };
 
+const mockCandleSource: CandleDataSource = {
+  mode: "mock",
+  label: "Mock candles",
+  candles: mockCandles
+};
+
+const candlesForSource = (source: CandleDataSource) => (source.candles.length ? source.candles : mockCandles);
+const configForSource = (config: ResolvedBacktestConfig, source: CandleDataSource) =>
+  source.metadata
+    ? sanitizeBacktestConfig({
+        ...config,
+        symbol: source.metadata.symbol,
+        timeframe: source.metadata.timeframe ?? config.timeframe
+      })
+    : config;
+
 export function BacktestLab() {
   const [configResolution, setConfigResolution] = useState(() => resolveActiveBacktestConfig());
   const [draftConfig, setDraftConfig] = useState<ResolvedBacktestConfig>(() => resolveActiveBacktestConfig().config);
   const [result, setResult] = useState(() => runBacktest(mockCandles, resolveActiveBacktestConfig().config));
   const [activeCalibration, setActiveCalibration] = useState(() => loadActiveResearchCalibration());
+  const [candleSource, setCandleSource] = useState<CandleDataSource>(mockCandleSource);
   const summary = result.summary;
+  const activeCandles = candlesForSource(candleSource);
   const zeroTradeDiagnostics = summary.totalTrades === 0
-    ? diagnoseTradeGeneration({ candles: mockCandles, config: result.config, result })
+    ? diagnoseTradeGeneration({ candles: activeCandles, config: result.config, result })
     : [];
   const lastEquity = summary.equityCurve[summary.equityCurve.length - 1]?.equityR ?? 0;
   const agentWeightTotal = useMemo(
@@ -129,12 +152,20 @@ export function BacktestLab() {
     );
   };
 
-  const run = () => {
+  const refreshWithActiveSource = async (configOverride?: ResolvedBacktestConfig) => {
+    const source = await loadActiveCandleSource();
+    const resolved = resolveActiveBacktestConfig(configOverride);
+    const sourceConfig = configForSource(resolved.config, source);
+    const sourceResolved = { ...resolved, config: sourceConfig, finalBacktestConfluenceThreshold: sourceConfig.minimumConfluenceThreshold };
+    setCandleSource(source);
+    setConfigResolution(sourceResolved);
+    setDraftConfig(sourceResolved.config);
+    setResult(runBacktest(candlesForSource(source), sourceResolved.config));
+  };
+
+  const run = async () => {
     const saved = saveBacktestConfig(draftConfig);
-    const resolved = resolveActiveBacktestConfig(saved);
-    setConfigResolution(resolved);
-    setDraftConfig(resolved.config);
-    setResult(runBacktest(mockCandles, resolved.config));
+    await refreshWithActiveSource(saved);
   };
 
   const saveOnly = () => {
@@ -144,28 +175,38 @@ export function BacktestLab() {
     setDraftConfig(resolved.config);
   };
 
-  const reset = () => {
+  const reset = async () => {
     clearActiveResearchCalibration("Reset Backtest Lab to the default simulation baseline.");
     const next = resetBacktestConfig();
-    const resolved = resolveActiveBacktestConfig(next);
     setActiveCalibration(loadActiveResearchCalibration());
-    setConfigResolution(resolved);
-    setDraftConfig(resolved.config);
-    setResult(runBacktest(mockCandles, resolved.config));
+    await refreshWithActiveSource(next);
   };
 
   useEffect(() => {
+    let mounted = true;
     const refresh = () => {
       setActiveCalibration(loadActiveResearchCalibration());
-      const resolved = resolveActiveBacktestConfig();
-      setConfigResolution(resolved);
-      setDraftConfig(resolved.config);
-      setResult(runBacktest(mockCandles, resolved.config));
+      loadActiveCandleSource().then((source) => {
+        if (!mounted) {
+          return;
+        }
+        const resolved = resolveActiveBacktestConfig();
+        const sourceConfig = configForSource(resolved.config, source);
+        const sourceResolved = { ...resolved, config: sourceConfig, finalBacktestConfluenceThreshold: sourceConfig.minimumConfluenceThreshold };
+        setCandleSource(source);
+        setConfigResolution(sourceResolved);
+        setDraftConfig(sourceResolved.config);
+        setResult(runBacktest(candlesForSource(source), sourceResolved.config));
+      });
     };
+    refresh();
     window.addEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
+    window.addEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
+      mounted = false;
       window.removeEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
+      window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
   }, []);
@@ -177,13 +218,15 @@ export function BacktestLab() {
           <p className="text-sm uppercase text-primary">Backtest configuration</p>
           <h2 className="mt-1 text-3xl font-semibold tracking-normal">Parameter Lab</h2>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Tune mock-candle replay assumptions for ICT filters, confluence gates, agent weights, stop model, and
-            simulated target logic.
+            Tune simulation replay assumptions for ICT filters, confluence gates, agent weights, stop model, and
+            simulated target logic. The run uses the active candle source selected in Market Data.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant="warning">Simulation only</Badge>
-          <Badge variant="muted">Mock candles</Badge>
+          <Badge variant={candleSource.mode === "imported" ? "success" : "muted"}>
+            {candleSource.mode === "imported" ? "Imported historical data active" : "Mock candles"}
+          </Badge>
         </div>
       </div>
 
@@ -209,6 +252,24 @@ export function BacktestLab() {
             <div className="text-xs uppercase opacity-70">Resolved threshold</div>
             <div className="mt-1 font-mono">{(configResolution.finalBacktestConfluenceThreshold * 100).toFixed(0)}%</div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className={candleSource.mode === "imported" ? "border-emerald-300/25 bg-emerald-300/10" : ""}>
+        <CardContent className="flex flex-col gap-3 p-4 text-sm md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="font-medium">
+              Active candle source: {candleSource.label}
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              {candleSource.mode === "imported" && candleSource.metadata
+                ? `${candleSource.metadata.candleCount.toLocaleString()} ${candleSource.metadata.timeframe ?? "detected"} candle(s), ${candleSource.metadata.firstTimestamp ?? "n/a"} to ${candleSource.metadata.lastTimestamp ?? "n/a"}.`
+                : `${mockCandles.length.toLocaleString()} bundled mock candle(s) for simulation research.`}
+            </p>
+          </div>
+          <Badge variant={candleSource.mode === "imported" ? "success" : "secondary"}>
+            {candleSource.mode === "imported" ? "real imported history" : "mock data"}
+          </Badge>
         </CardContent>
       </Card>
 
@@ -521,12 +582,12 @@ export function BacktestLab() {
 
       <TechnicalDetails
         title="View recent simulated records"
-        description="Open for the latest mock-candle trade records generated by the saved run configuration."
+        description="Open for the latest simulated trade records generated by the saved run configuration."
       >
       <Card>
         <CardHeader>
           <CardTitle>Recent Simulated Records</CardTitle>
-          <CardDescription>Latest mock-candle trades from the saved run configuration.</CardDescription>
+          <CardDescription>Latest trades from the active simulation candle source.</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-left text-sm">
@@ -570,8 +631,8 @@ export function BacktestLab() {
 
       <div className="rounded-lg border border-border bg-background/45 p-3 text-sm text-muted-foreground">
         <TimerReset className="mr-2 inline h-4 w-4 text-primary" aria-hidden="true" />
-        Config changes are local-first and use only `mockCandles`; no live data, broker API, websocket, or order routing
-        is present.
+        Config changes are local-first and use only the selected simulation candle source; no live data, broker API,
+        websocket, or order routing is present.
       </div>
     </div>
   );

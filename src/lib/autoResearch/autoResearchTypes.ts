@@ -13,7 +13,7 @@ import type {
   CalibrationComparisonResult,
   CalibrationProposalMetrics
 } from "@/lib/selfImprovement";
-import type { ICTScoringWeights } from "@/lib/types";
+import type { Candle, ICTScoringWeights } from "@/lib/types";
 import type { ValidationSuiteReport } from "@/lib/validation";
 
 export type AutoResearchSearchMode =
@@ -219,6 +219,8 @@ export interface AutoResearchRunOptions {
   maxCandidateCount: number;
   maxAdaptivePasses?: number;
   createProposal?: boolean;
+  candles?: Candle[];
+  baselineConfig?: ResolvedBacktestConfig;
   onCandidateEvaluated?: (progress: AutoResearchProgressSnapshot) => void;
 }
 

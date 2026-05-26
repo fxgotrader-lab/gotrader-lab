@@ -18,6 +18,11 @@ import {
 } from "@/lib/researchCycle";
 import type { ResearchCycleRun, ResearchCycleStepResult, ResearchCycleStepStatus } from "@/lib/researchCycle";
 import {
+  loadActiveCandleSource,
+  MARKET_DATA_IMPORT_UPDATED_EVENT,
+  type CandleDataSource
+} from "@/lib/marketData";
+import {
   ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
   loadActiveResearchCalibration,
   resolveActiveBacktestConfig
@@ -74,11 +79,18 @@ const dashboardSearchModes: Array<{ label: string; value: AutoResearchSearchMode
   { label: "Deep - 25 candidates", value: "deep", count: 25 }
 ];
 
+const fallbackCandleSource: CandleDataSource = {
+  mode: "mock",
+  label: "Mock candles",
+  candles: []
+};
+
 export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleControlProps) {
   const [cycleState, setCycleState] = useState(() => loadResearchCycleState());
   const [activeRun, setActiveRun] = useState<ResearchCycleRun>();
   const [activeCalibration, setActiveCalibration] = useState(() => loadActiveResearchCalibration());
   const [activeConfigResolution, setActiveConfigResolution] = useState(() => resolveActiveBacktestConfig());
+  const [activeCandleSource, setActiveCandleSource] = useState<CandleDataSource>(fallbackCandleSource);
   const [searchMode, setSearchMode] = useState<AutoResearchSearchMode>("standard");
   const [busy, setBusy] = useState(false);
   const latestRun = activeRun ?? latestResearchCycleRun(cycleState);
@@ -88,17 +100,27 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
   );
 
   useEffect(() => {
+    let mounted = true;
     const refresh = () => {
       setCycleState(loadResearchCycleState());
       setActiveCalibration(loadActiveResearchCalibration());
       setActiveConfigResolution(resolveActiveBacktestConfig());
+      loadActiveCandleSource().then((source) => {
+        if (mounted) {
+          setActiveCandleSource(source);
+        }
+      });
     };
+    refresh();
     window.addEventListener(RESEARCH_CYCLE_UPDATED_EVENT, refresh);
     window.addEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
+    window.addEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
+      mounted = false;
       window.removeEventListener(RESEARCH_CYCLE_UPDATED_EVENT, refresh);
       window.removeEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
+      window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
   }, []);
@@ -180,6 +202,17 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
             <p className="mt-3 text-xs text-slate-400">
               Last run: {formatDateTime(latestRun?.completedAt ?? latestRun?.startedAt)}
             </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+              <Badge variant={activeCandleSource.mode === "imported" ? "success" : "secondary"}>
+                {activeCandleSource.mode === "imported" ? "Imported historical data active" : "Mock candles active"}
+              </Badge>
+              <span className="text-slate-400">
+                {activeCandleSource.label}
+                {activeCandleSource.metadata?.candleCount
+                  ? ` / ${activeCandleSource.metadata.candleCount.toLocaleString()} candles`
+                  : ""}
+              </span>
+            </div>
             {latestRun?.candidateProgress ? (
               <div className="mt-3 rounded-md border border-cyan-400/15 bg-cyan-400/5 p-2 text-xs text-cyan-100/80">
                 Pass {latestRun.candidateProgress.passNumber ?? 1}/{latestRun.candidateProgress.totalPasses ?? 1} - candidate{" "}

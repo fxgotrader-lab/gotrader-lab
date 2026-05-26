@@ -31,6 +31,7 @@ import {
   validateLLMContextPacket
 } from "@/lib/llm";
 import type { LLMAdvisoryRun } from "@/lib/llm";
+import { loadActiveCandleSource, type CandleDataSource } from "@/lib/marketData";
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import { evaluateReadinessGate } from "@/lib/readiness";
 import { analyzeValidationResults, saveLatestResearchQualityReview } from "@/lib/researchQuality";
@@ -360,7 +361,21 @@ export async function runResearchCycle({
   let workingState: LabState = labStorage.load() ?? state;
   const cycleId = uid("research_cycle");
   const activeResearchConfig = resolveActiveBacktestConfig(backtestConfig ? sanitizeBacktestConfig(backtestConfig) : undefined);
-  const activeConfig = activeResearchConfig.config;
+  const baseActiveConfig = activeResearchConfig.config;
+  const activeCandleSource: CandleDataSource = await loadActiveCandleSource().catch(() => ({
+    mode: "mock" as const,
+    label: "Mock candles",
+    candles: mockCandles
+  }));
+  const researchCandles = activeCandleSource.candles.length ? activeCandleSource.candles : mockCandles;
+  const dataSourceLabel = activeCandleSource.mode === "imported" ? activeCandleSource.label : "Mock candles";
+  const activeConfig = activeCandleSource.metadata
+    ? sanitizeBacktestConfig({
+        ...baseActiveConfig,
+        symbol: activeCandleSource.metadata.symbol,
+        timeframe: activeCandleSource.metadata.timeframe ?? baseActiveConfig.timeframe
+      })
+    : baseActiveConfig;
   const run: ResearchCycleRun = {
     cycleId,
     startedAt: now(),
@@ -421,7 +436,7 @@ export async function runResearchCycle({
     let structuredDebateSession: AgentDebateSession | undefined;
     let latestSelfImprovementProposal: CalibrationProposal | undefined;
     try {
-      generatedThesis = generateThesis(thesisInputFor(activeConfig, cycleId), workingState);
+      generatedThesis = generateThesis(thesisInputFor(activeConfig, cycleId), workingState, researchCandles);
       structuredDebateSession = runAgentDebateSession({
         thesis: generatedThesis.thesis,
         sourceDebate: generatedThesis.debateSession,
@@ -441,7 +456,7 @@ export async function runResearchCycle({
       run.agentDebateConsensus = summarizeAgentDebateConsensus(structuredDebateSession);
       passStep("thesis_generation", {
         summary: `${generatedThesis.thesis.symbol} ${generatedThesis.thesis.timeframe} thesis generated: ${generatedThesis.thesis.finalBias}.`,
-        detail: `ICT ${generatedThesis.thesis.ictContext.bias}, confluence ${Math.round(generatedThesis.thesis.ictContext.confluenceScore * 100)}%, CIO confidence ${Math.round(generatedThesis.thesis.confidence * 100)}%. Debate consensus ${structuredDebateSession.moderatorOutput.consensusReached ? structuredDebateSession.moderatorOutput.position : "flat/no consensus"}. Active confluence threshold ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%.`
+        detail: `ICT ${generatedThesis.thesis.ictContext.bias}, confluence ${Math.round(generatedThesis.thesis.ictContext.confluenceScore * 100)}%, CIO confidence ${Math.round(generatedThesis.thesis.confidence * 100)}%. Debate consensus ${structuredDebateSession.moderatorOutput.consensusReached ? structuredDebateSession.moderatorOutput.position : "flat/no consensus"}. Active confluence threshold ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%. Data source: ${dataSourceLabel}.`
       });
     } catch (error) {
       failStep("thesis_generation", error instanceof Error ? error.message : "Research thesis generation failed.");
@@ -467,11 +482,11 @@ export async function runResearchCycle({
     startStep("backtest");
     let backtestResult: BacktestResult | undefined;
     try {
-      backtestResult = runBacktest(mockCandles, activeConfig);
+      backtestResult = runBacktest(researchCandles, activeConfig);
       run.backtestSummary = summarizeBacktest(backtestResult);
       if (backtestResult.summary.totalTrades === 0) {
         run.backtestDiagnostics = diagnoseTradeGeneration({
-          candles: mockCandles,
+          candles: researchCandles,
           config: backtestResult.config,
           result: backtestResult,
           thesis: generatedThesis.thesis
@@ -483,13 +498,13 @@ export async function runResearchCycle({
             topDiagnostic?.explanation ??
             "No simulated trades were generated. Auto Research will try bounded trade-generation recovery.",
           detail: topDiagnostic
-            ? `${topDiagnostic.reasonCode.replace(/_/g, " ")}: ${topDiagnostic.suggestedFix} Active threshold used ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%; config merge: ${activeResearchConfig.mergeStatusLabel}. ${activeResearchConfig.mergeError ?? ""}`.trim()
-            : `Auto Research will try threshold, session, direction, stop-model, and resolution-window recovery candidates. Active threshold used ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%; config merge: ${activeResearchConfig.mergeStatusLabel}. ${activeResearchConfig.mergeError ?? ""}`.trim()
+            ? `${topDiagnostic.reasonCode.replace(/_/g, " ")}: ${topDiagnostic.suggestedFix} Active threshold used ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%; data source: ${dataSourceLabel}; config merge: ${activeResearchConfig.mergeStatusLabel}. ${activeResearchConfig.mergeError ?? ""}`.trim()
+            : `Auto Research will try threshold, session, direction, stop-model, and resolution-window recovery candidates. Active threshold used ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%; data source: ${dataSourceLabel}; config merge: ${activeResearchConfig.mergeStatusLabel}. ${activeResearchConfig.mergeError ?? ""}`.trim()
         });
       } else {
         passStep("backtest", {
           summary: `Backtest completed with ${backtestResult.summary.totalTrades} simulated trades.`,
-          detail: `Win rate ${Math.round(backtestResult.summary.winRate * 100)}%, average R ${backtestResult.summary.averageR.toFixed(2)}, max drawdown ${backtestResult.summary.maxDrawdown.toFixed(2)}R. Active confluence threshold ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%.`
+          detail: `Win rate ${Math.round(backtestResult.summary.winRate * 100)}%, average R ${backtestResult.summary.averageR.toFixed(2)}, max drawdown ${backtestResult.summary.maxDrawdown.toFixed(2)}R. Active confluence threshold ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%. Data source: ${dataSourceLabel}.`
         });
       }
     } catch (error) {
@@ -566,6 +581,8 @@ export async function runResearchCycle({
       searchMode,
       maxCandidateCount,
       createProposal: true,
+      candles: researchCandles,
+      baselineConfig: activeConfig,
       onCandidateEvaluated: (progress) => {
         run.candidateProgress = progress;
         setStep("auto_research", {
@@ -603,7 +620,7 @@ export async function runResearchCycle({
     startStep("validation");
     let validationReport: ValidationSuiteReport | undefined;
     try {
-      validationReport = runValidationSuite(mockCandles, activeConfig);
+      validationReport = runValidationSuite(researchCandles, activeConfig);
       saveLatestValidationReport(validationReport);
       run.validationReport = validationReport;
       run.validationSummary = summarizeValidation(validationReport);

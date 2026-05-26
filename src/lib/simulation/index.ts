@@ -15,13 +15,14 @@ import type {
   Recommendation,
   SimulatedTradePlan,
   ThesisInput,
-  TradeThesis
+  TradeThesis,
+  Candle
 } from "@/lib/types";
 import { clamp, uid } from "@/lib/utils";
 
-export function generateThesis(input: ThesisInput, state: LabState) {
-  const ictContext = buildICTContext(mockCandles, input);
-  const researchAgentOpinions = runAgents(input, ictContext);
+export function generateThesis(input: ThesisInput, state: LabState, candles: Candle[] = mockCandles) {
+  const ictContext = buildICTContext(candles, input);
+  const researchAgentOpinions = runAgents(input, ictContext, candles);
   const cioSynthesis = synthesizeCIO(input, ictContext, researchAgentOpinions);
   const agentOpinions = [...researchAgentOpinions, cioSynthesis.cioOpinion];
   const plan: SimulatedTradePlan = {

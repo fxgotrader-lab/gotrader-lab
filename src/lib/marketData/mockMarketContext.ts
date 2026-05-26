@@ -1,21 +1,30 @@
 import { marketDataProviderRoadmap, plannedMarketDataAgents } from "@/lib/marketData/marketDataRoadmap";
 import type { MarketContext } from "@/lib/marketData/marketDataTypes";
 import { mockCandles } from "@/lib/mockData/mockCandles";
-import type { FuturesSymbol, Timeframe } from "@/lib/types";
+import type { Candle, FuturesSymbol, Timeframe } from "@/lib/types";
 import { uid } from "@/lib/utils";
 
-const latestCloseFor = (symbol: FuturesSymbol) =>
-  [...mockCandles].reverse().find((candle) => candle.symbol === symbol)?.close ?? (symbol.includes("NQ") ? 18880 : 5265);
+const latestCloseFor = (symbol: FuturesSymbol, candles = mockCandles as Candle[]) =>
+  [...candles].reverse().find((candle) => candle.symbol === symbol)?.close ?? candles[candles.length - 1]?.close ?? (symbol.includes("NQ") ? 18880 : 5265);
 
-export function createMockMarketContext(symbol: FuturesSymbol = "NQ", timeframe: Timeframe = "5m"): MarketContext {
-  const current = latestCloseFor(symbol);
+export function createMockMarketContext(
+  symbol: FuturesSymbol = "NQ",
+  timeframe: Timeframe = "5m",
+  candlesInput?: Candle[],
+  mode: MarketContext["mode"] = "mock"
+): MarketContext {
+  const matchingCandles = (candlesInput?.length ? candlesInput : mockCandles).filter(
+    (candle) => candle.symbol === symbol && candle.timeframe === timeframe
+  );
+  const candles = matchingCandles.length ? matchingCandles : candlesInput?.length ? candlesInput : mockCandles.filter((candle) => candle.symbol === symbol && candle.timeframe === timeframe);
+  const current = latestCloseFor(symbol, candles);
   const unit = symbol.includes("NQ") ? 40 : 12;
-  const candles = mockCandles.filter((candle) => candle.symbol === symbol && candle.timeframe === timeframe);
+  const imported = mode === "imported";
 
   return {
     contextId: uid("market_context"),
     timestamp: new Date().toISOString(),
-    mode: "mock",
+    mode,
     symbol,
     timeframe,
     priceVolume: {
@@ -23,7 +32,7 @@ export function createMockMarketContext(symbol: FuturesSymbol = "NQ", timeframe:
         symbol,
         timeframe,
         candles,
-        source: "mock",
+        source: imported ? "historical_import" : "mock",
         updatedAt: new Date().toISOString()
       },
       tickDataStatus: "planned",
@@ -123,9 +132,9 @@ export function createMockMarketContext(symbol: FuturesSymbol = "NQ", timeframe:
     availableModules: [
       {
         id: "mock-ohlcv",
-        name: "Mock OHLCV candles",
+        name: imported ? "Imported historical OHLCV candles" : "Mock OHLCV candles",
         status: "available_mock",
-        summary: `${candles.length} mock candle(s) available for ${symbol} ${timeframe}.`
+        summary: `${candles.length} ${imported ? "imported historical" : "mock"} candle(s) available for ${symbol} ${timeframe}.`
       },
       {
         id: "mock-session-levels",
