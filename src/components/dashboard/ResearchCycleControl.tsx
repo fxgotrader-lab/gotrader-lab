@@ -208,6 +208,25 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
           </div>
         </div>
 
+        <div className="grid gap-2 rounded-lg border border-white/10 bg-slate-950/55 p-3 text-xs text-slate-300 md:grid-cols-3">
+          <div>
+            <p className="uppercase tracking-[0.14em] text-slate-500">Active calibration storage found</p>
+            <p className="mt-1 font-mono text-slate-100">
+              {activeConfigResolution.activeCalibrationStorageFound ? "yes" : "no"}
+            </p>
+          </div>
+          <div>
+            <p className="uppercase tracking-[0.14em] text-slate-500">Config merge status</p>
+            <p className="mt-1 font-mono text-slate-100">{activeConfigResolution.mergeStatusLabel}</p>
+          </div>
+          <div>
+            <p className="uppercase tracking-[0.14em] text-slate-500">Resolved threshold</p>
+            <p className="mt-1 font-mono text-slate-100">
+              {(activeConfigResolution.finalBacktestConfluenceThreshold * 100).toFixed(0)}%
+            </p>
+          </div>
+        </div>
+
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4" aria-live="polite">
           {safeArray(latestRun?.steps).map((step) => (
             <ResearchCycleStep key={step.stepId} step={step} />
@@ -395,6 +414,8 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
         >
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {[
+              ["Active calibration storage found", activeConfigResolution.activeCalibrationStorageFound ? "yes" : "no"],
+              ["Config merge status", activeConfigResolution.mergeStatusLabel],
               ["Stored active ID", activeConfigResolution.activeCalibrationId ?? "none"],
               ["Default threshold", `${(activeConfigResolution.defaultConfluenceThreshold * 100).toFixed(0)}%`],
               ["Saved threshold", `${(activeConfigResolution.savedConfluenceThreshold * 100).toFixed(0)}%`],

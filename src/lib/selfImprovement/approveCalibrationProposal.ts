@@ -116,6 +116,7 @@ const normalizeActiveResearchCalibration = (
 
   return {
     approvedCalibrationId: calibration.approvedCalibrationId,
+    sourceProposalId: calibration.sourceProposalId ?? calibration.approvedCalibrationId,
     approvedAt: calibration.approvedAt,
     appliedConfigPatch: hasConfigPatch(storedPatch) ? storedPatch : inferredPatch,
     baselineConfigBefore,
@@ -137,6 +138,10 @@ const readActiveCalibrationStorage = (): ActiveResearchCalibration | undefined =
     return undefined;
   }
 };
+
+export function loadActiveResearchCalibrationStorage(): ActiveResearchCalibration | undefined {
+  return readActiveCalibrationStorage();
+}
 
 const readSelfImprovementActiveCalibration = (): ActiveResearchCalibration | undefined => {
   if (!isBrowser()) {
@@ -384,6 +389,7 @@ export function saveApprovedResearchCalibration(
   const savedConfig = saveBacktestConfig(activeConfigAfter);
   const activeCalibration: ActiveResearchCalibration = {
     approvedCalibrationId: proposal.proposalId,
+    sourceProposalId: proposal.proposalId,
     approvedAt: new Date().toISOString(),
     appliedConfigPatch: compactAllowedConfigPatch(proposal.proposedChanges),
     baselineConfigBefore: currentConfig,
@@ -435,6 +441,13 @@ export function resolveActiveBacktestConfig(overrideConfig?: BacktestConfig): Ac
       : savedConfig
   );
   const activeResearchCalibration = loadActiveResearchCalibration();
+  const dedicatedStorageCalibration = readActiveCalibrationStorage();
+  const activeCalibrationStorageFound = Boolean(dedicatedStorageCalibration);
+  const activeCalibrationStorageSource = dedicatedStorageCalibration
+    ? "dedicated_storage"
+    : activeResearchCalibration
+      ? "self_improvement_state"
+      : "missing";
   const sourceTrace = ["default baseline", "saved local backtest config"];
   if (overrideConfig) {
     sourceTrace.push("runtime override");
@@ -447,6 +460,8 @@ export function resolveActiveBacktestConfig(overrideConfig?: BacktestConfig): Ac
       savedConfig,
       preCalibrationConfig,
       activeResearchCalibration: undefined,
+      activeCalibrationStorageFound,
+      activeCalibrationStorageSource,
       activeCalibrationApplied: false,
       activeConfluenceThreshold: preCalibrationConfig.minimumConfluenceThreshold,
       defaultConfluenceThreshold: defaultConfig.minimumConfluenceThreshold,
@@ -467,6 +482,8 @@ export function resolveActiveBacktestConfig(overrideConfig?: BacktestConfig): Ac
       preCalibrationConfig,
       activeResearchCalibration,
       activeCalibrationId: activeResearchCalibration.approvedCalibrationId,
+      activeCalibrationStorageFound,
+      activeCalibrationStorageSource,
       activeCalibrationApplied: false,
       activeConfluenceThreshold: preCalibrationConfig.minimumConfluenceThreshold,
       defaultConfluenceThreshold: defaultConfig.minimumConfluenceThreshold,
@@ -489,6 +506,8 @@ export function resolveActiveBacktestConfig(overrideConfig?: BacktestConfig): Ac
       preCalibrationConfig,
       activeResearchCalibration,
       activeCalibrationId: activeResearchCalibration.approvedCalibrationId,
+      activeCalibrationStorageFound,
+      activeCalibrationStorageSource,
       activeCalibrationApplied: true,
       activeConfluenceThreshold: config.minimumConfluenceThreshold,
       defaultConfluenceThreshold: defaultConfig.minimumConfluenceThreshold,
@@ -507,6 +526,8 @@ export function resolveActiveBacktestConfig(overrideConfig?: BacktestConfig): Ac
       preCalibrationConfig,
       activeResearchCalibration,
       activeCalibrationId: activeResearchCalibration.approvedCalibrationId,
+      activeCalibrationStorageFound,
+      activeCalibrationStorageSource,
       activeCalibrationApplied: false,
       activeConfluenceThreshold: preCalibrationConfig.minimumConfluenceThreshold,
       defaultConfluenceThreshold: defaultConfig.minimumConfluenceThreshold,
@@ -576,6 +597,45 @@ export function approveCalibrationProposal(proposalId: string, reviewerName = "l
         proposalId,
         "accepted",
         notes || "Research calibration applied. Next AI Research Cycle will use the updated baseline.",
+        reviewerName
+      ),
+      ...state.auditTrail
+    ]
+  });
+}
+
+export function applyAcceptedCalibrationToActiveBaseline(
+  proposalId: string,
+  reviewerName = "local user",
+  notes = ""
+) {
+  const state = loadSelfImprovementState();
+  const target = state.proposals.find((proposal) => proposal.proposalId === proposalId);
+  if (!target || target.status !== "accepted") {
+    return state;
+  }
+
+  const baselineConfigBefore = sanitizeBacktestConfig(target.baselineConfig ?? loadBacktestConfig());
+  const activeResearchCalibration = saveApprovedResearchCalibration(target, baselineConfigBefore);
+  const updated: CalibrationProposal = {
+    ...target,
+    proposedConfig: activeResearchCalibration.activeConfigAfter,
+    approvalNotes:
+      notes ||
+      `Active calibration stored. Next AI Research Cycle will use threshold ${Math.round(activeResearchCalibration.activeConfigAfter.minimumConfluenceThreshold * 100)}%.`
+  };
+
+  return saveSelfImprovementState({
+    ...state,
+    proposals: state.proposals.map((proposal) => (proposal.proposalId === proposalId ? updated : proposal)),
+    latestProposalId: updated.proposalId,
+    lastAcceptedProposalId: updated.proposalId,
+    activeResearchCalibration,
+    auditTrail: [
+      auditEntry(
+        proposalId,
+        "accepted",
+        notes || "Re-applied accepted research calibration to the active baseline storage key.",
         reviewerName
       ),
       ...state.auditTrail

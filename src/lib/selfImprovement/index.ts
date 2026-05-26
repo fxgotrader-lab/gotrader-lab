@@ -1,11 +1,13 @@
 export {
   ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
   applyApprovedResearchCalibration,
+  applyAcceptedCalibrationToActiveBaseline,
   applyResearchCalibrationPatchToConfig,
   approveCalibrationProposal,
   canApproveProposal,
   clearActiveResearchCalibration,
   loadActiveResearchCalibration,
+  loadActiveResearchCalibrationStorage,
   loadSelfImprovementState,
   rejectCalibrationProposal,
   resolveActiveBacktestConfig,

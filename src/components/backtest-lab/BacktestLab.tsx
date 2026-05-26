@@ -183,6 +183,29 @@ export function BacktestLab() {
 
       <SafetyLockBanner message="Simulation calibration only. No broker connection, live market data, or real trades." />
 
+      <Card className="border-primary/20 bg-primary/10">
+        <CardContent className="grid gap-3 p-4 text-sm text-primary md:grid-cols-4">
+          <div>
+            <div className="text-xs uppercase opacity-70">Active calibration storage found</div>
+            <div className="mt-1 font-mono">{configResolution.activeCalibrationStorageFound ? "yes" : "no"}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Active threshold</div>
+            <div className="mt-1 font-mono">
+              {activeCalibration ? `${(activeCalibration.activeConfigAfter.minimumConfluenceThreshold * 100).toFixed(0)}%` : "n/a"}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Default threshold</div>
+            <div className="mt-1 font-mono">{(configResolution.defaultConfluenceThreshold * 100).toFixed(0)}%</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Resolved threshold</div>
+            <div className="mt-1 font-mono">{(configResolution.finalBacktestConfluenceThreshold * 100).toFixed(0)}%</div>
+          </div>
+        </CardContent>
+      </Card>
+
       {activeCalibration ? (
         <Card className="border-emerald-300/25 bg-emerald-300/10">
           <CardContent className="flex flex-col gap-3 p-4 text-sm text-emerald-100 md:flex-row md:items-center md:justify-between">
@@ -206,8 +229,10 @@ export function BacktestLab() {
       >
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {[
+            ["Active calibration storage found", configResolution.activeCalibrationStorageFound ? "yes" : "no"],
             ["Merge status", configResolution.mergeStatusLabel],
             ["Default threshold", `${(configResolution.defaultConfluenceThreshold * 100).toFixed(0)}%`],
+            ["Active threshold", activeCalibration ? `${(activeCalibration.activeConfigAfter.minimumConfluenceThreshold * 100).toFixed(0)}%` : "n/a"],
             ["Saved threshold", `${(configResolution.savedConfluenceThreshold * 100).toFixed(0)}%`],
             ["Final backtest threshold", `${(configResolution.finalBacktestConfluenceThreshold * 100).toFixed(0)}%`]
           ].map(([label, value]) => (

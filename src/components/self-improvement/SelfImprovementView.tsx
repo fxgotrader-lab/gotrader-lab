@@ -9,6 +9,7 @@ import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  applyAcceptedCalibrationToActiveBaseline,
   approveCalibrationProposal,
   canApproveProposal,
   createCalibrationProposal,
@@ -308,6 +309,11 @@ export function SelfImprovementView() {
   const isResearchCalibration = effectiveProposalIntent === "research_calibration_candidate";
   const approvalCheck = canApproveProposal(latestProposal);
   const canAccept = approvalCheck.canApprove;
+  const acceptedButActiveStorageMissing = Boolean(
+    latestProposal?.status === "accepted" &&
+      (!baselineResolution.activeCalibrationStorageFound ||
+        baselineResolution.activeCalibrationId !== latestProposal.proposalId)
+  );
   const rejectDisabledReason = !latestProposal
     ? "No proposal selected."
     : latestProposal.status === "accepted"
@@ -348,8 +354,30 @@ export function SelfImprovementView() {
       setActionMessage(approvalCheck.reason ?? "Proposal cannot be approved yet.");
       return;
     }
-    setState(approveCalibrationProposal(latestProposal.proposalId, reviewerName, approvalNotes));
-    setActionMessage("Research calibration applied. Next AI Research Cycle will use the updated baseline.");
+    const nextState = approveCalibrationProposal(latestProposal.proposalId, reviewerName, approvalNotes);
+    setState(nextState);
+    const threshold = nextState.activeResearchCalibration?.activeConfigAfter.minimumConfluenceThreshold;
+    setActionMessage(
+      `Active calibration stored. Next AI Research Cycle will use threshold ${
+        typeof threshold === "number" ? `${Math.round(threshold * 100)}%` : "from the approved baseline"
+      }.`
+    );
+    setApprovalNotes("");
+  };
+
+  const applyAcceptedToActiveBaseline = () => {
+    if (!latestProposal || latestProposal.status !== "accepted") {
+      setActionMessage("Only accepted proposals can be applied to the active baseline.");
+      return;
+    }
+    const nextState = applyAcceptedCalibrationToActiveBaseline(latestProposal.proposalId, reviewerName, approvalNotes);
+    setState(nextState);
+    const threshold = nextState.activeResearchCalibration?.activeConfigAfter.minimumConfluenceThreshold;
+    setActionMessage(
+      `Active calibration stored. Next AI Research Cycle will use threshold ${
+        typeof threshold === "number" ? `${Math.round(threshold * 100)}%` : "from the approved baseline"
+      }.`
+    );
     setApprovalNotes("");
   };
 
@@ -429,6 +457,23 @@ export function SelfImprovementView() {
         </CardContent>
       </Card>
 
+      <Card className="border-primary/20 bg-primary/10">
+        <CardContent className="grid gap-3 p-4 text-sm text-primary md:grid-cols-3">
+          <div>
+            <div className="text-xs uppercase opacity-70">Active calibration storage found</div>
+            <div className="mt-1 font-mono">{baselineResolution.activeCalibrationStorageFound ? "yes" : "no"}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Config merge</div>
+            <div className="mt-1 font-mono">{baselineResolution.mergeStatusLabel}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Resolved threshold</div>
+            <div className="mt-1 font-mono">{(baselineResolution.finalBacktestConfluenceThreshold * 100).toFixed(0)}%</div>
+          </div>
+        </CardContent>
+      </Card>
+
       <TechnicalDetails
         title="View baseline and detected weaknesses"
         description="Open for active local simulation settings and the evidence used to generate proposals."
@@ -450,6 +495,9 @@ export function SelfImprovementView() {
               Config merge: {baselineResolution.mergeStatusLabel}. Final confluence threshold{" "}
               {(baselineResolution.finalBacktestConfluenceThreshold * 100).toFixed(0)}%.
               {baselineResolution.activeCalibrationId ? ` Applied to baseline: ${baselineResolution.activeCalibrationId}.` : ""}
+              <span className="block pt-1">
+                Active calibration storage found: {baselineResolution.activeCalibrationStorageFound ? "yes" : "no"}.
+              </span>
             </div>
             <div className="grid gap-2 md:grid-cols-3">
               {[
@@ -688,6 +736,11 @@ export function SelfImprovementView() {
               <Button onClick={acceptProposal} disabled={!canAccept}>
                 {isResearchCalibration ? "Approve research calibration" : "Accept Proposal"}
               </Button>
+              {acceptedButActiveStorageMissing ? (
+                <Button variant="secondary" onClick={applyAcceptedToActiveBaseline}>
+                  Apply to active baseline
+                </Button>
+              ) : null}
               <Button variant="secondary" onClick={rejectProposal} disabled={Boolean(rejectDisabledReason)}>
                 Reject calibration
               </Button>
@@ -706,6 +759,11 @@ export function SelfImprovementView() {
                 {!canAccept ? `Approval disabled: ${approvalCheck.reason}` : null}
                 {!canAccept && rejectDisabledReason ? " " : ""}
                 {rejectDisabledReason ? `Reject disabled: ${rejectDisabledReason}` : null}
+                {acceptedButActiveStorageMissing ? (
+                  <span className="block pt-1">
+                    This accepted proposal is not stored in the active baseline key yet. Use “Apply to active baseline.”
+                  </span>
+                ) : null}
               </div>
             )}
           </div>

@@ -105,6 +105,7 @@ export interface CalibrationProposal {
 
 export interface ActiveResearchCalibration {
   approvedCalibrationId: string;
+  sourceProposalId: string;
   approvedAt: string;
   appliedConfigPatch: CalibrationProposalChanges;
   baselineConfigBefore: ResolvedBacktestConfig;
@@ -124,6 +125,8 @@ export interface ActiveBacktestConfigResolution {
   preCalibrationConfig: ResolvedBacktestConfig;
   activeResearchCalibration?: ActiveResearchCalibration;
   activeCalibrationId?: string;
+  activeCalibrationStorageFound: boolean;
+  activeCalibrationStorageSource: "dedicated_storage" | "self_improvement_state" | "missing";
   activeCalibrationApplied: boolean;
   activeConfluenceThreshold: number;
   defaultConfluenceThreshold: number;
