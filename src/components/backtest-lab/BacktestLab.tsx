@@ -45,6 +45,12 @@ const agentWeightLabels: Record<BacktestAgentWeightId, string> = {
   "ict-structure-agent": "ICT Structure",
   "session-timing-agent": "Session Timing",
   "risk-reward-agent": "Risk/Reward",
+  "session-levels-agent": "Session Levels",
+  "auction-volume-profile-agent": "Auction/Profile",
+  "macro-event-risk-agent": "Macro Event Risk",
+  "intermarket-confirmation-agent": "Intermarket",
+  "positioning-gamma-agent": "Positioning/Gamma",
+  "order-flow-agent": "Order Flow Later",
   "volatility-regime-agent": "Volatility/Regime"
 };
 

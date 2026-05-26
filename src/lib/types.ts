@@ -18,7 +18,7 @@ export type MarketRegime =
   | "risk-off"
   | "risk-on";
 
-export type AgentLayer = "macro" | "sector" | "strategy" | "cio";
+export type AgentLayer = "macro" | "market_context" | "sector" | "strategy" | "cio";
 
 export type MarketBias = "bullish" | "bearish" | "neutral";
 

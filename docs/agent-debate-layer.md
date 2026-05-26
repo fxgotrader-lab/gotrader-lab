@@ -32,6 +32,10 @@ Future market data context is also treated as immutable input once an adapter sn
 volume profile, macro context, intermarket readings, positioning/gamma, and order-flow imports can add evidence to
 the debate, but debate agents still interpret context only.
 
+Equity-style sector agents are deprecated in the main futures workflow. The debate desk now prioritizes futures market
+context agents because index futures respond more directly to session liquidity, auction levels, macro events,
+intermarket confirmation, positioning/gamma, and volatility regime than to broad equity-sector rotation summaries.
+
 ## Consensus Rules
 
 Consensus requires a configurable alignment threshold. The default is three aligned agents.

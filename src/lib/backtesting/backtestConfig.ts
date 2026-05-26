@@ -25,11 +25,17 @@ export const backtestSessionFilters: BacktestSessionFilter[] = [
 export const backtestStopModels: BacktestStopModel[] = ["latest swing", "fixed ticks", "FVG invalidation"];
 
 export const defaultBacktestAgentWeights: BacktestAgentWeights = {
-  "ict-liquidity-agent": 0.22,
-  "ict-structure-agent": 0.24,
-  "session-timing-agent": 0.14,
-  "risk-reward-agent": 0.2,
-  "volatility-regime-agent": 0.2
+  "ict-liquidity-agent": 0.15,
+  "ict-structure-agent": 0.16,
+  "session-timing-agent": 0.08,
+  "risk-reward-agent": 0.13,
+  "session-levels-agent": 0.1,
+  "auction-volume-profile-agent": 0.1,
+  "macro-event-risk-agent": 0.08,
+  "intermarket-confirmation-agent": 0.08,
+  "positioning-gamma-agent": 0.05,
+  "volatility-regime-agent": 0.08,
+  "order-flow-agent": 0.02
 };
 
 export const defaultBacktestConfig: ResolvedBacktestConfig = {

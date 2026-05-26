@@ -21,16 +21,28 @@ This layer is research/advisory only. It does not add broker execution, Tradovat
 1. LLM ICT Liquidity Reviewer
 2. LLM Market Structure Reviewer
 3. LLM Session Timing Reviewer
-4. LLM Risk/Reward Reviewer
-5. LLM Validation Reviewer
-6. LLM Self-Improvement Reviewer
-7. LLM CIO Synthesis Reviewer
+4. LLM Session Levels Reviewer
+5. LLM Auction/Volume Profile Reviewer
+6. LLM Macro Event Risk Reviewer
+7. LLM Intermarket Confirmation Reviewer
+8. LLM Positioning/Gamma Reviewer
+9. LLM Volatility Regime Reviewer
+10. LLM Order Flow Planning Reviewer
+11. LLM Risk/Reward Reviewer
+12. LLM Validation Reviewer
+13. LLM Self-Improvement Reviewer
+14. LLM CIO Synthesis Reviewer
+
+Equity-style sector reviewers are deprecated for the main futures workflow. ES/NQ/YM/MES/MNQ research gets more
+useful signal from direct futures context: session levels, auction/volume profile, macro event risk, intermarket
+confirmation, positioning/gamma, volatility regime, and later order flow.
 
 Each agent receives a restricted research context packet:
 
 - symbol
 - timeframe
 - ICT context summary
+- futures market context summary
 - deterministic ICT facts
 - internal baseline agent debate
 - CIO thesis

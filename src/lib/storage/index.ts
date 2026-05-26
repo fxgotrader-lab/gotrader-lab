@@ -18,23 +18,58 @@ export const LAB_STORAGE_UPDATED_EVENT = "gotrader-ai-lab-state-updated";
 
 const isBrowser = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 
+const withFuturesMarketAgentMigration = (state: Partial<LabState>, seeded: LabState): Partial<LabState> => {
+  const currentAgents = state.agents ?? seeded.agents;
+  const currentAgentIds = new Set(currentAgents.map((agent) => agent.id));
+  const futuresMarketAgents = seeded.agents.filter((agent) => agent.layer === "market_context");
+  const migratedAgents = [
+    ...currentAgents.map((agent) =>
+      agent.layer === "sector"
+        ? {
+            ...agent,
+            active: false,
+            tags: Array.from(new Set([...agent.tags, "deprecated", "equity-sector-legacy"]))
+          }
+        : agent
+    ),
+    ...futuresMarketAgents.filter((agent) => !currentAgentIds.has(agent.id))
+  ];
+  const migratedAgentIds = new Set(migratedAgents.map((agent) => agent.id));
+  const promptVersions = [
+    ...(state.promptVersions ?? seeded.promptVersions),
+    ...seeded.promptVersions.filter((prompt) => !state.promptVersions?.some((item) => item.id === prompt.id) && migratedAgentIds.has(prompt.agentId))
+  ];
+  const performanceScores = [
+    ...(state.performanceScores ?? seeded.performanceScores),
+    ...seeded.performanceScores.filter((score) => !state.performanceScores?.some((item) => item.id === score.id) && migratedAgentIds.has(score.agentId))
+  ];
+
+  return {
+    ...state,
+    agents: migratedAgents,
+    promptVersions,
+    performanceScores
+  };
+};
+
 const normalizeLabState = (state: Partial<LabState>): LabState => {
   const seeded = createInitialLabState();
+  const migrated = withFuturesMarketAgentMigration(state, seeded);
   return {
     ...seeded,
-    ...state,
-    agents: state.agents ?? seeded.agents,
-    promptVersions: state.promptVersions ?? seeded.promptVersions,
-    recommendations: state.recommendations ?? seeded.recommendations,
-    outcomes: state.outcomes ?? seeded.outcomes,
-    performanceScores: state.performanceScores ?? seeded.performanceScores,
-    promptMutations: state.promptMutations ?? seeded.promptMutations,
-    debateSessions: state.debateSessions ?? seeded.debateSessions,
-    tradeTheses: state.tradeTheses ?? seeded.tradeTheses,
-    handoffExports: state.handoffExports ?? [],
-    advisoryPackets: state.advisoryPackets ?? [],
-    advisoryResponses: state.advisoryResponses ?? [],
-    userApprovals: state.userApprovals ?? seeded.userApprovals
+    ...migrated,
+    agents: migrated.agents ?? seeded.agents,
+    promptVersions: migrated.promptVersions ?? seeded.promptVersions,
+    recommendations: migrated.recommendations ?? seeded.recommendations,
+    outcomes: migrated.outcomes ?? seeded.outcomes,
+    performanceScores: migrated.performanceScores ?? seeded.performanceScores,
+    promptMutations: migrated.promptMutations ?? seeded.promptMutations,
+    debateSessions: migrated.debateSessions ?? seeded.debateSessions,
+    tradeTheses: migrated.tradeTheses ?? seeded.tradeTheses,
+    handoffExports: migrated.handoffExports ?? [],
+    advisoryPackets: migrated.advisoryPackets ?? [],
+    advisoryResponses: migrated.advisoryResponses ?? [],
+    userApprovals: migrated.userApprovals ?? seeded.userApprovals
   };
 };
 
@@ -54,7 +89,10 @@ export class LocalStorageLabAdapter implements LabStorageAdapter {
     try {
       const parsed = JSON.parse(raw) as Partial<LabState>;
       const normalized = normalizeLabState(parsed);
-      if (!parsed.handoffExports || !parsed.advisoryPackets || !parsed.advisoryResponses) {
+      const needsFuturesAgentMigration =
+        !parsed.agents?.some((agent) => agent.layer === "market_context") ||
+        Boolean(parsed.agents?.some((agent) => agent.layer === "sector" && agent.active));
+      if (!parsed.handoffExports || !parsed.advisoryPackets || !parsed.advisoryResponses || needsFuturesAgentMigration) {
         this.save(normalized);
       }
       return normalized;

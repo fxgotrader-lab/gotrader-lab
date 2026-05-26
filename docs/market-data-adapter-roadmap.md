@@ -134,6 +134,10 @@ Future provider path:
 
 ## Planned Market Data Agents
 
+These agents replace the old equity-style sector layer for the main ES/NQ/MES/MNQ workflow. Sector rotation can still
+be researched later as optional macro context, but the active futures research stack should focus on direct futures
+inputs first.
+
 ### Session Levels Agent
 
 Purpose: compare price to prior session, overnight, and Globex levels.

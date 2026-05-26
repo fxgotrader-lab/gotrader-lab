@@ -78,7 +78,7 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
     timeframe: "5m",
     session: "New York AM",
     marketRegime: "trend",
-    notes: "Sell-side sweep below London low, displacement back into the range, tech breadth stable."
+    notes: "Sell-side sweep below London low, displacement back into the range, session levels stable."
   });
   const [activeThesisId, setActiveThesisId] = useState(state.tradeTheses[0]?.id);
   const [exportJson, setExportJson] = useState("");

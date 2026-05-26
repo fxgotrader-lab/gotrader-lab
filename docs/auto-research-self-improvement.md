@@ -26,6 +26,10 @@ The bounded search space may adjust:
 - internal agent weights
 - ICT scoring weights
 
+Internal agent weights now favor futures market-context agents over equity-sector agents. Auto Research may tune
+session levels, auction/volume profile, macro event risk, intermarket confirmation, positioning/gamma, volatility
+regime, and later order-flow weights, but it cannot restore deprecated sector agents into the main futures workflow.
+
 The supervisor must never search over:
 
 - broker settings

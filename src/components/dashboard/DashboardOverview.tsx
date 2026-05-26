@@ -48,7 +48,7 @@ export function DashboardOverview({ state }: { state: LabState }) {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <MetricCard label="Active agents" value={String(metrics.activeAgents)} detail="Macro, sector, strategy, CIO" icon={<Activity className="h-4 w-4" />} />
+        <MetricCard label="Active agents" value={String(metrics.activeAgents)} detail="Macro, market context, strategy, CIO" icon={<Activity className="h-4 w-4" />} />
         <MetricCard
           label="CIO confidence"
           value={formatPercent(metrics.confidence)}

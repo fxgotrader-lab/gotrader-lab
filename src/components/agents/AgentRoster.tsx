@@ -6,7 +6,8 @@ import { Progress } from "@/components/ui/progress";
 import type { AgentLayer, LabState } from "@/lib/types";
 import { formatPercent } from "@/lib/utils";
 
-const layerOrder: AgentLayer[] = ["macro", "sector", "strategy", "cio"];
+const layerOrder: AgentLayer[] = ["macro", "market_context", "strategy", "cio"];
+const layerLabel = (layer: AgentLayer) => layer === "market_context" ? "market context" : layer;
 
 export function AgentRoster({ state }: { state: LabState }) {
   return (
@@ -16,8 +17,8 @@ export function AgentRoster({ state }: { state: LabState }) {
           <p className="text-sm uppercase text-primary">Agent registry</p>
           <h2 className="mt-1 text-3xl font-semibold tracking-normal">Research Agents</h2>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Macro, sector, strategy, ICT, and CIO agents generate simulated market views and track prompt performance over
-            time.
+            Macro, futures market context, strategy, ICT, and CIO agents generate simulated market views and track prompt
+            performance over time. Equity-style sector agents are deprecated for the main futures workflow.
           </p>
         </div>
         <Badge variant="warning">Prompt changes require approval</Badge>
@@ -29,7 +30,7 @@ export function AgentRoster({ state }: { state: LabState }) {
           <section key={layer} className="space-y-3">
             <div className="flex items-center gap-2">
               <SlidersHorizontal className="h-4 w-4 text-primary" aria-hidden="true" />
-              <h3 className="text-lg font-semibold capitalize">{layer} layer</h3>
+              <h3 className="text-lg font-semibold capitalize">{layerLabel(layer)} layer</h3>
               <Badge variant="muted">{agents.length}</Badge>
             </div>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

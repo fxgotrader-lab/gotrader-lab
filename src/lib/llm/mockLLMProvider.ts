@@ -17,9 +17,9 @@ export const mockLLMProvider: LLMProvider = {
       executionAuthority: "none",
       brokerAuthority: "none",
       readinessOverrideAuthority: "none",
-      bias: index === 5 ? "no_opinion" : biasFor(context),
+      bias: agent.agentId.includes("self-improvement") || agent.agentId.includes("order-flow") ? "no_opinion" : biasFor(context),
       confidence: Math.max(0.42, Math.min(0.78, (context.cioThesis?.confidence ?? 0.55) - index * 0.01)),
-      agreesWithBaseline: index === 5 ? null : true,
+      agreesWithBaseline: agent.agentId.includes("self-improvement") || agent.agentId.includes("order-flow") ? null : true,
       reasoningSummary: `${agent.agentName} mock review found the context usable for UI testing only. This is not a real LLM advisory review.`,
       riskWarnings: [
         "Mock response only; do not use for Paper-Demo Candidate readiness.",
@@ -27,7 +27,7 @@ export const mockLLMProvider: LLMProvider = {
       ],
       missingEvidence: context.validationSummary ? [] : ["Validation summary is missing."],
       suggestedCalibration:
-        index === 5
+        agent.agentId.includes("self-improvement")
           ? ["If drawdown remains high, test a slightly higher confidence threshold in simulation."]
           : [],
       proceedRecommendation: context.validationSummary ? "rerun_validation" : "continue_research",

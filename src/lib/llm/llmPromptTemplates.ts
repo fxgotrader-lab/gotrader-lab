@@ -20,6 +20,48 @@ export const requiredLLMAgents: LLMAgentDefinition[] = [
     role: "Review session tag, ICT kill zone, time-of-day quality, and session-specific fragility."
   },
   {
+    agentId: "llm-session-levels-reviewer",
+    agentName: "LLM Session Levels Reviewer",
+    required: true,
+    role: "Review prior day/week/month, overnight, Globex, and opening-range levels for meaningful futures liquidity sweeps."
+  },
+  {
+    agentId: "llm-auction-volume-profile-reviewer",
+    agentName: "LLM Auction/Volume Profile Reviewer",
+    required: true,
+    role: "Review VWAP, anchored VWAP, VPOC, VAH, VAL, and acceptance/rejection evidence."
+  },
+  {
+    agentId: "llm-macro-event-risk-reviewer",
+    agentName: "LLM Macro Event Risk Reviewer",
+    required: true,
+    role: "Review scheduled macro risk, Fed speakers, and event proximity that can distort normal ICT behavior."
+  },
+  {
+    agentId: "llm-intermarket-confirmation-reviewer",
+    agentName: "LLM Intermarket Confirmation Reviewer",
+    required: true,
+    role: "Review ES/NQ, YM/ES, VIX, DXY, yields, bonds, crude, and gold context for confirmation or conflict."
+  },
+  {
+    agentId: "llm-positioning-gamma-reviewer",
+    agentName: "LLM Positioning/Gamma Reviewer",
+    required: true,
+    role: "Review COT, put/call, gamma levels, dealer gamma flip, and higher-timeframe positioning risk."
+  },
+  {
+    agentId: "llm-volatility-regime-reviewer",
+    agentName: "LLM Volatility Regime Reviewer",
+    required: true,
+    role: "Review VIX, ATR/range expansion, realized volatility, stop assumptions, and target expectations."
+  },
+  {
+    agentId: "llm-order-flow-planning-reviewer",
+    agentName: "LLM Order Flow Planning Reviewer",
+    required: true,
+    role: "Review missing DOM, footprint, delta, cumulative delta, and large-print evidence as planned later context only."
+  },
+  {
     agentId: "llm-risk-reward-reviewer",
     agentName: "LLM Risk/Reward Reviewer",
     required: true,
