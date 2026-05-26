@@ -43,6 +43,14 @@ import {
   type CandleWindowSettings,
   type PreparedCandleSource
 } from "@/lib/marketData";
+import {
+  resolveResearchRuntimeSnapshot,
+  selectRuntimeConfigSummary,
+  selectRuntimeMetricSourceLabel,
+  selectRuntimeSourceLabel,
+  selectRuntimeWarnings,
+  type ResearchRuntimeSnapshot
+} from "@/lib/runtime";
 import type { FuturesSymbol, MarketRegime, Timeframe } from "@/lib/types";
 import { formatPercent, formatSigned, safeTopN } from "@/lib/utils";
 
@@ -140,8 +148,10 @@ export function BacktestLab() {
   const [activeCalibration, setActiveCalibration] = useState(() => loadActiveResearchCalibration());
   const [candleSource, setCandleSource] = useState<PreparedCandleSource>(mockCandleSource);
   const [windowSettings, setWindowSettings] = useState<CandleWindowSettings>(() => loadCandleWindowSettings());
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
   const summary = result.summary;
   const activeCandles = candlesForSource(candleSource);
+  const runtimeWarnings = selectRuntimeWarnings(runtimeSnapshot);
   const zeroTradeDiagnostics = summary.totalTrades === 0
     ? diagnoseTradeGeneration({ candles: activeCandles, config: result.config, result })
     : [];
@@ -190,6 +200,7 @@ export function BacktestLab() {
     setConfigResolution(sourceResolved);
     setDraftConfig(sourceResolved.config);
     setResult(runBacktest(candlesForSource(source), sourceResolved.config));
+    void resolveResearchRuntimeSnapshot({ preparedCandleSource: source }).then(setRuntimeSnapshot).catch(() => undefined);
   };
 
   const patchWindowSettings = async (patch: Partial<CandleWindowSettings>) => {
@@ -243,6 +254,13 @@ export function BacktestLab() {
         setConfigResolution(sourceResolved);
         setDraftConfig(sourceResolved.config);
         setResult(runBacktest(candlesForSource(source), sourceResolved.config));
+        resolveResearchRuntimeSnapshot({ preparedCandleSource: source })
+          .then((snapshot) => {
+            if (mounted) {
+              setRuntimeSnapshot(snapshot);
+            }
+          })
+          .catch(() => undefined);
       });
     };
     refresh();
@@ -279,6 +297,27 @@ export function BacktestLab() {
       </div>
 
       <SafetyLockBanner message="Simulation calibration only. No broker connection, live market data, or real trades." />
+
+      <Card className="border-cyan-400/20 bg-cyan-400/5">
+        <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-4">
+          <div>
+            <div className="text-xs uppercase opacity-70">Metrics source</div>
+            <div className="mt-1 font-mono">{selectRuntimeMetricSourceLabel(runtimeSnapshot)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Runtime data source</div>
+            <div className="mt-1 font-mono">{selectRuntimeSourceLabel(runtimeSnapshot)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Active baseline</div>
+            <div className="mt-1 font-mono">{selectRuntimeConfigSummary(runtimeSnapshot)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Page-local diagnostic</div>
+            <div className="mt-1 font-mono">recomputed preview: {summary.totalTrades} trades</div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="border-primary/20 bg-primary/10">
         <CardContent className="grid gap-3 p-4 text-sm text-primary md:grid-cols-4">
@@ -428,6 +467,17 @@ export function BacktestLab() {
           <div>Source trace: {configResolution.sourceTrace.join(" + ")}</div>
           <div>Patch: {JSON.stringify(configResolution.appliedPatch ?? {})}</div>
           {configResolution.mergeError ? <div className="text-amber-100">Merge warning: {configResolution.mergeError}</div> : null}
+        </div>
+        <div className="mt-3 rounded-lg border border-border bg-background/45 p-3 text-xs text-muted-foreground">
+          <div className="font-medium text-foreground">Advanced detail: runtime snapshot diagnostics</div>
+          <div>Snapshot ID: {runtimeSnapshot?.snapshotId ?? "not loaded"}</div>
+          <div>Metrics source: {selectRuntimeMetricSourceLabel(runtimeSnapshot)}</div>
+          <div>Source trace: {runtimeSnapshot?.diagnostics.sourceTrace.join(" + ") ?? "n/a"}</div>
+          {runtimeWarnings.length ? (
+            <div className="mt-2 text-amber-100">Warnings: {runtimeWarnings.join(" ")}</div>
+          ) : (
+            <div className="mt-2 text-emerald-100">No runtime snapshot mismatch warnings.</div>
+          )}
         </div>
       </TechnicalDetails>
 

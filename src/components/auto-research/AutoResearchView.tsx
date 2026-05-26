@@ -34,6 +34,14 @@ import {
   MARKET_DATA_IMPORT_UPDATED_EVENT,
   type PreparedCandleSource
 } from "@/lib/marketData";
+import {
+  resolveResearchRuntimeSnapshot,
+  selectRuntimeConfigSummary,
+  selectRuntimeMetricSourceLabel,
+  selectRuntimeSourceLabel,
+  selectRuntimeWarnings,
+  type ResearchRuntimeSnapshot
+} from "@/lib/runtime";
 import { formatPercent, formatSigned, safeArray, safeTopN } from "@/lib/utils";
 
 const searchModeOptions = autoResearchSearchModes.map((mode) => ({
@@ -179,6 +187,7 @@ export function AutoResearchView() {
   const [isRunning, setIsRunning] = useState(false);
   const [configRefreshKey, setConfigRefreshKey] = useState(0);
   const [activeCandleSource, setActiveCandleSource] = useState<PreparedCandleSource>(fallbackCandleSource);
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
   const baselineResolution = useMemo(() => {
     const resolved = resolveActiveBacktestConfig();
     if (!activeCandleSource.metadata) {
@@ -191,7 +200,22 @@ export function AutoResearchView() {
     });
     return { ...resolved, config: sourceConfig };
   }, [state.latestCycleId, configRefreshKey, activeCandleSource]);
-  const baselineConfig = baselineResolution.config;
+  const baselineConfig = useMemo(() => {
+    const runtimeConfig = runtimeSnapshot?.activeConfig.resolvedBacktestConfig;
+    if (!runtimeConfig) {
+      return baselineResolution.config;
+    }
+    if (!activeCandleSource.metadata) {
+      return runtimeConfig;
+    }
+    return sanitizeBacktestConfig({
+      ...runtimeConfig,
+      symbol: activeCandleSource.metadata.symbol,
+      timeframe: activeCandleSource.appliedSettings.targetTimeframe
+    });
+  }, [activeCandleSource, baselineResolution.config, runtimeSnapshot]);
+  const activeCalibrationId = runtimeSnapshot?.activeConfig.activeCalibrationId ?? baselineResolution.activeCalibrationId;
+  const runtimeWarnings = selectRuntimeWarnings(runtimeSnapshot);
   const latestCycle = latestAutoResearchCycle(state);
   const bestCandidate = latestCycle?.bestCandidate;
   const createdProposalSnapshot = latestCycle?.createdProposal?.metricsSnapshot;
@@ -223,6 +247,13 @@ export function AutoResearchView() {
         if (mounted) {
           setActiveCandleSource(source);
         }
+        resolveResearchRuntimeSnapshot({ preparedCandleSource: source })
+          .then((snapshot) => {
+            if (mounted) {
+              setRuntimeSnapshot(snapshot);
+            }
+          })
+          .catch(() => undefined);
       });
     };
     refresh();
@@ -251,7 +282,7 @@ export function AutoResearchView() {
       baselineConfig,
       dataSource: activeCandleSource.label,
       candleWindow: `${activeCandleSource.researchWindowCandles} raw window / ${activeCandleSource.processedCandleCount} processed ${activeCandleSource.appliedSettings.targetTimeframe} candles`,
-      activeCalibrationIdUsed: baselineResolution.activeCalibrationId
+      activeCalibrationIdUsed: activeCalibrationId
     });
     setState(loadAutoResearchState());
     setIsRunning(false);
@@ -316,6 +347,27 @@ export function AutoResearchView() {
         </Card>
       ) : null}
 
+      <Card className="border-cyan-400/20 bg-cyan-400/5">
+        <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-4">
+          <div>
+            <div className="text-xs uppercase opacity-70">Metrics source</div>
+            <div className="mt-1 font-mono">{selectRuntimeMetricSourceLabel(runtimeSnapshot)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Runtime data source</div>
+            <div className="mt-1 font-mono">{selectRuntimeSourceLabel(runtimeSnapshot)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Active baseline</div>
+            <div className="mt-1 font-mono">{selectRuntimeConfigSummary(runtimeSnapshot)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">LLM advisory</div>
+            <div className="mt-1 font-mono">{runtimeSnapshot?.llm.advisoryPassed ? "passed" : "missing or not passed"}</div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Card>
           <CardHeader>
@@ -330,9 +382,9 @@ export function AutoResearchView() {
               {describeBacktestConfig(baselineConfig)}
             </div>
             <div className="rounded-lg border border-border bg-background/45 p-3 text-xs text-muted-foreground">
-              Config merge: {baselineResolution.mergeStatusLabel}. Final confluence threshold{" "}
-              {(baselineResolution.finalBacktestConfluenceThreshold * 100).toFixed(0)}%.
-              {baselineResolution.activeCalibrationId ? ` Active calibration ${baselineResolution.activeCalibrationId}.` : ""}
+              Config merge: {runtimeSnapshot?.activeConfig.configMergeStatusLabel ?? baselineResolution.mergeStatusLabel}. Final confluence threshold{" "}
+              {((runtimeSnapshot?.activeConfig.resolvedConfluenceThreshold ?? baselineResolution.finalBacktestConfluenceThreshold) * 100).toFixed(0)}%.
+              {activeCalibrationId ? ` Active calibration ${activeCalibrationId}.` : ""}
             </div>
             <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-3 text-xs text-cyan-50">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -866,6 +918,17 @@ export function AutoResearchView() {
           <Button variant="destructive" onClick={clearHistory} className="w-full md:w-auto">
             Clear Auto Research History
           </Button>
+        </div>
+        <div className="mt-3 rounded-lg border border-border bg-background/45 p-3 text-xs text-muted-foreground">
+          <div className="font-medium text-foreground">Advanced detail: runtime snapshot diagnostics</div>
+          <div>Snapshot ID: {runtimeSnapshot?.snapshotId ?? "not loaded"}</div>
+          <div>Metrics source: {selectRuntimeMetricSourceLabel(runtimeSnapshot)}</div>
+          <div>Source trace: {runtimeSnapshot?.diagnostics.sourceTrace.join(" + ") ?? "n/a"}</div>
+          {runtimeWarnings.length ? (
+            <div className="mt-2 text-amber-100">Warnings: {runtimeWarnings.join(" ")}</div>
+          ) : (
+            <div className="mt-2 text-emerald-100">No runtime snapshot mismatch warnings.</div>
+          )}
         </div>
       </TechnicalDetails>
 

@@ -31,6 +31,14 @@ import type { AutoResearchCandidateResult } from "@/lib/autoResearch";
 import { describeBacktestConfig } from "@/lib/backtesting";
 import { canonicalMetricsForRun, type CanonicalPerformanceMetrics } from "@/lib/performance/canonicalMetrics";
 import { latestResearchCycleRun } from "@/lib/researchCycle";
+import {
+  resolveResearchRuntimeSnapshot,
+  selectRuntimeConfigSummary,
+  selectRuntimeMetricSourceLabel,
+  selectRuntimeSourceLabel,
+  selectRuntimeWarnings,
+  type ResearchRuntimeSnapshot
+} from "@/lib/runtime";
 import { labStorage } from "@/lib/storage";
 import { formatPercent, safeArray } from "@/lib/utils";
 import { loadLatestResearchQualityReview } from "@/lib/researchQuality";
@@ -486,13 +494,15 @@ export function SelfImprovementView() {
   const [approvalNotes, setApprovalNotes] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [proposalFilter, setProposalFilter] = useState("");
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
   const latestValidation = loadLatestValidationReport();
   const latestQuality = loadLatestResearchQualityReview();
   const latestCycleRun = latestResearchCycleRun();
   const queryProposalId = searchParams.get("proposalId") ?? undefined;
   const generatedProposalFromCycle =
     latestCycleRun?.latestGeneratedProposal ?? latestCycleRun?.autoResearchCycle?.createdProposal;
-  const latestCycleCanonicalMetrics = canonicalMetricsForRun(latestCycleRun);
+  const latestCycleCanonicalMetrics = runtimeSnapshot?.performance.canonicalPerformanceMetrics ?? canonicalMetricsForRun(latestCycleRun);
+  const runtimeWarnings = selectRuntimeWarnings(runtimeSnapshot);
   const generatedProposalId = latestCycleRun?.createdProposalId ?? generatedProposalFromCycle?.proposalId;
   const generatedProposalStored = Boolean(
     generatedProposalId && safeArray(state.proposals).some((proposal) => proposal.proposalId === generatedProposalId)
@@ -504,7 +514,7 @@ export function SelfImprovementView() {
     () => resolveActiveBacktestConfig(),
     [state.latestProposalId, state.lastAcceptedProposalId, state.activeResearchCalibration?.approvedAt]
   );
-  const baselineConfig = baselineResolution.config;
+  const baselineConfig = runtimeSnapshot?.activeConfig.resolvedBacktestConfig ?? baselineResolution.config;
   const latestAdvisory = labStorage.load().advisoryResponses?.[0];
   const storedQueryProposal = queryProposalId
     ? safeArray(state.proposals).find((proposal) => proposal.proposalId === queryProposalId)
@@ -633,7 +643,11 @@ export function SelfImprovementView() {
           : "";
 
   useEffect(() => {
-    const refresh = () => setState(loadSelfImprovementState());
+    const refresh = () => {
+      setState(loadSelfImprovementState());
+      void resolveResearchRuntimeSnapshot().then(setRuntimeSnapshot).catch(() => undefined);
+    };
+    refresh();
     window.addEventListener(SELF_IMPROVEMENT_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
@@ -795,6 +809,27 @@ export function SelfImprovementView() {
       </div>
 
       <SafetyLockBanner message="Simulation self-improvement only. No broker execution, readiness override, paper/demo enablement, or real trades." />
+
+      <Card className="border-cyan-400/20 bg-cyan-400/5">
+        <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-4">
+          <div>
+            <div className="text-xs uppercase opacity-70">Metrics source</div>
+            <div className="mt-1 font-mono">{selectRuntimeMetricSourceLabel(runtimeSnapshot)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Runtime data source</div>
+            <div className="mt-1 font-mono">{selectRuntimeSourceLabel(runtimeSnapshot)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Active baseline</div>
+            <div className="mt-1 font-mono">{selectRuntimeConfigSummary(runtimeSnapshot)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Latest proposal</div>
+            <div className="mt-1 break-all font-mono">{runtimeSnapshot?.proposal.latestProposalId ?? "none"}</div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className={metricSourceWarningActive ? "border-amber-300/25 bg-amber-300/10" : "border-emerald-300/25 bg-emerald-300/10"}>
         <CardHeader>
@@ -1135,6 +1170,17 @@ export function SelfImprovementView() {
             </div>
           </CardContent>
         </Card>
+      </div>
+      <div className="mt-5 rounded-lg border border-border bg-background/45 p-3 text-xs text-muted-foreground">
+        <div className="font-medium text-foreground">Advanced detail: runtime snapshot diagnostics</div>
+        <div>Snapshot ID: {runtimeSnapshot?.snapshotId ?? "not loaded"}</div>
+        <div>Metrics source: {selectRuntimeMetricSourceLabel(runtimeSnapshot)}</div>
+        <div>Source trace: {runtimeSnapshot?.diagnostics.sourceTrace.join(" + ") ?? "n/a"}</div>
+        {runtimeWarnings.length ? (
+          <div className="mt-2 text-amber-100">Warnings: {runtimeWarnings.join(" ")}</div>
+        ) : (
+          <div className="mt-2 text-emerald-100">No runtime snapshot mismatch warnings.</div>
+        )}
       </div>
       </TechnicalDetails>
 

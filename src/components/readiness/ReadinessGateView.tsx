@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, ClipboardList, PauseCircle, RotateCcw, ShieldAlert, ShieldCheck, XCircle } from "lucide-react";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
@@ -21,6 +21,13 @@ import {
 } from "@/lib/readiness";
 import type { ManualApprovalRecord, ReadinessRequirementResult, ReadinessState } from "@/lib/readiness";
 import { loadLatestResearchQualityReview } from "@/lib/researchQuality";
+import {
+  resolveResearchRuntimeSnapshot,
+  selectRuntimeMetricSourceLabel,
+  selectRuntimeSourceLabel,
+  selectRuntimeWarnings,
+  type ResearchRuntimeSnapshot
+} from "@/lib/runtime";
 import { loadSelfImprovementState } from "@/lib/selfImprovement";
 import { countCompletedRunbookItems, loadSimulationRunbookState, simulationRunbookChecklist } from "@/lib/simulationRunbook";
 import { loadLatestValidationReport } from "@/lib/validation";
@@ -57,10 +64,11 @@ export function ReadinessGateView() {
   const [runbook, setRunbook] = useState(() => loadSimulationRunbookState());
   const [approval, setApproval] = useState(() => loadManualApprovalRecord());
   const [selfImprovement, setSelfImprovement] = useState(() => loadSelfImprovementState());
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
   const [reviewerName, setReviewerName] = useState(approval.reviewerName);
   const [notes, setNotes] = useState("");
 
-  const gate = useMemo(
+  const computedGate = useMemo(
     () =>
       evaluateReadinessGate({
         validation,
@@ -69,6 +77,8 @@ export function ReadinessGateView() {
       }),
     [validation, quality, runbook]
   );
+  const gate = runtimeSnapshot?.readiness.readinessSnapshot ?? computedGate;
+  const runtimeWarnings = selectRuntimeWarnings(runtimeSnapshot);
 
   const conservative = validation?.scenarios.find((scenario) => scenario.id === "conservative-confluence");
   const maxDrawdown = validation?.scenarios.reduce((max, scenario) => Math.max(max, scenario.maxDrawdown), 0) ?? 0;
@@ -104,7 +114,12 @@ export function ReadinessGateView() {
     setRunbook(loadSimulationRunbookState());
     setApproval(loadManualApprovalRecord());
     setSelfImprovement(loadSelfImprovementState());
+    void resolveResearchRuntimeSnapshot().then(setRuntimeSnapshot).catch(() => undefined);
   };
+
+  useEffect(() => {
+    refresh();
+  }, []);
 
   const approve = () => {
     if (gate.state !== "Paper-Demo Candidate") {
@@ -170,6 +185,27 @@ export function ReadinessGateView() {
       </div>
 
       <SafetyLockBanner message="Simulation-only readiness gating. Broker execution remains disabled." />
+
+      <Card className="border-cyan-400/20 bg-cyan-400/5">
+        <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-4">
+          <div>
+            <div className="text-xs uppercase opacity-70">Metrics source</div>
+            <div className="mt-1 font-mono">{selectRuntimeMetricSourceLabel(runtimeSnapshot)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Runtime data source</div>
+            <div className="mt-1 font-mono">{selectRuntimeSourceLabel(runtimeSnapshot)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Actual blockers</div>
+            <div className="mt-1 font-mono">{runtimeSnapshot?.readiness.actualBlockers.length ?? gate.failedRequirements.length}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">LLM advisory</div>
+            <div className="mt-1 font-mono">{runtimeSnapshot?.llm.advisoryPassed ? "passed" : "missing or not passed"}</div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Card>
@@ -394,6 +430,17 @@ export function ReadinessGateView() {
                 <div className="mt-1 font-mono">{value}</div>
               </div>
             ))}
+          </div>
+          <div className="rounded-lg border border-border bg-background/45 p-3 text-xs text-muted-foreground">
+            <div className="font-medium text-foreground">Advanced detail: runtime snapshot diagnostics</div>
+            <div>Snapshot ID: {runtimeSnapshot?.snapshotId ?? "not loaded"}</div>
+            <div>Metrics source: {selectRuntimeMetricSourceLabel(runtimeSnapshot)}</div>
+            <div>Source trace: {runtimeSnapshot?.diagnostics.sourceTrace.join(" + ") ?? "n/a"}</div>
+            {runtimeWarnings.length ? (
+              <div className="mt-2 text-amber-100">Warnings: {runtimeWarnings.join(" ")}</div>
+            ) : (
+              <div className="mt-2 text-emerald-100">No runtime snapshot mismatch warnings.</div>
+            )}
           </div>
         </CardContent>
       </Card>
