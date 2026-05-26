@@ -70,6 +70,38 @@ export function generateTradeQualityCandidateConfigs(
     patch: BacktestConfig,
     changedParameters: string[]
   ) => addUnique(candidates, baseline, seen, label, rationale, patch, changedParameters);
+  const addNyAmWinRateFocus = () => {
+    add(
+      "NY AM 1R win-rate test",
+      "Win rate was the top trade-quality issue and NY AM was recommended, so this tests the cleaner session with a closer 1R target.",
+      { sessionFilter: "NY AM Kill Zone", targetRMultiple: 1 },
+      ["sessionFilter", "targetRMultiple"]
+    );
+    add(
+      "NY AM FVG invalidation test",
+      "Win rate was weak, so this tests whether fair-value-gap invalidation improves NY AM trade quality.",
+      { sessionFilter: "NY AM Kill Zone", stopModel: "FVG invalidation" },
+      ["sessionFilter", "stopModel"]
+    );
+    add(
+      "NY AM structure invalidation test",
+      "Win rate was weak, so this tests structure-based invalidation inside the NY AM window.",
+      { sessionFilter: "NY AM Kill Zone", stopModel: "latest swing" },
+      ["sessionFilter", "stopModel"]
+    );
+    add(
+      "NY AM long-only quality test",
+      "Win rate was weak, so this isolates bullish theses during the NY AM window.",
+      { sessionFilter: "NY AM Kill Zone", allowLong: true, allowShort: false },
+      ["sessionFilter", "allowLong", "allowShort"]
+    );
+    add(
+      "NY AM short-only quality test",
+      "Win rate was weak, so this isolates bearish theses during the NY AM window.",
+      { sessionFilter: "NY AM Kill Zone", allowLong: false, allowShort: true },
+      ["sessionFilter", "allowLong", "allowShort"]
+    );
+  };
 
   const stopModels: Array<{ label: string; stopModel: BacktestStopModel; fixedTickStopSize?: number }> = [
     { label: "Fixed tick stop quality test", stopModel: "fixed ticks", fixedTickStopSize: Math.max(20, Math.min(60, baseline.fixedTickStopSize || 40)) },
@@ -89,6 +121,10 @@ export function generateTradeQualityCandidateConfigs(
     { label: "All sessions quality retest", sessionFilter: "all" },
     { label: "New York session quality test", sessionFilter: "New York" }
   ];
+
+  if (reasonCodes.has("win_rate_too_low")) {
+    addNyAmWinRateFocus();
+  }
 
   if (reasonCodes.has("stop_model_weak") || reasonCodes.has("max_drawdown_too_high") || reasonCodes.has("average_r_too_low")) {
     for (const test of stopModels) {

@@ -139,6 +139,41 @@ const initialState = (): ResearchCycleState => ({
   safetyNotice: "Research cycle only. Broker execution remains disabled."
 });
 
+const readinessBlockerLabel = (requirement: { id?: string; label: string; passed?: boolean }) => {
+  if (requirement.passed) {
+    return undefined;
+  }
+  switch (requirement.id) {
+    case "validation-exists":
+      return "Validation suite missing.";
+    case "research-quality-exists":
+      return "Research quality review missing.";
+    case "simulated-trade-sample":
+      return "Insufficient simulated trades.";
+    case "quality-candidate":
+      return "Research Quality must reach Paper-Demo Candidate.";
+    case "llm-advisory-review":
+      return "LLM advisory missing.";
+    case "runbook-complete":
+      return "Simulation runbook incomplete.";
+    case "drawdown-threshold":
+      return "Drawdown too high.";
+    case "confidence-calibration":
+      return "Confidence calibration too low.";
+    case "false-positive-control":
+      return "False positives too high.";
+    case "session-consistency":
+      return "Session consistency weak.";
+    case "conservative-stability":
+      return "Conservative scenario unstable.";
+    default:
+      return requirement.label;
+  }
+};
+
+const uniqueText = (items: Array<string | undefined>) =>
+  items.filter((item): item is string => Boolean(item?.trim())).filter((item, index, array) => array.indexOf(item) === index);
+
 const publish = (state: ResearchCycleState) => {
   if (isBrowser()) {
     try {
@@ -876,10 +911,10 @@ export async function runResearchCycle({
       runbook: runbookAfter
     });
     run.readinessSnapshot = readinessSnapshot;
-    run.blockers = [
-      ...safeArray(readinessSnapshot.failedRequirements).map((requirement) => requirement.label),
-      ...(!run.llmRun?.advisoryPassed ? ["LLM advisory review required before Paper-Demo Candidate."] : [])
-    ];
+    run.blockers = uniqueText([
+      ...safeArray(readinessSnapshot.failedRequirements).map(readinessBlockerLabel),
+      ...(!run.llmRun?.advisoryPassed ? ["LLM advisory missing."] : [])
+    ]);
     passStep("readiness_gate", {
       summary: `Readiness remains ${readinessSnapshot.state}.`,
       detail: `${safeArray(readinessSnapshot.failedRequirements).length} failed requirement${safeArray(readinessSnapshot.failedRequirements).length === 1 ? "" : "s"}; no override applied.`

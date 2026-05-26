@@ -77,6 +77,58 @@ const stepIcon = (status: ResearchCycleStepStatus) => {
 const formatStatus = (status?: string) => (status ?? "idle").replace(/_/g, " ");
 const formatPercent = (value?: number) =>
   typeof value === "number" && Number.isFinite(value) ? `${(value * 100).toFixed(0)}%` : "n/a";
+const passLikeReadinessPhrases = ["passed", "controlled", "exists", "broker execution skipped", "is paper-demo candidate"];
+const trueBlockerPhrases = [
+  "too low",
+  "too high",
+  "insufficient",
+  "missing",
+  "required",
+  "no safe",
+  "requires review",
+  "not ready",
+  "unstable",
+  "weak",
+  "blocked"
+];
+const readinessBlockerLabel = (requirement: { id?: string; label: string; passed?: boolean }) => {
+  if (requirement.passed) {
+    return undefined;
+  }
+  switch (requirement.id) {
+    case "validation-exists":
+      return "Validation suite missing.";
+    case "research-quality-exists":
+      return "Research quality review missing.";
+    case "simulated-trade-sample":
+      return "Insufficient simulated trades.";
+    case "quality-candidate":
+      return "Research Quality must reach Paper-Demo Candidate.";
+    case "llm-advisory-review":
+      return "LLM advisory missing.";
+    case "runbook-complete":
+      return "Simulation runbook incomplete.";
+    case "drawdown-threshold":
+      return "Drawdown too high.";
+    case "confidence-calibration":
+      return "Confidence calibration too low.";
+    case "false-positive-control":
+      return "False positives too high.";
+    case "session-consistency":
+      return "Session consistency weak.";
+    case "conservative-stability":
+      return "Conservative scenario unstable.";
+    default:
+      return requirement.label;
+  }
+};
+const isPassLikeText = (value: string) => {
+  const normalized = value.toLowerCase();
+  return passLikeReadinessPhrases.some((phrase) => normalized.includes(phrase)) &&
+    !trueBlockerPhrases.some((phrase) => normalized.includes(phrase));
+};
+const uniqueText = (items: Array<string | undefined>) =>
+  items.filter((item): item is string => Boolean(item?.trim())).filter((item, index, array) => array.indexOf(item) === index);
 const dashboardSearchModes: Array<{ label: string; value: AutoResearchSearchMode; count: number }> = [
   { label: "Quick - 5 candidates", value: "quick", count: 5 },
   { label: "Standard - 10 candidates", value: "standard", count: 10 },
@@ -118,17 +170,32 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
   const researchCalibrationAvailable = Boolean(
     latestRun?.createdProposalId && latestRun.autoResearchCycle?.noSafePaperDemoCandidateFound
   );
+  const topTradeQualityIssue =
+    safeArray(latestRun?.tradeQualityDiagnostics).find((item) => item.severity === "blocking") ??
+    safeArray(latestRun?.tradeQualityDiagnostics).find((item) => item.severity === "warning") ??
+    safeArray(latestRun?.tradeQualityDiagnostics)[0];
   const actualBlockers = useMemo(() => {
     if (!latestRun) {
       return [];
     }
-    return [
-      ...safeArray(latestRun.readinessSnapshot?.failedRequirements).map((requirement) => requirement.label),
-      ...(!latestRun.llmRun?.advisoryPassed ? ["LLM advisory review required before Paper-Demo Candidate."] : [])
-    ].filter((item, index, array) => item && array.indexOf(item) === index);
-  }, [latestRun]);
+    return uniqueText([
+      ...safeArray(latestRun.readinessSnapshot?.failedRequirements).map(readinessBlockerLabel),
+      ...safeArray(latestRun.blockers).filter((item) => !isPassLikeText(item)),
+      ...(topTradeQualityIssue?.reasonCode === "win_rate_too_low" ? ["Win rate too low."] : []),
+      ...(topTradeQualityIssue?.reasonCode === "average_r_too_low" ? ["Average R too low."] : []),
+      ...(topTradeQualityIssue?.reasonCode === "max_drawdown_too_high" ? ["Drawdown too high."] : []),
+      ...(latestRun.autoResearchCycle?.noSafePaperDemoCandidateFound ? ["No safe Paper-Demo Candidate found."] : []),
+      ...(latestRun.createdProposalId ? ["Proposal requires review."] : []),
+      ...(!latestRun.llmRun?.advisoryPassed ? ["LLM advisory missing."] : [])
+    ]);
+  }, [latestRun, topTradeQualityIssue?.reasonCode]);
   const passedRequirements = useMemo(
-    () => safeArray(latestRun?.readinessSnapshot?.passedRequirements).map((requirement) => requirement.label),
+    () => uniqueText([
+      ...safeArray(latestRun?.readinessSnapshot?.passedRequirements).map((requirement) => requirement.label),
+      ...safeArray(latestRun?.readinessSnapshot?.failedRequirements)
+        .map((requirement) => requirement.label)
+        .filter(isPassLikeText)
+    ]),
     [latestRun]
   );
   const readinessWarnings = useMemo(
@@ -138,11 +205,6 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
     ],
     [latestRun]
   );
-  const topTradeQualityIssue =
-    safeArray(latestRun?.tradeQualityDiagnostics).find((item) => item.severity === "blocking") ??
-    safeArray(latestRun?.tradeQualityDiagnostics).find((item) => item.severity === "warning") ??
-    safeArray(latestRun?.tradeQualityDiagnostics)[0];
-
   useEffect(() => {
     let mounted = true;
     const refresh = () => {

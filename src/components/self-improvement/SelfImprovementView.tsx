@@ -64,6 +64,31 @@ const tradeQualityTargets = new Set([
 ]);
 const isTradeQualityProposal = (proposal?: CalibrationProposal) =>
   Boolean(proposal && tradeQualityTargets.has(proposal.targetProblem));
+const proposalFocusLabels = (proposal?: CalibrationProposal) => {
+  if (!proposal) {
+    return [];
+  }
+  const labels: string[] = [];
+  if (proposal.proposedChanges.targetRMultiple !== undefined) {
+    labels.push("Target model");
+  }
+  if (proposal.proposedChanges.sessionFilter !== undefined) {
+    labels.push("Session filter");
+  }
+  if (proposal.proposedChanges.stopModel !== undefined) {
+    labels.push("Stop model");
+  }
+  if (
+    proposal.baselineConfig.allowLong !== proposal.proposedConfig.allowLong ||
+    proposal.baselineConfig.allowShort !== proposal.proposedConfig.allowShort
+  ) {
+    labels.push("Direction filter");
+  }
+  if (proposal.proposedChanges.confluenceThreshold !== undefined || proposal.proposedChanges.confidenceThreshold !== undefined) {
+    labels.push("Quality threshold");
+  }
+  return labels;
+};
 const deltaClass = (tone: "positive" | "negative" | "neutral") =>
   tone === "positive" ? "text-emerald-200" : tone === "negative" ? "text-red-200" : "text-muted-foreground";
 const deltaPrefix = (value: number) => (value > 0 ? "+" : "");
@@ -377,6 +402,13 @@ export function SelfImprovementView() {
     : 30;
   const tradeQualityAfterTrades = latestProposal?.afterMetrics?.totalTrades ?? 0;
   const tradeQualitySampleAcceptable = tradeQualityAfterTrades >= tradeQualitySampleMinimum;
+  const tradeQualityFocusLabels = proposalFocusLabels(latestProposal);
+  const tradeQualityWinRateImproved = latestProposal?.afterMetrics
+    ? latestProposal.afterMetrics.winRate > latestProposal.beforeMetrics.winRate
+    : false;
+  const tradeQualityAverageRImproved = latestProposal?.afterMetrics
+    ? latestProposal.afterMetrics.averageR > latestProposal.beforeMetrics.averageR
+    : false;
   const approvalCheck = latestProposalPersisted
     ? canApproveProposal(latestProposal)
     : {
@@ -839,10 +871,28 @@ export function SelfImprovementView() {
                     </div>
                   ))}
                 </div>
+                <div className="mt-3 flex flex-wrap gap-1">
+                  {tradeQualityFocusLabels.length ? (
+                    tradeQualityFocusLabels.map((label) => <Badge key={label} variant="secondary">{label}</Badge>)
+                  ) : (
+                    <Badge variant="muted">No focused config patch detected</Badge>
+                  )}
+                </div>
                 <p className="mt-3 text-xs text-cyan-100/75">
                   Sample guard: after-metrics should keep at least {tradeQualitySampleMinimum} trades. If it falls below that,
                   treat the proposal as a follow-up candidate, not an approval-ready calibration.
                 </p>
+                {latestProposal.afterMetrics ? (
+                  <p className={`mt-2 rounded-md border p-2 text-xs ${
+                    tradeQualityWinRateImproved && tradeQualityAverageRImproved
+                      ? "border-emerald-200/20 bg-emerald-200/5 text-emerald-100"
+                      : "border-amber-200/25 bg-amber-200/10 text-amber-100"
+                  }`}>
+                    {tradeQualityWinRateImproved && tradeQualityAverageRImproved
+                      ? "Win rate and average R improved in the simulation result. Manual approval is still required."
+                      : "Do not approve if win rate or average R did not improve. Run the next targeted quality test first."}
+                  </p>
+                ) : null}
               </div>
             ) : null}
             <div className="rounded-lg border border-border bg-background/45 p-3">
