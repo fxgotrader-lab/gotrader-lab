@@ -4,15 +4,18 @@ import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { CanonicalPerformanceMetrics } from "@/lib/performance/canonicalMetrics";
 import type { CalibrationProposal } from "@/lib/selfImprovement";
+import { formatPercent } from "@/lib/utils";
 
 import { formatDateTime, formatR } from "./dashboardFormatters";
 
 type SelfImprovementStatusCardProps = {
   proposal?: CalibrationProposal;
+  latestCycleMetrics?: CanonicalPerformanceMetrics;
 };
 
-export function SelfImprovementStatusCard({ proposal }: SelfImprovementStatusCardProps) {
+export function SelfImprovementStatusCard({ proposal, latestCycleMetrics }: SelfImprovementStatusCardProps) {
   const status = proposal?.status ?? "none";
   const before = proposal?.metricsSnapshot?.beforeMetrics ?? proposal?.beforeMetrics;
   const after = proposal?.metricsSnapshot?.afterMetrics ?? proposal?.afterMetrics;
@@ -48,6 +51,22 @@ export function SelfImprovementStatusCard({ proposal }: SelfImprovementStatusCar
           </div>
           <p className="mt-2 text-xs text-slate-500">
             {proposal?.metricsSnapshot ? "Using canonical proposal snapshot." : "No canonical snapshot stored yet."}
+          </p>
+        </div>
+        <div className="rounded-md border border-cyan-300/20 bg-cyan-300/5 p-3">
+          <div className="text-xs uppercase tracking-[0.16em] text-cyan-100/70">Win rate sources</div>
+          <div className="mt-2 grid gap-3 text-sm sm:grid-cols-2">
+            <Metric
+              label="Latest cycle win rate"
+              value={latestCycleMetrics ? formatPercent(latestCycleMetrics.winRate, 1) : "n/a"}
+            />
+            <Metric
+              label="Proposal snapshot win rate"
+              value={after ? formatPercent(after.winRate, 1) : before ? formatPercent(before.winRate, 1) : "n/a"}
+            />
+          </div>
+          <p className="mt-2 text-xs text-cyan-100/65">
+            These can differ when the proposal came from a candidate snapshot instead of the latest Dashboard cycle.
           </p>
         </div>
         <Link to="/self-improvement">

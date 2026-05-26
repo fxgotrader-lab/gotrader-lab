@@ -27,7 +27,7 @@ import {
 import type { CalibrationProposal, CalibrationProposalMetrics, SelfImprovementState } from "@/lib/selfImprovement";
 import type { AutoResearchCandidateResult } from "@/lib/autoResearch";
 import { describeBacktestConfig } from "@/lib/backtesting";
-import { canonicalMetricsForRun } from "@/lib/performance/canonicalMetrics";
+import { canonicalMetricsForRun, type CanonicalPerformanceMetrics } from "@/lib/performance/canonicalMetrics";
 import { latestResearchCycleRun } from "@/lib/researchCycle";
 import { labStorage } from "@/lib/storage";
 import { formatPercent, safeArray } from "@/lib/utils";
@@ -177,6 +177,7 @@ const countFormat = (value?: number | null) => (typeof value === "number" ? Stri
 const percentFormat = (value?: number | null) => (typeof value === "number" ? formatPercent(value, 1) : "n/a");
 const rFormat = (value?: number | null) => (typeof value === "number" ? `${formatNumber(value)}R` : "n/a");
 const numberFormat = (value?: number | null) => (typeof value === "number" ? formatNumber(value) : "n/a");
+const sourceDateFormat = (value?: string) => (value ? new Date(value).toLocaleString() : "n/a");
 
 const comparisonTone = (direction: ComparisonDirection, delta: number) => {
   if (Math.abs(delta) < 0.005 || direction === "neutral") {
@@ -340,6 +341,142 @@ const ComparisonTable = ({ before, after }: { before?: CalibrationProposalMetric
   );
 };
 
+interface SourceComparisonRow {
+  label: string;
+  latestCycle?: number | null;
+  proposalBefore?: number | null;
+  proposalAfter?: number | null;
+  format: (value?: number | null) => string;
+  meaning: string;
+}
+
+const MetricSourceComparisonTable = ({
+  latestCycle,
+  proposalBefore,
+  proposalAfter
+}: {
+  latestCycle?: CanonicalPerformanceMetrics;
+  proposalBefore?: CalibrationProposalMetrics;
+  proposalAfter?: CalibrationProposalMetrics;
+}) => {
+  const rows: SourceComparisonRow[] = [
+    {
+      label: "Win rate",
+      latestCycle: latestCycle?.winRate,
+      proposalBefore: proposalBefore?.winRate,
+      proposalAfter: proposalAfter?.winRate,
+      format: percentFormat,
+      meaning: "Dashboard uses the latest research cycle. Proposal columns use the stored candidate snapshot."
+    },
+    {
+      label: "Total trades",
+      latestCycle: latestCycle?.totalTrades,
+      proposalBefore: proposalBefore?.totalTrades,
+      proposalAfter: proposalAfter?.totalTrades,
+      format: countFormat,
+      meaning: "Different candle windows, candidates, or cycles can produce different trade counts."
+    },
+    {
+      label: "Average R",
+      latestCycle: latestCycle?.averageR,
+      proposalBefore: proposalBefore?.averageR,
+      proposalAfter: proposalAfter?.averageR,
+      format: rFormat,
+      meaning: "Use this to compare trade quality within the same proposal snapshot only."
+    },
+    {
+      label: "Max drawdown",
+      latestCycle: latestCycle?.maxDrawdownR,
+      proposalBefore: proposalBefore?.maxDrawdown,
+      proposalAfter: proposalAfter?.maxDrawdown,
+      format: rFormat,
+      meaning: "Lower proposal drawdown is useful only if win rate, R, and sample size stay credible."
+    },
+    {
+      label: "Profit factor",
+      latestCycle: latestCycle?.profitFactor,
+      proposalBefore: proposalBefore?.profitFactor,
+      proposalAfter: proposalAfter?.profitFactor,
+      format: numberFormat,
+      meaning: "Profit factor is a supporting metric, not a standalone approval reason."
+    },
+    {
+      label: "Readiness score",
+      latestCycle: latestCycle?.readinessScore,
+      proposalBefore: proposalBefore?.readinessScore,
+      proposalAfter: proposalAfter?.readinessScore,
+      format: countFormat,
+      meaning: "Latest readiness and proposal readiness may be from different source runs."
+    },
+    {
+      label: "Stability score",
+      latestCycle: latestCycle?.stabilityScore,
+      proposalBefore: proposalBefore?.stabilityScore,
+      proposalAfter: proposalAfter?.stabilityScore,
+      format: countFormat,
+      meaning: "Proposal stability belongs to the candidate that created the snapshot."
+    }
+  ];
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <table className="w-full min-w-[920px] table-fixed border-separate border-spacing-0 text-left text-sm">
+        <colgroup>
+          <col className="w-[18%]" />
+          <col className="w-[18%]" />
+          <col className="w-[16%]" />
+          <col className="w-[16%]" />
+          <col className="w-[32%]" />
+        </colgroup>
+        <thead className="bg-muted/55 text-xs uppercase text-muted-foreground">
+          <tr>
+            {["Metric", "Latest Dashboard Cycle", "Proposal Before", "Proposal After", "Difference / Meaning"].map((header) => (
+              <th
+                key={header}
+                className={
+                  header === "Metric" || header === "Difference / Meaning"
+                    ? "px-3 py-2 text-left font-medium"
+                    : "border-l border-border/70 px-3 py-2 text-right font-medium tabular-nums"
+                }
+              >
+                {header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const latestDiffersFromAfter =
+              typeof row.latestCycle === "number" &&
+              typeof row.proposalAfter === "number" &&
+              Math.abs(row.latestCycle - row.proposalAfter) > 0.0005;
+            return (
+              <tr key={row.label} className="border-t border-border bg-background/35 align-top">
+                <td className="px-3 py-3 font-medium text-foreground">{row.label}</td>
+                <td className="whitespace-nowrap border-l border-border/70 px-3 py-3 text-right font-mono tabular-nums text-slate-200">
+                  {row.format(row.latestCycle)}
+                </td>
+                <td className="whitespace-nowrap border-l border-border/70 px-3 py-3 text-right font-mono tabular-nums text-slate-200">
+                  {row.format(row.proposalBefore)}
+                </td>
+                <td className="whitespace-nowrap border-l border-border/70 px-3 py-3 text-right font-mono tabular-nums text-slate-200">
+                  {row.format(row.proposalAfter)}
+                </td>
+                <td className="border-l border-border/70 px-3 py-3 text-muted-foreground">
+                  <span className={latestDiffersFromAfter ? "text-amber-100" : ""}>
+                    {latestDiffersFromAfter ? "Different source/run. " : ""}
+                    {row.meaning}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
 export function SelfImprovementView() {
   const [state, setState] = useState<SelfImprovementState>(() => loadSelfImprovementState());
   const [searchParams, setSearchParams] = useSearchParams();
@@ -413,6 +550,26 @@ export function SelfImprovementView() {
       latestCycleCanonicalMetrics?.sourceCycleId &&
       latestProposal.metricsSnapshot.sourceCycleId !== latestCycleCanonicalMetrics.sourceCycleId
   );
+  const proposalSnapshotHasCandidateSource = Boolean(latestProposal?.metricsSnapshot?.sourceCandidateId);
+  const proposalMetricSourceDiffersFromDashboard = Boolean(
+    latestProposal?.metricsSnapshot &&
+      latestCycleCanonicalMetrics &&
+      (proposalAndCycleSourcesDiffer || proposalSnapshotHasCandidateSource)
+  );
+  const proposalDisplayedWinRate = snapshotAfterMetrics?.winRate ?? snapshotBeforeMetrics?.winRate;
+  const selfImprovementWinRateDiffersFromDashboard = Boolean(
+    typeof latestCycleCanonicalMetrics?.winRate === "number" &&
+      typeof proposalDisplayedWinRate === "number" &&
+      Math.abs(latestCycleCanonicalMetrics.winRate - proposalDisplayedWinRate) > 0.0005
+  );
+  const metricSourceWarningActive = proposalMetricSourceDiffersFromDashboard || selfImprovementWinRateDiffersFromDashboard;
+  const latestCycleUsesActiveBaseline = Boolean(
+    latestCycleCanonicalMetrics &&
+      (baselineResolution.activeCalibrationId
+        ? latestCycleCanonicalMetrics.activeCalibrationId === baselineResolution.activeCalibrationId
+        : !latestCycleCanonicalMetrics.activeCalibrationId)
+  );
+  const activeBaselineMetrics = latestCycleUsesActiveBaseline ? latestCycleCanonicalMetrics : undefined;
   const filteredProposals = safeArray(state.proposals).filter((proposal) => {
     const query = proposalFilter.trim().toLowerCase();
     if (!query) {
@@ -634,30 +791,95 @@ export function SelfImprovementView() {
 
       <SafetyLockBanner message="Simulation self-improvement only. No broker execution, readiness override, paper/demo enablement, or real trades." />
 
-      <Card className={proposalAndCycleSourcesDiffer ? "border-amber-300/25 bg-amber-300/10" : "border-cyan-300/20 bg-cyan-300/10"}>
-        <CardContent className={`grid gap-3 p-4 text-sm ${proposalAndCycleSourcesDiffer ? "text-amber-100" : "text-cyan-100"} md:grid-cols-2`}>
-          <div>
-            <p className="text-xs uppercase tracking-[0.14em] opacity-70">Proposal metrics source</p>
-            <p className="mt-1 break-all font-mono text-xs">
-              {latestProposal?.metricsSnapshot
-                ? `proposal snapshot ${latestProposal.metricsSnapshot.proposalId}`
-                : latestProposal
-                  ? `proposal ${latestProposal.proposalId}`
-                  : "no proposal selected"}
-            </p>
+      <Card className={metricSourceWarningActive ? "border-amber-300/25 bg-amber-300/10" : "border-emerald-300/25 bg-emerald-300/10"}>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Metric Source</CardTitle>
+              <CardDescription>
+                Self-Improvement can show proposal snapshots from a candidate while Dashboard shows the latest research cycle.
+              </CardDescription>
+            </div>
+            <Badge variant={metricSourceWarningActive ? "warning" : "success"}>
+              {metricSourceWarningActive ? "different metric sources" : "same cycle/source"}
+            </Badge>
           </div>
-          <div>
-            <p className="text-xs uppercase tracking-[0.14em] opacity-70">Latest cycle metrics source</p>
-            <p className="mt-1 break-all font-mono text-xs">
-              {latestCycleCanonicalMetrics ? `latest research cycle ${latestCycleCanonicalMetrics.sourceCycleId}` : "no completed cycle metrics"}
-            </p>
+        </CardHeader>
+        <CardContent className={`space-y-4 text-sm ${metricSourceWarningActive ? "text-amber-100" : "text-emerald-100"}`}>
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-lg border border-current/20 bg-background/35 p-3">
+              <p className="text-xs uppercase tracking-[0.14em] opacity-70">Proposal Snapshot Metrics</p>
+              <p className="mt-1 break-all font-mono text-xs">
+                {latestProposal?.metricsSnapshot
+                  ? `proposal snapshot ${latestProposal.metricsSnapshot.proposalId}`
+                  : latestProposal
+                    ? `proposal ${latestProposal.proposalId}`
+                    : "no proposal selected"}
+              </p>
+              <p className="mt-2 text-xs opacity-80">
+                Win rate: {snapshotAfterMetrics ? formatPercent(snapshotAfterMetrics.winRate, 1) : "not tested"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-current/20 bg-background/35 p-3">
+              <p className="text-xs uppercase tracking-[0.14em] opacity-70">Latest Research Cycle Metrics</p>
+              <p className="mt-1 break-all font-mono text-xs">
+                {latestCycleCanonicalMetrics ? `latest research cycle ${latestCycleCanonicalMetrics.sourceCycleId}` : "no completed cycle metrics"}
+              </p>
+              <p className="mt-2 text-xs opacity-80">
+                Win rate: {latestCycleCanonicalMetrics ? formatPercent(latestCycleCanonicalMetrics.winRate, 1) : "n/a"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-current/20 bg-background/35 p-3">
+              <p className="text-xs uppercase tracking-[0.14em] opacity-70">Active Baseline Metrics</p>
+              <p className="mt-1 break-all font-mono text-xs">
+                {activeBaselineMetrics
+                  ? `latest run with active baseline ${activeBaselineMetrics.sourceCycleId}`
+                  : baselineResolution.activeCalibrationId
+                    ? `active calibration ${baselineResolution.activeCalibrationId}; rerun cycle for metrics`
+                    : "default baseline; rerun cycle for current metrics"}
+              </p>
+              <p className="mt-2 text-xs opacity-80">
+                Win rate: {activeBaselineMetrics ? formatPercent(activeBaselineMetrics.winRate, 1) : "n/a"}
+              </p>
+            </div>
           </div>
-          {proposalAndCycleSourcesDiffer ? (
-            <p className="md:col-span-2">
-              These metrics are from different sources. Proposal comparisons use the stored proposal snapshot; latest-cycle
-              performance uses the canonical research cycle snapshot.
-            </p>
-          ) : null}
+
+          <div className="rounded-lg border border-current/20 bg-background/35 p-3">
+            {metricSourceWarningActive ? (
+              <p>
+                Different metric sources: do not compare these as the same run. Dashboard shows the latest research cycle;
+                this proposal shows the stored before/after snapshot from cycle{" "}
+                <span className="font-mono">{latestProposal?.metricsSnapshot?.sourceCycleId ?? "unknown"}</span>
+                {latestProposal?.metricsSnapshot?.sourceCandidateId ? (
+                  <>
+                    {" "}and candidate <span className="font-mono">{latestProposal.metricsSnapshot.sourceCandidateId}</span>
+                  </>
+                ) : null}
+                .
+              </p>
+            ) : (
+              <p>Metrics are from the same cycle/source.</p>
+            )}
+          </div>
+
+          <div className="grid gap-2 text-xs md:grid-cols-2 xl:grid-cols-4">
+            {[
+              ["Dashboard cycleId", latestCycleCanonicalMetrics?.sourceCycleId ?? "none"],
+              ["Proposal ID", latestProposal?.proposalId ?? "none"],
+              ["Source cycleId", latestProposal?.metricsSnapshot?.sourceCycleId ?? "none"],
+              ["Source candidateId", latestProposal?.metricsSnapshot?.sourceCandidateId ?? "none"],
+              ["Generated at", sourceDateFormat(latestProposal?.metricsSnapshot?.generatedAt)],
+              ["Data source", latestProposal?.metricsSnapshot?.dataSource ?? latestCycleCanonicalMetrics?.dataSource ?? "unknown"],
+              ["Candle window", latestProposal?.metricsSnapshot?.candleWindow ?? latestCycleCanonicalMetrics?.candleWindow ?? "unknown"],
+              ["Active calibration ID", latestProposal?.metricsSnapshot?.activeCalibrationIdUsed ?? latestCycleCanonicalMetrics?.activeCalibrationId ?? "none"],
+              ["Search mode", latestProposal?.metricsSnapshot?.searchMode ?? "n/a"]
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-md border border-current/15 bg-background/35 p-2">
+                <p className="uppercase tracking-[0.12em] opacity-65">{label}</p>
+                <p className="mt-1 break-all font-mono text-[11px]">{value}</p>
+              </div>
+            ))}
+          </div>
         </CardContent>
       </Card>
 
@@ -707,6 +929,33 @@ export function SelfImprovementView() {
           </CardContent>
         </Card>
       ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Dashboard vs Proposal Metrics</CardTitle>
+          <CardDescription>
+            Use this panel to separate latest-cycle results from stored proposal before/after snapshots.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <MetricSourceComparisonTable
+            latestCycle={latestCycleCanonicalMetrics}
+            proposalBefore={snapshotBeforeMetrics}
+            proposalAfter={snapshotAfterMetrics}
+          />
+          {metricSourceWarningActive ? (
+            <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+              These numbers come from different sources. A Dashboard win rate like 50% and a proposal snapshot win rate
+              like 41% can both be correct when they come from different cycles, candidates, candle windows, or active
+              calibrations.
+            </div>
+          ) : (
+            <div className="rounded-lg border border-emerald-300/25 bg-emerald-300/10 p-3 text-sm text-emerald-100">
+              Metrics are from the same cycle/source.
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {latestProposal && showMetricMismatchWarning ? (
         <Card className="border-red-300/30 bg-red-300/10">
@@ -1138,6 +1387,13 @@ export function SelfImprovementView() {
           <CardDescription>User approval is required before active simulation settings are changed.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
+          {metricSourceWarningActive ? (
+            <div className="xl:col-span-2 rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+              Approval note: this proposal snapshot is from an older or candidate-specific source compared with the latest
+              Dashboard cycle. You can still approve a valid proposal, but treat its before/after metrics as the stored
+              proposal evidence, not the latest-cycle performance result.
+            </div>
+          ) : null}
           <div className="space-y-3">
             <div className="space-y-2">
               <Label htmlFor="reviewer-name">Reviewer name</Label>

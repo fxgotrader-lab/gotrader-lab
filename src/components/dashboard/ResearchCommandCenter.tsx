@@ -250,7 +250,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
         <AutoResearchStatusCard cycle={latestAutoResearch} />
         <ValidationStatusCard report={validationReport} qualityReview={researchQuality} />
         <ResearchQualityStatusCard quality={researchQuality} />
-        <SelfImprovementStatusCard proposal={latestProposal} />
+        <SelfImprovementStatusCard latestCycleMetrics={canonicalMetrics} proposal={latestProposal} />
         <ReadinessSummaryCard manualApproval={manualApproval} readiness={readiness} />
         <SimulationBridgeStatusCard
           completedRunbookItems={completedRunbookItems}

@@ -45,8 +45,8 @@ export function PerformanceView({ state }: { state: LabState }) {
           <p className="text-sm uppercase text-primary">Simulation scorecard</p>
           <h2 className="mt-1 text-3xl font-semibold tracking-normal">Performance</h2>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Research-cycle metrics come from the same canonical latest-cycle snapshot used by Dashboard. Legacy agent
-            scorecards remain separate local research diagnostics.
+            Performance uses latest research cycle only. Research-cycle metrics come from the same canonical latest-cycle
+            snapshot used by Dashboard. Legacy agent scorecards remain separate local research diagnostics.
           </p>
         </div>
         <Badge variant="warning">Simulation only</Badge>

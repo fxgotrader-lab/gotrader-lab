@@ -515,12 +515,24 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
                 <p className="font-medium">Canonical proposal metrics snapshot</p>
                 <p className="mt-1 break-all font-mono text-xs">{latestProposalSnapshot.proposalId}</p>
               </div>
-              <Badge variant="secondary">source aligned</Badge>
+              <Badge variant="secondary">proposal snapshot</Badge>
             </div>
-            <div className="mt-3 grid gap-2 md:grid-cols-4">
+            <div className="mt-3 grid gap-2 md:grid-cols-3 xl:grid-cols-6">
               <div className="rounded-md border border-cyan-200/20 bg-cyan-200/5 p-2">
                 <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">Source candidate</p>
                 <p className="mt-1 break-all font-mono text-xs">{latestProposalSnapshot.sourceCandidateId ?? "n/a"}</p>
+              </div>
+              <div className="rounded-md border border-cyan-200/20 bg-cyan-200/5 p-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">Latest cycle win rate</p>
+                <p className="mt-1 font-mono">
+                  {formatPercent(latestRun?.canonicalMetrics?.winRate ?? latestRun?.backtestSummary?.winRate)}
+                </p>
+              </div>
+              <div className="rounded-md border border-cyan-200/20 bg-cyan-200/5 p-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">Proposal win rate</p>
+                <p className="mt-1 font-mono">
+                  {formatPercent(latestProposalSnapshot.afterMetrics?.winRate ?? latestProposalSnapshot.beforeMetrics.winRate)}
+                </p>
               </div>
               <div className="rounded-md border border-cyan-200/20 bg-cyan-200/5 p-2">
                 <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">Trades</p>
