@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ShieldAlert, Trophy } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { MetricCard } from "@/components/MetricCard";
@@ -13,20 +13,22 @@ import {
 } from "@/lib/performance/canonicalMetrics";
 import { buildSimulatedAccountFromCanonicalMetrics } from "@/lib/performance/simulatedAccount";
 import { latestResearchCycleRun, loadResearchCycleState } from "@/lib/researchCycle";
+import { resolveResearchRuntimeSnapshot, type ResearchRuntimeSnapshot } from "@/lib/runtime";
 import { aggregatePortfolioMetrics, identifyWeakestAgent } from "@/lib/scoring";
 import type { LabState } from "@/lib/types";
 import { formatPercent, formatSigned } from "@/lib/utils";
 
 export function PerformanceView({ state }: { state: LabState }) {
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
   const metrics = aggregatePortfolioMetrics(state);
   const weakest = identifyWeakestAgent(state);
   const latestCycle = latestResearchCycleRun(loadResearchCycleState());
-  const canonicalMetrics = canonicalMetricsForRun(latestCycle);
+  const canonicalMetrics = runtimeSnapshot?.performance.canonicalPerformanceMetrics ?? canonicalMetricsForRun(latestCycle);
   const derivedCanonicalMetrics = buildCanonicalPerformanceMetricsFromRun(latestCycle);
   const canonicalMismatchWarnings = detectCanonicalMetricsMismatch(latestCycle?.canonicalMetrics, derivedCanonicalMetrics);
   const simulatedAccount = useMemo(
-    () => buildSimulatedAccountFromCanonicalMetrics(canonicalMetrics),
-    [canonicalMetrics]
+    () => runtimeSnapshot?.performance.simulatedAccountSummary ?? buildSimulatedAccountFromCanonicalMetrics(canonicalMetrics),
+    [canonicalMetrics, runtimeSnapshot]
   );
   const chartData = state.agents
     .filter((agent) => agent.layer !== "cio")
@@ -37,6 +39,18 @@ export function PerformanceView({ state }: { state: LabState }) {
       drawdown: Math.round(agent.drawdown * 100)
     }))
     .slice(0, 14);
+
+  useEffect(() => {
+    let mounted = true;
+    resolveResearchRuntimeSnapshot({ labState: state }).then((snapshot) => {
+      if (mounted) {
+        setRuntimeSnapshot(snapshot);
+      }
+    }).catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, [state]);
 
   return (
     <div className="space-y-5">
@@ -66,11 +80,13 @@ export function PerformanceView({ state }: { state: LabState }) {
       </div>
 
       <Card className="border-cyan-300/20 bg-cyan-300/10">
-        <CardContent className="grid gap-3 p-4 text-sm text-cyan-100 md:grid-cols-2 xl:grid-cols-4">
+        <CardContent className="grid gap-3 p-4 text-sm text-cyan-100 md:grid-cols-2 xl:grid-cols-5">
           <div>
             <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">Metrics source</p>
             <p className="mt-1 break-all font-mono text-xs">
-              {canonicalMetrics ? `latest research cycle ${canonicalMetrics.sourceCycleId}` : "no completed research cycle"}
+              {runtimeSnapshot
+                ? runtimeSnapshot.performance.canonicalPerformanceMetrics?.metricSourceLabel ?? "no completed research cycle"
+                : canonicalMetrics ? `latest research cycle ${canonicalMetrics.sourceCycleId}` : "no completed research cycle"}
             </p>
           </div>
           <div>
@@ -84,6 +100,10 @@ export function PerformanceView({ state }: { state: LabState }) {
           <div>
             <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">P&amp;L assumption</p>
             <p className="mt-1">{canonicalMetrics?.pnlAssumption ?? "Run AI Research Cycle to estimate simulation P&L."}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">Runtime snapshot</p>
+            <p className="mt-1">{runtimeSnapshot ? runtimeSnapshot.snapshotId : "loading"}</p>
           </div>
         </CardContent>
       </Card>

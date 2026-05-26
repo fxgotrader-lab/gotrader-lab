@@ -30,6 +30,16 @@ import {
 import { evaluateReadinessGate, loadManualApprovalRecord } from "@/lib/readiness";
 import { loadLatestResearchQualityReview } from "@/lib/researchQuality";
 import { latestResearchCycleRun, loadResearchCycleState } from "@/lib/researchCycle";
+import {
+  resolveResearchRuntimeSnapshot,
+  selectRuntimeConfigSummary,
+  selectRuntimeDataBadge,
+  selectRuntimeMetricSourceLabel,
+  selectRuntimeSnapshotHealth,
+  selectRuntimeSourceLabel,
+  selectRuntimeWarnings,
+  type ResearchRuntimeSnapshot
+} from "@/lib/runtime";
 import { loadSelfImprovementState } from "@/lib/selfImprovement";
 import {
   countCompletedRunbookItems,
@@ -78,8 +88,9 @@ const fallbackCandleSource: PreparedCandleSource = {
 };
 
 export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
-  const [, setDashboardRefresh] = useState(0);
+  const [dashboardRefresh, setDashboardRefresh] = useState(0);
   const [activeCandleSource, setActiveCandleSource] = useState<PreparedCandleSource>(fallbackCandleSource);
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
   const llmState = loadLLMResearchState();
   const latestLLMRun = latestLLMAdvisoryRun(llmState);
   const researchCycleState = loadResearchCycleState();
@@ -96,19 +107,20 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
   const runbook = loadSimulationRunbookState();
   const completedRunbookItems = countCompletedRunbookItems(runbook);
   const manualApproval = loadManualApprovalRecord();
-  const readiness = evaluateReadinessGate({
+  const fallbackReadiness = evaluateReadinessGate({
     validation: validationReport,
     quality: researchQuality,
     runbook,
   });
+  const readiness = runtimeSnapshot?.readiness.readinessSnapshot ?? fallbackReadiness;
   const latestHandoff = state.handoffExports[0];
   const communicationSummary = getCommunicationSummary(loadCommunicationMessages());
   const agentAuditSummary = summarizeAgentAudit(loadAgentAuditState());
   const agentDebateSummary = summarizeAgentDebate(loadAgentDebateState());
-  const canonicalMetrics = canonicalMetricsForRun(latestResearchCycle);
+  const canonicalMetrics = runtimeSnapshot?.performance.canonicalPerformanceMetrics ?? canonicalMetricsForRun(latestResearchCycle);
   const derivedCanonicalMetrics = buildCanonicalPerformanceMetricsFromRun(latestResearchCycle);
   const canonicalMismatchWarnings = detectCanonicalMetricsMismatch(latestResearchCycle?.canonicalMetrics, derivedCanonicalMetrics);
-  const simulatedAccount = buildSimulatedAccountFromCanonicalMetrics(canonicalMetrics);
+  const simulatedAccount = runtimeSnapshot?.performance.simulatedAccountSummary ?? buildSimulatedAccountFromCanonicalMetrics(canonicalMetrics);
   const latestThesis = state.tradeTheses[0];
   const marketSymbol = activeCandleSource.metadata?.symbol ?? latestThesis?.symbol ?? "NQ";
   const marketTimeframe =
@@ -128,8 +140,13 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
       loadPreparedCandleSource().then((source) => {
         if (mounted) {
           setActiveCandleSource(source);
+          resolveResearchRuntimeSnapshot({ labState: state, preparedCandleSource: source }).then((snapshot) => {
+            if (mounted) {
+              setRuntimeSnapshot(snapshot);
+            }
+          }).catch(() => undefined);
         }
-      });
+      }).catch(() => undefined);
     };
     refreshMarketData();
     window.addEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refreshMarketData);
@@ -141,7 +158,9 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
       window.removeEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refreshMarketData);
       window.removeEventListener("storage", refreshMarketData);
     };
-  }, []);
+  }, [dashboardRefresh, state]);
+
+  const runtimeWarnings = selectRuntimeWarnings(runtimeSnapshot);
 
   const recommendedAction = getRecommendedAction({
     completedRunbookItems,
@@ -220,7 +239,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
       <Card className="border-cyan-300/20 bg-cyan-300/10">
         <CardContent className="flex flex-col gap-2 p-4 text-sm text-cyan-100 md:flex-row md:items-center md:justify-between">
           <span>
-            Metrics source: {canonicalMetrics ? `latest research cycle ${canonicalMetrics.sourceCycleId}` : "no completed research cycle yet"}
+            Metrics source: {runtimeSnapshot ? selectRuntimeMetricSourceLabel(runtimeSnapshot) : canonicalMetrics ? `latest research cycle ${canonicalMetrics.sourceCycleId}` : "no completed research cycle yet"}
           </span>
           <span>
             {canonicalMetrics
@@ -240,6 +259,15 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
       <SimulatedAccountCard account={simulatedAccount} />
 
       <SafetyLockCard />
+
+      <Card className="border-white/10 bg-slate-950/70">
+        <CardContent className="grid gap-3 p-4 text-sm text-slate-300 md:grid-cols-2 xl:grid-cols-4">
+          <StatusLine label="Runtime snapshot" value={selectRuntimeSnapshotHealth(runtimeSnapshot)} />
+          <StatusLine label="Data source" value={selectRuntimeSourceLabel(runtimeSnapshot)} />
+          <StatusLine label="Active config" value={selectRuntimeConfigSummary(runtimeSnapshot)} />
+          <StatusLine label="Data mode" value={selectRuntimeDataBadge(runtimeSnapshot)} />
+        </CardContent>
+      </Card>
 
       <div className="grid gap-5 xl:grid-cols-2">
         <AICommunicationsCard summary={communicationSummary} />
@@ -285,6 +313,44 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
           </CardContent>
         </Card>
         </div>
+        {runtimeSnapshot ? (
+          <Card className="mt-5 border-white/10 bg-slate-950/70">
+            <CardHeader>
+              <CardTitle className="text-base text-slate-100">Runtime Snapshot Diagnostics</CardTitle>
+              <p className="text-xs text-slate-500">Canonical read-model status for data, config, cycle, proposal, readiness, and metrics.</p>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm text-slate-300">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <StatusLine label="Snapshot ID" value={runtimeSnapshot.snapshotId} />
+                <StatusLine label="Generated" value={formatDateTime(runtimeSnapshot.generatedAt)} />
+                <StatusLine label="Active threshold" value={`${(runtimeSnapshot.activeConfig.resolvedConfluenceThreshold * 100).toFixed(0)}%`} />
+                <StatusLine label="Latest proposal" value={runtimeSnapshot.proposal.latestProposalId ?? "none"} />
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-md border border-white/10 bg-white/[0.03] p-3">
+                  <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Source trace</div>
+                  <ul className="mt-2 space-y-1">
+                    {runtimeSnapshot.diagnostics.sourceTrace.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="rounded-md border border-white/10 bg-white/[0.03] p-3">
+                  <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Warnings</div>
+                  {runtimeWarnings.length ? (
+                    <ul className="mt-2 space-y-1 text-amber-100">
+                      {runtimeWarnings.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-emerald-200">No runtime snapshot mismatch warnings detected.</p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
       </TechnicalDetails>
     </div>
   );
