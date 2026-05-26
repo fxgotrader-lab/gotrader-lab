@@ -8,6 +8,18 @@ It lets the React app send an advisory context packet to:
 POST http://127.0.0.1:8787/llm/run-advisory
 ```
 
+You can verify the server without sending any advisory context:
+
+```text
+GET http://127.0.0.1:8787/health
+```
+
+Opening the root URL returns a helpful JSON status message:
+
+```text
+GET http://127.0.0.1:8787/
+```
+
 The bridge then calls:
 
 ```text
@@ -35,7 +47,9 @@ npm run llm:bridge
 ## Security
 
 - Binds only to `127.0.0.1`
-- Allows CORS only from `http://127.0.0.1:5173` and `http://localhost:5173`
+- Allows CORS only from local Vite dev origins on ports `5173` through `5179`:
+  - `http://127.0.0.1:5173` through `http://127.0.0.1:5179`
+  - `http://localhost:5173` through `http://localhost:5179`
 - Requires `OPENAI_API_KEY` in the server environment
 - Does not expose API keys to the browser
 - Does not call brokers or go-trader
@@ -63,3 +77,11 @@ If the response file is missing after a run, the provider rejected the model out
 ```powershell
 node scripts/llm-local-bridge-server.mjs --help
 ```
+
+## Endpoints
+
+- Bridge URL: `http://127.0.0.1:8787`
+- Health check: `GET /health`
+- Advisory endpoint: `POST /llm/run-advisory`
+
+The API key remains only in the PowerShell bridge environment. The React app never receives it.

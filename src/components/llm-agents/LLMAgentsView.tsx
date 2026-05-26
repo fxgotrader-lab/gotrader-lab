@@ -19,9 +19,13 @@ import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Textarea } from "@/components/ui/textarea";
 import {
   buildLLMResearchContextPacket,
+  checkLocalBridgeHealth,
   createLLMContextPacket,
   getLLMReadinessImpact,
   importLLMAgentResponse,
+  LLM_LOCAL_BRIDGE_BASE_URL,
+  LLM_LOCAL_BRIDGE_HEALTH_URL,
+  LLM_LOCAL_BRIDGE_URL,
   LLM_LOCAL_COMMAND_ENV_VAR,
   LLM_RESEARCH_UPDATED_EVENT,
   loadLLMResearchState,
@@ -62,7 +66,6 @@ const statusVariant = (status?: string) =>
 const providerVariant = (configured: boolean, providerMode: LLMProviderMode) =>
   configured && providerMode === "local_command" ? "success" : providerMode === "mock_llm" ? "warning" : "danger";
 const latestLLMContextFilename = "latest-llm-context.json";
-const localBridgeEndpoint = "http://127.0.0.1:8787/llm/run-advisory";
 const llmRequestPath = "C:/Users/andre/OneDrive/Documents/gotrader/llm/requests/latest-llm-context.json";
 const llmResponsePath = "C:/Users/andre/OneDrive/Documents/gotrader/llm/responses/latest-llm-response.json";
 const sampleResponseHint = `Paste the contents of llm/responses/latest-llm-response.json here.
@@ -157,6 +160,31 @@ export function LLMAgentsView({ state }: { state: LabState }) {
     };
   }, []);
 
+  useEffect(() => {
+    void checkBridgeHealth(true);
+  }, []);
+
+  const checkBridgeHealth = async (silent = false) => {
+    if (!silent) {
+      setBridgeStatus({ state: "running", message: "Checking local LLM bridge health." });
+    }
+    try {
+      await checkLocalBridgeHealth();
+      setBridgeStatus({
+        state: "complete",
+        message: "Bridge running."
+      });
+    } catch (error) {
+      setBridgeStatus({
+        state: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Local LLM bridge server is not running. Opening / in browser is not the advisory endpoint. Use /health to verify bridge status."
+      });
+    }
+  };
+
   const runMock = async () => {
     setBusy(true);
     const mockContext = { ...context, providerMode: "mock_llm" as const };
@@ -224,7 +252,7 @@ export function LLMAgentsView({ state }: { state: LabState }) {
 
   const runBridgeAdvisory = async () => {
     setBusy(true);
-    setBridgeStatus({ state: "running", message: "Sending advisory context to the local LLM bridge." });
+    setBridgeStatus({ state: "running", message: "Checking bridge health before advisory review." });
     const packet = createLLMContextPacket({
       state,
       validation: latestValidation,
@@ -246,6 +274,8 @@ export function LLMAgentsView({ state }: { state: LabState }) {
     }
 
     try {
+      await checkLocalBridgeHealth();
+      setBridgeStatus({ state: "running", message: "Bridge running. Sending advisory context to the local LLM bridge." });
       const bridgeResult = await runLocalBridgeAdvisory(packet);
       const responseJson = JSON.stringify(safeArray(bridgeResult.responses), null, 2);
       setImportJson(responseJson);
@@ -395,13 +425,27 @@ export function LLMAgentsView({ state }: { state: LabState }) {
           <div className="grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
             <div className="space-y-3">
               <div className="rounded-lg border border-border bg-background/45 p-3">
-                <p className="text-xs text-muted-foreground">Bridge endpoint</p>
-                <p className="mt-1 break-all font-mono text-xs text-foreground">{localBridgeEndpoint}</p>
+                <p className="text-xs text-muted-foreground">Bridge URL</p>
+                <p className="mt-1 break-all font-mono text-xs text-foreground">{LLM_LOCAL_BRIDGE_BASE_URL}</p>
               </div>
-              <Button onClick={runBridgeAdvisory} disabled={busy}>
-                <BrainCircuit className="h-4 w-4" aria-hidden="true" />
-                Run GPT Advisory Review
-              </Button>
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs text-muted-foreground">Health check</p>
+                <p className="mt-1 break-all font-mono text-xs text-foreground">{LLM_LOCAL_BRIDGE_HEALTH_URL}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs text-muted-foreground">Advisory endpoint</p>
+                <p className="mt-1 break-all font-mono text-xs text-foreground">{LLM_LOCAL_BRIDGE_URL}</p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button variant="secondary" onClick={() => void checkBridgeHealth()} disabled={busy}>
+                  <TerminalSquare className="h-4 w-4" aria-hidden="true" />
+                  Check Bridge Health
+                </Button>
+                <Button onClick={runBridgeAdvisory} disabled={busy}>
+                  <BrainCircuit className="h-4 w-4" aria-hidden="true" />
+                  Run GPT Advisory Review
+                </Button>
+              </div>
               {bridgeStatus.message ? (
                 <div
                   className={`rounded-lg border p-3 text-sm ${
@@ -427,7 +471,8 @@ $env:GOTRADER_LLM_MODEL = "gpt-5.5"
 node scripts/llm-local-bridge-server.mjs`}
               </pre>
               <p className="mt-3 text-xs text-muted-foreground">
-                If the server is not running, the app will show “Local LLM bridge server is not running.”
+                Verify with {LLM_LOCAL_BRIDGE_HEALTH_URL}. Opening / in a browser is only a status helper; POST
+                /llm/run-advisory is the advisory endpoint.
               </p>
             </div>
           </div>

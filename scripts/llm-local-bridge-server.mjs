@@ -9,7 +9,21 @@ const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 8787;
 const PROVIDER_SCRIPT = path.join("scripts", "gpt55-llm-agent-provider.mjs");
 const LATEST_RESPONSE_FILE = path.join("llm", "responses", "latest-llm-response.json");
-const allowedOrigins = new Set(["http://127.0.0.1:5173", "http://localhost:5173"]);
+const allowedOrigins = new Set(
+  Array.from({ length: 7 }, (_, index) => 5173 + index).flatMap((port) => [
+    `http://127.0.0.1:${port}`,
+    `http://localhost:${port}`
+  ])
+);
+
+const healthPayload = {
+  status: "ok",
+  service: "gotrader_llm_bridge",
+  mode: "advisory_only",
+  executionAuthority: "none",
+  brokerAuthority: "none",
+  readinessOverrideAuthority: "none"
+};
 
 function parseArgs(argv) {
   const valueAfter = (flag) => {
@@ -39,6 +53,8 @@ Environment:
   GOTRADER_LLM_MODEL   Optional. Defaults inside the provider to gpt-5.5.
 
 Endpoint:
+  GET  http://127.0.0.1:8787/
+  GET  http://127.0.0.1:8787/health
   POST http://127.0.0.1:8787/llm/run-advisory
 
 Safety:
@@ -262,7 +278,7 @@ async function handleRequest(request, response) {
     }
     response.writeHead(204, {
       "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
       "Access-Control-Max-Age": "600",
       Vary: "Origin"
@@ -271,8 +287,38 @@ async function handleRequest(request, response) {
     return;
   }
 
+  const requestUrl = new URL(request.url ?? "/", `http://${host || `${DEFAULT_HOST}:${DEFAULT_PORT}`}`);
+
+  if (request.method === "GET" && requestUrl.pathname === "/health") {
+    sendJson(response, 200, healthPayload, origin);
+    return;
+  }
+
+  if (request.method === "GET" && requestUrl.pathname === "/") {
+    sendJson(
+      response,
+      200,
+      {
+        status: "ok",
+        message: "GoTrader AI Lab local LLM bridge is running. Use POST /llm/run-advisory.",
+        health: "/health",
+        ...healthPayload
+      },
+      origin
+    );
+    return;
+  }
+
   if (request.method !== "POST" || request.url !== "/llm/run-advisory") {
-    sendJson(response, 404, { error: "Not found" }, origin);
+    sendJson(
+      response,
+      404,
+      {
+        error: "Not found",
+        message: "Opening / in browser is not the advisory endpoint. Use /health to verify bridge status, or POST /llm/run-advisory from GoTrader AI Lab."
+      },
+      origin
+    );
     return;
   }
 

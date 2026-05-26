@@ -6,7 +6,8 @@ The app sends the current LLM research context to a localhost-only bridge. The b
 
 ```text
 Frontend /llm-agents
-  -> http://127.0.0.1:8787/llm/run-advisory
+  -> health check http://127.0.0.1:8787/health
+  -> advisory POST http://127.0.0.1:8787/llm/run-advisory
   -> scripts/gpt55-llm-agent-provider.mjs
   -> OpenAI Responses API
   -> validated advisory response
@@ -35,6 +36,20 @@ Then open:
 http://127.0.0.1:5173/llm-agents
 ```
 
+Verify the bridge:
+
+```text
+http://127.0.0.1:8787/health
+```
+
+The root route is only a helper:
+
+```text
+http://127.0.0.1:8787/
+```
+
+The advisory endpoint is `POST /llm/run-advisory`; opening it directly in a browser is not the same as running an advisory review.
+
 Click:
 
 ```text
@@ -59,8 +74,10 @@ The bridge is local development only:
 
 The bridge binds to `127.0.0.1` and accepts CORS only from:
 
-- `http://127.0.0.1:5173`
-- `http://localhost:5173`
+- `http://127.0.0.1:5173` through `http://127.0.0.1:5179`
+- `http://localhost:5173` through `http://localhost:5179`
+
+Vite may use `5174`, `5175`, or another nearby port when `5173` is already busy. Remote origins are still rejected.
 
 ## Output Files
 
