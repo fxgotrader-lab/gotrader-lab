@@ -1150,6 +1150,7 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       rejectedCandidates = allSelection.rejectedCandidates;
     }
     let createdProposalId: string | undefined;
+    let createdProposal: CalibrationProposal | undefined;
     const selectedCandidateId = bestCandidate?.candidateId;
     const candidateScores = candidateResults.map((candidate) => ({
       candidateId: candidate.candidateId,
@@ -1203,6 +1204,7 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
           "Created from successful zero-trade recovery. Proposal remains approval-required and simulation-only."
         );
         createdProposalId = proposal.proposalId;
+        createdProposal = proposal;
       }
     }
 
@@ -1230,6 +1232,7 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
         "Created by Auto Research supervisor. Proposal still requires simulation review and manual approval."
       );
       createdProposalId = proposal.proposalId;
+      createdProposal = proposal;
     }
 
     if (!createdProposalId && !recoveryStillZero && options.createProposal !== false) {
@@ -1256,6 +1259,7 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
             "Created from improved-but-not-ready Auto Research candidate. Proposal remains research-only and approval-required."
           );
           createdProposalId = proposal.proposalId;
+          createdProposal = proposal;
         }
       }
     }
@@ -1271,6 +1275,7 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       scoringCriteria: defaultAutoResearchScoringCriteria,
       safetyNotes: autoResearchSafetyNotes,
       createdProposalId,
+      createdProposal,
       status: createdProposalId ? "proposal_created" : "completed",
       searchMode: options.searchMode,
       closestCandidates,

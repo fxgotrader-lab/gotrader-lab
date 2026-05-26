@@ -9,6 +9,7 @@ import type { BacktestSessionFilter, BacktestStopModel } from "@/lib/backtesting
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
 import type { ResearchQualityReview } from "@/lib/researchQuality";
 import type {
+  CalibrationProposal,
   CalibrationComparisonResult,
   CalibrationProposalMetrics
 } from "@/lib/selfImprovement";
@@ -208,6 +209,7 @@ export interface AutoResearchCycle {
   scoringCriteria: AutoResearchScoringCriteria;
   safetyNotes: string[];
   createdProposalId?: string;
+  createdProposal?: CalibrationProposal;
   status: AutoResearchCycleStatus;
   error?: string;
 }

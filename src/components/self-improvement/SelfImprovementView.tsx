@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { CheckCircle2, FlaskConical, History, ShieldAlert, SlidersHorizontal, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,8 +23,9 @@ import {
 } from "@/lib/selfImprovement";
 import type { CalibrationProposal, CalibrationProposalMetrics, SelfImprovementState } from "@/lib/selfImprovement";
 import { describeBacktestConfig } from "@/lib/backtesting";
+import { latestResearchCycleRun } from "@/lib/researchCycle";
 import { labStorage } from "@/lib/storage";
-import { formatPercent } from "@/lib/utils";
+import { formatPercent, safeArray } from "@/lib/utils";
 import { loadLatestResearchQualityReview } from "@/lib/researchQuality";
 import { loadLatestValidationReport } from "@/lib/validation";
 
@@ -291,25 +292,72 @@ const ComparisonTable = ({ before, after }: { before?: CalibrationProposalMetric
 
 export function SelfImprovementView() {
   const [state, setState] = useState<SelfImprovementState>(() => loadSelfImprovementState());
+  const [searchParams, setSearchParams] = useSearchParams();
   const [reviewerName, setReviewerName] = useState("local user");
   const [approvalNotes, setApprovalNotes] = useState("");
   const [actionMessage, setActionMessage] = useState("");
+  const [proposalFilter, setProposalFilter] = useState("");
   const latestValidation = loadLatestValidationReport();
   const latestQuality = loadLatestResearchQualityReview();
+  const latestCycleRun = latestResearchCycleRun();
+  const queryProposalId = searchParams.get("proposalId") ?? undefined;
+  const generatedProposalFromCycle =
+    latestCycleRun?.latestGeneratedProposal ?? latestCycleRun?.autoResearchCycle?.createdProposal;
+  const generatedProposalId = latestCycleRun?.createdProposalId ?? generatedProposalFromCycle?.proposalId;
+  const generatedProposalStored = Boolean(
+    generatedProposalId && safeArray(state.proposals).some((proposal) => proposal.proposalId === generatedProposalId)
+  );
+  const importableCycleProposal = generatedProposalFromCycle && !generatedProposalStored
+    ? generatedProposalFromCycle
+    : undefined;
   const baselineResolution = useMemo(
     () => resolveActiveBacktestConfig(),
     [state.latestProposalId, state.lastAcceptedProposalId, state.activeResearchCalibration?.approvedAt]
   );
   const baselineConfig = baselineResolution.config;
   const latestAdvisory = labStorage.load().advisoryResponses?.[0];
-  const latestProposal = state.proposals.find((proposal) => proposal.proposalId === state.latestProposalId) ?? state.proposals[0];
+  const storedQueryProposal = queryProposalId
+    ? safeArray(state.proposals).find((proposal) => proposal.proposalId === queryProposalId)
+    : undefined;
+  const generatedQueryProposal =
+    queryProposalId && generatedProposalFromCycle?.proposalId === queryProposalId
+      ? generatedProposalFromCycle
+      : undefined;
+  const latestProposal =
+    storedQueryProposal ??
+    generatedQueryProposal ??
+    safeArray(state.proposals).find((proposal) => proposal.proposalId === state.latestProposalId) ??
+    safeArray(state.proposals)[0] ??
+    generatedProposalFromCycle;
+  const latestProposalPersisted = Boolean(
+    latestProposal && safeArray(state.proposals).some((proposal) => proposal.proposalId === latestProposal.proposalId)
+  );
+  const filteredProposals = safeArray(state.proposals).filter((proposal) => {
+    const query = proposalFilter.trim().toLowerCase();
+    if (!query) {
+      return true;
+    }
+    return [
+      proposal.proposalId,
+      proposal.status,
+      proposal.proposalIntent,
+      proposal.targetProblem,
+      proposal.reason
+    ].filter(Boolean).some((value) => String(value).toLowerCase().includes(query));
+  });
   const effectiveProposalIntent =
     latestProposal?.proposalIntent ??
     (latestProposal?.sourceCandidateId || latestProposal?.reason.includes("Auto Research")
       ? "research_calibration_candidate"
       : undefined);
   const isResearchCalibration = effectiveProposalIntent === "research_calibration_candidate";
-  const approvalCheck = canApproveProposal(latestProposal);
+  const approvalCheck = latestProposalPersisted
+    ? canApproveProposal(latestProposal)
+    : {
+        canApprove: false,
+        reason: latestProposal ? "Import proposal from latest research cycle first." : "No proposal selected.",
+        reasons: [latestProposal ? "Import proposal from latest research cycle first." : "No proposal selected."]
+      };
   const canAccept = approvalCheck.canApprove;
   const acceptedButActiveStorageMissing = Boolean(
     latestProposal?.status === "accepted" &&
@@ -318,6 +366,8 @@ export function SelfImprovementView() {
   );
   const rejectDisabledReason = !latestProposal
     ? "No proposal selected."
+    : !latestProposalPersisted
+      ? "Import proposal from latest research cycle first."
     : latestProposal.status === "accepted"
       ? "Proposal already accepted."
       : latestProposal.status === "rejected"
@@ -342,8 +392,31 @@ export function SelfImprovementView() {
     setActionMessage("");
   };
 
+  const importLatestCycleProposal = () => {
+    if (!importableCycleProposal) {
+      setActionMessage(
+        generatedProposalId
+          ? "Latest research cycle has a proposal ID but no recoverable proposal snapshot. Rerun the AI Research Cycle to regenerate it."
+          : "No latest research-cycle proposal is available to import."
+      );
+      return;
+    }
+    const nextState = upsertCalibrationProposal(
+      importableCycleProposal,
+      "created",
+      "Imported proposal from latest AI Research Cycle summary."
+    );
+    setState(nextState);
+    setSearchParams({ proposalId: importableCycleProposal.proposalId });
+    setActionMessage(`Imported proposal ${importableCycleProposal.proposalId} from the latest research cycle.`);
+  };
+
   const testProposal = () => {
     if (!latestProposal) {
+      return;
+    }
+    if (!latestProposalPersisted) {
+      setActionMessage("Import proposal from latest research cycle before testing it.");
       return;
     }
     const tested = evaluateCalibrationProposal(latestProposal);
@@ -427,6 +500,47 @@ export function SelfImprovementView() {
         </Card>
       ) : null}
 
+      {generatedProposalId ? (
+        <Card className={generatedProposalStored ? "border-emerald-300/25 bg-emerald-300/10" : "border-amber-300/25 bg-amber-300/10"}>
+          <CardHeader>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle>Latest Generated Proposal</CardTitle>
+                <CardDescription>
+                  Latest AI Research Cycle proposal snapshot. It must be stored here before approval or rejection.
+                </CardDescription>
+              </div>
+              <Badge variant={generatedProposalStored ? "success" : "warning"}>
+                {generatedProposalStored ? "stored in self-improvement" : "import available"}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="grid gap-3 text-sm md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+            <div className="min-w-0">
+              <p className="font-mono text-xs text-foreground break-all">{generatedProposalId}</p>
+              <p className="mt-1 text-muted-foreground">
+                {generatedProposalFromCycle
+                  ? generatedProposalFromCycle.reason
+                  : "The latest research cycle reported a proposal ID, but this older summary does not contain a recoverable proposal snapshot."}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                to={`/self-improvement?proposalId=${encodeURIComponent(generatedProposalId)}`}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-transparent px-4 py-2 text-sm font-medium shadow-none transition-[background-color,border-color,color,box-shadow,transform] duration-150 ease-out hover:bg-secondary/60 hover:shadow-sm active:scale-[0.98] active:bg-secondary/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                Open proposal
+              </Link>
+              {!generatedProposalStored ? (
+                <Button onClick={importLatestCycleProposal} disabled={!importableCycleProposal}>
+                  Import proposal from latest research cycle
+                </Button>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Current Proposal</CardTitle>
@@ -435,6 +549,12 @@ export function SelfImprovementView() {
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-[0.8fr_1.2fr]">
+          <div className={`rounded-lg border bg-background/45 p-3 ${
+            queryProposalId && latestProposal?.proposalId === queryProposalId ? "border-cyan-300/40" : "border-border"
+          }`}>
+            <p className="text-xs text-muted-foreground">Proposal ID</p>
+            <p className="mt-1 break-all font-mono text-xs text-foreground">{latestProposal?.proposalId ?? "none"}</p>
+          </div>
           <div className="rounded-lg border border-border bg-background/45 p-3">
             <p className="text-xs text-muted-foreground">Intent</p>
             <div className="mt-2 flex flex-wrap gap-2">
@@ -811,6 +931,64 @@ export function SelfImprovementView() {
           </div>
         </CardContent>
       </Card>
+
+      <TechnicalDetails
+        title="View proposal history"
+        description="Open for all local proposals, including proposed, testing, accepted, rejected, and reverted."
+      >
+        <Card>
+          <CardHeader>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle>Proposal History</CardTitle>
+                <CardDescription>Search by proposal ID, status, target problem, or reason.</CardDescription>
+              </div>
+              <div className="w-full max-w-sm">
+                <Label htmlFor="proposal-filter" className="sr-only">Search proposals</Label>
+                <Input
+                  id="proposal-filter"
+                  value={proposalFilter}
+                  onChange={(event) => setProposalFilter(event.target.value)}
+                  placeholder="Search proposal ID, status, or reason"
+                />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {filteredProposals.map((proposal) => (
+              <Link
+                key={proposal.proposalId}
+                to={`/self-improvement?proposalId=${encodeURIComponent(proposal.proposalId)}`}
+                className={`block rounded-lg border bg-background/45 p-3 text-sm transition hover:bg-secondary/40 ${
+                  latestProposal?.proposalId === proposal.proposalId ? "border-cyan-300/45" : "border-border"
+                }`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="break-all font-mono text-xs text-foreground">{proposal.proposalId}</p>
+                    <p className="mt-1 line-clamp-2 text-muted-foreground">{proposal.reason}</p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-1">
+                    <Badge variant={statusVariant(proposal.status)}>{proposal.status}</Badge>
+                    <Badge variant="secondary">{intentLabel(proposal.proposalIntent)}</Badge>
+                  </div>
+                </div>
+                <div className="mt-2 grid gap-2 text-xs text-muted-foreground sm:grid-cols-4">
+                  <span>Target: {problemLabel(proposal.targetProblem)}</span>
+                  <span>Proposed ICT: {formatOptionalPercent(proposal.proposedConfluenceThreshold ?? proposal.proposedChanges.confluenceThreshold)}</span>
+                  <span>Active ICT: {formatOptionalPercent(proposal.activeConfluenceThreshold)}</span>
+                  <span>Recovery trades: {proposal.tradesAfterRecovery ?? "n/a"}</span>
+                </div>
+              </Link>
+            ))}
+            {!filteredProposals.length ? (
+              <div className="rounded-lg border border-border bg-background/45 p-3 text-sm text-muted-foreground">
+                No proposals match the current filter.
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      </TechnicalDetails>
 
       <Card>
         <CardHeader>

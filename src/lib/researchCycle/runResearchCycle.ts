@@ -41,7 +41,8 @@ import {
 import type { SimulationRunbookSignal } from "@/lib/simulationRunbook";
 import {
   loadSelfImprovementState,
-  resolveActiveBacktestConfig
+  resolveActiveBacktestConfig,
+  upsertCalibrationProposal
 } from "@/lib/selfImprovement";
 import { labStorage } from "@/lib/storage";
 import type { LabState, ThesisInput, TradeThesis } from "@/lib/types";
@@ -546,6 +547,7 @@ export async function runResearchCycle({
     });
     run.autoResearchCycle = autoResearchCycle;
     run.createdProposalId = autoResearchCycle.createdProposalId;
+    run.latestGeneratedProposal = autoResearchCycle.createdProposal;
     run.bestCandidateSummary = summarizeCandidate(autoResearchCycle.bestCandidate);
     if (autoResearchCycle.status === "failed") {
       failStep("auto_research", autoResearchCycle.error ?? "Auto Research cycle failed.");
@@ -597,10 +599,29 @@ export async function runResearchCycle({
     }
 
     startStep("self_improvement");
-    const improvementState = loadSelfImprovementState();
+    let improvementState = loadSelfImprovementState();
+    if (
+      run.createdProposalId &&
+      run.latestGeneratedProposal &&
+      !safeArray(improvementState.proposals).some((proposal) => proposal.proposalId === run.createdProposalId)
+    ) {
+      improvementState = upsertCalibrationProposal(
+        run.latestGeneratedProposal,
+        "created",
+        "Recovered proposal from the latest AI Research Cycle summary."
+      );
+    }
     const latestProposal =
+      (run.createdProposalId
+        ? safeArray(improvementState.proposals).find((proposal) => proposal.proposalId === run.createdProposalId)
+        : undefined) ??
       safeArray(improvementState.proposals).find((proposal) => proposal.proposalId === improvementState.latestProposalId) ??
       safeArray(improvementState.proposals)[0];
+    run.latestGeneratedProposal =
+      run.latestGeneratedProposal ??
+      (run.createdProposalId
+        ? safeArray(improvementState.proposals).find((proposal) => proposal.proposalId === run.createdProposalId)
+        : undefined);
     run.proposalStatus = run.createdProposalId
       ? "proposed"
       : latestProposal?.status;

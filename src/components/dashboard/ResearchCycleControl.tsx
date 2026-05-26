@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, CircleDashed, Loader2, Play, ShieldCheck } from "lucide-react";
 
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
@@ -259,11 +260,16 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
             </div>
             <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
               <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Proposal</p>
-              <p className="mt-1 truncate font-semibold text-slate-100">
-                {researchCalibrationAvailable
-                  ? "Research calibration proposal available"
-                  : latestRun.createdProposalId ?? latestRun.proposalStatus ?? "No proposal"}
-              </p>
+              {latestRun.createdProposalId ? (
+                <Link
+                  to={`/self-improvement?proposalId=${encodeURIComponent(latestRun.createdProposalId)}`}
+                  className="mt-1 block truncate font-semibold text-cyan-100 hover:text-cyan-50"
+                >
+                  {researchCalibrationAvailable ? "Research calibration proposal available" : latestRun.createdProposalId}
+                </Link>
+              ) : (
+                <p className="mt-1 truncate font-semibold text-slate-100">{latestRun.proposalStatus ?? "No proposal"}</p>
+              )}
             </div>
             <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
               <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Blockers</p>

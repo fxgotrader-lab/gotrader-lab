@@ -3,7 +3,7 @@ import type { BacktestConfig, BacktestSummary, ResolvedBacktestConfig, TradeGene
 import type { LLMAdvisoryRun } from "@/lib/llm";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
 import type { ResearchQualityReview } from "@/lib/researchQuality";
-import type { CalibrationProposalChanges } from "@/lib/selfImprovement";
+import type { CalibrationProposal, CalibrationProposalChanges } from "@/lib/selfImprovement";
 import type { FuturesSymbol, MarketBias, Timeframe } from "@/lib/types";
 import type { ValidationSuiteReport } from "@/lib/validation";
 
@@ -139,6 +139,7 @@ export interface ResearchCycleRun {
   proposalStatus?: string;
   blockers?: string[];
   createdProposalId?: string;
+  latestGeneratedProposal?: CalibrationProposal;
   failedStepId?: ResearchCycleStepId;
   failedStepDetails?: string;
   nextRecommendedAction: string;
