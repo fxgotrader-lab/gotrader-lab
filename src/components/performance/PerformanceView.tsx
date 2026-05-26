@@ -1,38 +1,32 @@
 import { useMemo } from "react";
-import { AlertTriangle, Activity, ShieldAlert, Trophy } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { AlertTriangle, ShieldAlert, Trophy } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { MetricCard } from "@/components/MetricCard";
 import { SimulatedAccountCard } from "@/components/dashboard/SimulatedAccountCard";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { describeBacktestConfig, runBacktest } from "@/lib/backtesting";
-import { mockCandles } from "@/lib/mockData/mockCandles";
-import { buildSimulatedAccountFromBacktestResult } from "@/lib/performance/simulatedAccount";
-import { resolveActiveBacktestConfig } from "@/lib/selfImprovement";
+import {
+  buildCanonicalPerformanceMetricsFromRun,
+  canonicalMetricsForRun,
+  detectCanonicalMetricsMismatch
+} from "@/lib/performance/canonicalMetrics";
+import { buildSimulatedAccountFromCanonicalMetrics } from "@/lib/performance/simulatedAccount";
+import { latestResearchCycleRun, loadResearchCycleState } from "@/lib/researchCycle";
 import { aggregatePortfolioMetrics, identifyWeakestAgent } from "@/lib/scoring";
 import type { LabState } from "@/lib/types";
 import { formatPercent, formatSigned } from "@/lib/utils";
 
-const biasVariant = (bias?: string) => {
-  if (bias === "bullish") {
-    return "success" as const;
-  }
-  if (bias === "bearish") {
-    return "danger" as const;
-  }
-  return "warning" as const;
-};
-
 export function PerformanceView({ state }: { state: LabState }) {
   const metrics = aggregatePortfolioMetrics(state);
   const weakest = identifyWeakestAgent(state);
-  const activeBacktestConfig = useMemo(() => resolveActiveBacktestConfig().config, []);
-  const backtest = useMemo(() => runBacktest(mockCandles, activeBacktestConfig), [activeBacktestConfig]);
-  const backtestSummary = backtest.summary;
+  const latestCycle = latestResearchCycleRun(loadResearchCycleState());
+  const canonicalMetrics = canonicalMetricsForRun(latestCycle);
+  const derivedCanonicalMetrics = buildCanonicalPerformanceMetricsFromRun(latestCycle);
+  const canonicalMismatchWarnings = detectCanonicalMetricsMismatch(latestCycle?.canonicalMetrics, derivedCanonicalMetrics);
   const simulatedAccount = useMemo(
-    () => buildSimulatedAccountFromBacktestResult(backtest, "Mock candles"),
-    [backtest]
+    () => buildSimulatedAccountFromCanonicalMetrics(canonicalMetrics),
+    [canonicalMetrics]
   );
   const chartData = state.agents
     .filter((agent) => agent.layer !== "cio")
@@ -51,11 +45,11 @@ export function PerformanceView({ state }: { state: LabState }) {
           <p className="text-sm uppercase text-primary">Simulation scorecard</p>
           <h2 className="mt-1 text-3xl font-semibold tracking-normal">Performance</h2>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Scores are generated from mock recommendations and outcomes. They are designed for prompt research, not live
-            trading decisions.
+            Research-cycle metrics come from the same canonical latest-cycle snapshot used by Dashboard. Legacy agent
+            scorecards remain separate local research diagnostics.
           </p>
         </div>
-        <Badge variant="warning">Mock outcomes only</Badge>
+        <Badge variant="warning">Simulation only</Badge>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -71,27 +65,62 @@ export function PerformanceView({ state }: { state: LabState }) {
         Simulation only. No broker connection. No real trades.
       </div>
 
+      <Card className="border-cyan-300/20 bg-cyan-300/10">
+        <CardContent className="grid gap-3 p-4 text-sm text-cyan-100 md:grid-cols-2 xl:grid-cols-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">Metrics source</p>
+            <p className="mt-1 break-all font-mono text-xs">
+              {canonicalMetrics ? `latest research cycle ${canonicalMetrics.sourceCycleId}` : "no completed research cycle"}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">Data source</p>
+            <p className="mt-1">{canonicalMetrics?.dataSource ?? "n/a"}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">Candle window</p>
+            <p className="mt-1">{canonicalMetrics?.candleWindow ?? "n/a"}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">P&amp;L assumption</p>
+            <p className="mt-1">{canonicalMetrics?.pnlAssumption ?? "Run AI Research Cycle to estimate simulation P&L."}</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {canonicalMismatchWarnings.length ? (
+        <Card className="border-amber-300/25 bg-amber-300/10">
+          <CardContent className="p-4 text-sm text-amber-100">
+            Performance is using the stored canonical latest-cycle metrics as source of truth. Derived summary mismatch: {canonicalMismatchWarnings.join(" ")}
+          </CardContent>
+        </Card>
+      ) : null}
+
       <SimulatedAccountCard account={simulatedAccount} />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-        <MetricCard label="Backtest trades" value={String(backtestSummary.totalTrades)} detail={`${backtestSummary.directionalTrades} directional`} />
-        <MetricCard label="Backtest win rate" value={formatPercent(backtestSummary.winRate)} detail={`${backtestSummary.wins} target hit(s)`} />
-        <MetricCard label="Average R" value={formatSigned(backtestSummary.averageR, 2)} detail="Per simulated record" tone={backtestSummary.averageR >= 0 ? "positive" : "danger"} />
-        <MetricCard label="Max drawdown" value={`${backtestSummary.maxDrawdown.toFixed(2)}R`} detail="Replay equity curve" />
-        <MetricCard label="Best trade" value={`${formatSigned(backtestSummary.bestTrade?.rMultiple ?? 0, 2)}R`} detail={backtestSummary.bestTrade?.outcome.replace("_", " ") ?? "n/a"} tone="positive" />
-        <MetricCard label="Worst trade" value={`${formatSigned(backtestSummary.worstTrade?.rMultiple ?? 0, 2)}R`} detail={backtestSummary.worstTrade?.outcome.replace("_", " ") ?? "n/a"} tone="danger" />
+        <MetricCard label="Research trades" value={String(canonicalMetrics?.totalTrades ?? 0)} detail={canonicalMetrics?.metricSourceLabel ?? "Latest cycle not available"} />
+        <MetricCard label="Research win rate" value={formatPercent(canonicalMetrics?.winRate ?? 0)} detail={`${canonicalMetrics?.winningTrades ?? 0} target hit(s)`} />
+        <MetricCard label="Average R" value={formatSigned(canonicalMetrics?.averageR ?? 0, 2)} detail="Canonical latest cycle" tone={(canonicalMetrics?.averageR ?? 0) >= 0 ? "positive" : "danger"} />
+        <MetricCard label="Max drawdown" value={`${(canonicalMetrics?.maxDrawdownR ?? 0).toFixed(2)}R`} detail="Canonical latest cycle" />
+        <MetricCard label="Profit factor" value={canonicalMetrics?.profitFactor === null || canonicalMetrics?.profitFactor === undefined ? "n/a" : canonicalMetrics.profitFactor.toFixed(2)} detail="Canonical latest cycle" />
+        <MetricCard label="Stability score" value={String(canonicalMetrics?.stabilityScore ?? 0)} detail={`Readiness ${canonicalMetrics?.readinessScore ?? 0}`} />
       </div>
 
       <Card>
         <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-xs uppercase text-muted-foreground">Active Backtest Configuration</p>
-            <p className="mt-1 text-sm text-muted-foreground">{describeBacktestConfig(backtest.config)}</p>
+            <p className="text-xs uppercase text-muted-foreground">Canonical Metric Diagnostics</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Dashboard cycle ID and Performance cycle ID both resolve to {canonicalMetrics?.sourceCycleId ?? "no cycle"}.
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Badge variant="secondary">{backtest.config.sessionFilter}</Badge>
-            <Badge variant="secondary">max {backtest.config.maxBarsToResolveTrade} bars</Badge>
-            <Badge variant="secondary">skipped {backtestSummary.skippedSignals}</Badge>
+            <Badge variant="secondary">{canonicalMetrics?.symbol ?? "n/a"}</Badge>
+            <Badge variant="secondary">{canonicalMetrics?.timeframe ?? "n/a"}</Badge>
+            <Badge variant="secondary">skipped {canonicalMetrics?.skippedSignals ?? 0}</Badge>
+            <Badge variant="secondary">false + {canonicalMetrics?.falsePositiveCount ?? 0}</Badge>
+            <Badge variant="secondary">calibration {formatPercent(canonicalMetrics?.confidenceCalibration ?? 0)}</Badge>
           </div>
         </CardContent>
       </Card>
@@ -99,89 +128,26 @@ export function PerformanceView({ state }: { state: LabState }) {
       <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Backtest Equity Curve</CardTitle>
-            <CardDescription>Cumulative simulated R from deterministic mock-candle replay.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={backtestSummary.equityCurve}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
-                  <XAxis dataKey="index" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
-                  <Tooltip contentStyle={{ background: "#111827", border: "1px solid #334155", borderRadius: 8 }} />
-                  <Line type="monotone" dataKey="equityR" stroke="#2dd4bf" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Strategy / Agent Attribution</CardTitle>
-            <CardDescription>How often each internal agent aligned with the CIO replay thesis.</CardDescription>
+            <CardTitle>Canonical Research Metrics</CardTitle>
+            <CardDescription>Same latest-cycle values displayed on Dashboard.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {backtestSummary.agentAttribution.map((agent) => (
-              <div key={agent.agentId} className="rounded-lg border border-border bg-background/45 p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="font-medium">{agent.name}</p>
-                    <p className="text-xs text-muted-foreground">{agent.totalOpinions} replay opinions</p>
-                  </div>
-                  <Badge variant="secondary">{formatPercent(agent.cioAlignmentRate)}</Badge>
-                </div>
-                <div className="mt-3 grid grid-cols-4 gap-2 text-xs text-muted-foreground">
-                  <span>Bull {agent.bullishCount}</span>
-                  <span>Bear {agent.bearishCount}</span>
-                  <span>Neutral {agent.neutralCount}</span>
-                  <span>Conf {formatPercent(agent.averageConfidence)}</span>
-                </div>
+            {[
+              ["Cycle", canonicalMetrics?.sourceCycleId ?? "none"],
+              ["Generated", canonicalMetrics?.generatedAt ? new Date(canonicalMetrics.generatedAt).toLocaleString() : "n/a"],
+              ["Data source", canonicalMetrics?.dataSource ?? "n/a"],
+              ["Raw candles", String(canonicalMetrics?.rawCandleCount ?? 0)],
+              ["Processed candles", String(canonicalMetrics?.processedCandleCount ?? 0)],
+              ["Active calibration", canonicalMetrics?.activeCalibrationId ?? "none"]
+            ].map(([label, value]) => (
+              <div key={label} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-background/45 p-3 text-sm">
+                <span className="text-muted-foreground">{label}</span>
+                <span className="break-all font-mono text-xs text-foreground">{value}</span>
               </div>
             ))}
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Backtest Trade List</CardTitle>
-          <CardDescription>Simulated target, invalidation, and expiry outcomes from mock OHLC only.</CardDescription>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <table className="w-full min-w-[920px] text-left text-sm">
-            <thead className="text-xs uppercase text-muted-foreground">
-              <tr className="border-b border-border">
-                <th className="py-3 pr-3">Decision</th>
-                <th className="py-3 pr-3">Bias</th>
-                <th className="py-3 pr-3">Confidence</th>
-                <th className="py-3 pr-3">Outcome</th>
-                <th className="py-3 pr-3">R</th>
-                <th className="py-3 pr-3">MFE</th>
-                <th className="py-3 pr-3">MAE</th>
-                <th className="py-3 pr-3">Reason</th>
-              </tr>
-            </thead>
-            <tbody>
-              {backtest.trades.map((trade) => (
-                <tr key={trade.id} className="border-b border-border/70">
-                  <td className="py-3 pr-3 font-mono">{trade.decisionIndex + 1}</td>
-                  <td className="py-3 pr-3">
-                    <Badge variant={biasVariant(trade.bias)}>{trade.bias}</Badge>
-                  </td>
-                  <td className="py-3 pr-3 font-mono">{formatPercent(trade.confidence)}</td>
-                  <td className="py-3 pr-3">{trade.outcome.replace("_", " ")}</td>
-                  <td className="py-3 pr-3 font-mono">{formatSigned(trade.rMultiple, 2)}R</td>
-                  <td className="py-3 pr-3 font-mono">{trade.maxFavorableExcursion.toFixed(2)}</td>
-                  <td className="py-3 pr-3 font-mono">{trade.maxAdverseExcursion.toFixed(2)}</td>
-                  <td className="py-3 pr-3 text-muted-foreground">{trade.reason}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
 
       <div className="grid gap-5 xl:grid-cols-[1.3fr_0.9fr]">
         <Card>

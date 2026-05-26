@@ -1,4 +1,5 @@
 import type { BacktestResult } from "@/lib/backtesting";
+import type { CanonicalPerformanceMetrics } from "@/lib/performance/canonicalMetrics";
 import type { ResearchCycleRun } from "@/lib/researchCycle";
 
 export type SimulatedAccountDataSource = "simulation" | "tradovate_demo" | "tradovate_live";
@@ -26,6 +27,10 @@ export interface SimulatedAccount {
   sourceLabel: string;
   sourceNote: string;
   riskDollarsPerR: number;
+  sourceCycleId?: string;
+  sourceProposalId?: string;
+  metricSourceLabel?: string;
+  pnlAssumption?: string;
   isEmpty: boolean;
 }
 
@@ -65,6 +70,8 @@ const emptyAccount = ({
   sourceLabel,
   sourceNote,
   riskDollarsPerR: round(startingBalance * DEFAULT_SIMULATED_RISK_PER_R),
+  metricSourceLabel: sourceLabel,
+  pnlAssumption: "Estimated simulation P&L. No broker account data is connected.",
   isEmpty: true
 });
 
@@ -136,6 +143,44 @@ export function buildSimulatedAccount({
     sourceLabel,
     sourceNote,
     riskDollarsPerR,
+    metricSourceLabel: sourceLabel,
+    pnlAssumption: `Estimated simulation P&L using ${riskDollarsPerR.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })} per 1R.`,
+    isEmpty: false
+  };
+}
+
+export function buildSimulatedAccountFromCanonicalMetrics(
+  metrics?: CanonicalPerformanceMetrics
+): SimulatedAccount {
+  if (!metrics) {
+    return emptyAccount();
+  }
+
+  return {
+    startingBalance: metrics.startingBalance,
+    currentBalance: metrics.currentBalance,
+    realizedPnL: metrics.realizedPnL,
+    realizedPnLPercent: metrics.realizedPnLPercent,
+    totalTrades: metrics.totalTrades,
+    winningTrades: metrics.winningTrades,
+    losingTrades: metrics.losingTrades,
+    winRate: metrics.winRate,
+    averageR: metrics.averageR,
+    maxDrawdownR: metrics.maxDrawdownR,
+    maxDrawdownDollars: metrics.maxDrawdownDollars,
+    profitFactor: metrics.profitFactor,
+    bestTradeR: metrics.bestTradeR,
+    worstTradeR: metrics.worstTradeR,
+    lastUpdated: metrics.generatedAt,
+    dataSource: "simulation",
+    accountProvider: "none",
+    sourceLabel: metrics.dataSource,
+    sourceNote: sourceNoteFor(metrics.sourceMode, metrics.dataSource),
+    riskDollarsPerR: metrics.riskDollarsPerR,
+    sourceCycleId: metrics.sourceCycleId,
+    sourceProposalId: metrics.sourceProposalId,
+    metricSourceLabel: metrics.metricSourceLabel,
+    pnlAssumption: metrics.pnlAssumption,
     isEmpty: false
   };
 }
@@ -144,6 +189,10 @@ export function buildSimulatedAccountFromResearchCycle(
   run?: ResearchCycleRun,
   startingBalance = DEFAULT_SIMULATED_STARTING_BALANCE
 ): SimulatedAccount {
+  if (run?.canonicalMetrics) {
+    return buildSimulatedAccountFromCanonicalMetrics(run.canonicalMetrics);
+  }
+
   const summary = run?.backtestSummary;
   const sourceLabel = run?.dataSourceLabel ?? (run?.dataSourceMode === "imported" ? "Imported historical data" : "Mock candles");
   const sourceNote = sourceNoteFor(run?.dataSourceMode, sourceLabel);

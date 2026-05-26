@@ -27,6 +27,7 @@ import {
 import type { CalibrationProposal, CalibrationProposalMetrics, SelfImprovementState } from "@/lib/selfImprovement";
 import type { AutoResearchCandidateResult } from "@/lib/autoResearch";
 import { describeBacktestConfig } from "@/lib/backtesting";
+import { canonicalMetricsForRun } from "@/lib/performance/canonicalMetrics";
 import { latestResearchCycleRun } from "@/lib/researchCycle";
 import { labStorage } from "@/lib/storage";
 import { formatPercent, safeArray } from "@/lib/utils";
@@ -352,6 +353,7 @@ export function SelfImprovementView() {
   const queryProposalId = searchParams.get("proposalId") ?? undefined;
   const generatedProposalFromCycle =
     latestCycleRun?.latestGeneratedProposal ?? latestCycleRun?.autoResearchCycle?.createdProposal;
+  const latestCycleCanonicalMetrics = canonicalMetricsForRun(latestCycleRun);
   const generatedProposalId = latestCycleRun?.createdProposalId ?? generatedProposalFromCycle?.proposalId;
   const generatedProposalStored = Boolean(
     generatedProposalId && safeArray(state.proposals).some((proposal) => proposal.proposalId === generatedProposalId)
@@ -406,6 +408,11 @@ export function SelfImprovementView() {
   const proposalHasAnyAfterMetrics = Boolean(snapshotAfterMetrics || latestProposal?.afterMetrics);
   const showMetricMismatchWarning =
     proposalMismatchReasons.length > 0 || (latestProposal && proposalHasAnyAfterMetrics && !proposalHasMaterialChange);
+  const proposalAndCycleSourcesDiffer = Boolean(
+    latestProposal?.metricsSnapshot?.sourceCycleId &&
+      latestCycleCanonicalMetrics?.sourceCycleId &&
+      latestProposal.metricsSnapshot.sourceCycleId !== latestCycleCanonicalMetrics.sourceCycleId
+  );
   const filteredProposals = safeArray(state.proposals).filter((proposal) => {
     const query = proposalFilter.trim().toLowerCase();
     if (!query) {
@@ -626,6 +633,33 @@ export function SelfImprovementView() {
       </div>
 
       <SafetyLockBanner message="Simulation self-improvement only. No broker execution, readiness override, paper/demo enablement, or real trades." />
+
+      <Card className={proposalAndCycleSourcesDiffer ? "border-amber-300/25 bg-amber-300/10" : "border-cyan-300/20 bg-cyan-300/10"}>
+        <CardContent className={`grid gap-3 p-4 text-sm ${proposalAndCycleSourcesDiffer ? "text-amber-100" : "text-cyan-100"} md:grid-cols-2`}>
+          <div>
+            <p className="text-xs uppercase tracking-[0.14em] opacity-70">Proposal metrics source</p>
+            <p className="mt-1 break-all font-mono text-xs">
+              {latestProposal?.metricsSnapshot
+                ? `proposal snapshot ${latestProposal.metricsSnapshot.proposalId}`
+                : latestProposal
+                  ? `proposal ${latestProposal.proposalId}`
+                  : "no proposal selected"}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.14em] opacity-70">Latest cycle metrics source</p>
+            <p className="mt-1 break-all font-mono text-xs">
+              {latestCycleCanonicalMetrics ? `latest research cycle ${latestCycleCanonicalMetrics.sourceCycleId}` : "no completed cycle metrics"}
+            </p>
+          </div>
+          {proposalAndCycleSourcesDiffer ? (
+            <p className="md:col-span-2">
+              These metrics are from different sources. Proposal comparisons use the stored proposal snapshot; latest-cycle
+              performance uses the canonical research cycle snapshot.
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
 
       {actionMessage ? (
         <Card className="border-emerald-300/25 bg-emerald-300/10">
@@ -1197,6 +1231,9 @@ export function SelfImprovementView() {
               ["Data source", latestProposal?.metricsSnapshot?.dataSource ?? latestCycleRun?.dataSourceLabel ?? "unknown"],
               ["Candle window", latestProposal?.metricsSnapshot?.candleWindow ?? "missing"],
               ["Active calibration used", latestProposal?.metricsSnapshot?.activeCalibrationIdUsed ?? "none"],
+              ["Latest cycle metrics ID", latestCycleCanonicalMetrics?.sourceCycleId ?? "none"],
+              ["Latest cycle data source", latestCycleCanonicalMetrics?.dataSource ?? "n/a"],
+              ["Latest cycle generated", formatDate(latestCycleCanonicalMetrics?.generatedAt)],
               ["Mismatch status", proposalMismatchReasons.length ? proposalMismatchReasons.join(" ") : proposalHasMaterialChange ? "none" : "no material metric change"],
               ["Source candidate available", sourceCandidateForLatestProposal ? "yes" : "no"]
             ].map(([label, value]) => (

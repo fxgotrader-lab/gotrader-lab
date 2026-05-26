@@ -9,6 +9,7 @@ import type {
 } from "@/lib/backtesting";
 import type { LLMAdvisoryRun } from "@/lib/llm";
 import type { CandleWindowSettings, CandleDataSourceMode, ResearchPerformanceMode } from "@/lib/marketData";
+import type { CanonicalPerformanceMetrics } from "@/lib/performance/canonicalMetrics";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
 import type { ResearchQualityReview } from "@/lib/researchQuality";
 import type { CalibrationProposal, CalibrationProposalChanges } from "@/lib/selfImprovement";
@@ -148,6 +149,7 @@ export interface ResearchCycleRun {
   backtestSummary?: ResearchCycleBacktestSummary;
   backtestDiagnostics?: TradeGenerationDiagnostic[];
   tradeQualityDiagnostics?: TradeQualityDiagnostic[];
+  canonicalMetrics?: CanonicalPerformanceMetrics;
   dataSourceMode?: CandleDataSourceMode;
   dataSourceLabel?: string;
   rawCandleCount?: number;

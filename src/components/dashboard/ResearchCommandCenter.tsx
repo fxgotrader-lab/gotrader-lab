@@ -52,7 +52,12 @@ import { SimulatedAccountCard } from "./SimulatedAccountCard";
 import { SimulationBridgeStatusCard } from "./SimulationBridgeStatusCard";
 import { SystemStatusGrid } from "./SystemStatusGrid";
 import { ValidationStatusCard } from "./ValidationStatusCard";
-import { buildSimulatedAccountFromResearchCycle } from "@/lib/performance/simulatedAccount";
+import {
+  buildCanonicalPerformanceMetricsFromRun,
+  canonicalMetricsForRun,
+  detectCanonicalMetricsMismatch
+} from "@/lib/performance/canonicalMetrics";
+import { buildSimulatedAccountFromCanonicalMetrics } from "@/lib/performance/simulatedAccount";
 
 type ResearchCommandCenterProps = {
   state: LabState;
@@ -100,7 +105,10 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
   const communicationSummary = getCommunicationSummary(loadCommunicationMessages());
   const agentAuditSummary = summarizeAgentAudit(loadAgentAuditState());
   const agentDebateSummary = summarizeAgentDebate(loadAgentDebateState());
-  const simulatedAccount = buildSimulatedAccountFromResearchCycle(latestResearchCycle);
+  const canonicalMetrics = canonicalMetricsForRun(latestResearchCycle);
+  const derivedCanonicalMetrics = buildCanonicalPerformanceMetricsFromRun(latestResearchCycle);
+  const canonicalMismatchWarnings = detectCanonicalMetricsMismatch(latestResearchCycle?.canonicalMetrics, derivedCanonicalMetrics);
+  const simulatedAccount = buildSimulatedAccountFromCanonicalMetrics(canonicalMetrics);
   const latestThesis = state.tradeTheses[0];
   const marketSymbol = activeCandleSource.metadata?.symbol ?? latestThesis?.symbol ?? "NQ";
   const marketTimeframe =
@@ -208,6 +216,26 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
       </Card>
 
       <ResearchCycleControl state={state} onCycleUpdate={() => setDashboardRefresh((value) => value + 1)} />
+
+      <Card className="border-cyan-300/20 bg-cyan-300/10">
+        <CardContent className="flex flex-col gap-2 p-4 text-sm text-cyan-100 md:flex-row md:items-center md:justify-between">
+          <span>
+            Metrics source: {canonicalMetrics ? `latest research cycle ${canonicalMetrics.sourceCycleId}` : "no completed research cycle yet"}
+          </span>
+          <span>
+            {canonicalMetrics
+              ? `${canonicalMetrics.dataSource} / ${canonicalMetrics.candleWindow}`
+              : "Run AI Research Cycle to generate canonical performance metrics."}
+          </span>
+        </CardContent>
+      </Card>
+      {canonicalMismatchWarnings.length ? (
+        <Card className="border-amber-300/25 bg-amber-300/10">
+          <CardContent className="p-4 text-sm text-amber-100">
+            Dashboard is using the stored canonical latest-cycle metrics as source of truth. Derived summary mismatch: {canonicalMismatchWarnings.join(" ")}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <SimulatedAccountCard account={simulatedAccount} />
 

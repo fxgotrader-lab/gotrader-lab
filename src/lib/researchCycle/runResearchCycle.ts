@@ -42,6 +42,7 @@ import {
   type PreparedCandleSource
 } from "@/lib/marketData";
 import { mockCandles } from "@/lib/mockData/mockCandles";
+import { buildCanonicalPerformanceMetricsFromRun } from "@/lib/performance/canonicalMetrics";
 import { evaluateReadinessGate } from "@/lib/readiness";
 import { analyzeValidationResults, saveLatestResearchQualityReview } from "@/lib/researchQuality";
 import type {
@@ -952,6 +953,7 @@ export async function runResearchCycle({
 
     run.status = finalStatusFor(run);
     run.completedAt = now();
+    run.canonicalMetrics = buildCanonicalPerformanceMetricsFromRun(run, validationReport);
     run.nextRecommendedAction = nextActionFor(run);
     run.resultSummary = resultSummaryFor(run);
 
@@ -988,6 +990,7 @@ export async function runResearchCycle({
 
     run.status = finalStatusFor(run);
     run.completedAt = now();
+    run.canonicalMetrics = buildCanonicalPerformanceMetricsFromRun(run, validationReport);
     run.nextRecommendedAction = nextActionFor(run);
     run.resultSummary = resultSummaryFor(run);
     saveResearchCycleRun(snapshot());
@@ -999,6 +1002,7 @@ export async function runResearchCycle({
     failStep(runningStep, message);
     run.status = "failed";
     run.completedAt = now();
+    run.canonicalMetrics = buildCanonicalPerformanceMetricsFromRun(run, run.validationReport);
     run.nextRecommendedAction = nextActionFor(run);
     run.resultSummary = resultSummaryFor(run);
     try {

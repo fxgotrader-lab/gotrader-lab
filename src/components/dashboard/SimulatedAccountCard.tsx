@@ -30,6 +30,9 @@ export function SimulatedAccountCard({ account }: { account: SimulatedAccount })
           <p className="mt-1 text-xs text-slate-500">
             Research P&amp;L model only. Uses simulated backtest R, not broker account data.
           </p>
+          <p className="mt-1 text-xs text-cyan-100/70">
+            Metrics source: {account.metricSourceLabel ?? account.sourceLabel}
+          </p>
         </div>
         <Badge variant="warning">Simulation only</Badge>
       </CardHeader>
@@ -79,8 +82,11 @@ export function SimulatedAccountCard({ account }: { account: SimulatedAccount })
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge variant="secondary">{account.sourceNote}</Badge>
+            {account.sourceCycleId ? <Badge variant="secondary">Cycle: {account.sourceCycleId}</Badge> : null}
+            <Badge variant="secondary">Risk: {currency(account.riskDollarsPerR)} / 1R</Badge>
             <Badge variant="secondary">Provider: {account.accountProvider}</Badge>
           </div>
+          {account.pnlAssumption ? <span className="md:basis-full">{account.pnlAssumption}</span> : null}
         </div>
       </CardContent>
     </Card>
