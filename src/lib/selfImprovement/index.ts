@@ -27,6 +27,12 @@ export {
   evaluateCalibrationProposal,
   summarizeValidationMetrics
 } from "@/lib/selfImprovement/evaluateCalibrationProposal";
+export {
+  attachProposalMetricsSnapshot,
+  createProposalMetricsSnapshot,
+  hasMaterialProposalMetricChange,
+  proposalSnapshotMismatchReasons
+} from "@/lib/selfImprovement/proposalMetricsSnapshot";
 export type {
   ActiveResearchCalibration,
   ActiveBacktestConfigMergeStatus,
@@ -36,6 +42,7 @@ export type {
   CalibrationProposal,
   CalibrationProposalChanges,
   CalibrationProposalIntent,
+  CalibrationProposalMetricsSnapshot,
   CalibrationProposalMetrics,
   CalibrationProposalSource,
   CalibrationProposalStatus,

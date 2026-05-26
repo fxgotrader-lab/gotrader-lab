@@ -751,6 +751,9 @@ export async function runResearchCycle({
         createProposal: true,
         candles: researchCandles,
         baselineConfig: activeConfig,
+        dataSource: dataSourceLabel,
+        candleWindow: `${activeCandleSource.researchWindowCandles} raw window / ${activeCandleSource.processedCandleCount} processed ${activeCandleSource.appliedSettings.targetTimeframe} candles`,
+        activeCalibrationIdUsed: activeResearchConfig.activeCalibrationId,
         onCandidateEvaluated: (progress) => {
           run.candidateProgress = progress;
           setStep("auto_research", {

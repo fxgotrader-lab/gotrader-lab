@@ -232,6 +232,9 @@ export interface AutoResearchRunOptions {
   createProposal?: boolean;
   candles?: Candle[];
   baselineConfig?: ResolvedBacktestConfig;
+  dataSource?: string;
+  candleWindow?: string;
+  activeCalibrationIdUsed?: string;
   onCandidateEvaluated?: (progress: AutoResearchProgressSnapshot) => void;
 }
 

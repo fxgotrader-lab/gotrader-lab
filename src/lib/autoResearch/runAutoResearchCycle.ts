@@ -40,6 +40,7 @@ import {
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
 import {
   compareProposalToBaseline,
+  attachProposalMetricsSnapshot,
   loadActiveResearchCalibration,
   resolveActiveBacktestConfig,
   summarizeValidationMetrics,
@@ -1092,6 +1093,14 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
     const activeCandles = options.candles?.length ? options.candles : mockCandles;
     const activeResearchConfig = resolveActiveBacktestConfig();
     const baselineConfig = options.baselineConfig ? resolveActiveBacktestConfig(options.baselineConfig).config : activeResearchConfig.config;
+    const proposalSnapshotContext = (sourceCandidateId?: string) => ({
+      sourceCycleId: cycleId,
+      sourceCandidateId,
+      dataSource: options.dataSource ?? "mock",
+      candleWindow: options.candleWindow ?? `${activeCandles.length} candles`,
+      searchMode: options.searchMode,
+      activeCalibrationIdUsed: options.activeCalibrationIdUsed ?? activeResearchConfig.activeCalibrationId
+    });
     const baselineBacktest = runBacktest(activeCandles, baselineConfig);
     const tradesBeforeRecovery = baselineBacktest.summary.totalTrades;
     const tradeGenerationDiagnostics = tradesBeforeRecovery === 0
@@ -1329,14 +1338,14 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
         tradesAfterRecovery
       })
     ) {
-      const proposal = createZeroTradeRecoveryProposal({
+      const proposal = attachProposalMetricsSnapshot(createZeroTradeRecoveryProposal({
         baselineConfig,
         baselineMetrics,
         recoveryResult,
         recoveryMetadata,
         tradesBeforeRecovery,
         tradesAfterRecovery
-      });
+      }), proposalSnapshotContext(recoveryResult.candidateId));
       const duplicateMessage = duplicateActiveCalibrationMessage(proposal, activeResearchConfig.activeResearchCalibration);
       if (duplicateMessage) {
         recoveryFailureReasons = safeTopN([
@@ -1363,7 +1372,7 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       shouldCreateProposal(bestCandidate)
     ) {
       const advisorySource = (labStorage.load().advisoryResponses?.length ?? 0) > 0 ? "openclaw" : "internal";
-      const proposal = createSelfImprovementFromCandidate({
+      const proposal = attachProposalMetricsSnapshot(createSelfImprovementFromCandidate({
         baselineConfig,
         baselineMetrics,
         candidate: bestCandidate,
@@ -1372,7 +1381,7 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
           bestCandidate.resultCategory === "paper_demo_candidate"
             ? "paper_demo_candidate_review"
             : "research_calibration_candidate"
-      });
+      }), proposalSnapshotContext(bestCandidate.candidateId));
       upsertCalibrationProposal(
         proposal,
         "created",
@@ -1390,12 +1399,12 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
         baselineMetrics
       });
       if (researchCalibrationCandidate && researchCalibrationCandidate.resultCategory !== "paper_demo_candidate") {
-        const proposal = createResearchCalibrationCandidateProposal({
+        const proposal = attachProposalMetricsSnapshot(createResearchCalibrationCandidateProposal({
           baselineConfig,
           baselineMetrics,
           candidate: researchCalibrationCandidate,
           adaptivePasses
-        });
+        }), proposalSnapshotContext(researchCalibrationCandidate.candidateId));
         const duplicateMessage = duplicateActiveCalibrationMessage(proposal, activeResearchConfig.activeResearchCalibration);
         if (duplicateMessage) {
           recoveryFailureReasons = safeTopN([duplicateMessage, ...safeArray(recoveryFailureReasons)], 6);

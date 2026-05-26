@@ -18,6 +18,10 @@ import type {
   SelfImprovementAuditEntry,
   SelfImprovementState
 } from "@/lib/selfImprovement/selfImprovementTypes";
+import {
+  hasMaterialProposalMetricChange,
+  proposalSnapshotMismatchReasons
+} from "@/lib/selfImprovement/proposalMetricsSnapshot";
 import { safeArray, uid } from "@/lib/utils";
 
 export const SELF_IMPROVEMENT_STORAGE_KEY = "gotrader_ai_lab_self_improvement_state";
@@ -345,6 +349,13 @@ export function canApproveProposal(proposal?: CalibrationProposal): ProposalAppr
   }
   if (!hasResearchImprovement(proposal)) {
     reasons.push("Proposal does not show trade-generation or stability improvement.");
+  }
+  const snapshotMismatchReasons = proposalSnapshotMismatchReasons(proposal);
+  if (snapshotMismatchReasons.length) {
+    reasons.push(...snapshotMismatchReasons);
+  }
+  if (!hasMaterialProposalMetricChange(proposal)) {
+    reasons.push("Proposal has no material before/after metric change.");
   }
   if (safeArray(proposal.comparisonResult?.criticalRegressions).length) {
     reasons.push("Proposal has critical metric regressions; run a targeted follow-up before approval.");

@@ -194,6 +194,7 @@ export function AutoResearchView() {
   const baselineConfig = baselineResolution.config;
   const latestCycle = latestAutoResearchCycle(state);
   const bestCandidate = latestCycle?.bestCandidate;
+  const createdProposalSnapshot = latestCycle?.createdProposal?.metricsSnapshot;
   const topCandidates = latestCycle?.closestCandidates?.length
     ? safeArray(latestCycle.closestCandidates)
     : safeTopN([...safeArray(latestCycle?.candidateResults)].sort((a, b) => scoreValue(b) - scoreValue(a)), 3);
@@ -247,7 +248,10 @@ export function AutoResearchView() {
       maxCandidateCount: Number(maxCandidateCount),
       createProposal: true,
       candles: activeCandleSource.candles,
-      baselineConfig
+      baselineConfig,
+      dataSource: activeCandleSource.label,
+      candleWindow: `${activeCandleSource.researchWindowCandles} raw window / ${activeCandleSource.processedCandleCount} processed ${activeCandleSource.appliedSettings.targetTimeframe} candles`,
+      activeCalibrationIdUsed: baselineResolution.activeCalibrationId
     });
     setState(loadAutoResearchState());
     setIsRunning(false);
@@ -443,6 +447,18 @@ export function AutoResearchView() {
                       /self-improvement
                     </Link>
                     .
+                    {createdProposalSnapshot ? (
+                      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-4">
+                        <span>Snapshot: {createdProposalSnapshot.proposalId}</span>
+                        <span>Candidate: {createdProposalSnapshot.sourceCandidateId ?? "n/a"}</span>
+                        <span>
+                          Trades: {createdProposalSnapshot.beforeMetrics.totalTrades} {"->"} {createdProposalSnapshot.afterMetrics?.totalTrades ?? "n/a"}
+                        </span>
+                        <span>
+                          Avg R: {createdProposalSnapshot.beforeMetrics.averageR.toFixed(2)} {"->"} {createdProposalSnapshot.afterMetrics?.averageR.toFixed(2) ?? "n/a"}
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
                 ) : (
                   <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">

@@ -10,11 +10,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   applyAcceptedCalibrationToActiveBaseline,
+  attachProposalMetricsSnapshot,
   approveCalibrationProposal,
   canApproveProposal,
   createCalibrationProposal,
   evaluateCalibrationProposal,
+  hasMaterialProposalMetricChange,
   loadSelfImprovementState,
+  proposalSnapshotMismatchReasons,
   rejectCalibrationProposal,
   resolveActiveBacktestConfig,
   revertCalibrationProposal,
@@ -22,6 +25,7 @@ import {
   upsertCalibrationProposal
 } from "@/lib/selfImprovement";
 import type { CalibrationProposal, CalibrationProposalMetrics, SelfImprovementState } from "@/lib/selfImprovement";
+import type { AutoResearchCandidateResult } from "@/lib/autoResearch";
 import { describeBacktestConfig } from "@/lib/backtesting";
 import { latestResearchCycleRun } from "@/lib/researchCycle";
 import { labStorage } from "@/lib/storage";
@@ -377,6 +381,31 @@ export function SelfImprovementView() {
   const latestProposalPersisted = Boolean(
     latestProposal && safeArray(state.proposals).some((proposal) => proposal.proposalId === latestProposal.proposalId)
   );
+  const sourceCandidatesForLatestProposal = useMemo(() => {
+    const cycle = latestCycleRun?.autoResearchCycle;
+    const candidates = [
+      cycle?.bestCandidate,
+      cycle?.recoveryResult,
+      cycle?.tradeQualityBestCandidate,
+      ...safeArray(cycle?.candidateResults),
+      ...safeArray(cycle?.closestCandidates),
+      ...safeArray(cycle?.rejectedCandidates),
+      ...safeArray(cycle?.adaptivePasses).map((pass) => pass.bestCandidatePerPass)
+    ].filter((candidate): candidate is AutoResearchCandidateResult => Boolean(candidate));
+    const unique = new Map(candidates.map((candidate) => [candidate.candidateId, candidate]));
+    return [...unique.values()];
+  }, [latestCycleRun]);
+  const sourceCandidateForLatestProposal = latestProposal?.sourceCandidateId
+    ? sourceCandidatesForLatestProposal.find((candidate) => candidate.candidateId === latestProposal.sourceCandidateId)
+    : undefined;
+  const snapshotBeforeMetrics = latestProposal?.metricsSnapshot?.beforeMetrics ?? latestProposal?.beforeMetrics;
+  const snapshotAfterMetrics = latestProposal?.metricsSnapshot?.afterMetrics ?? latestProposal?.afterMetrics;
+  const snapshotComparisonResult = latestProposal?.metricsSnapshot?.comparisonResult ?? latestProposal?.comparisonResult;
+  const proposalMismatchReasons = proposalSnapshotMismatchReasons(latestProposal);
+  const proposalHasMaterialChange = hasMaterialProposalMetricChange(latestProposal);
+  const proposalHasAnyAfterMetrics = Boolean(snapshotAfterMetrics || latestProposal?.afterMetrics);
+  const showMetricMismatchWarning =
+    proposalMismatchReasons.length > 0 || (latestProposal && proposalHasAnyAfterMetrics && !proposalHasMaterialChange);
   const filteredProposals = safeArray(state.proposals).filter((proposal) => {
     const query = proposalFilter.trim().toLowerCase();
     if (!query) {
@@ -398,16 +427,16 @@ export function SelfImprovementView() {
   const isResearchCalibration = effectiveProposalIntent === "research_calibration_candidate";
   const isTradeQualityCalibration = isTradeQualityProposal(latestProposal);
   const tradeQualitySampleMinimum = latestProposal
-    ? Math.max(30, Math.floor(latestProposal.beforeMetrics.totalTrades * 0.5))
+    ? Math.max(30, Math.floor((snapshotBeforeMetrics?.totalTrades ?? 0) * 0.5))
     : 30;
-  const tradeQualityAfterTrades = latestProposal?.afterMetrics?.totalTrades ?? 0;
+  const tradeQualityAfterTrades = snapshotAfterMetrics?.totalTrades ?? 0;
   const tradeQualitySampleAcceptable = tradeQualityAfterTrades >= tradeQualitySampleMinimum;
   const tradeQualityFocusLabels = proposalFocusLabels(latestProposal);
-  const tradeQualityWinRateImproved = latestProposal?.afterMetrics
-    ? latestProposal.afterMetrics.winRate > latestProposal.beforeMetrics.winRate
+  const tradeQualityWinRateImproved = snapshotAfterMetrics && snapshotBeforeMetrics
+    ? snapshotAfterMetrics.winRate > snapshotBeforeMetrics.winRate
     : false;
-  const tradeQualityAverageRImproved = latestProposal?.afterMetrics
-    ? latestProposal.afterMetrics.averageR > latestProposal.beforeMetrics.averageR
+  const tradeQualityAverageRImproved = snapshotAfterMetrics && snapshotBeforeMetrics
+    ? snapshotAfterMetrics.averageR > snapshotBeforeMetrics.averageR
     : false;
   const approvalCheck = latestProposalPersisted
     ? canApproveProposal(latestProposal)
@@ -467,6 +496,52 @@ export function SelfImprovementView() {
     setState(nextState);
     setSearchParams({ proposalId: importableCycleProposal.proposalId });
     setActionMessage(`Imported proposal ${importableCycleProposal.proposalId} from the latest research cycle.`);
+  };
+
+  const rebuildProposalSnapshot = () => {
+    if (!latestProposal) {
+      setActionMessage("No proposal selected.");
+      return;
+    }
+    if (!latestProposalPersisted) {
+      setActionMessage("Import proposal from latest research cycle before rebuilding its snapshot.");
+      return;
+    }
+    const sourceCandidate = sourceCandidateForLatestProposal;
+    if (!sourceCandidate) {
+      setActionMessage("Source candidate is not available in the latest research cycle summary. Rerun the AI Research Cycle to regenerate it.");
+      return;
+    }
+
+    const rebuilt = attachProposalMetricsSnapshot(
+      {
+        ...latestProposal,
+        afterMetrics: sourceCandidate.metrics,
+        comparisonResult: sourceCandidate.comparisonResult,
+        candidateStabilityScore: sourceCandidate.metrics.stabilityScore,
+        sourceCandidateId: sourceCandidate.candidateId,
+        sourceCandidateLabel: sourceCandidate.label
+      },
+      {
+        sourceCycleId: latestCycleRun?.autoResearchCycle?.cycleId ?? latestCycleRun?.cycleId,
+        sourceCandidateId: sourceCandidate.candidateId,
+        dataSource: latestCycleRun?.dataSourceLabel ?? latestProposal.metricsSnapshot?.dataSource,
+        candleWindow:
+          latestProposal.metricsSnapshot?.candleWindow ??
+          (typeof latestCycleRun?.researchWindowCandles === "number" && typeof latestCycleRun?.processedCandleCount === "number"
+            ? `${latestCycleRun.researchWindowCandles} raw window / ${latestCycleRun.processedCandleCount} processed ${latestCycleRun.researchTimeframe ?? "candles"}`
+            : undefined),
+        searchMode: latestCycleRun?.effectiveSearchMode ?? latestProposal.metricsSnapshot?.searchMode,
+        activeCalibrationIdUsed: latestCycleRun?.activeCalibrationId ?? latestProposal.metricsSnapshot?.activeCalibrationIdUsed
+      }
+    );
+    const nextState = upsertCalibrationProposal(
+      rebuilt,
+      "tested",
+      "Rebuilt canonical proposal metrics snapshot from the source Auto Research candidate."
+    );
+    setState(nextState);
+    setActionMessage("Rebuilt proposal snapshot from source candidate.");
   };
 
   const testProposal = () => {
@@ -593,6 +668,40 @@ export function SelfImprovementView() {
                 <Button onClick={importLatestCycleProposal} disabled={!importableCycleProposal}>
                   Import proposal from latest research cycle
                 </Button>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {latestProposal && showMetricMismatchWarning ? (
+        <Card className="border-red-300/30 bg-red-300/10">
+          <CardHeader>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle>Metric Snapshot Guard</CardTitle>
+                <CardDescription>
+                  Approval is blocked until the canonical proposal snapshot matches the source candidate evidence.
+                </CardDescription>
+              </div>
+              <Badge variant="danger">approval blocked</Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-red-50">
+            <p>Metric mismatch detected: candidate summary and proposal snapshot disagree.</p>
+            <ul className="space-y-1 text-xs text-red-100/85">
+              {proposalMismatchReasons.length ? (
+                proposalMismatchReasons.map((reason) => <li key={reason}>{reason}</li>)
+              ) : (
+                <li>Proposal has no material before/after metric change.</li>
+              )}
+            </ul>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={rebuildProposalSnapshot} disabled={!sourceCandidateForLatestProposal || !latestProposalPersisted}>
+                Rebuild proposal snapshot from source candidate
+              </Button>
+              {!sourceCandidateForLatestProposal ? (
+                <span className="text-xs text-red-100/70">Source candidate is missing from the latest compact cycle. Rerun the AI Research Cycle if needed.</span>
               ) : null}
             </div>
           </CardContent>
@@ -825,11 +934,11 @@ export function SelfImprovementView() {
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <div className="rounded-md border border-primary/20 bg-primary/5 p-2">
                     <p className="text-xs text-muted-foreground">Score before</p>
-                    <p className="mt-1 font-mono text-sm">{latestProposal.baselineStabilityScore ?? latestProposal.beforeMetrics.stabilityScore}</p>
+                    <p className="mt-1 font-mono text-sm">{latestProposal.baselineStabilityScore ?? snapshotBeforeMetrics?.stabilityScore ?? "n/a"}</p>
                   </div>
                   <div className="rounded-md border border-primary/20 bg-primary/5 p-2">
                     <p className="text-xs text-muted-foreground">Score after</p>
-                    <p className="mt-1 font-mono text-sm">{latestProposal.candidateStabilityScore ?? latestProposal.afterMetrics?.stabilityScore ?? "not tested"}</p>
+                    <p className="mt-1 font-mono text-sm">{latestProposal.candidateStabilityScore ?? snapshotAfterMetrics?.stabilityScore ?? "not tested"}</p>
                   </div>
                 </div>
                 <div className="mt-3 space-y-2 text-xs text-primary">
@@ -858,10 +967,10 @@ export function SelfImprovementView() {
                 </div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                   {[
-                    ["Win rate", formatPercent(latestProposal.beforeMetrics.winRate, 1), latestProposal.afterMetrics ? formatPercent(latestProposal.afterMetrics.winRate, 1) : "not tested"],
-                    ["Average R", `${formatNumber(latestProposal.beforeMetrics.averageR)}R`, latestProposal.afterMetrics ? `${formatNumber(latestProposal.afterMetrics.averageR)}R` : "not tested"],
-                    ["Max drawdown", `${formatNumber(latestProposal.beforeMetrics.maxDrawdown)}R`, latestProposal.afterMetrics ? `${formatNumber(latestProposal.afterMetrics.maxDrawdown)}R` : "not tested"],
-                    ["Trades", String(latestProposal.beforeMetrics.totalTrades), latestProposal.afterMetrics ? String(latestProposal.afterMetrics.totalTrades) : "not tested"]
+                    ["Win rate", snapshotBeforeMetrics ? formatPercent(snapshotBeforeMetrics.winRate, 1) : "n/a", snapshotAfterMetrics ? formatPercent(snapshotAfterMetrics.winRate, 1) : "not tested"],
+                    ["Average R", snapshotBeforeMetrics ? `${formatNumber(snapshotBeforeMetrics.averageR)}R` : "n/a", snapshotAfterMetrics ? `${formatNumber(snapshotAfterMetrics.averageR)}R` : "not tested"],
+                    ["Max drawdown", snapshotBeforeMetrics ? `${formatNumber(snapshotBeforeMetrics.maxDrawdown)}R` : "n/a", snapshotAfterMetrics ? `${formatNumber(snapshotAfterMetrics.maxDrawdown)}R` : "not tested"],
+                    ["Trades", String(snapshotBeforeMetrics?.totalTrades ?? "n/a"), snapshotAfterMetrics ? String(snapshotAfterMetrics.totalTrades) : "not tested"]
                   ].map(([label, beforeValue, afterValue]) => (
                     <div key={label} className="rounded-md border border-cyan-200/20 bg-cyan-200/5 p-2">
                       <p className="text-xs text-cyan-100/70">{label}</p>
@@ -882,7 +991,7 @@ export function SelfImprovementView() {
                   Sample guard: after-metrics should keep at least {tradeQualitySampleMinimum} trades. If it falls below that,
                   treat the proposal as a follow-up candidate, not an approval-ready calibration.
                 </p>
-                {latestProposal.afterMetrics ? (
+                {snapshotAfterMetrics ? (
                   <p className={`mt-2 rounded-md border p-2 text-xs ${
                     tradeQualityWinRateImproved && tradeQualityAverageRImproved
                       ? "border-emerald-200/20 bg-emerald-200/5 text-emerald-100"
@@ -908,33 +1017,33 @@ export function SelfImprovementView() {
       <div className="grid gap-5 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Simulation Test Result</CardTitle>
-            <CardDescription>Candidate settings are tested against deterministic mock candle validation.</CardDescription>
+            <CardTitle>Original Proposal Snapshot</CardTitle>
+            <CardDescription>Default view uses the canonical metrics captured when this proposal was created.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <MetricsGrid metrics={latestProposal?.afterMetrics} />
+            <MetricsGrid metrics={snapshotAfterMetrics} />
           </CardContent>
         </Card>
 
         <Card className="xl:col-span-2">
           <CardHeader>
             <CardTitle>Before/After Comparison</CardTitle>
-            <CardDescription>Promotion requires stability improvement, not merely higher profit.</CardDescription>
+            <CardDescription>Promotion requires stability improvement, not merely higher profit. Values come from the original proposal snapshot.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <ComparisonTable before={latestProposal?.beforeMetrics} after={latestProposal?.afterMetrics} />
+            <ComparisonTable before={snapshotBeforeMetrics} after={snapshotAfterMetrics} />
             <div className="rounded-lg border border-border bg-background/45 p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">Comparison</span>
-                <Badge variant={verdictVariant(latestProposal?.comparisonResult?.promotionVerdict)}>
-                  {formatToken(latestProposal?.comparisonResult?.promotionVerdict)}
+                <Badge variant={verdictVariant(snapshotComparisonResult?.promotionVerdict)}>
+                  {formatToken(snapshotComparisonResult?.promotionVerdict)}
                 </Badge>
               </div>
-              <p className="text-muted-foreground">{latestProposal?.comparisonResult?.summary ?? "Run a simulation test to compare."}</p>
+              <p className="text-muted-foreground">{snapshotComparisonResult?.summary ?? "Run a simulation test to compare."}</p>
             </div>
-            {latestProposal?.comparisonResult && (
+            {snapshotComparisonResult && (
               <>
-                {safeArray(latestProposal.comparisonResult.criticalRegressions).length ? (
+                {safeArray(snapshotComparisonResult.criticalRegressions).length ? (
                   <div className="rounded-lg border border-red-300/30 bg-red-300/10 p-3 text-sm text-red-50">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
@@ -946,7 +1055,7 @@ export function SelfImprovementView() {
                       <Badge variant="danger">blocked</Badge>
                     </div>
                     <ul className="mt-3 space-y-1 text-xs">
-                      {safeArray(latestProposal.comparisonResult.criticalRegressions).map((item) => <li key={item}>{item}</li>)}
+                      {safeArray(snapshotComparisonResult.criticalRegressions).map((item) => <li key={item}>{item}</li>)}
                     </ul>
                   </div>
                 ) : null}
@@ -954,28 +1063,28 @@ export function SelfImprovementView() {
                   <div className="rounded-lg border border-emerald-300/25 bg-emerald-300/10 p-3">
                     <p className="mb-2 font-medium text-emerald-100">Improved metrics</p>
                     <ul className="space-y-1 text-xs text-emerald-50">
-                      {safeArray(latestProposal.comparisonResult.improvedMetrics).map((item) => <li key={item}>{item}</li>)}
-                      {!safeArray(latestProposal.comparisonResult.improvedMetrics).length && <li>No clear improvement.</li>}
+                      {safeArray(snapshotComparisonResult.improvedMetrics).map((item) => <li key={item}>{item}</li>)}
+                      {!safeArray(snapshotComparisonResult.improvedMetrics).length && <li>No clear improvement.</li>}
                     </ul>
                   </div>
                   <div className="rounded-lg border border-red-300/25 bg-red-300/10 p-3">
                     <p className="mb-2 font-medium text-red-100">Worsened metrics</p>
                     <ul className="space-y-1 text-xs text-red-50">
-                      {safeArray(latestProposal.comparisonResult.worsenedMetrics).map((item) => <li key={item}>{item}</li>)}
-                      {!safeArray(latestProposal.comparisonResult.worsenedMetrics).length && <li>No material regression.</li>}
+                      {safeArray(snapshotComparisonResult.worsenedMetrics).map((item) => <li key={item}>{item}</li>)}
+                      {!safeArray(snapshotComparisonResult.worsenedMetrics).length && <li>No material regression.</li>}
                     </ul>
                   </div>
                   <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3">
                     <p className="mb-2 font-medium text-amber-100">Sanity checks</p>
                     <ul className="space-y-1 text-xs text-amber-50">
-                      {safeArray(latestProposal.comparisonResult.sanityWarnings).map((item) => <li key={item}>{item}</li>)}
-                      {!safeArray(latestProposal.comparisonResult.sanityWarnings).length && <li>No suspicious metric pattern found.</li>}
+                      {safeArray(snapshotComparisonResult.sanityWarnings).map((item) => <li key={item}>{item}</li>)}
+                      {!safeArray(snapshotComparisonResult.sanityWarnings).length && <li>No suspicious metric pattern found.</li>}
                     </ul>
                   </div>
                   <div className="rounded-lg border border-cyan-300/25 bg-cyan-300/10 p-3">
                     <p className="mb-2 font-medium text-cyan-100">Recommended follow-up</p>
                     <p className="text-xs text-cyan-50">
-                      {latestProposal.comparisonResult.followUpSearchDirection ??
+                      {snapshotComparisonResult.followUpSearchDirection ??
                         "No follow-up required by the current promotion guard. Approval is still manual."}
                     </p>
                   </div>
@@ -1066,6 +1175,39 @@ export function SelfImprovementView() {
           </div>
         </CardContent>
       </Card>
+
+      <TechnicalDetails
+        title="View proposal metric diagnostics"
+        description="Open for the canonical snapshot IDs and storage trace used to keep Dashboard, Auto Research, and Self-Improvement aligned."
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle>Canonical Proposal Snapshot Diagnostics</CardTitle>
+            <CardDescription>
+              These values should match the Dashboard proposal link and the Auto Research source candidate for the same proposal ID.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
+            {[
+              ["Dashboard proposal ID", latestCycleRun?.createdProposalId ?? generatedProposalId ?? "none"],
+              ["Self-Improvement proposal ID", latestProposal?.proposalId ?? "none"],
+              ["Source candidate ID", latestProposal?.metricsSnapshot?.sourceCandidateId ?? latestProposal?.sourceCandidateId ?? "none"],
+              ["Source cycle ID", latestProposal?.metricsSnapshot?.sourceCycleId ?? latestCycleRun?.autoResearchCycle?.cycleId ?? latestCycleRun?.cycleId ?? "none"],
+              ["Metric snapshot timestamp", formatDate(latestProposal?.metricsSnapshot?.generatedAt)],
+              ["Data source", latestProposal?.metricsSnapshot?.dataSource ?? latestCycleRun?.dataSourceLabel ?? "unknown"],
+              ["Candle window", latestProposal?.metricsSnapshot?.candleWindow ?? "missing"],
+              ["Active calibration used", latestProposal?.metricsSnapshot?.activeCalibrationIdUsed ?? "none"],
+              ["Mismatch status", proposalMismatchReasons.length ? proposalMismatchReasons.join(" ") : proposalHasMaterialChange ? "none" : "no material metric change"],
+              ["Source candidate available", sourceCandidateForLatestProposal ? "yes" : "no"]
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+                <p className="mt-1 break-words font-mono text-xs text-foreground">{value}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </TechnicalDetails>
 
       <TechnicalDetails
         title="View proposal history"

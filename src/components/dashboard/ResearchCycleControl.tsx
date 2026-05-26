@@ -159,6 +159,7 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
   const [advancedFullResearchMode, setAdvancedFullResearchMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const latestRun = activeRun ?? latestResearchCycleRun(cycleState);
+  const latestProposalSnapshot = latestRun?.latestGeneratedProposal?.metricsSnapshot ?? latestRun?.autoResearchCycle?.createdProposal?.metricsSnapshot;
   const importedSafeMode = activeCandleSource.mode === "imported" && !advancedFullResearchMode;
   const effectiveSearchMode = importedSafeMode ? "quick" : searchMode;
   const selectedSearchMode = dashboardSearchModes.find((mode) => mode.value === effectiveSearchMode) ?? dashboardSearchModes[0];
@@ -503,6 +504,40 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
             <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
               <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Blockers</p>
               <p className="mt-1 font-semibold text-slate-100">{actualBlockers.length}</p>
+            </div>
+          </div>
+        ) : null}
+
+        {latestProposalSnapshot ? (
+          <div className="rounded-lg border border-cyan-300/25 bg-cyan-300/10 p-3 text-sm text-cyan-100">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-medium">Canonical proposal metrics snapshot</p>
+                <p className="mt-1 break-all font-mono text-xs">{latestProposalSnapshot.proposalId}</p>
+              </div>
+              <Badge variant="secondary">source aligned</Badge>
+            </div>
+            <div className="mt-3 grid gap-2 md:grid-cols-4">
+              <div className="rounded-md border border-cyan-200/20 bg-cyan-200/5 p-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">Source candidate</p>
+                <p className="mt-1 break-all font-mono text-xs">{latestProposalSnapshot.sourceCandidateId ?? "n/a"}</p>
+              </div>
+              <div className="rounded-md border border-cyan-200/20 bg-cyan-200/5 p-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">Trades</p>
+                <p className="mt-1 font-mono">
+                  {latestProposalSnapshot.beforeMetrics.totalTrades} {"->"} {latestProposalSnapshot.afterMetrics?.totalTrades ?? "n/a"}
+                </p>
+              </div>
+              <div className="rounded-md border border-cyan-200/20 bg-cyan-200/5 p-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">Average R</p>
+                <p className="mt-1 font-mono">
+                  {latestProposalSnapshot.beforeMetrics.averageR.toFixed(2)}R {"->"} {latestProposalSnapshot.afterMetrics?.averageR.toFixed(2) ?? "n/a"}R
+                </p>
+              </div>
+              <div className="rounded-md border border-cyan-200/20 bg-cyan-200/5 p-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">Window</p>
+                <p className="mt-1 text-xs">{latestProposalSnapshot.candleWindow ?? "n/a"}</p>
+              </div>
             </div>
           </div>
         ) : null}

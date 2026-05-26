@@ -119,6 +119,10 @@ export function createSelfImprovementFromCandidate({
     comparisonResult,
     baselineConfig,
     proposedConfig: candidate.config,
-    approvalRequired: true
+    approvalRequired: true,
+    sourceCandidateId: candidate.candidateId,
+    sourceCandidateLabel: candidate.label,
+    baselineStabilityScore: baselineMetrics.stabilityScore,
+    candidateStabilityScore: candidate.metrics.stabilityScore
   };
 }

@@ -14,6 +14,9 @@ type SelfImprovementStatusCardProps = {
 
 export function SelfImprovementStatusCard({ proposal }: SelfImprovementStatusCardProps) {
   const status = proposal?.status ?? "none";
+  const before = proposal?.metricsSnapshot?.beforeMetrics ?? proposal?.beforeMetrics;
+  const after = proposal?.metricsSnapshot?.afterMetrics ?? proposal?.afterMetrics;
+  const comparison = proposal?.metricsSnapshot?.comparisonResult ?? proposal?.comparisonResult;
 
   return (
     <Card className="border-white/10 bg-slate-950/70">
@@ -39,10 +42,13 @@ export function SelfImprovementStatusCard({ proposal }: SelfImprovementStatusCar
         <div className="rounded-md border border-white/10 bg-white/[0.03] p-3">
           <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Before / after summary</div>
           <div className="mt-2 grid gap-3 text-sm sm:grid-cols-3">
-            <Metric label="Average R" value={`${formatR(proposal?.beforeMetrics.averageR)} → ${formatR(proposal?.afterMetrics?.averageR)}`} />
-            <Metric label="Drawdown" value={`${formatR(proposal?.beforeMetrics.maxDrawdown)} → ${formatR(proposal?.afterMetrics?.maxDrawdown)}`} />
-            <Metric label="Result" value={proposal?.comparisonResult?.recommendation ?? "Not tested"} />
+            <Metric label="Average R" value={`${formatR(before?.averageR)} -> ${formatR(after?.averageR)}`} />
+            <Metric label="Drawdown" value={`${formatR(before?.maxDrawdown)} -> ${formatR(after?.maxDrawdown)}`} />
+            <Metric label="Result" value={comparison?.recommendation ?? "Not tested"} />
           </div>
+          <p className="mt-2 text-xs text-slate-500">
+            {proposal?.metricsSnapshot ? "Using canonical proposal snapshot." : "No canonical snapshot stored yet."}
+          </p>
         </div>
         <Link to="/self-improvement">
           <Button variant="secondary" className="w-full justify-between">

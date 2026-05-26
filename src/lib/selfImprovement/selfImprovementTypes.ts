@@ -76,6 +76,20 @@ export interface CalibrationComparisonResult {
   followUpSearchDirection?: string;
 }
 
+export interface CalibrationProposalMetricsSnapshot {
+  proposalId: string;
+  sourceCycleId?: string;
+  sourceCandidateId?: string;
+  beforeMetrics: CalibrationProposalMetrics;
+  afterMetrics?: CalibrationProposalMetrics;
+  comparisonResult?: CalibrationComparisonResult;
+  generatedAt: string;
+  dataSource?: string;
+  candleWindow?: string;
+  searchMode?: string;
+  activeCalibrationIdUsed?: string;
+}
+
 export interface CalibrationProposal {
   proposalId: string;
   timestamp: string;
@@ -94,6 +108,7 @@ export interface CalibrationProposal {
   beforeMetrics: CalibrationProposalMetrics;
   afterMetrics?: CalibrationProposalMetrics;
   comparisonResult?: CalibrationComparisonResult;
+  metricsSnapshot?: CalibrationProposalMetricsSnapshot;
   baselineConfig: ResolvedBacktestConfig;
   proposedConfig: ResolvedBacktestConfig;
   testedAt?: string;
