@@ -1,4 +1,4 @@
-import { loadBacktestConfig } from "@/lib/backtesting";
+import { resolveActiveBacktestConfig } from "@/lib/selfImprovement";
 import {
   GO_TRADER_HANDOFF_MODE,
   GO_TRADER_HANDOFF_SCHEMA_VERSION,
@@ -20,7 +20,7 @@ interface CreateGoTraderHandoffOptions {
 
 export function createGoTraderHandoff(thesis: TradeThesis, options: CreateGoTraderHandoffOptions = {}): GoTraderHandoff {
   const timestamp = options.timestamp ?? new Date().toISOString();
-  const backtestConfig = loadBacktestConfig();
+  const backtestConfig = resolveActiveBacktestConfig().config;
   const replayBacktestMetadata: GoTraderHandoffReplayBacktestMetadata = {
     sourceModule: options.replayBacktestMetadata?.sourceModule ?? "research_workbench",
     mockDataOnly: true,

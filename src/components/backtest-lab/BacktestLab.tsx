@@ -18,7 +18,6 @@ import {
   defaultBacktestAgentWeights,
   diagnoseTradeGeneration,
   describeBacktestConfig,
-  loadBacktestConfig,
   resetBacktestConfig,
   runBacktest,
   sanitizeBacktestConfig,
@@ -29,7 +28,8 @@ import { mockCandles } from "@/lib/mockData/mockCandles";
 import {
   ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
   clearActiveResearchCalibration,
-  loadActiveResearchCalibration
+  loadActiveResearchCalibration,
+  resolveActiveBacktestConfig
 } from "@/lib/selfImprovement";
 import type { FuturesSymbol, MarketRegime, Timeframe } from "@/lib/types";
 import { formatPercent, formatSigned } from "@/lib/utils";
@@ -87,8 +87,9 @@ const biasVariant = (bias?: string) => {
 };
 
 export function BacktestLab() {
-  const [draftConfig, setDraftConfig] = useState<ResolvedBacktestConfig>(() => loadBacktestConfig());
-  const [result, setResult] = useState(() => runBacktest(mockCandles, loadBacktestConfig()));
+  const [configResolution, setConfigResolution] = useState(() => resolveActiveBacktestConfig());
+  const [draftConfig, setDraftConfig] = useState<ResolvedBacktestConfig>(() => resolveActiveBacktestConfig().config);
+  const [result, setResult] = useState(() => runBacktest(mockCandles, resolveActiveBacktestConfig().config));
   const [activeCalibration, setActiveCalibration] = useState(() => loadActiveResearchCalibration());
   const summary = result.summary;
   const zeroTradeDiagnostics = summary.totalTrades === 0
@@ -124,28 +125,36 @@ export function BacktestLab() {
 
   const run = () => {
     const saved = saveBacktestConfig(draftConfig);
-    setDraftConfig(saved);
-    setResult(runBacktest(mockCandles, saved));
+    const resolved = resolveActiveBacktestConfig(saved);
+    setConfigResolution(resolved);
+    setDraftConfig(resolved.config);
+    setResult(runBacktest(mockCandles, resolved.config));
   };
 
   const saveOnly = () => {
-    setDraftConfig(saveBacktestConfig(draftConfig));
+    const saved = saveBacktestConfig(draftConfig);
+    const resolved = resolveActiveBacktestConfig(saved);
+    setConfigResolution(resolved);
+    setDraftConfig(resolved.config);
   };
 
   const reset = () => {
     clearActiveResearchCalibration("Reset Backtest Lab to the default simulation baseline.");
     const next = resetBacktestConfig();
+    const resolved = resolveActiveBacktestConfig(next);
     setActiveCalibration(loadActiveResearchCalibration());
-    setDraftConfig(next);
-    setResult(runBacktest(mockCandles, next));
+    setConfigResolution(resolved);
+    setDraftConfig(resolved.config);
+    setResult(runBacktest(mockCandles, resolved.config));
   };
 
   useEffect(() => {
     const refresh = () => {
       setActiveCalibration(loadActiveResearchCalibration());
-      const latestConfig = loadBacktestConfig();
-      setDraftConfig(latestConfig);
-      setResult(runBacktest(mockCandles, latestConfig));
+      const resolved = resolveActiveBacktestConfig();
+      setConfigResolution(resolved);
+      setDraftConfig(resolved.config);
+      setResult(runBacktest(mockCandles, resolved.config));
     };
     window.addEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
@@ -181,7 +190,7 @@ export function BacktestLab() {
               <p className="font-medium">Active approved calibration</p>
               <p className="mt-1">
                 {activeCalibration.approvedCalibrationId} is active. Current confluence threshold{" "}
-                {(activeCalibration.activeConfigAfter.minimumConfluenceThreshold * 100).toFixed(0)}%.
+                {(configResolution.config.minimumConfluenceThreshold * 100).toFixed(0)}%.
               </p>
             </div>
             <Button variant="secondary" onClick={reset}>
@@ -190,6 +199,31 @@ export function BacktestLab() {
           </CardContent>
         </Card>
       ) : null}
+
+      <TechnicalDetails
+        title="Active config diagnostics"
+        description="Open to verify the saved baseline, active calibration patch, and final threshold used by the backtest."
+      >
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {[
+            ["Merge status", configResolution.mergeStatusLabel],
+            ["Default threshold", `${(configResolution.defaultConfluenceThreshold * 100).toFixed(0)}%`],
+            ["Saved threshold", `${(configResolution.savedConfluenceThreshold * 100).toFixed(0)}%`],
+            ["Final backtest threshold", `${(configResolution.finalBacktestConfluenceThreshold * 100).toFixed(0)}%`]
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-lg border border-border bg-background/45 p-3">
+              <p className="text-xs text-muted-foreground">{label}</p>
+              <p className="mt-1 font-mono text-sm text-foreground">{value}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 rounded-lg border border-border bg-background/45 p-3 text-xs text-muted-foreground">
+          <div>Active ID: {configResolution.activeCalibrationId ?? "none"}</div>
+          <div>Source trace: {configResolution.sourceTrace.join(" + ")}</div>
+          <div>Patch: {JSON.stringify(configResolution.appliedPatch ?? {})}</div>
+          {configResolution.mergeError ? <div className="text-amber-100">Merge warning: {configResolution.mergeError}</div> : null}
+        </div>
+      </TechnicalDetails>
 
       <TechnicalDetails
         title="View validation guide"

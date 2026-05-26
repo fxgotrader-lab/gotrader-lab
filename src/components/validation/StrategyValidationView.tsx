@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ValidationGuideCard } from "@/components/validation/ValidationGuideCard";
 import { mockCandles } from "@/lib/mockData/mockCandles";
+import { resolveActiveBacktestConfig } from "@/lib/selfImprovement";
 import {
   loadLatestValidationReport,
   runValidationSuite,
@@ -45,6 +46,7 @@ const topAgentFor = (scenario: ValidationScenarioResult) =>
 export function StrategyValidationView() {
   const [report, setReport] = useState<ValidationSuiteReport | undefined>(() => loadLatestValidationReport());
   const [isRunning, setIsRunning] = useState(false);
+  const activeResolution = useMemo(() => resolveActiveBacktestConfig(), [report?.id]);
 
   const suiteStats = useMemo(() => {
     if (!report) {
@@ -60,7 +62,7 @@ export function StrategyValidationView() {
 
   const runSuite = () => {
     setIsRunning(true);
-    const nextReport = runValidationSuite(mockCandles);
+    const nextReport = runValidationSuite(mockCandles, activeResolution.config);
     saveLatestValidationReport(nextReport);
     setReport(nextReport);
     setIsRunning(false);
@@ -90,6 +92,13 @@ export function StrategyValidationView() {
       </div>
 
       <SafetyLockBanner message="Simulation validation only. Mock OHLC only. No broker connection and no real trades." />
+
+      <Card className="border-primary/20 bg-primary/10">
+        <CardContent className="p-4 text-sm text-primary">
+          Active validation baseline: confluence {(activeResolution.finalBacktestConfluenceThreshold * 100).toFixed(0)}%.
+          Config merge: {activeResolution.mergeStatusLabel}.
+        </CardContent>
+      </Card>
 
       <TechnicalDetails
         title="View validation methodology"

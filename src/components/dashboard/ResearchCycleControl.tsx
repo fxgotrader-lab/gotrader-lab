@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, CircleDashed, Loader2, Play, ShieldCheck } from "lucide-react";
 
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
+import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +18,8 @@ import {
 import type { ResearchCycleRun, ResearchCycleStepResult, ResearchCycleStepStatus } from "@/lib/researchCycle";
 import {
   ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
-  loadActiveResearchCalibration
+  loadActiveResearchCalibration,
+  resolveActiveBacktestConfig
 } from "@/lib/selfImprovement";
 import type { LabState } from "@/lib/types";
 import { safeArray, safeTopN } from "@/lib/utils";
@@ -73,6 +75,7 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
   const [cycleState, setCycleState] = useState(() => loadResearchCycleState());
   const [activeRun, setActiveRun] = useState<ResearchCycleRun>();
   const [activeCalibration, setActiveCalibration] = useState(() => loadActiveResearchCalibration());
+  const [activeConfigResolution, setActiveConfigResolution] = useState(() => resolveActiveBacktestConfig());
   const [searchMode, setSearchMode] = useState<AutoResearchSearchMode>("standard");
   const [busy, setBusy] = useState(false);
   const latestRun = activeRun ?? latestResearchCycleRun(cycleState);
@@ -85,6 +88,7 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
     const refresh = () => {
       setCycleState(loadResearchCycleState());
       setActiveCalibration(loadActiveResearchCalibration());
+      setActiveConfigResolution(resolveActiveBacktestConfig());
     };
     window.addEventListener(RESEARCH_CYCLE_UPDATED_EVENT, refresh);
     window.addEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
@@ -121,6 +125,8 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
       });
       setActiveRun(result);
       setCycleState(loadResearchCycleState());
+      setActiveCalibration(loadActiveResearchCalibration());
+      setActiveConfigResolution(resolveActiveBacktestConfig());
       onCycleUpdate?.();
     } finally {
       setBusy(false);
@@ -246,16 +252,28 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
         ) : null}
 
         {activeCalibration ? (
-          <div className="rounded-lg border border-emerald-300/25 bg-emerald-300/10 p-3 text-sm text-emerald-100">
+          <div className={`rounded-lg border p-3 text-sm ${
+            activeConfigResolution.activeCalibrationApplied
+              ? "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
+              : "border-amber-300/25 bg-amber-300/10 text-amber-100"
+          }`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="font-medium">Using approved research baseline</p>
+                <p className="font-medium">
+                  {activeConfigResolution.activeCalibrationApplied
+                    ? "Using approved research baseline"
+                    : "Approved calibration exists but was not merged"}
+                </p>
                 <p className="mt-1">
                   Active calibration: {activeCalibration.approvedCalibrationId}. Active confluence threshold{" "}
-                  {(activeCalibration.activeConfigAfter.minimumConfluenceThreshold * 100).toFixed(0)}%.
+                  {(activeConfigResolution.finalBacktestConfluenceThreshold * 100).toFixed(0)}%. Config merge:{" "}
+                  {activeConfigResolution.mergeStatusLabel}.
                 </p>
+                {activeConfigResolution.mergeError ? <p className="mt-1">{activeConfigResolution.mergeError}</p> : null}
               </div>
-              <Badge variant="success">approved calibration</Badge>
+              <Badge variant={activeConfigResolution.activeCalibrationApplied ? "success" : "warning"}>
+                approved calibration
+              </Badge>
             </div>
           </div>
         ) : null}
@@ -306,9 +324,14 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
               </div>
               <div className="rounded-md border border-amber-200/20 bg-amber-200/5 p-2">
                 <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Config merge</p>
-                <p className="mt-1">{latestRun.activeCalibrationApplied ? "active calibration applied" : "default baseline"}</p>
+                <p className="mt-1">{latestRun.activeCalibrationMergeLabel ?? (latestRun.activeCalibrationApplied ? "active calibration applied" : "default baseline")}</p>
               </div>
             </div>
+            {latestRun.activeCalibrationId && !latestRun.activeCalibrationApplied ? (
+              <div className="mt-3 rounded-md border border-amber-200/20 bg-amber-200/5 p-2 text-xs text-amber-100">
+                Approved calibration exists but was not merged. Check the active patch and storage summary before creating another proposal.
+              </div>
+            ) : null}
             <p className="mt-3 text-xs text-amber-100/80">
               Next action: {safeArray(latestRun.backtestDiagnostics)[0]?.suggestedFix ?? "Run bounded recovery in Auto Research, then rerun validation."}
             </p>
@@ -365,6 +388,32 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
           <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Recommended next action</p>
           <p className="mt-1">{latestRun?.nextRecommendedAction ?? "Start with a research cycle, then review any warnings or proposals."}</p>
         </div>
+
+        <TechnicalDetails
+          title="Active calibration diagnostics"
+          description="Open to inspect active patch storage and the final threshold used by dashboard research cycles."
+        >
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {[
+              ["Stored active ID", activeConfigResolution.activeCalibrationId ?? "none"],
+              ["Default threshold", `${(activeConfigResolution.defaultConfluenceThreshold * 100).toFixed(0)}%`],
+              ["Saved threshold", `${(activeConfigResolution.savedConfluenceThreshold * 100).toFixed(0)}%`],
+              ["Resolved threshold", `${(activeConfigResolution.finalBacktestConfluenceThreshold * 100).toFixed(0)}%`]
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-white/10 bg-slate-950/45 p-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">{label}</p>
+                <p className="mt-1 break-words font-mono text-sm text-slate-100">{value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 rounded-lg border border-white/10 bg-slate-950/45 p-3 text-xs text-slate-400">
+            <div>Merge status: {activeConfigResolution.mergeStatusLabel}</div>
+            <div>Source trace: {activeConfigResolution.sourceTrace.join(" + ")}</div>
+            <div>Active patch: {JSON.stringify(activeConfigResolution.appliedPatch ?? {})}</div>
+            <div>Last run final threshold: {latestRun?.finalBacktestConfluenceThreshold !== undefined ? `${(latestRun.finalBacktestConfluenceThreshold * 100).toFixed(0)}%` : "n/a"}</div>
+            {activeConfigResolution.mergeError ? <div className="text-amber-100">Merge warning: {activeConfigResolution.mergeError}</div> : null}
+          </div>
+        </TechnicalDetails>
       </CardContent>
     </Card>
   );

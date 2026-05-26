@@ -8,11 +8,13 @@ export {
   loadActiveResearchCalibration,
   loadSelfImprovementState,
   rejectCalibrationProposal,
+  resolveActiveBacktestConfig,
   resolveActiveResearchConfig,
   revertCalibrationProposal,
   saveApprovedResearchCalibration,
   saveSelfImprovementState,
   SELF_IMPROVEMENT_STORAGE_KEY,
+  ACTIVE_RESEARCH_CALIBRATION_STORAGE_KEY,
   SELF_IMPROVEMENT_UPDATED_EVENT,
   upsertCalibrationProposal
 } from "@/lib/selfImprovement/approveCalibrationProposal";
@@ -25,6 +27,8 @@ export {
 } from "@/lib/selfImprovement/evaluateCalibrationProposal";
 export type {
   ActiveResearchCalibration,
+  ActiveBacktestConfigMergeStatus,
+  ActiveBacktestConfigResolution,
   CalibrationComparisonRecommendation,
   CalibrationComparisonResult,
   CalibrationProposal,

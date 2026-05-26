@@ -2,7 +2,6 @@ import { compactAutoResearchCycle, runAutoResearchCycle } from "@/lib/autoResear
 import type { AutoResearchCandidateResult } from "@/lib/autoResearch";
 import {
   diagnoseTradeGeneration,
-  loadBacktestConfig,
   runBacktest,
   sanitizeBacktestConfig,
   topTradeGenerationDiagnostic
@@ -42,7 +41,7 @@ import {
 import type { SimulationRunbookSignal } from "@/lib/simulationRunbook";
 import {
   loadSelfImprovementState,
-  resolveActiveResearchConfig
+  resolveActiveBacktestConfig
 } from "@/lib/selfImprovement";
 import { labStorage } from "@/lib/storage";
 import type { LabState, ThesisInput, TradeThesis } from "@/lib/types";
@@ -334,9 +333,7 @@ export async function runResearchCycle({
   let steps = initialSteps();
   let workingState: LabState = labStorage.load() ?? state;
   const cycleId = uid("research_cycle");
-  const config = loadBacktestConfig();
-  const optionConfig = backtestConfig ? sanitizeBacktestConfig({ ...config, ...backtestConfig }) : config;
-  const activeResearchConfig = resolveActiveResearchConfig(optionConfig);
+  const activeResearchConfig = resolveActiveBacktestConfig(backtestConfig ? sanitizeBacktestConfig(backtestConfig) : undefined);
   const activeConfig = activeResearchConfig.config;
   const run: ResearchCycleRun = {
     cycleId,
@@ -344,10 +341,17 @@ export async function runResearchCycle({
     status: "running",
     steps,
     llmBridgeAvailable: false,
-    activeCalibrationId: activeResearchConfig.activeResearchCalibration?.approvedCalibrationId,
+    activeCalibrationId: activeResearchConfig.activeCalibrationId,
     activeCalibrationApprovedAt: activeResearchConfig.activeResearchCalibration?.approvedAt,
     activeCalibrationApplied: activeResearchConfig.activeCalibrationApplied,
-    activeCalibrationPatch: activeResearchConfig.activeResearchCalibration?.appliedConfigPatch,
+    activeCalibrationPatch: activeResearchConfig.appliedPatch,
+    activeCalibrationMergeStatus: activeResearchConfig.mergeStatus,
+    activeCalibrationMergeLabel: activeResearchConfig.mergeStatusLabel,
+    activeCalibrationMergeError: activeResearchConfig.mergeError,
+    activeCalibrationSourceTrace: activeResearchConfig.sourceTrace,
+    defaultConfluenceThreshold: activeResearchConfig.defaultConfluenceThreshold,
+    savedConfluenceThreshold: activeResearchConfig.savedConfluenceThreshold,
+    finalBacktestConfluenceThreshold: activeResearchConfig.finalBacktestConfluenceThreshold,
     activeConfluenceThreshold: activeConfig.minimumConfluenceThreshold,
     nextRecommendedAction: "Research cycle is running.",
     resultSummary: "Research cycle is running.",
@@ -442,8 +446,8 @@ export async function runResearchCycle({
             topDiagnostic?.explanation ??
             "No simulated trades were generated. Auto Research will try bounded trade-generation recovery.",
           detail: topDiagnostic
-            ? `${topDiagnostic.reasonCode.replace(/_/g, " ")}: ${topDiagnostic.suggestedFix} Active threshold used ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%; calibration merge ${activeResearchConfig.activeCalibrationApplied ? "applied" : "not active"}.`
-            : `Auto Research will try threshold, session, direction, stop-model, and resolution-window recovery candidates. Active threshold used ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%; calibration merge ${activeResearchConfig.activeCalibrationApplied ? "applied" : "not active"}.`
+            ? `${topDiagnostic.reasonCode.replace(/_/g, " ")}: ${topDiagnostic.suggestedFix} Active threshold used ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%; config merge: ${activeResearchConfig.mergeStatusLabel}. ${activeResearchConfig.mergeError ?? ""}`.trim()
+            : `Auto Research will try threshold, session, direction, stop-model, and resolution-window recovery candidates. Active threshold used ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%; config merge: ${activeResearchConfig.mergeStatusLabel}. ${activeResearchConfig.mergeError ?? ""}`.trim()
         });
       } else {
         passStep("backtest", {

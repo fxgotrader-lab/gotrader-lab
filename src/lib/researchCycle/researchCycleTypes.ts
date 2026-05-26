@@ -125,6 +125,13 @@ export interface ResearchCycleRun {
   activeCalibrationApprovedAt?: string;
   activeCalibrationApplied?: boolean;
   activeCalibrationPatch?: CalibrationProposalChanges;
+  activeCalibrationMergeStatus?: string;
+  activeCalibrationMergeLabel?: string;
+  activeCalibrationMergeError?: string;
+  activeCalibrationSourceTrace?: string[];
+  defaultConfluenceThreshold?: number;
+  savedConfluenceThreshold?: number;
+  finalBacktestConfluenceThreshold?: number;
   activeConfluenceThreshold?: number;
   validationSummary?: ResearchCycleValidationSummary;
   researchQualitySummary?: ResearchCycleQualitySummary;

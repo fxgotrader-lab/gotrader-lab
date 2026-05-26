@@ -111,6 +111,31 @@ export interface ActiveResearchCalibration {
   activeConfigAfter: ResolvedBacktestConfig;
 }
 
+export type ActiveBacktestConfigMergeStatus =
+  | "no_active_calibration"
+  | "active_calibration_applied"
+  | "active_calibration_missing_patch"
+  | "active_calibration_merge_failed";
+
+export interface ActiveBacktestConfigResolution {
+  config: ResolvedBacktestConfig;
+  defaultConfig: ResolvedBacktestConfig;
+  savedConfig: ResolvedBacktestConfig;
+  preCalibrationConfig: ResolvedBacktestConfig;
+  activeResearchCalibration?: ActiveResearchCalibration;
+  activeCalibrationId?: string;
+  activeCalibrationApplied: boolean;
+  activeConfluenceThreshold: number;
+  defaultConfluenceThreshold: number;
+  savedConfluenceThreshold: number;
+  finalBacktestConfluenceThreshold: number;
+  appliedPatch?: CalibrationProposalChanges;
+  mergeStatus: ActiveBacktestConfigMergeStatus;
+  mergeStatusLabel: string;
+  mergeError?: string;
+  sourceTrace: string[];
+}
+
 export interface SelfImprovementAuditEntry {
   id: string;
   timestamp: string;

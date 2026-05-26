@@ -64,6 +64,7 @@ import {
 import {
   ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
   loadSelfImprovementState,
+  resolveActiveBacktestConfig,
   SELF_IMPROVEMENT_UPDATED_EVENT
 } from "@/lib/selfImprovement";
 import type { ICTScoringWeights, LabState } from "@/lib/types";
@@ -104,6 +105,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const [simulationRunbook, setSimulationRunbook] = useState(() => loadSimulationRunbookState());
   const [readinessApproval, setReadinessApproval] = useState(() => loadManualApprovalRecord());
   const [selfImprovementState, setSelfImprovementState] = useState(() => loadSelfImprovementState());
+  const [activeBacktestResolution, setActiveBacktestResolution] = useState(() => resolveActiveBacktestConfig());
   const [llmResearchState, setLlmResearchState] = useState(() => loadLLMResearchState());
   const [autoResearchState, setAutoResearchState] = useState(() => loadAutoResearchState());
   const latestHandoffExport = state.handoffExports?.[0];
@@ -115,7 +117,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const lastAcceptedSelfImprovementProposal = selfImprovementState.proposals.find(
     (proposal) => proposal.proposalId === selfImprovementState.lastAcceptedProposalId
   );
-  const activeResearchCalibration = selfImprovementState.activeResearchCalibration;
+  const activeResearchCalibration = activeBacktestResolution.activeResearchCalibration ?? selfImprovementState.activeResearchCalibration;
   const latestLLMRun = latestLLMAdvisoryRun(llmResearchState);
   const llmProviderStatus = providerStatusForMode(llmResearchState.providerMode);
   const latestAutoResearch = latestAutoResearchCycle(autoResearchState);
@@ -173,7 +175,10 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   }, []);
 
   useEffect(() => {
-    const refreshSelfImprovement = () => setSelfImprovementState(loadSelfImprovementState());
+    const refreshSelfImprovement = () => {
+      setSelfImprovementState(loadSelfImprovementState());
+      setActiveBacktestResolution(resolveActiveBacktestConfig());
+    };
     window.addEventListener(SELF_IMPROVEMENT_UPDATED_EVENT, refreshSelfImprovement);
     window.addEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refreshSelfImprovement);
     window.addEventListener("storage", refreshSelfImprovement);
@@ -568,9 +573,10 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
                 <div>
                   Confluence:{" "}
                   {activeResearchCalibration
-                    ? `${(activeResearchCalibration.activeConfigAfter.minimumConfluenceThreshold * 100).toFixed(0)}%`
+                    ? `${(activeBacktestResolution.finalBacktestConfluenceThreshold * 100).toFixed(0)}%`
                     : "default baseline"}
                 </div>
+                <div>Merge: {activeBacktestResolution.mergeStatusLabel}</div>
                 <div>Approved: {activeResearchCalibration?.approvedAt ?? "n/a"}</div>
               </div>
             </div>

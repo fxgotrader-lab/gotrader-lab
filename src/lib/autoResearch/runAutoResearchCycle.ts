@@ -38,7 +38,7 @@ import type { ReadinessGateSnapshot } from "@/lib/readiness";
 import {
   compareProposalToBaseline,
   loadActiveResearchCalibration,
-  resolveActiveResearchConfig,
+  resolveActiveBacktestConfig,
   summarizeValidationMetrics,
   upsertCalibrationProposal
 } from "@/lib/selfImprovement";
@@ -743,8 +743,12 @@ const duplicateActiveCalibrationMessage = (
   proposal: CalibrationProposal,
   activeCalibration = loadActiveResearchCalibration()
 ) =>
-  activeCalibration && patchesMatch(proposal.proposedChanges, activeCalibration.appliedConfigPatch)
-    ? "Approved calibration is already active; further improvement requires a different adjustment."
+  activeCalibration &&
+  (patchesMatch(proposal.proposedChanges, activeCalibration.appliedConfigPatch) ||
+    (proposal.targetProblem === "trade_generation_blocked" &&
+      proposal.proposedChanges.confluenceThreshold !== undefined &&
+      activeCalibration.appliedConfigPatch.confluenceThreshold !== undefined))
+    ? "Approved confluence calibration is already active; trade generation remains blocked, so a different adjustment is needed."
     : undefined;
 
 const candidateImprovedForResearch = (
@@ -882,7 +886,7 @@ const createResearchCalibrationCandidateProposal = ({
 export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResearchCycle {
   const cycleId = uid("auto_cycle");
   try {
-    const activeResearchConfig = resolveActiveResearchConfig(loadBacktestConfig());
+    const activeResearchConfig = resolveActiveBacktestConfig();
     const baselineConfig = activeResearchConfig.config;
     const baselineBacktest = runBacktest(mockCandles, baselineConfig);
     const tradesBeforeRecovery = baselineBacktest.summary.totalTrades;
@@ -1167,7 +1171,7 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       cycleId,
       timestamp: new Date().toISOString(),
       searchMode: options.searchMode,
-      baselineConfig: loadBacktestConfig(),
+      baselineConfig: resolveActiveBacktestConfig().config,
       candidateConfigs: [],
       candidateResults: [],
       closestCandidates: [],

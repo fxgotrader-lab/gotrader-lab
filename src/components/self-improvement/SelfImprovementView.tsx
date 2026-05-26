@@ -15,12 +15,13 @@ import {
   evaluateCalibrationProposal,
   loadSelfImprovementState,
   rejectCalibrationProposal,
+  resolveActiveBacktestConfig,
   revertCalibrationProposal,
   SELF_IMPROVEMENT_UPDATED_EVENT,
   upsertCalibrationProposal
 } from "@/lib/selfImprovement";
 import type { CalibrationProposal, CalibrationProposalMetrics, SelfImprovementState } from "@/lib/selfImprovement";
-import { describeBacktestConfig, loadBacktestConfig } from "@/lib/backtesting";
+import { describeBacktestConfig } from "@/lib/backtesting";
 import { labStorage } from "@/lib/storage";
 import { formatPercent } from "@/lib/utils";
 import { loadLatestResearchQualityReview } from "@/lib/researchQuality";
@@ -292,10 +293,11 @@ export function SelfImprovementView() {
   const [actionMessage, setActionMessage] = useState("");
   const latestValidation = loadLatestValidationReport();
   const latestQuality = loadLatestResearchQualityReview();
-  const baselineConfig = useMemo(
-    () => loadBacktestConfig(),
+  const baselineResolution = useMemo(
+    () => resolveActiveBacktestConfig(),
     [state.latestProposalId, state.lastAcceptedProposalId, state.activeResearchCalibration?.approvedAt]
   );
+  const baselineConfig = baselineResolution.config;
   const latestAdvisory = labStorage.load().advisoryResponses?.[0];
   const latestProposal = state.proposals.find((proposal) => proposal.proposalId === state.latestProposalId) ?? state.proposals[0];
   const effectiveProposalIntent =
@@ -443,6 +445,11 @@ export function SelfImprovementView() {
           <CardContent className="space-y-3">
             <div className="rounded-lg border border-border bg-background/45 p-3 font-mono text-sm text-slate-200">
               {describeBacktestConfig(baselineConfig)}
+            </div>
+            <div className="rounded-lg border border-emerald-300/20 bg-emerald-300/10 p-3 text-xs text-emerald-100">
+              Config merge: {baselineResolution.mergeStatusLabel}. Final confluence threshold{" "}
+              {(baselineResolution.finalBacktestConfluenceThreshold * 100).toFixed(0)}%.
+              {baselineResolution.activeCalibrationId ? ` Applied to baseline: ${baselineResolution.activeCalibrationId}.` : ""}
             </div>
             <div className="grid gap-2 md:grid-cols-3">
               {[

@@ -5,8 +5,9 @@ import { MetricCard } from "@/components/MetricCard";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { describeBacktestConfig, loadBacktestConfig, runBacktest } from "@/lib/backtesting";
+import { describeBacktestConfig, runBacktest } from "@/lib/backtesting";
 import { mockCandles } from "@/lib/mockData/mockCandles";
+import { resolveActiveBacktestConfig } from "@/lib/selfImprovement";
 import { aggregatePortfolioMetrics, identifyWeakestAgent } from "@/lib/scoring";
 import type { LabState } from "@/lib/types";
 import { formatPercent, formatSigned } from "@/lib/utils";
@@ -24,7 +25,7 @@ const biasVariant = (bias?: string) => {
 export function PerformanceView({ state }: { state: LabState }) {
   const metrics = aggregatePortfolioMetrics(state);
   const weakest = identifyWeakestAgent(state);
-  const activeBacktestConfig = useMemo(() => loadBacktestConfig(), []);
+  const activeBacktestConfig = useMemo(() => resolveActiveBacktestConfig().config, []);
   const backtest = useMemo(() => runBacktest(mockCandles, activeBacktestConfig), [activeBacktestConfig]);
   const backtestSummary = backtest.summary;
   const chartData = state.agents

@@ -22,7 +22,11 @@ import type {
   AutoResearchSearchMode,
   AutoResearchState
 } from "@/lib/autoResearch";
-import { describeBacktestConfig, loadBacktestConfig } from "@/lib/backtesting";
+import { describeBacktestConfig } from "@/lib/backtesting";
+import {
+  ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
+  resolveActiveBacktestConfig
+} from "@/lib/selfImprovement";
 import { formatPercent, formatSigned, safeArray, safeTopN } from "@/lib/utils";
 
 const searchModeOptions = autoResearchSearchModes.map((mode) => ({
@@ -151,7 +155,9 @@ export function AutoResearchView() {
   const [searchMode, setSearchMode] = useState<AutoResearchSearchMode>("standard");
   const [maxCandidateCount, setMaxCandidateCount] = useState("10");
   const [isRunning, setIsRunning] = useState(false);
-  const baselineConfig = useMemo(() => loadBacktestConfig(), [state.latestCycleId]);
+  const [configRefreshKey, setConfigRefreshKey] = useState(0);
+  const baselineResolution = useMemo(() => resolveActiveBacktestConfig(), [state.latestCycleId, configRefreshKey]);
+  const baselineConfig = baselineResolution.config;
   const latestCycle = latestAutoResearchCycle(state);
   const bestCandidate = latestCycle?.bestCandidate;
   const topCandidates = latestCycle?.closestCandidates?.length
@@ -174,11 +180,16 @@ export function AutoResearchView() {
   );
 
   useEffect(() => {
-    const refresh = () => setState(loadAutoResearchState());
+    const refresh = () => {
+      setState(loadAutoResearchState());
+      setConfigRefreshKey((value) => value + 1);
+    };
     window.addEventListener(AUTO_RESEARCH_UPDATED_EVENT, refresh);
+    window.addEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
       window.removeEventListener(AUTO_RESEARCH_UPDATED_EVENT, refresh);
+      window.removeEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
   }, []);
@@ -262,6 +273,11 @@ export function AutoResearchView() {
           <CardContent className="space-y-4">
             <div className="rounded-lg border border-border bg-background/45 p-3 font-mono text-sm text-slate-200">
               {describeBacktestConfig(baselineConfig)}
+            </div>
+            <div className="rounded-lg border border-border bg-background/45 p-3 text-xs text-muted-foreground">
+              Config merge: {baselineResolution.mergeStatusLabel}. Final confluence threshold{" "}
+              {(baselineResolution.finalBacktestConfluenceThreshold * 100).toFixed(0)}%.
+              {baselineResolution.activeCalibrationId ? ` Active calibration ${baselineResolution.activeCalibrationId}.` : ""}
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-2">

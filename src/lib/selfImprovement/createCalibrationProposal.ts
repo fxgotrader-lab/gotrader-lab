@@ -14,6 +14,7 @@ import {
   applyProposalChangesToConfig,
   summarizeValidationMetrics
 } from "@/lib/selfImprovement/evaluateCalibrationProposal";
+import { resolveActiveBacktestConfig } from "@/lib/selfImprovement/approveCalibrationProposal";
 import type {
   CalibrationProposal,
   CalibrationProposalChanges,
@@ -170,7 +171,7 @@ const reasonFor = (targetProblem: CalibrationTargetProblem) => {
 };
 
 export function createCalibrationProposal(source: CalibrationProposalSource = "openclaw"): CalibrationProposal {
-  const currentConfig = safeConfig(loadBacktestConfig() ?? defaultBacktestConfig);
+  const currentConfig = safeConfig(resolveActiveBacktestConfig().config ?? loadBacktestConfig() ?? defaultBacktestConfig);
   const validationReport = loadLatestValidationReport() ?? runValidationSuite(mockCandles, currentConfig);
   const beforeMetrics = summarizeValidationMetrics(validationReport);
   const targetProblem = detectTargetProblem();

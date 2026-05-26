@@ -10,13 +10,13 @@ import {
   describeBacktestConfig,
   getReplayFrame,
   jumpReplay,
-  loadBacktestConfig,
   runBacktest,
   setReplayPlaying,
   stepReplay
 } from "@/lib/backtesting";
 import type { BacktestResult } from "@/lib/backtesting";
 import { mockCandles } from "@/lib/mockData/mockCandles";
+import { resolveActiveBacktestConfig } from "@/lib/selfImprovement";
 import type { Candle, MarketBias, TradeThesis } from "@/lib/types";
 import { formatPercent, formatSigned } from "@/lib/utils";
 
@@ -176,7 +176,7 @@ function ReplayControls({ result, isAtEnd, onSetState }: {
 }
 
 export function ReplayView() {
-  const activeConfig = useMemo(() => loadBacktestConfig(), []);
+  const activeConfig = useMemo(() => resolveActiveBacktestConfig().config, []);
   const backtest = useMemo(() => runBacktest(mockCandles, activeConfig), [activeConfig]);
   const [replayState, setReplayState] = useState(() => createReplayState(backtest));
   const frame = useMemo(() => getReplayFrame(backtest, replayState), [backtest, replayState]);
