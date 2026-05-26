@@ -1,6 +1,7 @@
 import { compactAutoResearchCycle, runAutoResearchCycle } from "@/lib/autoResearch";
 import type { AutoResearchCandidateResult } from "@/lib/autoResearch";
 import {
+  auditAgentDebateSession,
   auditAutoResearchDecision,
   auditCioSynthesis,
   auditReadinessGate,
@@ -8,6 +9,11 @@ import {
   buildAgentAuditTraces,
   saveAgentAuditTraces
 } from "@/lib/agentAudit";
+import {
+  runAgentDebateSession,
+  saveAgentDebateSession,
+  type AgentDebateSession
+} from "@/lib/agentDebate";
 import {
   diagnoseTradeGeneration,
   runBacktest,
@@ -32,6 +38,7 @@ import type {
   ResearchCycleBacktestSummary,
   ResearchCycleCandidateSummary,
   ResearchCycleQualitySummary,
+  ResearchCycleAgentDebateSummary,
   ResearchCycleRun,
   ResearchCycleRunOptions,
   ResearchCycleState,
@@ -230,6 +237,15 @@ const summarizeCandidate = (candidate?: AutoResearchCandidateResult): ResearchCy
       }
     : undefined;
 
+const summarizeAgentDebateConsensus = (session: AgentDebateSession): ResearchCycleAgentDebateSummary => ({
+  sessionId: session.sessionId,
+  consensusReached: session.moderatorOutput.consensusReached,
+  position: session.moderatorOutput.position,
+  probability: session.moderatorOutput.probability,
+  strongestDisagreement: session.moderatorOutput.disagreements[0] ?? "No major disagreement recorded.",
+  minorityView: session.moderatorOutput.minorityView
+});
+
 const compactLLMRun = (run?: LLMAdvisoryRun): LLMAdvisoryRun | undefined =>
   run
     ? {
@@ -402,9 +418,18 @@ export async function runResearchCycle({
   try {
     startStep("thesis_generation");
     let generatedThesis: ReturnType<typeof generateThesis> | undefined;
+    let structuredDebateSession: AgentDebateSession | undefined;
     let latestSelfImprovementProposal: CalibrationProposal | undefined;
     try {
       generatedThesis = generateThesis(thesisInputFor(activeConfig, cycleId), workingState);
+      structuredDebateSession = runAgentDebateSession({
+        thesis: generatedThesis.thesis,
+        sourceDebate: generatedThesis.debateSession,
+        mode: "deterministic_fallback",
+        roundCount: 2,
+        consensusThreshold: 3
+      });
+      saveAgentDebateSession(structuredDebateSession);
       workingState = {
         ...workingState,
         debateSessions: [generatedThesis.debateSession, ...safeArray(workingState.debateSessions)],
@@ -413,9 +438,10 @@ export async function runResearchCycle({
       };
       labStorage.save(workingState);
       run.thesisSummary = summarizeThesis(generatedThesis.thesis, generatedThesis.debateSession.id);
+      run.agentDebateConsensus = summarizeAgentDebateConsensus(structuredDebateSession);
       passStep("thesis_generation", {
         summary: `${generatedThesis.thesis.symbol} ${generatedThesis.thesis.timeframe} thesis generated: ${generatedThesis.thesis.finalBias}.`,
-        detail: `ICT ${generatedThesis.thesis.ictContext.bias}, confluence ${Math.round(generatedThesis.thesis.ictContext.confluenceScore * 100)}%, CIO confidence ${Math.round(generatedThesis.thesis.confidence * 100)}%. Active confluence threshold ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%.`
+        detail: `ICT ${generatedThesis.thesis.ictContext.bias}, confluence ${Math.round(generatedThesis.thesis.ictContext.confluenceScore * 100)}%, CIO confidence ${Math.round(generatedThesis.thesis.confidence * 100)}%. Debate consensus ${structuredDebateSession.moderatorOutput.consensusReached ? structuredDebateSession.moderatorOutput.position : "flat/no consensus"}. Active confluence threshold ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%.`
       });
     } catch (error) {
       failStep("thesis_generation", error instanceof Error ? error.message : "Research thesis generation failed.");
@@ -703,6 +729,7 @@ export async function runResearchCycle({
         llmRun: run.llmRun
       }),
       ...auditCioSynthesis(generatedThesis.thesis, generatedThesis.debateSession.messages),
+      ...auditAgentDebateSession(structuredDebateSession),
       ...auditAutoResearchDecision(autoResearchCycle),
       ...auditSelfImprovementDecision(latestSelfImprovementProposal),
       ...auditReadinessGate(readinessSnapshot)

@@ -14,6 +14,7 @@ export {
 } from "@/lib/agentAudit/auditAgentDecision";
 export { auditCioSynthesis } from "@/lib/agentAudit/auditCioSynthesis";
 export { auditAutoResearchDecision } from "@/lib/agentAudit/auditAutoResearchDecision";
+export { auditAgentDebateSession } from "@/lib/agentAudit/auditAgentDebate";
 export { auditSelfImprovementDecision } from "@/lib/agentAudit/auditSelfImprovementDecision";
 export { auditReadinessGate } from "@/lib/agentAudit/auditReadinessGate";
 export type {

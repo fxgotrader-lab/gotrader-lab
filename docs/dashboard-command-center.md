@@ -1,6 +1,6 @@
 # GoTrader AI Lab Dashboard Command Center
 
-The `/dashboard` page is the main monitoring and approval center for GoTrader AI Lab. It summarizes the full research loop in one place: LLM advisory review, auto-research configuration search, validation, research quality review, self-improvement proposals, readiness gating, simulation bridge checks, and safety locks.
+The `/dashboard` page is the main monitoring and approval center for GoTrader AI Lab. It summarizes the full research loop in one place: LLM advisory review, structured agent debate, auto-research configuration search, validation, research quality review, self-improvement proposals, readiness gating, simulation bridge checks, and safety locks.
 
 ## Purpose
 
@@ -22,6 +22,10 @@ Shows the fixed safety posture:
 ### LLM Agent Status
 
 Shows whether the required LLM advisory layer has produced a valid advisory-only review. Real research mode requires LLM advisory review before Paper-Demo Candidate can be reached. LLM agents cannot execute trades, approve trades, or override readiness gates.
+
+### Agent Debate Consensus
+
+Shows the latest structured debate moderation result. Agents publish opening statements, challenge or support each other, may update confidence, and the moderator declares consensus or flat/no consensus. Deterministic facts remain immutable and minority views stay visible.
 
 ### Auto Research Status
 
@@ -97,16 +101,17 @@ If all research checks pass, the dashboard still reminds the user not to proceed
 The dashboard includes a single safe control: **Run AI Research Cycle**. It runs the research workflow in order:
 
 1. Generate or refresh the research thesis with ICT context and CIO synthesis.
-2. Run a mock-data backtest with the active Backtest Lab config.
-3. Try the local LLM advisory bridge.
-4. Continue with deterministic simulation steps if the bridge is unavailable.
-5. Run multi-pass Auto Research configuration search.
-6. Run the validation suite.
-7. Run research quality review.
-8. Check for an approval-required self-improvement proposal.
-9. Update the simulation runbook with the research pipeline timestamp without marking scheduler verification checks.
-10. Recompute readiness without applying overrides.
-11. Log the result into the in-app communications audit trail.
+2. Run a structured agent debate and store moderator consensus.
+3. Run a mock-data backtest with the active Backtest Lab config.
+4. Try the local LLM advisory bridge.
+5. Continue with deterministic simulation steps if the bridge is unavailable.
+6. Run multi-pass Auto Research configuration search.
+7. Run the validation suite.
+8. Run research quality review.
+9. Check for an approval-required self-improvement proposal.
+10. Update the simulation runbook with the research pipeline timestamp without marking scheduler verification checks.
+11. Recompute readiness without applying overrides.
+12. Log the result into the in-app communications audit trail.
 
 If the local LLM bridge is not running, the cycle records a warning and continues only through safe simulation steps. It does not mark LLM advisory as passed. Any calibration proposal created by Auto Research remains approval-required and does not change active settings automatically.
 

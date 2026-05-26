@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowRight, ClipboardCheck, ExternalLink, MessageSquareText, Route, Sparkles } from "lucide-react";
+import { ArrowRight, ClipboardCheck, ExternalLink, MessageSquareText, MessagesSquare, Route, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { loadAgentAuditState, summarizeAgentAudit } from "@/lib/agentAudit";
+import { loadAgentDebateState, summarizeAgentDebate } from "@/lib/agentDebate";
 import {
   latestAutoResearchCycle,
   loadAutoResearchState,
@@ -73,6 +74,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
   const latestHandoff = state.handoffExports[0];
   const communicationSummary = getCommunicationSummary(loadCommunicationMessages());
   const agentAuditSummary = summarizeAgentAudit(loadAgentAuditState());
+  const agentDebateSummary = summarizeAgentDebate(loadAgentDebateState());
 
   const recommendedAction = getRecommendedAction({
     completedRunbookItems,
@@ -152,6 +154,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
 
       <div className="grid gap-5 xl:grid-cols-2">
         <AICommunicationsCard summary={communicationSummary} />
+        <AgentDebateCard summary={agentDebateSummary} />
         <AgentAuditCard summary={agentAuditSummary} />
         <LLMAgentStatusCard latestRun={latestLLMRun} providerStatus={providerStatus} state={llmState} />
         <AutoResearchStatusCard cycle={latestAutoResearch} />
@@ -194,6 +197,42 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
         </div>
       </TechnicalDetails>
     </div>
+  );
+}
+
+function AgentDebateCard({ summary }: { summary: ReturnType<typeof summarizeAgentDebate> }) {
+  return (
+    <Card className="border-white/10 bg-slate-950/70">
+      <CardHeader className="flex flex-row items-start justify-between gap-3">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base text-slate-100">
+            <MessagesSquare className="h-4 w-4 text-cyan-300" aria-hidden="true" />
+            Agent Debate Consensus
+          </CardTitle>
+          <p className="mt-1 text-xs text-slate-500">Moderator consensus from opening statements and debate rounds.</p>
+        </div>
+        <Badge variant={summary.consensusReached ? "success" : "warning"}>
+          {summary.consensusReached ? "Consensus" : "Flat/no consensus"}
+        </Badge>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 text-sm sm:grid-cols-2">
+          <StatusLine label="Position" value={summary.position} />
+          <StatusLine label="Probability" value={`${Math.round(summary.probability * 100)}%`} />
+          <StatusLine label="Strongest disagreement" value={summary.strongestDisagreement} />
+          <StatusLine label="Minority view" value={summary.minorityView} />
+        </div>
+        <div className="rounded-md border border-cyan-400/20 bg-cyan-400/5 p-3 text-xs text-cyan-100">
+          Debate interprets immutable facts only. No consensus means flat/no thesis.
+        </div>
+        <Link to="/agent-debate">
+          <Button variant="secondary" className="w-full justify-between">
+            Open debate layer
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </Link>
+      </CardContent>
+    </Card>
   );
 }
 

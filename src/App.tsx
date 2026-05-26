@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AgentDetail } from "@/components/agents/AgentDetail";
 import { AgentRoster } from "@/components/agents/AgentRoster";
 import { AgentAuditView } from "@/components/agent-audit/AgentAuditView";
+import { AgentDebateView } from "@/components/agent-debate/AgentDebateView";
 import { AdvisoryAgentsView } from "@/components/advisory/AdvisoryAgentsView";
 import { AppShell } from "@/components/AppShell";
 import { AutoResearchView } from "@/components/auto-research/AutoResearchView";
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="/dashboard" element={<ResearchCommandCenter state={state} />} />
         <Route path="/communications" element={<AICommunicationsView />} />
         <Route path="/agent-audit" element={<AgentAuditView />} />
+        <Route path="/agent-debate" element={<AgentDebateView />} />
         <Route path="/agents" element={<AgentRoster state={state} />} />
         <Route path="/agents/:id" element={<AgentDetail state={state} />} />
         <Route path="/research" element={<ResearchWorkbench state={state} actions={actions} />} />

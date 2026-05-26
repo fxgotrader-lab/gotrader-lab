@@ -1,4 +1,5 @@
 import type { AutoResearchCycle } from "@/lib/autoResearch";
+import type { AgentDebateSession } from "@/lib/agentDebate";
 import type { LLMAdvisoryRun } from "@/lib/llm";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
 import type { CalibrationProposal } from "@/lib/selfImprovement";
@@ -7,6 +8,7 @@ import type { AgentDebateMessage, MarketBias, TradeThesis } from "@/lib/types";
 export type AgentDecisionType =
   | "deterministic_agent"
   | "cio_synthesis"
+  | "agent_debate"
   | "llm_advisory"
   | "auto_research_selector"
   | "self_improvement_proposal"
@@ -55,6 +57,7 @@ export interface AgentAuditSourceContext {
   thesis?: TradeThesis;
   debateMessages?: AgentDebateMessage[];
   llmRun?: LLMAdvisoryRun;
+  agentDebateSession?: AgentDebateSession;
   autoResearchCycle?: AutoResearchCycle;
   proposal?: CalibrationProposal;
   readiness?: ReadinessGateSnapshot;

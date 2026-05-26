@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select } from "@/components/ui/select";
 import {
   AGENT_AUDIT_UPDATED_EVENT,
+  auditAgentDebateSession,
   auditAutoResearchDecision,
   auditCioSynthesis,
   auditReadinessGate,
@@ -20,6 +21,7 @@ import {
   saveAgentAuditTraces,
   summarizeAgentAudit
 } from "@/lib/agentAudit";
+import { latestAgentDebateSession, loadAgentDebateState } from "@/lib/agentDebate";
 import type { AgentAuditVerdict, AgentDecisionTrace } from "@/lib/agentAudit";
 import { latestAutoResearchCycle, loadAutoResearchState } from "@/lib/autoResearch";
 import { latestLLMAdvisoryRun, loadLLMResearchState } from "@/lib/llm";
@@ -61,6 +63,7 @@ function createTracesFromCurrentState() {
   });
   const latestCycle = latestResearchCycleRun();
   const autoResearchCycle = latestCycle?.autoResearchCycle ?? latestAutoResearchCycle(loadAutoResearchState());
+  const agentDebateSession = latestAgentDebateSession(loadAgentDebateState());
 
   return [
     ...buildAgentAuditTraces({
@@ -69,6 +72,7 @@ function createTracesFromCurrentState() {
       llmRun: latestLLMAdvisoryRun(loadLLMResearchState())
     }),
     ...auditCioSynthesis(latestThesis, latestDebate?.messages ?? []),
+    ...auditAgentDebateSession(agentDebateSession),
     ...auditAutoResearchDecision(autoResearchCycle),
     ...auditSelfImprovementDecision(latestProposal),
     ...auditReadinessGate(readiness)

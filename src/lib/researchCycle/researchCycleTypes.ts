@@ -1,4 +1,5 @@
 import type { AutoResearchCycle, AutoResearchProgressSnapshot, AutoResearchSearchMode } from "@/lib/autoResearch";
+import type { DebatePosition } from "@/lib/agentDebate";
 import type { BacktestConfig, BacktestSummary, ResolvedBacktestConfig, TradeGenerationDiagnostic } from "@/lib/backtesting";
 import type { LLMAdvisoryRun } from "@/lib/llm";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
@@ -105,6 +106,15 @@ export interface ResearchCycleCandidateSummary {
   readinessEstimate: string;
 }
 
+export interface ResearchCycleAgentDebateSummary {
+  sessionId: string;
+  consensusReached: boolean;
+  position: DebatePosition;
+  probability: number;
+  strongestDisagreement: string;
+  minorityView: string;
+}
+
 export interface ResearchCycleRun {
   cycleId: string;
   startedAt: string;
@@ -136,6 +146,7 @@ export interface ResearchCycleRun {
   validationSummary?: ResearchCycleValidationSummary;
   researchQualitySummary?: ResearchCycleQualitySummary;
   bestCandidateSummary?: ResearchCycleCandidateSummary;
+  agentDebateConsensus?: ResearchCycleAgentDebateSummary;
   proposalStatus?: string;
   blockers?: string[];
   createdProposalId?: string;

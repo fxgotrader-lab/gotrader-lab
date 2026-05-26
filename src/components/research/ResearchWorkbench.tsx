@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Download, FileJson, FlaskConical, Play, ShieldAlert, Sparkles } from "lucide-react";
+import { Download, FileJson, FlaskConical, MessagesSquare, Play, ShieldAlert, Sparkles } from "lucide-react";
+import { Link } from "react-router-dom";
 import { BridgeStatusCard } from "@/components/bridge/BridgeStatusCard";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
@@ -212,6 +213,25 @@ export function ResearchWorkbench({ state, actions }: { state: LabState; actions
       </div>
 
       <BridgeStatusCard handoffExports={state.handoffExports ?? []} compact />
+
+      <Card className="border-cyan-400/20 bg-cyan-950/20">
+        <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-cyan-100">
+              <MessagesSquare className="h-4 w-4" aria-hidden="true" />
+              Structured Agent Debate
+            </div>
+            <p className="mt-1 text-xs text-cyan-100/70">
+              Optional moderator layer: agents challenge, support, concede, and preserve minority views before CIO review.
+            </p>
+          </div>
+          <Link to="/agent-debate">
+            <Button variant="secondary" className="w-full md:w-auto">
+              Open debate layer
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-5 xl:grid-cols-[0.82fr_1.18fr]">
         <Card>

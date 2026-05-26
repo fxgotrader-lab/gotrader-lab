@@ -13,6 +13,7 @@ import {
   GitBranch,
   LayoutDashboard,
   MessageSquareText,
+  MessagesSquare,
   RefreshCw,
   Settings,
   ShieldAlert,
@@ -26,6 +27,7 @@ import { cn } from "@/lib/utils";
 const navigation = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/communications", label: "Comms", icon: MessageSquareText },
+  { href: "/agent-debate", label: "Debate", icon: MessagesSquare },
   { href: "/agent-audit", label: "Audit", icon: ClipboardCheck },
   { href: "/agents", label: "Agents", icon: Bot },
   { href: "/research", label: "Research", icon: FlaskConical },
