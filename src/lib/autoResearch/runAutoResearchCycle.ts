@@ -145,7 +145,13 @@ const compactComparison = (comparison?: AutoResearchCandidateResult["comparisonR
         ...comparison,
         positiveChanges: safeTopN(comparison.positiveChanges, 3),
         negativeChanges: safeTopN(comparison.negativeChanges, 3),
-        neutralChanges: safeTopN(comparison.neutralChanges, 3)
+        neutralChanges: safeTopN(comparison.neutralChanges, 3),
+        improvedMetrics: safeTopN(comparison.improvedMetrics, 4),
+        worsenedMetrics: safeTopN(comparison.worsenedMetrics, 4),
+        criticalRegressions: safeTopN(comparison.criticalRegressions, 4),
+        sanityWarnings: safeTopN(comparison.sanityWarnings, 3),
+        promotionVerdict: comparison.promotionVerdict ?? "needs_follow_up",
+        followUpSearchDirection: comparison.followUpSearchDirection
       }
     : {
         improved: false,
@@ -154,7 +160,13 @@ const compactComparison = (comparison?: AutoResearchCandidateResult["comparisonR
         summary: "Comparison summary unavailable in compact stored history.",
         positiveChanges: [],
         negativeChanges: [],
-        neutralChanges: []
+        neutralChanges: [],
+        improvedMetrics: [],
+        worsenedMetrics: [],
+        criticalRegressions: [],
+        sanityWarnings: [],
+        promotionVerdict: "needs_follow_up" as const,
+        followUpSearchDirection: "Rerun Auto Research to regenerate full proposal diagnostics."
       };
 
 const compactCandidate = (candidate: AutoResearchCandidateResult): AutoResearchCandidateResult => {
@@ -500,15 +512,21 @@ const evaluateCandidate = (
   }
 };
 
-const shouldCreateProposal = (candidate?: AutoResearchCandidateResult) =>
-  Boolean(
+const shouldCreateProposal = (candidate?: AutoResearchCandidateResult) => {
+  const promotionVerdict = candidate?.comparisonResult?.promotionVerdict ?? "needs_follow_up";
+  return Boolean(
     candidate &&
       candidate.promotionEligible &&
       candidate.scoreBreakdown.stabilityImproved &&
       candidate.scoreBreakdown.sufficientSample &&
-      candidate.comparisonResult.stabilityImproved &&
+      candidate.comparisonResult?.improved &&
+      candidate.comparisonResult?.stabilityImproved &&
+      !safeArray(candidate.comparisonResult?.criticalRegressions).length &&
+      promotionVerdict !== "needs_follow_up" &&
+      promotionVerdict !== "reject" &&
       candidate.scoreBreakdown.totalScore >= 45
   );
+};
 
 const skippedSignalImbalanceFor = (candidate?: AutoResearchCandidateResult) => {
   const metrics = candidate?.metrics;
@@ -529,6 +547,7 @@ const diagnoseFailedGates = (
   const score = { ...fallbackScoreBreakdown(), ...(candidate.scoreBreakdown ?? {}) };
   const gates: AutoResearchFailedGate[] = [];
   const rejectionText = safeArray(candidate.rejectionReasons).join(" ").toLowerCase();
+  const criticalText = safeArray(candidate.comparisonResult?.criticalRegressions).join(" ").toLowerCase();
 
   if (metrics.maxDrawdown > Math.max(6, baselineMetrics.maxDrawdown + 1.5) || score.drawdownScore < 55) {
     gates.push("max_drawdown_too_high");
@@ -536,13 +555,19 @@ const diagnoseFailedGates = (
   if (metrics.falsePositiveCount > Math.max(6, baselineMetrics.falsePositiveCount + 3) || score.falsePositiveScore < 65) {
     gates.push("false_positives_too_high");
   }
-  if (metrics.averageR < baselineMetrics.averageR - 0.1 || score.averageRScore < 45) {
+  if (metrics.averageR < baselineMetrics.averageR - 0.1 || score.averageRScore < 45 || criticalText.includes("average r")) {
     gates.push("average_r_too_low");
   }
-  if (metrics.winRate < 0.36 || score.winRateScore < 45) {
+  if (metrics.winRate < 0.36 || score.winRateScore < 45 || criticalText.includes("win rate")) {
     gates.push("win_rate_too_low");
   }
-  if (!score.sufficientSample || metrics.totalTrades < 3 || rejectionText.includes("enough simulated trades")) {
+  if (
+    !score.sufficientSample ||
+    metrics.totalTrades < 3 ||
+    rejectionText.includes("enough simulated trades") ||
+    criticalText.includes("trade") ||
+    criticalText.includes("sample")
+  ) {
     gates.push("trade_count_too_low");
   }
   if (metrics.confidenceCalibration < 0.55 || score.confidenceCalibrationScore < 55) {
@@ -554,7 +579,7 @@ const diagnoseFailedGates = (
   if (!metrics.conservativeScenarioStable || rejectionText.includes("conservative scenario")) {
     gates.push("conservative_scenario_unstable");
   }
-  if (skippedSignalImbalanceFor(candidate) > 0.72 || score.skippedSignalBalanceScore < 45) {
+  if (skippedSignalImbalanceFor(candidate) > 0.72 || score.skippedSignalBalanceScore < 45 || criticalText.includes("skipped")) {
     gates.push("skipped_signal_imbalance");
   }
   if (
@@ -869,20 +894,25 @@ const duplicateActiveCalibrationMessage = (
 const candidateImprovedForResearch = (
   candidate: AutoResearchCandidateResult | undefined,
   baselineMetrics: CalibrationProposalMetrics
-) =>
-  Boolean(
+) => {
+  const promotionVerdict = candidate?.comparisonResult?.promotionVerdict ?? "needs_follow_up";
+  return Boolean(
     candidate &&
       candidate.resultCategory !== "unsafe_overfit" &&
       candidate.metrics.totalTrades > 0 &&
+      !safeArray(candidate.comparisonResult?.criticalRegressions).length &&
+      promotionVerdict !== "needs_follow_up" &&
+      promotionVerdict !== "reject" &&
       (candidate.resultCategory === "improved_but_not_ready" ||
         candidate.resultCategory === "research_ready_candidate" ||
         candidate.resultCategory === "research_ready" ||
         candidate.scoreBreakdown.stabilityImproved ||
-        candidate.comparisonResult.stabilityImproved ||
+        candidate.comparisonResult?.stabilityImproved ||
         candidate.metrics.totalTrades > baselineMetrics.totalTrades ||
         candidate.metrics.stabilityScore > baselineMetrics.stabilityScore ||
         candidate.metrics.averageR > baselineMetrics.averageR + 0.05)
   );
+};
 
 const improvementSummaryFor = (
   candidate: AutoResearchCandidateResult,

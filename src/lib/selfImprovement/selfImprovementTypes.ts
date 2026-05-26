@@ -24,6 +24,12 @@ export type CalibrationTargetProblem =
   | "trade_generation_blocked";
 
 export type CalibrationComparisonRecommendation = "accept" | "reject" | "keep_testing";
+export type CalibrationPromotionVerdict =
+  | "reject"
+  | "needs_follow_up"
+  | "research_candidate"
+  | "strong_research_candidate"
+  | "paper_demo_review_candidate";
 
 export interface CalibrationProposalChanges {
   confluenceThreshold?: number;
@@ -62,6 +68,12 @@ export interface CalibrationComparisonResult {
   positiveChanges: string[];
   negativeChanges: string[];
   neutralChanges: string[];
+  improvedMetrics: string[];
+  worsenedMetrics: string[];
+  criticalRegressions: string[];
+  sanityWarnings: string[];
+  promotionVerdict: CalibrationPromotionVerdict;
+  followUpSearchDirection?: string;
 }
 
 export interface CalibrationProposal {

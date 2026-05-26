@@ -449,6 +449,15 @@ export function AutoResearchView() {
                     No proposal was created because the best candidate did not clear the stability-first promotion gate.
                   </div>
                 )}
+                {safeArray(bestCandidate.comparisonResult?.criticalRegressions).length ? (
+                  <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+                    <p className="font-medium">Follow-up required before proposal promotion</p>
+                    <p className="mt-1">
+                      {bestCandidate.comparisonResult.followUpSearchDirection ??
+                        "Run a targeted follow-up search because the candidate has critical metric regressions."}
+                    </p>
+                  </div>
+                ) : null}
               </>
             ) : (
               <div className="rounded-lg border border-border bg-background/45 p-3 text-sm text-muted-foreground">

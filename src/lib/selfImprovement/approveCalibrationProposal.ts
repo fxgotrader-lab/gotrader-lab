@@ -18,7 +18,7 @@ import type {
   SelfImprovementAuditEntry,
   SelfImprovementState
 } from "@/lib/selfImprovement/selfImprovementTypes";
-import { uid } from "@/lib/utils";
+import { safeArray, uid } from "@/lib/utils";
 
 export const SELF_IMPROVEMENT_STORAGE_KEY = "gotrader_ai_lab_self_improvement_state";
 export const ACTIVE_RESEARCH_CALIBRATION_STORAGE_KEY = "gotrader_ai_lab_active_research_calibration";
@@ -345,6 +345,15 @@ export function canApproveProposal(proposal?: CalibrationProposal): ProposalAppr
   }
   if (!hasResearchImprovement(proposal)) {
     reasons.push("Proposal does not show trade-generation or stability improvement.");
+  }
+  if (safeArray(proposal.comparisonResult?.criticalRegressions).length) {
+    reasons.push("Proposal has critical metric regressions; run a targeted follow-up before approval.");
+  }
+  if (
+    proposal.comparisonResult?.promotionVerdict === "needs_follow_up" ||
+    proposal.comparisonResult?.promotionVerdict === "reject"
+  ) {
+    reasons.push(`Promotion verdict is ${proposal.comparisonResult.promotionVerdict.replace(/_/g, " ")}.`);
   }
 
   return {

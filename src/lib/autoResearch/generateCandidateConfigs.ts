@@ -576,6 +576,37 @@ export function generateAdaptiveCandidateConfigs({
     );
   }
 
+  if (
+    gateSet.has("average_r_too_low") &&
+    gateSet.has("win_rate_too_low") &&
+    !gateSet.has("max_drawdown_too_high")
+  ) {
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive balanced quality recovery",
+      "Drawdown improved but trade quality collapsed, so this keeps the lower-risk posture while slightly loosening confluence and confidence.",
+      { minimumConfluenceThreshold: looserConfluence, minimumConfidenceThreshold: looserConfidence },
+      ["confluenceThreshold", "confidenceThreshold"]
+    );
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive session quality recovery",
+      "Drawdown improved but win rate and average R weakened, so this tests whether a cleaner session restores trade quality.",
+      { sessionFilter: "London", minimumConfluenceThreshold: looserConfluence },
+      ["sessionFilter", "confluenceThreshold"]
+    );
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive stop-target quality recovery",
+      "Drawdown improved but average R weakened, so this tests stop and target balance without changing execution authority.",
+      { stopModel: "latest swing", targetRMultiple: round(Math.max(1.25, baseline.targetRMultiple - 0.25), 2) },
+      ["stopModel", "targetRMultiple"]
+    );
+  }
+
   if (gateSet.has("trade_count_too_low")) {
     pushAdaptiveCandidate(
       candidates,

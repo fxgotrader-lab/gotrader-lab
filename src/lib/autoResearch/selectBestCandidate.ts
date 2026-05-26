@@ -19,6 +19,7 @@ const rejectionReasonsFor = (
   const reasons: string[] = [];
   const score: AutoResearchScoreBreakdown = candidate.scoreBreakdown;
   const conservative = conservativeScenarioFor(candidate);
+  const promotionVerdict = candidate.comparisonResult?.promotionVerdict ?? "needs_follow_up";
   if (!score.stabilityImproved) {
     reasons.push("Stability did not improve versus baseline.");
   }
@@ -30,6 +31,12 @@ const rejectionReasonsFor = (
   }
   if (candidate.metrics.averageR < baselineMetrics.averageR - 0.1) {
     reasons.push("Average R weakened beyond tolerance.");
+  }
+  if (safeArray(candidate.comparisonResult?.criticalRegressions).length) {
+    reasons.push(...safeTopN(candidate.comparisonResult?.criticalRegressions, 3));
+  }
+  if (promotionVerdict === "needs_follow_up") {
+    reasons.push(candidate.comparisonResult?.followUpSearchDirection ?? "Candidate needs targeted follow-up before promotion.");
   }
   if (candidate.metrics.falsePositiveCount > Math.max(6, baselineMetrics.falsePositiveCount + 3)) {
     reasons.push("False positives too high.");
@@ -64,17 +71,22 @@ const categoryFor = (
       "Composite stability-first score is too low."
     ].includes(reason)
   );
+  const promotionVerdict = candidate.comparisonResult?.promotionVerdict ?? "needs_follow_up";
+  const hasCriticalRegression = safeArray(candidate.comparisonResult?.criticalRegressions).length > 0;
   const likelyOverfit =
     candidate.scoreBreakdown.totalScore >= 70 &&
     (candidate.metrics.totalTrades < 4 ||
       skippedSignalImbalanceFor(candidate) > 0.82 ||
-    candidate.metrics.maxDrawdown > baselineMetrics.maxDrawdown + 1.25);
+      candidate.metrics.maxDrawdown > baselineMetrics.maxDrawdown + 1.25);
 
   if (likelyOverfit) {
     return "unsafe_overfit";
   }
   if (hardFailures.length) {
     return "rejected";
+  }
+  if (hasCriticalRegression) {
+    return candidate.scoreBreakdown.stabilityImproved ? "improved_but_not_ready" : "rejected";
   }
   if (
     candidate.readinessEstimate?.state === "Paper-Demo Candidate" &&
@@ -89,7 +101,11 @@ const categoryFor = (
   ) {
     return "research_ready_candidate";
   }
-  if (candidate.scoreBreakdown.stabilityImproved && candidate.comparisonResult.stabilityImproved) {
+  if (
+    candidate.scoreBreakdown.stabilityImproved &&
+    candidate.comparisonResult?.stabilityImproved &&
+    promotionVerdict !== "reject"
+  ) {
     return "improved_but_not_ready";
   }
   return "rejected";
@@ -102,10 +118,15 @@ export function selectBestCandidate(
   const scored = safeArray(candidates).map((candidate) => {
     const rejectionReasons = rejectionReasonsFor(candidate, baselineMetrics);
     const resultCategory = categoryFor(candidate, baselineMetrics, rejectionReasons);
+    const promotionVerdict = candidate.comparisonResult?.promotionVerdict ?? "needs_follow_up";
     return {
       ...candidate,
       resultCategory,
-      promotionEligible: ["improved_but_not_ready", "research_ready", "research_ready_candidate", "paper_demo_candidate"].includes(resultCategory),
+      promotionEligible:
+        ["improved_but_not_ready", "research_ready", "research_ready_candidate", "paper_demo_candidate"].includes(resultCategory) &&
+        !safeArray(candidate.comparisonResult?.criticalRegressions).length &&
+        promotionVerdict !== "needs_follow_up" &&
+        promotionVerdict !== "reject",
       rejectionReasons
     };
   });

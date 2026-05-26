@@ -44,6 +44,17 @@ const statusVariant = (status?: string) =>
   status === "accepted" ? "success" : status === "rejected" || status === "reverted" ? "danger" : status === "testing" ? "warning" : "muted";
 const readinessVariant = (status?: string) =>
   status === "green" ? "success" : status === "yellow" ? "warning" : status === "red" ? "danger" : "muted";
+const verdictVariant = (verdict?: string) =>
+  verdict === "paper_demo_review_candidate" || verdict === "strong_research_candidate"
+    ? "success"
+    : verdict === "research_candidate"
+      ? "warning"
+      : verdict === "needs_follow_up"
+        ? "warning"
+        : verdict === "reject"
+          ? "danger"
+          : "muted";
+const formatToken = (value?: string) => (value ?? "not tested").replace(/_/g, " ");
 const deltaClass = (tone: "positive" | "negative" | "neutral") =>
   tone === "positive" ? "text-emerald-200" : tone === "negative" ? "text-red-200" : "text-muted-foreground";
 const deltaPrefix = (value: number) => (value > 0 ? "+" : "");
@@ -816,36 +827,61 @@ export function SelfImprovementView() {
             <div className="rounded-lg border border-border bg-background/45 p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">Comparison</span>
-                <Badge variant={latestProposal?.comparisonResult?.improved ? "success" : "warning"}>
-                  {latestProposal?.comparisonResult?.recommendation ?? "not tested"}
+                <Badge variant={verdictVariant(latestProposal?.comparisonResult?.promotionVerdict)}>
+                  {formatToken(latestProposal?.comparisonResult?.promotionVerdict)}
                 </Badge>
               </div>
               <p className="text-muted-foreground">{latestProposal?.comparisonResult?.summary ?? "Run a simulation test to compare."}</p>
             </div>
             {latestProposal?.comparisonResult && (
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-lg border border-emerald-300/25 bg-emerald-300/10 p-3">
-                  <p className="mb-2 font-medium text-emerald-100">Improved</p>
-                  <ul className="space-y-1 text-xs text-emerald-50">
-                    {latestProposal.comparisonResult.positiveChanges.map((item) => <li key={item}>{item}</li>)}
-                    {!latestProposal.comparisonResult.positiveChanges.length && <li>No clear positive change.</li>}
-                  </ul>
+              <>
+                {safeArray(latestProposal.comparisonResult.criticalRegressions).length ? (
+                  <div className="rounded-lg border border-red-300/30 bg-red-300/10 p-3 text-sm text-red-50">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="font-medium">Do not approve yet</p>
+                        <p className="mt-1 text-red-100/80">
+                          This proposal improved some stability metrics, but critical trade-quality regressions must be resolved first.
+                        </p>
+                      </div>
+                      <Badge variant="danger">blocked</Badge>
+                    </div>
+                    <ul className="mt-3 space-y-1 text-xs">
+                      {safeArray(latestProposal.comparisonResult.criticalRegressions).map((item) => <li key={item}>{item}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-lg border border-emerald-300/25 bg-emerald-300/10 p-3">
+                    <p className="mb-2 font-medium text-emerald-100">Improved metrics</p>
+                    <ul className="space-y-1 text-xs text-emerald-50">
+                      {safeArray(latestProposal.comparisonResult.improvedMetrics).map((item) => <li key={item}>{item}</li>)}
+                      {!safeArray(latestProposal.comparisonResult.improvedMetrics).length && <li>No clear improvement.</li>}
+                    </ul>
+                  </div>
+                  <div className="rounded-lg border border-red-300/25 bg-red-300/10 p-3">
+                    <p className="mb-2 font-medium text-red-100">Worsened metrics</p>
+                    <ul className="space-y-1 text-xs text-red-50">
+                      {safeArray(latestProposal.comparisonResult.worsenedMetrics).map((item) => <li key={item}>{item}</li>)}
+                      {!safeArray(latestProposal.comparisonResult.worsenedMetrics).length && <li>No material regression.</li>}
+                    </ul>
+                  </div>
+                  <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3">
+                    <p className="mb-2 font-medium text-amber-100">Sanity checks</p>
+                    <ul className="space-y-1 text-xs text-amber-50">
+                      {safeArray(latestProposal.comparisonResult.sanityWarnings).map((item) => <li key={item}>{item}</li>)}
+                      {!safeArray(latestProposal.comparisonResult.sanityWarnings).length && <li>No suspicious metric pattern found.</li>}
+                    </ul>
+                  </div>
+                  <div className="rounded-lg border border-cyan-300/25 bg-cyan-300/10 p-3">
+                    <p className="mb-2 font-medium text-cyan-100">Recommended follow-up</p>
+                    <p className="text-xs text-cyan-50">
+                      {latestProposal.comparisonResult.followUpSearchDirection ??
+                        "No follow-up required by the current promotion guard. Approval is still manual."}
+                    </p>
+                  </div>
                 </div>
-                <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3">
-                  <p className="mb-2 font-medium text-amber-100">Neutral</p>
-                  <ul className="space-y-1 text-xs text-amber-50">
-                    {latestProposal.comparisonResult.neutralChanges.map((item) => <li key={item}>{item}</li>)}
-                    {!latestProposal.comparisonResult.neutralChanges.length && <li>No neutral factors.</li>}
-                  </ul>
-                </div>
-                <div className="rounded-lg border border-red-300/25 bg-red-300/10 p-3">
-                  <p className="mb-2 font-medium text-red-100">Worse</p>
-                  <ul className="space-y-1 text-xs text-red-50">
-                    {latestProposal.comparisonResult.negativeChanges.map((item) => <li key={item}>{item}</li>)}
-                    {!latestProposal.comparisonResult.negativeChanges.length && <li>No material negative change.</li>}
-                  </ul>
-                </div>
-              </div>
+              </>
             )}
           </CardContent>
         </Card>
@@ -916,7 +952,7 @@ export function SelfImprovementView() {
               "Broker authority, execution authority, and readiness override authority must remain none.",
               "Proposal must include approved research/backtest setting changes.",
               "Proposal must include simulation metrics before acceptance.",
-              "Comparison must improve trade generation or stability, not merely profit.",
+              "Comparison must pass balanced guards for stability, trade quality, sample size, and readiness.",
               "Acceptance only updates local simulation calibration settings."
             ].map((item, index) => (
               <div key={item} className="flex items-center gap-3 rounded-lg border border-border bg-background/45 p-3 text-sm">
