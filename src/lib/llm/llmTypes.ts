@@ -84,6 +84,22 @@ export interface LLMSimulationRunbookSummary {
   positionsZero: boolean;
 }
 
+export interface LLMMarketContextSummary {
+  mode: "mock" | "planning_only" | "future_provider";
+  availableModules: string[];
+  missingModules: string[];
+  vwap?: number;
+  vpoc?: number;
+  overnightHigh?: number;
+  overnightLow?: number;
+  globexHigh?: number;
+  globexLow?: number;
+  macroRiskBias?: MarketBias;
+  positioningBias?: MarketBias;
+  orderFlowStatus?: string;
+  safetyNotice: string;
+}
+
 export interface LLMResearchContextPacket {
   packetId: string;
   timestamp: string;
@@ -97,6 +113,7 @@ export interface LLMResearchContextPacket {
   symbol?: FuturesSymbol;
   timeframe?: Timeframe;
   ictContextSummary?: LLMICTContextSummary;
+  marketContextSummary?: LLMMarketContextSummary;
   deterministicICTFacts: string[];
   internalBaselineAgentDebate: LLMBaselineDebateSummary[];
   cioThesis?: {

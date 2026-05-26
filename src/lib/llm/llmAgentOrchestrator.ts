@@ -11,6 +11,7 @@ import type {
 } from "@/lib/llm/llmTypes";
 import { validateLLMResponse } from "@/lib/llm/validateLLMResponse";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
+import { buildMarketContext, summarizeMarketContext } from "@/lib/marketData";
 import type { ResearchQualityReview } from "@/lib/researchQuality";
 import type { SimulationRunbookState } from "@/lib/simulationRunbook";
 import { countCompletedRunbookItems, simulationRunbookChecklist } from "@/lib/simulationRunbook";
@@ -51,6 +52,9 @@ export function buildLLMResearchContextPacket({
   const thesis = safeArray(state.tradeTheses)[0];
   const debate = latestDebateFor(state, thesis);
   const ictContext = thesis?.ictContext;
+  const marketContext = thesis
+    ? summarizeMarketContext(buildMarketContext({ symbol: thesis.symbol, timeframe: thesis.timeframe, mode: "mock" }))
+    : undefined;
   const validationScenarios = safeArray(validation?.scenarios);
   const qualityWeaknesses = safeArray(quality?.topWeaknesses);
   const qualityFalsePositivePatterns = safeArray(quality?.falsePositivePatterns);
@@ -85,13 +89,16 @@ export function buildLLMResearchContextPacket({
           fairValueGapCount: safeArray(ictContext.fairValueGaps).length
         }
       : undefined,
+    marketContextSummary: marketContext,
     deterministicICTFacts: [
       `Confluence score: ${ictContext?.confluenceScore ?? "missing"}`,
       `Bias: ${ictContext?.bias ?? "missing"}`,
       `MSS bullish/bearish: ${Boolean(ictContext?.hasBullishMSS)}/${Boolean(ictContext?.hasBearishMSS)}`,
       `BOS bullish/bearish: ${Boolean(ictContext?.hasBullishBOS)}/${Boolean(ictContext?.hasBearishBOS)}`,
       `Liquidity sweeps: ${safeArray(ictContext?.liquiditySweeps).length}`,
-      `Fair value gaps: ${safeArray(ictContext?.fairValueGaps).length}`
+      `Fair value gaps: ${safeArray(ictContext?.fairValueGaps).length}`,
+      `Market context mode: ${marketContext?.mode ?? "missing"}`,
+      `Market context missing modules: ${marketContext?.missingModules.join(", ") ?? "missing"}`
     ],
     internalBaselineAgentDebate:
       safeArray(debate?.messages).map((message) => ({

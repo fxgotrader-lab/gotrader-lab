@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowRight, ClipboardCheck, ExternalLink, MessageSquareText, MessagesSquare, Route, Sparkles } from "lucide-react";
+import { ArrowRight, ClipboardCheck, DatabaseZap, ExternalLink, MessageSquareText, MessagesSquare, Route, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +19,7 @@ import {
   loadLLMResearchState,
   providerStatusForMode,
 } from "@/lib/llm";
+import { buildMarketContext } from "@/lib/marketData";
 import { evaluateReadinessGate, loadManualApprovalRecord } from "@/lib/readiness";
 import { loadLatestResearchQualityReview } from "@/lib/researchQuality";
 import { latestResearchCycleRun, loadResearchCycleState } from "@/lib/researchCycle";
@@ -75,6 +76,12 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
   const communicationSummary = getCommunicationSummary(loadCommunicationMessages());
   const agentAuditSummary = summarizeAgentAudit(loadAgentAuditState());
   const agentDebateSummary = summarizeAgentDebate(loadAgentDebateState());
+  const latestThesis = state.tradeTheses[0];
+  const marketContext = buildMarketContext({
+    symbol: latestThesis?.symbol ?? "NQ",
+    timeframe: latestThesis?.timeframe ?? "5m",
+    mode: "mock"
+  });
 
   const recommendedAction = getRecommendedAction({
     completedRunbookItems,
@@ -154,6 +161,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
 
       <div className="grid gap-5 xl:grid-cols-2">
         <AICommunicationsCard summary={communicationSummary} />
+        <MarketDataContextCard context={marketContext} />
         <AgentDebateCard summary={agentDebateSummary} />
         <AgentAuditCard summary={agentAuditSummary} />
         <LLMAgentStatusCard latestRun={latestLLMRun} providerStatus={providerStatus} state={llmState} />
@@ -197,6 +205,40 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
         </div>
       </TechnicalDetails>
     </div>
+  );
+}
+
+function MarketDataContextCard({ context }: { context: ReturnType<typeof buildMarketContext> }) {
+  return (
+    <Card className="border-white/10 bg-slate-950/70">
+      <CardHeader className="flex flex-row items-start justify-between gap-3">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base text-slate-100">
+            <DatabaseZap className="h-4 w-4 text-cyan-300" aria-hidden="true" />
+            Market Data Context
+          </CardTitle>
+          <p className="mt-1 text-xs text-slate-500">Mock/planning adapter layer for future real market inputs.</p>
+        </div>
+        <Badge variant="warning">{context.mode}</Badge>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 text-sm sm:grid-cols-2">
+          <StatusLine label="Symbol" value={`${context.symbol} ${context.timeframe}`} />
+          <StatusLine label="Available modules" value={String(context.availableModules.length)} />
+          <StatusLine label="Missing modules" value={String(context.missingModules.length)} />
+          <StatusLine label="Planned agents" value={String(context.plannedAgents.length)} />
+        </div>
+        <div className="rounded-md border border-cyan-400/20 bg-cyan-400/5 p-3 text-xs text-cyan-100">
+          Price/volume mock context exists; macro, positioning, intermarket, and order flow remain roadmap inputs.
+        </div>
+        <Link to="/market-data">
+          <Button variant="secondary" className="w-full justify-between">
+            Open market data context
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </Link>
+      </CardContent>
+    </Card>
   );
 }
 

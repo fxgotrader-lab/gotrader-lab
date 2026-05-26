@@ -28,6 +28,10 @@ Deterministic facts remain immutable:
 
 The debate layer can only interpret those facts. It cannot rewrite them.
 
+Future market data context is also treated as immutable input once an adapter snapshot is created. Session levels,
+volume profile, macro context, intermarket readings, positioning/gamma, and order-flow imports can add evidence to
+the debate, but debate agents still interpret context only.
+
 ## Consensus Rules
 
 Consensus requires a configurable alignment threshold. The default is three aligned agents.

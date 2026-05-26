@@ -11,6 +11,7 @@ import { AICommunicationsView } from "@/components/communications/AICommunicatio
 import { ResearchCommandCenter } from "@/components/dashboard/ResearchCommandCenter";
 import { ICTLab } from "@/components/ict-lab/ICTLab";
 import { LLMAgentsView } from "@/components/llm-agents/LLMAgentsView";
+import { MarketDataView } from "@/components/market-data/MarketDataView";
 import { PerformanceView } from "@/components/performance/PerformanceView";
 import { PromptLab } from "@/components/prompt-lab/PromptLab";
 import { ReadinessGateView } from "@/components/readiness/ReadinessGateView";
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="/agents/:id" element={<AgentDetail state={state} />} />
         <Route path="/research" element={<ResearchWorkbench state={state} actions={actions} />} />
         <Route path="/ict-lab" element={<ICTLab />} />
+        <Route path="/market-data" element={<MarketDataView />} />
         <Route path="/replay" element={<ReplayView />} />
         <Route path="/backtest-lab" element={<BacktestLab />} />
         <Route path="/validation" element={<StrategyValidationView />} />

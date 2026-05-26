@@ -6,6 +6,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   Database,
+  DatabaseZap,
   KeyRound,
   Lock,
   MessageSquareText,
@@ -45,6 +46,7 @@ import {
   loadLLMResearchState,
   providerStatusForMode
 } from "@/lib/llm";
+import { buildMarketContext } from "@/lib/marketData";
 import {
   evaluateReadinessGate,
   latestApprovalTimestamp,
@@ -120,6 +122,11 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const activeResearchCalibration = activeBacktestResolution.activeResearchCalibration ?? selfImprovementState.activeResearchCalibration;
   const latestLLMRun = latestLLMAdvisoryRun(llmResearchState);
   const llmProviderStatus = providerStatusForMode(llmResearchState.providerMode);
+  const marketContext = buildMarketContext({
+    symbol: state.tradeTheses[0]?.symbol ?? "NQ",
+    timeframe: state.tradeTheses[0]?.timeframe ?? "5m",
+    mode: "mock"
+  });
   const latestAutoResearch = latestAutoResearchCycle(autoResearchState);
   const communicationSummary = getCommunicationSummary(loadCommunicationMessages());
   const runbookCompleted = countCompletedRunbookItems(simulationRunbook);
@@ -375,6 +382,43 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
                 {latestHandoffExport?.exportedAt ?? "none"}
               </span>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <DatabaseZap className="h-4 w-4 text-primary" aria-hidden="true" />
+              <CardTitle>Market Data Providers</CardTitle>
+            </div>
+            <CardDescription>Future adapter roadmap for real market context. Current mode is mock/planning only.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {[
+              ["Current data mode", marketContext.mode],
+              ["Broker feed", "not connected"],
+              ["Live trading", "disabled"],
+              ["API keys in browser", "none"],
+              ["Available mock modules", String(marketContext.availableModules.length)],
+              ["Missing/planned modules", String(marketContext.missingModules.length)],
+              ["Planned agents", String(marketContext.plannedAgents.length)]
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+                <span className="text-muted-foreground">{label}</span>
+                <Badge variant={value === "none" || value === "disabled" || value === "not connected" ? "danger" : value === "mock" ? "warning" : "secondary"}>
+                  {formatBridgeValue(value)}
+                </Badge>
+              </div>
+            ))}
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              Market data adapters are research inputs only. No broker execution or live trading.
+            </div>
+            <Link
+              to="/market-data"
+              className="inline-flex h-9 w-full items-center justify-center rounded-md border border-border bg-background/60 px-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary/70"
+            >
+              Open market data context
+            </Link>
           </CardContent>
         </Card>
 
