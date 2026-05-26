@@ -14,6 +14,7 @@ import {
   approveCalibrationProposal,
   canApproveProposal,
   createCalibrationProposal,
+  effectiveProposalComparison,
   evaluateCalibrationProposal,
   hasMaterialProposalMetricChange,
   isNoOpProposalSnapshot,
@@ -540,7 +541,7 @@ export function SelfImprovementView() {
     : undefined;
   const snapshotBeforeMetrics = latestProposal?.metricsSnapshot?.beforeMetrics ?? latestProposal?.beforeMetrics;
   const snapshotAfterMetrics = latestProposal?.metricsSnapshot?.afterMetrics ?? latestProposal?.afterMetrics;
-  const snapshotComparisonResult = latestProposal?.metricsSnapshot?.comparisonResult ?? latestProposal?.comparisonResult;
+  const snapshotComparisonResult = effectiveProposalComparison(latestProposal);
   const proposalMismatchReasons = proposalSnapshotMismatchReasons(latestProposal);
   const proposalIsNoOp = isNoOpProposalSnapshot(latestProposal);
   const proposalHasMaterialChange = hasMaterialProposalMetricChange(latestProposal);
@@ -1364,14 +1365,14 @@ export function SelfImprovementView() {
                     <p className="mb-2 font-medium text-emerald-100">Improved metrics</p>
                     <ul className="space-y-1 text-xs text-emerald-50">
                       {safeArray(snapshotComparisonResult.improvedMetrics).map((item) => <li key={item}>{item}</li>)}
-                      {!safeArray(snapshotComparisonResult.improvedMetrics).length && <li>No clear improvement.</li>}
+                      {!safeArray(snapshotComparisonResult.improvedMetrics).length && <li>None</li>}
                     </ul>
                   </div>
                   <div className="rounded-lg border border-red-300/25 bg-red-300/10 p-3">
                     <p className="mb-2 font-medium text-red-100">Worsened metrics</p>
                     <ul className="space-y-1 text-xs text-red-50">
                       {safeArray(snapshotComparisonResult.worsenedMetrics).map((item) => <li key={item}>{item}</li>)}
-                      {!safeArray(snapshotComparisonResult.worsenedMetrics).length && <li>No material regression.</li>}
+                      {!safeArray(snapshotComparisonResult.worsenedMetrics).length && <li>None</li>}
                     </ul>
                   </div>
                   <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3">
@@ -1385,7 +1386,7 @@ export function SelfImprovementView() {
                     <p className="mb-2 font-medium text-cyan-100">Recommended follow-up</p>
                     <p className="text-xs text-cyan-50">
                       {snapshotComparisonResult.followUpSearchDirection ??
-                        "No follow-up required by the current promotion guard. Approval is still manual."}
+                        "Run a different candidate search focused on win rate, average R, drawdown, session filter, or stop model."}
                     </p>
                   </div>
                 </div>

@@ -2,7 +2,11 @@ import type {
   CalibrationComparisonResult,
   CalibrationProposalMetrics
 } from "@/lib/selfImprovement/selfImprovementTypes";
-import { materialMetricsChanged } from "@/lib/selfImprovement/proposalMetricsSnapshot";
+import {
+  hasMaterialImprovement,
+  isProfitFactorOnlyImprovement,
+  materialMetricsChanged
+} from "@/lib/selfImprovement/proposalMetricsSnapshot";
 
 const round = (value: number, digits = 2) => Number(value.toFixed(digits));
 const deltaText = (label: string, before: number, after: number, suffix = "") =>
@@ -71,7 +75,7 @@ export function compareProposalToBaseline(
       criticalRegressions: ["This proposal does not materially change the baseline."],
       sanityWarnings: ["Before and after metrics are identical within tolerance."],
       promotionVerdict: "no_material_change",
-      followUpSearchDirection: "Reject this no-op proposal or rebuild the snapshot from the source candidate."
+      followUpSearchDirection: "Run a different candidate search focused on win rate, average R, drawdown, session filter, or stop model."
     };
   }
 
@@ -223,23 +227,38 @@ export function compareProposalToBaseline(
     sanityWarnings.push(`Sample size is too small to trust: ${after.totalTrades} trades versus required ${minimumTradeCount}.`);
   }
 
+  const materialPositiveImprovement = hasMaterialImprovement(before, after);
+  if (!materialPositiveImprovement) {
+    criticalRegressions.push(
+      isProfitFactorOnlyImprovement(before, after)
+        ? "Profit factor improved, but profit factor alone is not enough to promote a proposal."
+        : "No material positive improvement was detected."
+    );
+  }
+
   const stabilityImproved =
     after.stabilityScore >= before.stabilityScore &&
     after.maxDrawdown <= before.maxDrawdown &&
     after.confidenceCalibration >= before.confidenceCalibration - 0.03;
   const qualityImproved =
-    after.readinessScore >= before.readinessScore ||
+    after.readinessScore > before.readinessScore ||
     after.averageR >= before.averageR + 0.05 ||
-    after.winRate >= before.winRate + 0.04;
+    after.winRate >= before.winRate + 0.04 ||
+    after.maxDrawdown < before.maxDrawdown ||
+    after.falsePositiveCount < before.falsePositiveCount ||
+    after.confidenceCalibration > before.confidenceCalibration ||
+    after.stabilityScore > before.stabilityScore;
   const balancedEnough =
     criticalRegressions.length === 0 &&
     after.totalTrades >= minimumTradeCount &&
     after.averageR >= before.averageR - promotionGuards.materialAverageRDecline &&
     after.winRate >= Math.max(0.05, before.winRate * 0.75) &&
     after.readinessScore >= before.readinessScore;
-  const improved = stabilityImproved && qualityImproved && balancedEnough && sanityWarnings.length <= 1;
+  const improved = materialPositiveImprovement && stabilityImproved && qualityImproved && balancedEnough && sanityWarnings.length <= 1;
   const promotionVerdict =
-    improved && after.readinessStatus === "green" && after.readinessScore >= Math.max(70, before.readinessScore)
+    !materialPositiveImprovement
+      ? "reject" as const
+      : improved && after.readinessStatus === "green" && after.readinessScore >= Math.max(70, before.readinessScore)
       ? "paper_demo_review_candidate" as const
       : improved && after.stabilityScore >= before.stabilityScore + 20
         ? "strong_research_candidate" as const
@@ -257,9 +276,11 @@ export function compareProposalToBaseline(
         ? "keep_testing"
         : "reject";
   const followUpSearchDirection =
-    promotionVerdict === "needs_follow_up" || promotionVerdict === "reject"
-      ? inferFollowUpSearchDirection([...criticalRegressions, ...sanityWarnings])
-      : undefined;
+    !materialPositiveImprovement
+      ? "Run a different candidate search focused on win rate, average R, drawdown, session filter, or stop model."
+      : promotionVerdict === "needs_follow_up" || promotionVerdict === "reject"
+        ? inferFollowUpSearchDirection([...criticalRegressions, ...sanityWarnings])
+        : undefined;
 
   return {
     improved,
@@ -269,7 +290,9 @@ export function compareProposalToBaseline(
       ? "Candidate passed balanced promotion guards across stability, trade quality, sample size, and readiness."
       : recommendation === "keep_testing"
         ? "Candidate improved some stability metrics but has critical trade-quality regressions. Run a targeted follow-up before approval."
-        : "Candidate did not pass balanced promotion guards.",
+        : !materialPositiveImprovement
+          ? "Candidate did not improve the baseline. No regression alone is not enough for promotion."
+          : "Candidate did not pass balanced promotion guards.",
     positiveChanges,
     negativeChanges,
     neutralChanges,

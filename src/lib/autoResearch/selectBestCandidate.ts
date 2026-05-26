@@ -3,7 +3,7 @@ import type {
   AutoResearchResultCategory,
   AutoResearchScoreBreakdown
 } from "@/lib/autoResearch/autoResearchTypes";
-import { materialMetricsChanged, type CalibrationProposalMetrics } from "@/lib/selfImprovement";
+import { hasMaterialImprovement, materialMetricsChanged, type CalibrationProposalMetrics } from "@/lib/selfImprovement";
 import { safeArray, safeTopN } from "@/lib/utils";
 
 const conservativeScenarioFor = (candidate: AutoResearchCandidateResult) =>
@@ -22,6 +22,9 @@ const rejectionReasonsFor = (
   const promotionVerdict = candidate.comparisonResult?.promotionVerdict ?? "needs_follow_up";
   if (!materialMetricsChanged(baselineMetrics, candidate.metrics)) {
     reasons.push("No material metric change versus baseline.");
+  }
+  if (materialMetricsChanged(baselineMetrics, candidate.metrics) && !hasMaterialImprovement(baselineMetrics, candidate.metrics)) {
+    reasons.push("Candidate has no material positive improvement versus baseline.");
   }
   if (!score.stabilityImproved) {
     reasons.push("Stability did not improve versus baseline.");
@@ -71,6 +74,7 @@ const categoryFor = (
     [
       "No material metric change versus baseline.",
       "Candidate did not materially improve the baseline.",
+      "Candidate has no material positive improvement versus baseline.",
       "Candidate did not produce enough simulated trades.",
       "Drawdown too high for bounded simulation readiness.",
       "False positives too high.",
@@ -134,6 +138,7 @@ export function selectBestCandidate(
       promotionEligible:
         ["improved_but_not_ready", "research_ready", "research_ready_candidate", "paper_demo_candidate"].includes(resultCategory) &&
         !safeArray(candidate.comparisonResult?.criticalRegressions).length &&
+        hasMaterialImprovement(baselineMetrics, candidate.metrics) &&
         promotionVerdict !== "needs_follow_up" &&
         promotionVerdict !== "reject" &&
         promotionVerdict !== "no_material_change",

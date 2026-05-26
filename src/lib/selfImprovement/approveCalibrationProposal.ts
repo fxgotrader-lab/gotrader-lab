@@ -19,6 +19,8 @@ import type {
   SelfImprovementState
 } from "@/lib/selfImprovement/selfImprovementTypes";
 import {
+  effectiveProposalComparison,
+  hasMaterialImprovement,
   hasMaterialProposalMetricChange,
   isNoOpProposalSnapshot,
   proposalSnapshotMismatchReasons
@@ -295,15 +297,16 @@ const hasAllowedProposedChanges = (proposal: CalibrationProposal) => {
 };
 
 const hasResearchImprovement = (proposal: CalibrationProposal) => {
+  const comparison = effectiveProposalComparison(proposal);
   const tradeGenerationImproved =
     typeof proposal.tradesBeforeRecovery === "number" &&
     typeof proposal.tradesAfterRecovery === "number" &&
     proposal.tradesAfterRecovery > proposal.tradesBeforeRecovery;
-  const stabilityImproved =
-    Boolean(proposal.comparisonResult?.stabilityImproved) ||
-    Boolean(proposal.afterMetrics && proposal.afterMetrics.stabilityScore >= proposal.beforeMetrics.stabilityScore);
+  const before = proposal.metricsSnapshot?.beforeMetrics ?? proposal.beforeMetrics;
+  const after = proposal.metricsSnapshot?.afterMetrics ?? proposal.afterMetrics;
+  const materialImproved = hasMaterialImprovement(before, after);
 
-  return Boolean(proposal.comparisonResult?.improved || stabilityImproved || tradeGenerationImproved);
+  return Boolean((comparison?.improved && materialImproved) || tradeGenerationImproved);
 };
 
 export interface ProposalApprovalCheck {
@@ -361,15 +364,16 @@ export function canApproveProposal(proposal?: CalibrationProposal): ProposalAppr
   if (isNoOpProposalSnapshot(proposal)) {
     reasons.push("This proposal does not materially change the baseline.");
   }
-  if (safeArray(proposal.comparisonResult?.criticalRegressions).length) {
+  const effectiveComparison = effectiveProposalComparison(proposal);
+  if (safeArray(effectiveComparison?.criticalRegressions).length) {
     reasons.push("Proposal has critical metric regressions; run a targeted follow-up before approval.");
   }
   if (
-    proposal.comparisonResult?.promotionVerdict === "needs_follow_up" ||
-    proposal.comparisonResult?.promotionVerdict === "reject" ||
-    proposal.comparisonResult?.promotionVerdict === "no_material_change"
+    effectiveComparison?.promotionVerdict === "needs_follow_up" ||
+    effectiveComparison?.promotionVerdict === "reject" ||
+    effectiveComparison?.promotionVerdict === "no_material_change"
   ) {
-    reasons.push(`Promotion verdict is ${proposal.comparisonResult.promotionVerdict.replace(/_/g, " ")}.`);
+    reasons.push(`Promotion verdict is ${effectiveComparison.promotionVerdict.replace(/_/g, " ")}.`);
   }
 
   return {

@@ -30,8 +30,12 @@ export {
 export {
   attachProposalMetricsSnapshot,
   createProposalMetricsSnapshot,
+  effectiveProposalComparison,
+  hasMaterialImprovement,
   hasMaterialProposalMetricChange,
+  isNoOpComparison,
   isNoOpProposalSnapshot,
+  isProfitFactorOnlyImprovement,
   materialMetricsChanged,
   noMaterialMetricsChanged,
   proposalSnapshotMismatchReasons

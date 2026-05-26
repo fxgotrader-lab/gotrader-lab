@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { CanonicalPerformanceMetrics } from "@/lib/performance/canonicalMetrics";
-import type { CalibrationProposal } from "@/lib/selfImprovement";
+import { effectiveProposalComparison, type CalibrationProposal } from "@/lib/selfImprovement";
 import { formatPercent } from "@/lib/utils";
 
 import { formatDateTime, formatR } from "./dashboardFormatters";
@@ -19,7 +19,7 @@ export function SelfImprovementStatusCard({ proposal, latestCycleMetrics }: Self
   const status = proposal?.status ?? "none";
   const before = proposal?.metricsSnapshot?.beforeMetrics ?? proposal?.beforeMetrics;
   const after = proposal?.metricsSnapshot?.afterMetrics ?? proposal?.afterMetrics;
-  const comparison = proposal?.metricsSnapshot?.comparisonResult ?? proposal?.comparisonResult;
+  const comparison = effectiveProposalComparison(proposal);
   const noMaterialChange = comparison?.promotionVerdict === "no_material_change";
 
   return (

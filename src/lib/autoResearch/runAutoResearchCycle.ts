@@ -41,6 +41,7 @@ import type { ReadinessGateSnapshot } from "@/lib/readiness";
 import {
   compareProposalToBaseline,
   attachProposalMetricsSnapshot,
+  hasMaterialImprovement,
   loadActiveResearchCalibration,
   materialMetricsChanged,
   resolveActiveBacktestConfig,
@@ -532,6 +533,7 @@ const shouldCreateProposal = (candidate: AutoResearchCandidateResult | undefined
   return Boolean(
     candidate &&
       materialMetricsChanged(baselineMetrics, candidate.metrics) &&
+      hasMaterialImprovement(baselineMetrics, candidate.metrics) &&
       candidate.promotionEligible &&
       candidate.scoreBreakdown.stabilityImproved &&
       candidate.scoreBreakdown.sufficientSample &&
@@ -961,6 +963,7 @@ const candidateImprovedForResearch = (
   return Boolean(
     candidate &&
       materialMetricsChanged(baselineMetrics, candidate.metrics) &&
+      hasMaterialImprovement(baselineMetrics, candidate.metrics) &&
       candidate.resultCategory !== "unsafe_overfit" &&
       candidate.metrics.totalTrades > 0 &&
       !safeArray(candidate.comparisonResult?.criticalRegressions).length &&

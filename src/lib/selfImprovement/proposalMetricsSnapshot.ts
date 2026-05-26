@@ -60,6 +60,13 @@ const valuesEqual = (left: unknown, right: unknown) => {
   return left === right;
 };
 
+const valueImproved = (before: number | null, after: number | null, direction: "higher" | "lower") => {
+  if (typeof before !== "number" || typeof after !== "number" || !Number.isFinite(before) || !Number.isFinite(after)) {
+    return false;
+  }
+  return direction === "higher" ? after > before + 0.000001 : after < before - 0.000001;
+};
+
 export const materialMetricsChanged = (
   before?: CalibrationProposalMetrics,
   after?: CalibrationProposalMetrics
@@ -74,6 +81,38 @@ export const noMaterialMetricsChanged = (
   before?: CalibrationProposalMetrics,
   after?: CalibrationProposalMetrics
 ) => Boolean(before && after && !materialMetricsChanged(before, after));
+
+export const materialImprovementKeys = (
+  before?: CalibrationProposalMetrics,
+  after?: CalibrationProposalMetrics
+) => {
+  if (!before || !after) {
+    return [];
+  }
+  return [
+    valueImproved(before.winRate, after.winRate, "higher") ? "winRate" : undefined,
+    valueImproved(before.averageR, after.averageR, "higher") ? "averageR" : undefined,
+    valueImproved(before.maxDrawdown, after.maxDrawdown, "lower") ? "maxDrawdownR" : undefined,
+    after.falsePositiveCount < before.falsePositiveCount ? "falsePositiveCount" : undefined,
+    valueImproved(before.confidenceCalibration, after.confidenceCalibration, "higher") ? "confidenceCalibration" : undefined,
+    after.readinessScore > before.readinessScore ? "readinessScore" : undefined,
+    after.stabilityScore > before.stabilityScore ? "stabilityScore" : undefined,
+    valueImproved(before.profitFactor, after.profitFactor, "higher") ? "profitFactor" : undefined
+  ].filter((key): key is string => Boolean(key));
+};
+
+export const hasMaterialImprovement = (
+  before?: CalibrationProposalMetrics,
+  after?: CalibrationProposalMetrics
+) => materialImprovementKeys(before, after).some((key) => key !== "profitFactor");
+
+export const isProfitFactorOnlyImprovement = (
+  before?: CalibrationProposalMetrics,
+  after?: CalibrationProposalMetrics
+) => {
+  const keys = materialImprovementKeys(before, after);
+  return keys.length === 1 && keys[0] === "profitFactor";
+};
 
 const noOpComparison = (comparison: CalibrationComparisonResult | undefined): CalibrationComparisonResult => ({
   improved: false,
@@ -94,7 +133,36 @@ const noOpComparison = (comparison: CalibrationComparisonResult | undefined): Ca
     "No-op proposal snapshot: before and after metrics are identical within tolerance."
   ],
   promotionVerdict: "no_material_change",
-  followUpSearchDirection: comparison?.followUpSearchDirection ?? "Reject or rebuild the snapshot from the source candidate before approval."
+  followUpSearchDirection:
+    comparison?.promotionVerdict === "no_material_change"
+      ? comparison.followUpSearchDirection
+      : "Run a different candidate search focused on win rate, average R, drawdown, session filter, or stop model."
+});
+
+export const noMaterialPositiveImprovementComparison = (
+  comparison: CalibrationComparisonResult | undefined
+): CalibrationComparisonResult => ({
+  ...(comparison ?? {
+    positiveChanges: [],
+    negativeChanges: [],
+    neutralChanges: [],
+    improvedMetrics: [],
+    worsenedMetrics: [],
+    criticalRegressions: [],
+    sanityWarnings: []
+  }),
+  improved: false,
+  stabilityImproved: false,
+  recommendation: "reject",
+  summary: "This proposal does not improve the baseline.",
+  criticalRegressions: [
+    ...new Set([
+      ...(comparison?.criticalRegressions ?? []),
+      "This proposal does not improve the baseline."
+    ])
+  ],
+  promotionVerdict: "reject",
+  followUpSearchDirection: "Run a different candidate search focused on win rate, average R, drawdown, session filter, or stop model."
 });
 
 export function createProposalMetricsSnapshot(
@@ -232,3 +300,23 @@ export function isNoOpProposalSnapshot(proposal?: CalibrationProposal): boolean 
   const after = snapshot?.afterMetrics ?? proposal.afterMetrics;
   return noMaterialMetricsChanged(before, after);
 }
+
+export function effectiveProposalComparison(proposal?: CalibrationProposal): CalibrationComparisonResult | undefined {
+  if (!proposal) {
+    return undefined;
+  }
+  const snapshot = proposal.metricsSnapshot;
+  const before = snapshot?.beforeMetrics ?? proposal.beforeMetrics;
+  const after = snapshot?.afterMetrics ?? proposal.afterMetrics;
+  const comparison = snapshot?.comparisonResult ?? proposal.comparisonResult;
+  if (noMaterialMetricsChanged(before, after)) {
+    return noOpComparison(comparison);
+  }
+  if (after && !hasMaterialImprovement(before, after)) {
+    return noMaterialPositiveImprovementComparison(comparison);
+  }
+  return comparison;
+}
+
+export const isNoOpComparison = (comparison?: CalibrationComparisonResult) =>
+  comparison?.promotionVerdict === "no_material_change";
