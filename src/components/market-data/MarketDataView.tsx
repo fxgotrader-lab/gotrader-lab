@@ -6,22 +6,34 @@ import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import {
   buildMarketContext,
+  CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
   importHistoricalCandleFile,
   listImportedCandleMetadata,
-  loadActiveCandleSource,
+  loadCandleWindowSettings,
+  loadPreparedCandleSource,
   MARKET_DATA_IMPORT_UPDATED_EVENT,
   saveImportedCandleSet,
   setActiveImportedCandleSet,
-  type CandleDataSource,
-  type ImportedCandleMetadata
+  safeWindowSizeOptions,
+  saveCandleWindowSettings,
+  type CandleWindowSettings,
+  type ImportedCandleMetadata,
+  type PreparedCandleSource
 } from "@/lib/marketData";
 import type { FuturesSymbol, Timeframe } from "@/lib/types";
 
 const symbolOptions = ["ES", "NQ", "MES", "MNQ"].map((value) => ({ label: value, value }));
 const timeframeOptions = ["1m", "5m", "15m", "1h"].map((value) => ({ label: value, value }));
+const researchTimeframeOptions = ["1m", "5m", "15m"].map((value) => ({ label: value, value }));
+const windowSizeOptions = [
+  ...safeWindowSizeOptions.map((value) => ({ label: `${value.toLocaleString()} candles`, value: String(value) })),
+  { label: "Custom", value: "custom" }
+];
 
 const statusVariant = (status: string) =>
   status === "available_mock" || status === "mock_only"
@@ -32,10 +44,18 @@ const statusVariant = (status: string) =>
         ? "danger"
         : "secondary";
 
-const fallbackSource: CandleDataSource = {
+const fallbackSource: PreparedCandleSource = {
   mode: "mock",
   label: "Mock candles",
-  candles: []
+  candles: [],
+  rawCandleCount: 0,
+  researchWindowCandles: 0,
+  processedCandleCount: 0,
+  estimatedProcessedCandles: 0,
+  appliedSettings: loadCandleWindowSettings(),
+  aggregationApplied: false,
+  performanceMode: "safe",
+  warnings: []
 };
 
 const formatDate = (value?: string) => (value ? new Date(value).toLocaleString() : "n/a");
@@ -44,12 +64,13 @@ export function MarketDataView() {
   const [symbol, setSymbol] = useState<FuturesSymbol>("NQ");
   const [timeframe, setTimeframe] = useState<Timeframe>("5m");
   const [imports, setImports] = useState<ImportedCandleMetadata[]>([]);
-  const [activeSource, setActiveSource] = useState<CandleDataSource>(fallbackSource);
+  const [activeSource, setActiveSource] = useState<PreparedCandleSource>(fallbackSource);
+  const [windowSettings, setWindowSettings] = useState<CandleWindowSettings>(() => loadCandleWindowSettings());
   const [importMessage, setImportMessage] = useState<string>();
   const [importError, setImportError] = useState<string>();
   const [importing, setImporting] = useState(false);
   const contextSymbol = activeSource.metadata?.symbol ?? symbol;
-  const contextTimeframe = activeSource.metadata?.timeframe ?? timeframe;
+  const contextTimeframe = activeSource.mode === "imported" ? activeSource.appliedSettings.targetTimeframe : timeframe;
   const context = useMemo(
     () =>
       buildMarketContext({
@@ -69,8 +90,10 @@ export function MarketDataView() {
   ];
 
   const refreshImports = async () => {
-    const [metadata, source] = await Promise.all([listImportedCandleMetadata(), loadActiveCandleSource()]);
+    const settings = loadCandleWindowSettings();
+    const [metadata, source] = await Promise.all([listImportedCandleMetadata(), loadPreparedCandleSource(settings)]);
     setImports(metadata);
+    setWindowSettings(settings);
     setActiveSource(source);
     if (source.metadata) {
       setSymbol(source.metadata.symbol);
@@ -91,10 +114,12 @@ export function MarketDataView() {
     };
     refresh();
     window.addEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
+    window.addEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
       mounted = false;
       window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
+      window.removeEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
   }, []);
@@ -127,6 +152,12 @@ export function MarketDataView() {
     setImportError(undefined);
     setImportMessage(undefined);
     setActiveImportedCandleSet(value === "mock" ? undefined : value);
+    await refreshImports();
+  };
+
+  const patchWindowSettings = async (patch: Partial<CandleWindowSettings>) => {
+    const saved = saveCandleWindowSettings({ ...windowSettings, ...patch });
+    setWindowSettings(saved);
     await refreshImports();
   };
 
@@ -205,8 +236,93 @@ export function MarketDataView() {
           <div className="grid gap-3 md:grid-cols-4">
             <StatusTile label="Source mode" value={activeSource.mode === "imported" ? "imported history" : "mock"} />
             <StatusTile label="Active label" value={activeSource.label} />
-            <StatusTile label="Candles" value={String(activeSource.candles.length || context.priceVolume.ohlcv.candles.length)} />
+            <StatusTile label="Raw candles" value={String(activeSource.rawCandleCount || context.priceVolume.ohlcv.candles.length)} />
+            <StatusTile label="Research window" value={String(activeSource.researchWindowCandles || context.priceVolume.ohlcv.candles.length)} />
+            <StatusTile label="Processed candles" value={String(activeSource.processedCandleCount || context.priceVolume.ohlcv.candles.length)} />
             <StatusTile label="Validation" value={activeSource.metadata?.status.replace(/_/g, " ") ?? "mock data"} />
+          </div>
+
+          <div className="rounded-lg border border-border bg-background/45 p-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold">Research Window Controls</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Dashboard and Backtest Lab use this prepared window instead of the full raw file. Default is latest
+                  2,000 raw 1m candles aggregated to 5m.
+                </p>
+              </div>
+              <Badge variant={activeSource.performanceMode === "safe" ? "success" : "warning"}>
+                performance mode: {activeSource.performanceMode}
+              </Badge>
+            </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-5">
+              <div className="space-y-2">
+                <Label htmlFor="market-data-window-size">Window size</Label>
+                <Select
+                  id="market-data-window-size"
+                  value={safeWindowSizeOptions.includes(windowSettings.windowSize) ? String(windowSettings.windowSize) : "custom"}
+                  options={windowSizeOptions}
+                  onChange={(event) => {
+                    if (event.target.value !== "custom") {
+                      void patchWindowSettings({ windowSize: Number(event.target.value), advancedMode: false });
+                    }
+                  }}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="market-data-timeframe">Research timeframe</Label>
+                <Select
+                  id="market-data-timeframe"
+                  value={windowSettings.targetTimeframe}
+                  options={researchTimeframeOptions}
+                  onChange={(event) => void patchWindowSettings({ targetTimeframe: event.target.value as CandleWindowSettings["targetTimeframe"] })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="market-data-session-filter">Session filter</Label>
+                <Select
+                  id="market-data-session-filter"
+                  value={windowSettings.sessionFilter}
+                  options={["all", "Asia", "London", "New York", "Off hours"].map((value) => ({ label: value, value }))}
+                  onChange={(event) => void patchWindowSettings({ sessionFilter: event.target.value as CandleWindowSettings["sessionFilter"] })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="market-data-custom-window">Custom window</Label>
+                <Input
+                  id="market-data-custom-window"
+                  type="number"
+                  min="100"
+                  max="50000"
+                  value={String(windowSettings.windowSize)}
+                  onChange={(event) =>
+                    void patchWindowSettings({
+                      windowSize: Number(event.target.value),
+                      advancedMode: Number(event.target.value) > 5000
+                    })
+                  }
+                />
+              </div>
+              <label className="flex items-center gap-2 rounded-lg border border-border bg-card/45 p-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={windowSettings.advancedMode}
+                  onChange={(event) => void patchWindowSettings({ advancedMode: event.target.checked })}
+                />
+                Advanced large-window mode
+              </label>
+            </div>
+            <div className="mt-3 grid gap-2 text-xs md:grid-cols-4">
+              <StatusTile label="Raw import" value={activeSource.rawCandleCount.toLocaleString()} />
+              <StatusTile label="Window used" value={activeSource.researchWindowCandles.toLocaleString()} />
+              <StatusTile label="Research timeframe" value={activeSource.appliedSettings.targetTimeframe} />
+              <StatusTile label="After aggregation" value={activeSource.processedCandleCount.toLocaleString()} />
+            </div>
+            {activeSource.warnings.length ? (
+              <div className="mt-3 rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-xs text-amber-100">
+                {activeSource.warnings.join(" ")}
+              </div>
+            ) : null}
           </div>
 
           {activeSource.metadata ? <ImportMetadataPanel metadata={activeSource.metadata} /> : null}

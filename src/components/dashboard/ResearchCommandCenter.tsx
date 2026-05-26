@@ -21,9 +21,11 @@ import {
 } from "@/lib/llm";
 import {
   buildMarketContext,
-  loadActiveCandleSource,
+  loadPreparedCandleSource,
   MARKET_DATA_IMPORT_UPDATED_EVENT,
-  type CandleDataSource
+  CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
+  loadCandleWindowSettings,
+  type PreparedCandleSource
 } from "@/lib/marketData";
 import { evaluateReadinessGate, loadManualApprovalRecord } from "@/lib/readiness";
 import { loadLatestResearchQualityReview } from "@/lib/researchQuality";
@@ -54,15 +56,23 @@ type ResearchCommandCenterProps = {
   state: LabState;
 };
 
-const fallbackCandleSource: CandleDataSource = {
+const fallbackCandleSource: PreparedCandleSource = {
   mode: "mock",
   label: "Mock candles",
-  candles: []
+  candles: [],
+  rawCandleCount: 0,
+  researchWindowCandles: 0,
+  processedCandleCount: 0,
+  estimatedProcessedCandles: 0,
+  appliedSettings: loadCandleWindowSettings(),
+  aggregationApplied: false,
+  performanceMode: "safe",
+  warnings: []
 };
 
 export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
   const [, setDashboardRefresh] = useState(0);
-  const [activeCandleSource, setActiveCandleSource] = useState<CandleDataSource>(fallbackCandleSource);
+  const [activeCandleSource, setActiveCandleSource] = useState<PreparedCandleSource>(fallbackCandleSource);
   const llmState = loadLLMResearchState();
   const latestLLMRun = latestLLMAdvisoryRun(llmState);
   const researchCycleState = loadResearchCycleState();
@@ -89,9 +99,14 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
   const agentAuditSummary = summarizeAgentAudit(loadAgentAuditState());
   const agentDebateSummary = summarizeAgentDebate(loadAgentDebateState());
   const latestThesis = state.tradeTheses[0];
+  const marketSymbol = activeCandleSource.metadata?.symbol ?? latestThesis?.symbol ?? "NQ";
+  const marketTimeframe =
+    activeCandleSource.mode === "imported"
+      ? activeCandleSource.appliedSettings.targetTimeframe
+      : latestThesis?.timeframe ?? "5m";
   const marketContext = buildMarketContext({
-    symbol: latestThesis?.symbol ?? "NQ",
-    timeframe: latestThesis?.timeframe ?? "5m",
+    symbol: marketSymbol,
+    timeframe: marketTimeframe,
     mode: activeCandleSource.mode === "imported" ? "imported" : "mock",
     candles: activeCandleSource.candles
   });
@@ -99,7 +114,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
   useEffect(() => {
     let mounted = true;
     const refreshMarketData = () => {
-      loadActiveCandleSource().then((source) => {
+      loadPreparedCandleSource().then((source) => {
         if (mounted) {
           setActiveCandleSource(source);
         }
@@ -107,10 +122,12 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
     };
     refreshMarketData();
     window.addEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refreshMarketData);
+    window.addEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refreshMarketData);
     window.addEventListener("storage", refreshMarketData);
     return () => {
       mounted = false;
       window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refreshMarketData);
+      window.removeEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refreshMarketData);
       window.removeEventListener("storage", refreshMarketData);
     };
   }, []);
@@ -245,7 +262,7 @@ function MarketDataContextCard({
   source
 }: {
   context: ReturnType<typeof buildMarketContext>;
-  source: CandleDataSource;
+  source: PreparedCandleSource;
 }) {
   return (
     <Card className="border-white/10 bg-slate-950/70">
@@ -263,7 +280,10 @@ function MarketDataContextCard({
         <div className="grid gap-3 text-sm sm:grid-cols-2">
           <StatusLine label="Symbol" value={`${context.symbol} ${context.timeframe}`} />
           <StatusLine label="Source" value={source.label} />
-          <StatusLine label="Candles" value={String(context.priceVolume.ohlcv.candles.length)} />
+          <StatusLine label="Raw candles" value={source.rawCandleCount.toLocaleString()} />
+          <StatusLine label="Window used" value={source.researchWindowCandles.toLocaleString()} />
+          <StatusLine label="Processed candles" value={String(context.priceVolume.ohlcv.candles.length)} />
+          <StatusLine label="Performance" value={source.performanceMode} />
           <StatusLine label="Available modules" value={String(context.availableModules.length)} />
           <StatusLine label="Missing modules" value={String(context.missingModules.length)} />
           <StatusLine label="Planned agents" value={String(context.plannedAgents.length)} />

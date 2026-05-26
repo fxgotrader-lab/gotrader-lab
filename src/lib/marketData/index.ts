@@ -1,4 +1,20 @@
 export { mockMarketDataAdapter, marketDataProviderRoadmap, plannedMarketDataAgents } from "@/lib/marketData/marketDataAdapters";
+export {
+  aggregateCandles,
+  CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
+  defaultCandleWindowSettings,
+  DEFAULT_IMPORTED_WINDOW_SIZE,
+  HARD_BROWSER_CANDLE_LIMIT,
+  loadCandleWindowSettings,
+  loadPreparedCandleSource,
+  prepareCandlesForResearch,
+  prepareCandleSourceForResearch,
+  resetCandleWindowSettings,
+  SAFE_CANDLE_WINDOW_LIMIT,
+  safeWindowSizeOptions,
+  sanitizeCandleWindowSettings,
+  saveCandleWindowSettings
+} from "@/lib/marketData/candleWindowing";
 export { buildMarketContext, summarizeMarketContext } from "@/lib/marketData/marketContextBuilder";
 export {
   getActiveImportedCandleSetId,
@@ -13,6 +29,14 @@ export {
 } from "@/lib/marketData/historicalCandleImport";
 export { createMockMarketContext, mockMarketContext } from "@/lib/marketData/mockMarketContext";
 export { marketDataProviderRoadmap as marketDataRoadmap, plannedMarketDataAgents as plannedMarketAgents } from "@/lib/marketData/marketDataRoadmap";
+export type {
+  CandleWindowSettings,
+  PreparedCandleSource,
+  ResearchPerformanceMode,
+  ResearchSessionFilter,
+  ResearchTimeframe,
+  ResearchWindowMode
+} from "@/lib/marketData/candleWindowing";
 export type {
   CandleDataSource,
   CandleDataSourceMode,

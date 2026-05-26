@@ -32,15 +32,25 @@ import {
   resolveActiveBacktestConfig
 } from "@/lib/selfImprovement";
 import {
-  loadActiveCandleSource,
+  CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
+  loadCandleWindowSettings,
+  loadPreparedCandleSource,
   MARKET_DATA_IMPORT_UPDATED_EVENT,
-  type CandleDataSource
+  safeWindowSizeOptions,
+  saveCandleWindowSettings,
+  type CandleWindowSettings,
+  type PreparedCandleSource
 } from "@/lib/marketData";
 import type { FuturesSymbol, MarketRegime, Timeframe } from "@/lib/types";
 import { formatPercent, formatSigned } from "@/lib/utils";
 
 const symbolOptions = ["ES", "NQ", "MES", "MNQ"].map((value) => ({ label: value, value }));
 const timeframeOptions = ["1m", "5m", "15m", "1h"].map((value) => ({ label: value, value }));
+const researchTimeframeOptions = ["1m", "5m", "15m"].map((value) => ({ label: value, value }));
+const windowSizeOptions = [
+  ...safeWindowSizeOptions.map((value) => ({ label: `${value.toLocaleString()} candles`, value: String(value) })),
+  { label: "Custom", value: "custom" }
+];
 const sessionOptions = backtestSessionFilters.map((value) => ({ label: value, value }));
 const stopModelOptions = backtestStopModels.map((value) => ({ label: value, value }));
 const regimeOptions = ["trend", "balanced", "volatile", "range", "news-driven", "risk-off", "risk-on"].map((value) => ({ label: value, value }));
@@ -97,19 +107,27 @@ const biasVariant = (bias?: string) => {
   return "warning" as const;
 };
 
-const mockCandleSource: CandleDataSource = {
+const mockCandleSource: PreparedCandleSource = {
   mode: "mock",
   label: "Mock candles",
-  candles: mockCandles
+  candles: mockCandles,
+  rawCandleCount: mockCandles.length,
+  researchWindowCandles: mockCandles.length,
+  processedCandleCount: mockCandles.length,
+  estimatedProcessedCandles: mockCandles.length,
+  appliedSettings: loadCandleWindowSettings(),
+  aggregationApplied: false,
+  performanceMode: "safe",
+  warnings: []
 };
 
-const candlesForSource = (source: CandleDataSource) => (source.candles.length ? source.candles : mockCandles);
-const configForSource = (config: ResolvedBacktestConfig, source: CandleDataSource) =>
+const candlesForSource = (source: PreparedCandleSource) => (source.candles.length ? source.candles : mockCandles);
+const configForSource = (config: ResolvedBacktestConfig, source: PreparedCandleSource) =>
   source.metadata
     ? sanitizeBacktestConfig({
         ...config,
         symbol: source.metadata.symbol,
-        timeframe: source.metadata.timeframe ?? config.timeframe
+        timeframe: source.appliedSettings.targetTimeframe
       })
     : config;
 
@@ -118,7 +136,8 @@ export function BacktestLab() {
   const [draftConfig, setDraftConfig] = useState<ResolvedBacktestConfig>(() => resolveActiveBacktestConfig().config);
   const [result, setResult] = useState(() => runBacktest(mockCandles, resolveActiveBacktestConfig().config));
   const [activeCalibration, setActiveCalibration] = useState(() => loadActiveResearchCalibration());
-  const [candleSource, setCandleSource] = useState<CandleDataSource>(mockCandleSource);
+  const [candleSource, setCandleSource] = useState<PreparedCandleSource>(mockCandleSource);
+  const [windowSettings, setWindowSettings] = useState<CandleWindowSettings>(() => loadCandleWindowSettings());
   const summary = result.summary;
   const activeCandles = candlesForSource(candleSource);
   const zeroTradeDiagnostics = summary.totalTrades === 0
@@ -152,8 +171,11 @@ export function BacktestLab() {
     );
   };
 
-  const refreshWithActiveSource = async (configOverride?: ResolvedBacktestConfig) => {
-    const source = await loadActiveCandleSource();
+  const refreshWithActiveSource = async (
+    configOverride?: ResolvedBacktestConfig,
+    settingsOverride: CandleWindowSettings = loadCandleWindowSettings()
+  ) => {
+    const source = await loadPreparedCandleSource(settingsOverride);
     const resolved = resolveActiveBacktestConfig(configOverride);
     const sourceConfig = configForSource(resolved.config, source);
     const sourceResolved = { ...resolved, config: sourceConfig, finalBacktestConfluenceThreshold: sourceConfig.minimumConfluenceThreshold };
@@ -161,6 +183,12 @@ export function BacktestLab() {
     setConfigResolution(sourceResolved);
     setDraftConfig(sourceResolved.config);
     setResult(runBacktest(candlesForSource(source), sourceResolved.config));
+  };
+
+  const patchWindowSettings = async (patch: Partial<CandleWindowSettings>) => {
+    const saved = saveCandleWindowSettings({ ...windowSettings, ...patch });
+    setWindowSettings(saved);
+    await refreshWithActiveSource(undefined, saved);
   };
 
   const run = async () => {
@@ -186,7 +214,9 @@ export function BacktestLab() {
     let mounted = true;
     const refresh = () => {
       setActiveCalibration(loadActiveResearchCalibration());
-      loadActiveCandleSource().then((source) => {
+      const settings = loadCandleWindowSettings();
+      setWindowSettings(settings);
+      loadPreparedCandleSource(settings).then((source) => {
         if (!mounted) {
           return;
         }
@@ -201,11 +231,13 @@ export function BacktestLab() {
     };
     refresh();
     window.addEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
+    window.addEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
     window.addEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
       mounted = false;
       window.removeEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
+      window.removeEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
@@ -256,20 +288,75 @@ export function BacktestLab() {
       </Card>
 
       <Card className={candleSource.mode === "imported" ? "border-emerald-300/25 bg-emerald-300/10" : ""}>
-        <CardContent className="flex flex-col gap-3 p-4 text-sm md:flex-row md:items-center md:justify-between">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle className="text-base">Historical Data Mode</CardTitle>
+              <CardDescription>Backtests use the prepared research window, not the full raw import.</CardDescription>
+            </div>
+            <Badge variant={candleSource.mode === "imported" ? "success" : "secondary"}>
+              {candleSource.mode === "imported" ? "real imported history" : "mock data"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm">
           <div>
-            <p className="font-medium">
-              Active candle source: {candleSource.label}
-            </p>
+            <p className="font-medium">Active candle source: {candleSource.label}</p>
             <p className="mt-1 text-muted-foreground">
               {candleSource.mode === "imported" && candleSource.metadata
-                ? `${candleSource.metadata.candleCount.toLocaleString()} ${candleSource.metadata.timeframe ?? "detected"} candle(s), ${candleSource.metadata.firstTimestamp ?? "n/a"} to ${candleSource.metadata.lastTimestamp ?? "n/a"}.`
+                ? `Raw candles ${candleSource.rawCandleCount.toLocaleString()}; research window ${candleSource.researchWindowCandles.toLocaleString()}; processed ${candleSource.processedCandleCount.toLocaleString()} ${candleSource.appliedSettings.targetTimeframe} candle(s).`
                 : `${mockCandles.length.toLocaleString()} bundled mock candle(s) for simulation research.`}
             </p>
           </div>
-          <Badge variant={candleSource.mode === "imported" ? "success" : "secondary"}>
-            {candleSource.mode === "imported" ? "real imported history" : "mock data"}
-          </Badge>
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="space-y-2">
+              <Label htmlFor="backtest-research-window">Research window</Label>
+              <Select
+                id="backtest-research-window"
+                value={safeWindowSizeOptions.includes(windowSettings.windowSize) ? String(windowSettings.windowSize) : "custom"}
+                options={windowSizeOptions}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (value !== "custom") {
+                    void patchWindowSettings({ windowSize: Number(value), advancedMode: false });
+                  }
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="backtest-research-timeframe">Research timeframe</Label>
+              <Select
+                id="backtest-research-timeframe"
+                value={windowSettings.targetTimeframe}
+                options={researchTimeframeOptions}
+                onChange={(event) => void patchWindowSettings({ targetTimeframe: event.target.value as CandleWindowSettings["targetTimeframe"] })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="backtest-custom-window">Custom window</Label>
+              <Input
+                id="backtest-custom-window"
+                type="number"
+                min="100"
+                max="50000"
+                value={String(windowSettings.windowSize)}
+                onChange={(event) => void patchWindowSettings({ windowSize: Number(event.target.value), advancedMode: Number(event.target.value) > 5000 })}
+              />
+            </div>
+            <label className="flex items-center gap-2 rounded-lg border border-border bg-background/45 p-3 text-sm">
+              <input
+                type="checkbox"
+                checked={windowSettings.advancedMode}
+                onChange={(event) => void patchWindowSettings({ advancedMode: event.target.checked })}
+              />
+              Advanced large-window mode
+            </label>
+          </div>
+          {candleSource.warnings.length ? (
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-xs text-amber-100">
+              {candleSource.warnings.join(" ")}
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

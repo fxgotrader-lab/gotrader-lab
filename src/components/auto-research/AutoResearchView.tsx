@@ -28,9 +28,11 @@ import {
   resolveActiveBacktestConfig
 } from "@/lib/selfImprovement";
 import {
-  loadActiveCandleSource,
+  CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
+  loadCandleWindowSettings,
+  loadPreparedCandleSource,
   MARKET_DATA_IMPORT_UPDATED_EVENT,
-  type CandleDataSource
+  type PreparedCandleSource
 } from "@/lib/marketData";
 import { formatPercent, formatSigned, safeArray, safeTopN } from "@/lib/utils";
 
@@ -76,7 +78,19 @@ const categoryVariant = (category?: string) =>
 const formatToken = (value?: string) => (value ?? "none").replace(/_/g, " ");
 const formatOptionalPercent = (value?: number) =>
   typeof value === "number" && Number.isFinite(value) ? formatPercent(value) : "n/a";
-const fallbackCandleSource: CandleDataSource = { mode: "mock", label: "Mock candles", candles: [] };
+const fallbackCandleSource: PreparedCandleSource = {
+  mode: "mock",
+  label: "Mock candles",
+  candles: [],
+  rawCandleCount: 0,
+  researchWindowCandles: 0,
+  processedCandleCount: 0,
+  estimatedProcessedCandles: 0,
+  appliedSettings: loadCandleWindowSettings(),
+  aggregationApplied: false,
+  performanceMode: "safe",
+  warnings: []
+};
 const metricValue = (candidate: AutoResearchCandidateResult) => ({
   totalTrades: candidate.metrics?.totalTrades ?? 0,
   winRate: candidate.metrics?.winRate ?? 0,
@@ -164,7 +178,7 @@ export function AutoResearchView() {
   const [maxCandidateCount, setMaxCandidateCount] = useState("10");
   const [isRunning, setIsRunning] = useState(false);
   const [configRefreshKey, setConfigRefreshKey] = useState(0);
-  const [activeCandleSource, setActiveCandleSource] = useState<CandleDataSource>(fallbackCandleSource);
+  const [activeCandleSource, setActiveCandleSource] = useState<PreparedCandleSource>(fallbackCandleSource);
   const baselineResolution = useMemo(() => {
     const resolved = resolveActiveBacktestConfig();
     if (!activeCandleSource.metadata) {
@@ -173,7 +187,7 @@ export function AutoResearchView() {
     const sourceConfig = sanitizeBacktestConfig({
       ...resolved.config,
       symbol: activeCandleSource.metadata.symbol,
-      timeframe: activeCandleSource.metadata.timeframe ?? resolved.config.timeframe
+      timeframe: activeCandleSource.appliedSettings.targetTimeframe
     });
     return { ...resolved, config: sourceConfig };
   }, [state.latestCycleId, configRefreshKey, activeCandleSource]);
@@ -204,7 +218,7 @@ export function AutoResearchView() {
     const refresh = () => {
       setState(loadAutoResearchState());
       setConfigRefreshKey((value) => value + 1);
-      loadActiveCandleSource().then((source) => {
+      loadPreparedCandleSource().then((source) => {
         if (mounted) {
           setActiveCandleSource(source);
         }
@@ -213,12 +227,14 @@ export function AutoResearchView() {
     refresh();
     window.addEventListener(AUTO_RESEARCH_UPDATED_EVENT, refresh);
     window.addEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
+    window.addEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
     window.addEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
       mounted = false;
       window.removeEventListener(AUTO_RESEARCH_UPDATED_EVENT, refresh);
       window.removeEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
+      window.removeEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
@@ -313,6 +329,31 @@ export function AutoResearchView() {
               Config merge: {baselineResolution.mergeStatusLabel}. Final confluence threshold{" "}
               {(baselineResolution.finalBacktestConfluenceThreshold * 100).toFixed(0)}%.
               {baselineResolution.activeCalibrationId ? ` Active calibration ${baselineResolution.activeCalibrationId}.` : ""}
+            </div>
+            <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-3 text-xs text-cyan-50">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium">
+                  Data source: {activeCandleSource.mode === "imported" ? activeCandleSource.metadata?.symbol ?? "Imported" : "Mock candles"}
+                </span>
+                <Badge variant={activeCandleSource.performanceMode === "safe" ? "success" : "warning"}>
+                  {activeCandleSource.performanceMode} mode
+                </Badge>
+              </div>
+              {activeCandleSource.mode === "imported" ? (
+                <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                  <div>Raw candles: {activeCandleSource.rawCandleCount.toLocaleString()}</div>
+                  <div>Research window: {activeCandleSource.researchWindowCandles.toLocaleString()}</div>
+                  <div>
+                    Processed: {activeCandleSource.processedCandleCount.toLocaleString()}{" "}
+                    {activeCandleSource.appliedSettings.targetTimeframe}
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-2 text-cyan-100/75">Mock data is being used until an imported candle set is activated.</p>
+              )}
+              {activeCandleSource.warnings.length ? (
+                <p className="mt-2 text-amber-100">{activeCandleSource.warnings[0]}</p>
+              ) : null}
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-2">

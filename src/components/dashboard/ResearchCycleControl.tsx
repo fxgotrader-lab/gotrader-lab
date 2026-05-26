@@ -18,9 +18,11 @@ import {
 } from "@/lib/researchCycle";
 import type { ResearchCycleRun, ResearchCycleStepResult, ResearchCycleStepStatus } from "@/lib/researchCycle";
 import {
-  loadActiveCandleSource,
+  CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
+  loadCandleWindowSettings,
+  loadPreparedCandleSource,
   MARKET_DATA_IMPORT_UPDATED_EVENT,
-  type CandleDataSource
+  type PreparedCandleSource
 } from "@/lib/marketData";
 import {
   ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
@@ -79,10 +81,18 @@ const dashboardSearchModes: Array<{ label: string; value: AutoResearchSearchMode
   { label: "Deep - 25 candidates", value: "deep", count: 25 }
 ];
 
-const fallbackCandleSource: CandleDataSource = {
+const fallbackCandleSource: PreparedCandleSource = {
   mode: "mock",
   label: "Mock candles",
-  candles: []
+  candles: [],
+  rawCandleCount: 0,
+  researchWindowCandles: 0,
+  processedCandleCount: 0,
+  estimatedProcessedCandles: 0,
+  appliedSettings: loadCandleWindowSettings(),
+  aggregationApplied: false,
+  performanceMode: "safe",
+  warnings: []
 };
 
 export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleControlProps) {
@@ -90,7 +100,7 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
   const [activeRun, setActiveRun] = useState<ResearchCycleRun>();
   const [activeCalibration, setActiveCalibration] = useState(() => loadActiveResearchCalibration());
   const [activeConfigResolution, setActiveConfigResolution] = useState(() => resolveActiveBacktestConfig());
-  const [activeCandleSource, setActiveCandleSource] = useState<CandleDataSource>(fallbackCandleSource);
+  const [activeCandleSource, setActiveCandleSource] = useState<PreparedCandleSource>(fallbackCandleSource);
   const [searchMode, setSearchMode] = useState<AutoResearchSearchMode>("standard");
   const [busy, setBusy] = useState(false);
   const latestRun = activeRun ?? latestResearchCycleRun(cycleState);
@@ -105,7 +115,7 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
       setCycleState(loadResearchCycleState());
       setActiveCalibration(loadActiveResearchCalibration());
       setActiveConfigResolution(resolveActiveBacktestConfig());
-      loadActiveCandleSource().then((source) => {
+      loadPreparedCandleSource().then((source) => {
         if (mounted) {
           setActiveCandleSource(source);
         }
@@ -114,12 +124,14 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
     refresh();
     window.addEventListener(RESEARCH_CYCLE_UPDATED_EVENT, refresh);
     window.addEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
+    window.addEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
     window.addEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
       mounted = false;
       window.removeEventListener(RESEARCH_CYCLE_UPDATED_EVENT, refresh);
       window.removeEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
+      window.removeEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
@@ -208,11 +220,40 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
               </Badge>
               <span className="text-slate-400">
                 {activeCandleSource.label}
-                {activeCandleSource.metadata?.candleCount
-                  ? ` / ${activeCandleSource.metadata.candleCount.toLocaleString()} candles`
+                {activeCandleSource.mode === "imported"
+                  ? ` / raw ${activeCandleSource.rawCandleCount.toLocaleString()} / window ${activeCandleSource.researchWindowCandles.toLocaleString()} / ${activeCandleSource.processedCandleCount.toLocaleString()} ${activeCandleSource.appliedSettings.targetTimeframe}`
                   : ""}
               </span>
             </div>
+            <div className="mt-3 grid gap-2 rounded-md border border-white/10 bg-slate-950/45 p-2 text-xs text-slate-300 md:grid-cols-5">
+              <div>
+                <p className="uppercase tracking-[0.14em] text-slate-500">Data source</p>
+                <p className="mt-1 font-mono text-slate-100">
+                  {activeCandleSource.mode === "imported" ? activeCandleSource.metadata?.symbol ?? "Imported" : "Mock"}
+                </p>
+              </div>
+              <div>
+                <p className="uppercase tracking-[0.14em] text-slate-500">Raw candles</p>
+                <p className="mt-1 font-mono text-slate-100">{activeCandleSource.rawCandleCount.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="uppercase tracking-[0.14em] text-slate-500">Using window</p>
+                <p className="mt-1 font-mono text-slate-100">{activeCandleSource.researchWindowCandles.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="uppercase tracking-[0.14em] text-slate-500">Research timeframe</p>
+                <p className="mt-1 font-mono text-slate-100">{activeCandleSource.appliedSettings.targetTimeframe}</p>
+              </div>
+              <div>
+                <p className="uppercase tracking-[0.14em] text-slate-500">Performance mode</p>
+                <p className="mt-1 font-mono text-slate-100">{activeCandleSource.performanceMode}</p>
+              </div>
+            </div>
+            {activeCandleSource.warnings.length ? (
+              <div className="mt-3 rounded-md border border-amber-300/20 bg-amber-300/10 p-2 text-xs text-amber-100">
+                {activeCandleSource.warnings[0]}
+              </div>
+            ) : null}
             {latestRun?.candidateProgress ? (
               <div className="mt-3 rounded-md border border-cyan-400/15 bg-cyan-400/5 p-2 text-xs text-cyan-100/80">
                 Pass {latestRun.candidateProgress.passNumber ?? 1}/{latestRun.candidateProgress.totalPasses ?? 1} - candidate{" "}

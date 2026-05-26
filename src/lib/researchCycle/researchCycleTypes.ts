@@ -2,6 +2,7 @@ import type { AutoResearchCycle, AutoResearchProgressSnapshot, AutoResearchSearc
 import type { DebatePosition } from "@/lib/agentDebate";
 import type { BacktestConfig, BacktestSummary, ResolvedBacktestConfig, TradeGenerationDiagnostic } from "@/lib/backtesting";
 import type { LLMAdvisoryRun } from "@/lib/llm";
+import type { CandleWindowSettings, CandleDataSourceMode, ResearchPerformanceMode } from "@/lib/marketData";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
 import type { ResearchQualityReview } from "@/lib/researchQuality";
 import type { CalibrationProposal, CalibrationProposalChanges } from "@/lib/selfImprovement";
@@ -131,6 +132,15 @@ export interface ResearchCycleRun {
   thesisSummary?: ResearchCycleThesisSummary;
   backtestSummary?: ResearchCycleBacktestSummary;
   backtestDiagnostics?: TradeGenerationDiagnostic[];
+  dataSourceMode?: CandleDataSourceMode;
+  dataSourceLabel?: string;
+  rawCandleCount?: number;
+  researchWindowCandles?: number;
+  processedCandleCount?: number;
+  researchTimeframe?: Timeframe;
+  performanceMode?: ResearchPerformanceMode;
+  candleWindowSettings?: CandleWindowSettings;
+  candleWindowWarnings?: string[];
   activeCalibrationId?: string;
   activeCalibrationApprovedAt?: string;
   activeCalibrationApplied?: boolean;

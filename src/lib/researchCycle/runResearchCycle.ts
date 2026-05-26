@@ -31,7 +31,7 @@ import {
   validateLLMContextPacket
 } from "@/lib/llm";
 import type { LLMAdvisoryRun } from "@/lib/llm";
-import { loadActiveCandleSource, type CandleDataSource } from "@/lib/marketData";
+import { loadPreparedCandleSource, type PreparedCandleSource } from "@/lib/marketData";
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import { evaluateReadinessGate } from "@/lib/readiness";
 import { analyzeValidationResults, saveLatestResearchQualityReview } from "@/lib/researchQuality";
@@ -362,10 +362,24 @@ export async function runResearchCycle({
   const cycleId = uid("research_cycle");
   const activeResearchConfig = resolveActiveBacktestConfig(backtestConfig ? sanitizeBacktestConfig(backtestConfig) : undefined);
   const baseActiveConfig = activeResearchConfig.config;
-  const activeCandleSource: CandleDataSource = await loadActiveCandleSource().catch(() => ({
+  const activeCandleSource: PreparedCandleSource = await loadPreparedCandleSource().catch(() => ({
     mode: "mock" as const,
     label: "Mock candles",
-    candles: mockCandles
+    candles: mockCandles,
+    rawCandleCount: mockCandles.length,
+    researchWindowCandles: mockCandles.length,
+    processedCandleCount: mockCandles.length,
+    estimatedProcessedCandles: mockCandles.length,
+    appliedSettings: {
+      windowMode: "latest",
+      windowSize: mockCandles.length,
+      targetTimeframe: "5m" as const,
+      sessionFilter: "all" as const,
+      advancedMode: false
+    },
+    aggregationApplied: false,
+    performanceMode: "safe" as const,
+    warnings: []
   }));
   const researchCandles = activeCandleSource.candles.length ? activeCandleSource.candles : mockCandles;
   const dataSourceLabel = activeCandleSource.mode === "imported" ? activeCandleSource.label : "Mock candles";
@@ -373,7 +387,7 @@ export async function runResearchCycle({
     ? sanitizeBacktestConfig({
         ...baseActiveConfig,
         symbol: activeCandleSource.metadata.symbol,
-        timeframe: activeCandleSource.metadata.timeframe ?? baseActiveConfig.timeframe
+        timeframe: activeCandleSource.appliedSettings.targetTimeframe
       })
     : baseActiveConfig;
   const run: ResearchCycleRun = {
@@ -394,6 +408,15 @@ export async function runResearchCycle({
     savedConfluenceThreshold: activeResearchConfig.savedConfluenceThreshold,
     finalBacktestConfluenceThreshold: activeResearchConfig.finalBacktestConfluenceThreshold,
     activeConfluenceThreshold: activeConfig.minimumConfluenceThreshold,
+    dataSourceMode: activeCandleSource.mode,
+    dataSourceLabel,
+    rawCandleCount: activeCandleSource.rawCandleCount,
+    researchWindowCandles: activeCandleSource.researchWindowCandles,
+    processedCandleCount: activeCandleSource.processedCandleCount,
+    researchTimeframe: activeConfig.timeframe,
+    performanceMode: activeCandleSource.performanceMode,
+    candleWindowSettings: activeCandleSource.appliedSettings,
+    candleWindowWarnings: activeCandleSource.warnings,
     nextRecommendedAction: "Research cycle is running.",
     resultSummary: "Research cycle is running.",
     safetyNotice: "Research cycle only. Broker execution remains disabled."
@@ -508,11 +531,16 @@ export async function runResearchCycle({
         });
       }
     } catch (error) {
+      const fallbackMessage =
+        activeCandleSource.mode === "imported"
+          ? "Historical dataset was too large for browser processing. Reduce research window or aggregate to 5m/15m."
+          : "Backtest failed. Check active Backtest Lab config and mock candle data.";
+      const details = error instanceof Error ? error.message : fallbackMessage;
       failStep(
         "backtest",
-        error instanceof Error
-          ? `Backtest failed: ${error.message}`
-          : "Backtest failed. Check active Backtest Lab config and mock candle data."
+        activeCandleSource.mode === "imported"
+          ? `${fallbackMessage} Details: ${details}`
+          : `Backtest failed: ${details}`
       );
     }
 
