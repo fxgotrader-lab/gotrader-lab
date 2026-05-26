@@ -33,6 +33,7 @@ import {
 } from "@/lib/selfImprovement";
 import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
+  importedDataPresetSettings,
   loadCandleWindowSettings,
   loadPreparedCandleSource,
   MARKET_DATA_IMPORT_UPDATED_EVENT,
@@ -191,6 +192,15 @@ export function BacktestLab() {
     await refreshWithActiveSource(undefined, saved);
   };
 
+  const applyImportedPreset = async (preset: "safe" | "standard" | "advanced") => {
+    const saved = saveCandleWindowSettings({
+      ...windowSettings,
+      ...importedDataPresetSettings[preset]
+    });
+    setWindowSettings(saved);
+    await refreshWithActiveSource(undefined, saved);
+  };
+
   const run = async () => {
     const saved = saveBacktestConfig(draftConfig);
     await refreshWithActiveSource(saved);
@@ -307,6 +317,17 @@ export function BacktestLab() {
                 ? `Raw candles ${candleSource.rawCandleCount.toLocaleString()}; research window ${candleSource.researchWindowCandles.toLocaleString()}; processed ${candleSource.processedCandleCount.toLocaleString()} ${candleSource.appliedSettings.targetTimeframe} candle(s).`
                 : `${mockCandles.length.toLocaleString()} bundled mock candle(s) for simulation research.`}
             </p>
+          </div>
+          <div className="grid gap-2 md:grid-cols-3">
+            <Button variant="secondary" onClick={() => void applyImportedPreset("safe")} className="justify-center">
+              Safe: 500 raw to 5m
+            </Button>
+            <Button variant="outline" onClick={() => void applyImportedPreset("standard")} className="justify-center">
+              Standard: 2,000 raw to 5m
+            </Button>
+            <Button variant="outline" onClick={() => void applyImportedPreset("advanced")} className="justify-center">
+              Advanced custom
+            </Button>
           </div>
           <div className="grid gap-3 md:grid-cols-4">
             <div className="space-y-2">

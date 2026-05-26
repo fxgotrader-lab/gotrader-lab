@@ -31,6 +31,11 @@ export const CANDLE_WINDOW_SETTINGS_UPDATED_EVENT = "gotrader-ai-lab-candle-wind
 export const SAFE_CANDLE_WINDOW_LIMIT = 5000;
 export const HARD_BROWSER_CANDLE_LIMIT = 10000;
 export const DEFAULT_IMPORTED_WINDOW_SIZE = 2000;
+export const DASHBOARD_IMPORTED_SAFE_WINDOW_SIZE = 500;
+export const DASHBOARD_IMPORTED_STANDARD_WINDOW_SIZE = 2000;
+export const DASHBOARD_IMPORTED_SAFE_PROCESSED_LIMIT = 500;
+export const DASHBOARD_IMPORTED_RAW_WINDOW_LIMIT = 2000;
+export const DASHBOARD_IMPORTED_CANDIDATE_LIMIT = 10;
 export const safeWindowSizeOptions = [500, 1000, 2000, 5000];
 
 const STORAGE_KEY = "gotrader-ai-lab-candle-window-settings";
@@ -44,6 +49,29 @@ export const defaultCandleWindowSettings: CandleWindowSettings = {
   sessionFilter: "all",
   advancedMode: false
 };
+
+export const dashboardImportedSafeCandleWindowSettings: CandleWindowSettings = {
+  ...defaultCandleWindowSettings,
+  windowSize: DASHBOARD_IMPORTED_SAFE_WINDOW_SIZE,
+  targetTimeframe: "5m",
+  advancedMode: false
+};
+
+export const importedDataPresetSettings = {
+  safe: dashboardImportedSafeCandleWindowSettings,
+  standard: {
+    ...defaultCandleWindowSettings,
+    windowSize: DASHBOARD_IMPORTED_STANDARD_WINDOW_SIZE,
+    targetTimeframe: "5m",
+    advancedMode: false
+  },
+  advanced: {
+    ...defaultCandleWindowSettings,
+    windowSize: DASHBOARD_IMPORTED_STANDARD_WINDOW_SIZE,
+    targetTimeframe: "5m",
+    advancedMode: true
+  }
+} satisfies Record<"safe" | "standard" | "advanced", CandleWindowSettings>;
 
 const timeframeMinutes: Record<ResearchTimeframe, number> = {
   "1m": 1,

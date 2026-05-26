@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/select";
 import {
   buildMarketContext,
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
+  importedDataPresetSettings,
   importHistoricalCandleFile,
   listImportedCandleMetadata,
   loadCandleWindowSettings,
@@ -161,6 +162,15 @@ export function MarketDataView() {
     await refreshImports();
   };
 
+  const applyImportedPreset = async (preset: "safe" | "standard" | "advanced") => {
+    const saved = saveCandleWindowSettings({
+      ...windowSettings,
+      ...importedDataPresetSettings[preset]
+    });
+    setWindowSettings(saved);
+    await refreshImports();
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
@@ -248,12 +258,35 @@ export function MarketDataView() {
                 <p className="font-semibold">Research Window Controls</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Dashboard and Backtest Lab use this prepared window instead of the full raw file. Default is latest
-                  2,000 raw 1m candles aggregated to 5m.
+                  500 raw candles aggregated to 5m for dashboard Safe mode; Standard uses 2,000.
                 </p>
               </div>
               <Badge variant={activeSource.performanceMode === "safe" ? "success" : "warning"}>
                 performance mode: {activeSource.performanceMode}
               </Badge>
+            </div>
+            <div className="mt-3 grid gap-2 md:grid-cols-3">
+              <Button
+                variant="secondary"
+                onClick={() => void applyImportedPreset("safe")}
+                className="justify-center"
+              >
+                Safe: 500 raw to 5m
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => void applyImportedPreset("standard")}
+                className="justify-center"
+              >
+                Standard: 2,000 raw to 5m
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => void applyImportedPreset("advanced")}
+                className="justify-center"
+              >
+                Advanced custom
+              </Button>
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-5">
               <div className="space-y-2">

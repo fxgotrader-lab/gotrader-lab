@@ -31,7 +31,15 @@ import {
   validateLLMContextPacket
 } from "@/lib/llm";
 import type { LLMAdvisoryRun } from "@/lib/llm";
-import { loadPreparedCandleSource, type PreparedCandleSource } from "@/lib/marketData";
+import {
+  DASHBOARD_IMPORTED_CANDIDATE_LIMIT,
+  DASHBOARD_IMPORTED_RAW_WINDOW_LIMIT,
+  DASHBOARD_IMPORTED_SAFE_PROCESSED_LIMIT,
+  DASHBOARD_IMPORTED_SAFE_WINDOW_SIZE,
+  dashboardImportedSafeCandleWindowSettings,
+  loadPreparedCandleSource,
+  type PreparedCandleSource
+} from "@/lib/marketData";
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import { evaluateReadinessGate } from "@/lib/readiness";
 import { analyzeValidationResults, saveLatestResearchQualityReview } from "@/lib/researchQuality";
@@ -132,7 +140,21 @@ const initialState = (): ResearchCycleState => ({
 
 const publish = (state: ResearchCycleState) => {
   if (isBrowser()) {
-    window.localStorage.setItem(RESEARCH_CYCLE_STORAGE_KEY, JSON.stringify(state));
+    try {
+      window.localStorage.setItem(RESEARCH_CYCLE_STORAGE_KEY, JSON.stringify(state));
+    } catch (error) {
+      const compactState = {
+        ...state,
+        runs: safeTopN(safeArray(state.runs), 1)
+      };
+      try {
+        window.localStorage.setItem(RESEARCH_CYCLE_STORAGE_KEY, JSON.stringify(compactState));
+      } catch (retryError) {
+        console.warn("Research cycle storage write skipped after pruning.", {
+          error: retryError instanceof Error ? retryError.message : String(retryError)
+        });
+      }
+    }
     window.dispatchEvent(new CustomEvent(RESEARCH_CYCLE_UPDATED_EVENT, { detail: state }));
   }
   return state;
@@ -145,6 +167,15 @@ const initialSteps = (): ResearchCycleStepResult[] =>
   }));
 
 const now = () => new Date().toISOString();
+
+const yieldToBrowser = () =>
+  new Promise<void>((resolve) => {
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => resolve());
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
 
 const statusCounts = (steps: ResearchCycleStepResult[]) => ({
   warnings: steps.filter((step) => step.status === "warning").length,
@@ -355,6 +386,9 @@ export async function runResearchCycle({
   searchMode = "standard",
   maxCandidateCount = 10,
   backtestConfig,
+  candleWindowSettings,
+  advancedFullResearchMode = false,
+  skipHeavyAudit,
   onUpdate
 }: ResearchCycleRunOptions): Promise<ResearchCycleRun> {
   let steps = initialSteps();
@@ -362,7 +396,8 @@ export async function runResearchCycle({
   const cycleId = uid("research_cycle");
   const activeResearchConfig = resolveActiveBacktestConfig(backtestConfig ? sanitizeBacktestConfig(backtestConfig) : undefined);
   const baseActiveConfig = activeResearchConfig.config;
-  const activeCandleSource: PreparedCandleSource = await loadPreparedCandleSource().catch(() => ({
+  const requestedCandleWindowSettings = candleWindowSettings ?? dashboardImportedSafeCandleWindowSettings;
+  const activeCandleSource: PreparedCandleSource = await loadPreparedCandleSource(requestedCandleWindowSettings).catch(() => ({
     mode: "mock" as const,
     label: "Mock candles",
     candles: mockCandles,
@@ -381,6 +416,34 @@ export async function runResearchCycle({
     performanceMode: "safe" as const,
     warnings: []
   }));
+  const importedSafeMode = activeCandleSource.mode === "imported" && !advancedFullResearchMode;
+  const effectiveSearchMode = importedSafeMode ? "quick" : searchMode;
+  const effectiveMaxCandidateCount = importedSafeMode
+    ? Math.min(maxCandidateCount, 5)
+    : maxCandidateCount;
+  const effectiveMaxAdaptivePasses = importedSafeMode ? 1 : undefined;
+  const heavyAuditSkipped = skipHeavyAudit ?? importedSafeMode;
+  const researchPreset =
+    activeCandleSource.mode !== "imported"
+      ? "mock"
+      : advancedFullResearchMode || activeCandleSource.performanceMode === "advanced"
+        ? "advanced"
+        : activeCandleSource.researchWindowCandles <= DASHBOARD_IMPORTED_SAFE_WINDOW_SIZE
+          ? "safe"
+          : "standard";
+  const hardLimitWarnings = activeCandleSource.mode === "imported" && !advancedFullResearchMode
+    ? [
+        activeCandleSource.processedCandleCount > DASHBOARD_IMPORTED_SAFE_PROCESSED_LIMIT
+          ? `Processed candles ${activeCandleSource.processedCandleCount.toLocaleString()} exceed the dashboard safe limit of ${DASHBOARD_IMPORTED_SAFE_PROCESSED_LIMIT.toLocaleString()}.`
+          : undefined,
+        activeCandleSource.researchWindowCandles > DASHBOARD_IMPORTED_RAW_WINDOW_LIMIT
+          ? `Raw imported window ${activeCandleSource.researchWindowCandles.toLocaleString()} exceeds the dashboard safe limit of ${DASHBOARD_IMPORTED_RAW_WINDOW_LIMIT.toLocaleString()}.`
+          : undefined,
+        maxCandidateCount > DASHBOARD_IMPORTED_CANDIDATE_LIMIT
+          ? `Candidate count ${maxCandidateCount.toLocaleString()} exceeds the imported-data safe limit of ${DASHBOARD_IMPORTED_CANDIDATE_LIMIT.toLocaleString()}.`
+          : undefined
+      ].filter(Boolean) as string[]
+    : [];
   const researchCandles = activeCandleSource.candles.length ? activeCandleSource.candles : mockCandles;
   const dataSourceLabel = activeCandleSource.mode === "imported" ? activeCandleSource.label : "Mock candles";
   const activeConfig = activeCandleSource.metadata
@@ -415,8 +478,13 @@ export async function runResearchCycle({
     processedCandleCount: activeCandleSource.processedCandleCount,
     researchTimeframe: activeConfig.timeframe,
     performanceMode: activeCandleSource.performanceMode,
+    researchPreset,
+    advancedFullResearchMode,
+    effectiveSearchMode,
+    effectiveMaxCandidateCount,
+    heavyAuditSkipped,
     candleWindowSettings: activeCandleSource.appliedSettings,
-    candleWindowWarnings: activeCandleSource.warnings,
+    candleWindowWarnings: [...activeCandleSource.warnings, ...hardLimitWarnings],
     nextRecommendedAction: "Research cycle is running.",
     resultSummary: "Research cycle is running.",
     safetyNotice: "Research cycle only. Broker execution remains disabled."
@@ -453,8 +521,32 @@ export async function runResearchCycle({
 
   notify();
 
+  if (hardLimitWarnings.length) {
+    failStep(
+      "thesis_generation",
+      `Imported historical dataset exceeds dashboard safe limits. ${hardLimitWarnings.join(" ")} Enable Advanced full research mode intentionally, or use the Safe preset: latest 500 raw candles aggregated to 5m.`
+    );
+    skipStep("backtest", "Backtest skipped because imported-data limits were exceeded.");
+    skipStep("llm_advisory", "LLM advisory skipped because imported-data limits were exceeded.");
+    skipStep("auto_research", "Auto Research skipped because imported-data limits were exceeded.");
+    skipStep("validation", "Validation skipped because imported-data limits were exceeded.");
+    skipStep("research_quality", "Research quality skipped because imported-data limits were exceeded.");
+    skipStep("self_improvement", "Self-improvement skipped because imported-data limits were exceeded.");
+    skipStep("simulation_verification", "Simulation runbook update skipped because imported-data limits were exceeded.");
+    skipStep("readiness_gate", "Readiness skipped because imported-data limits were exceeded.");
+    skipStep("communications_audit", "Communications audit skipped because imported-data limits were exceeded.");
+    run.status = "failed";
+    run.completedAt = now();
+    run.nextRecommendedAction =
+      "Use the dashboard Safe preset or enable Advanced full research mode only when intentionally stress-testing large imported datasets.";
+    run.resultSummary = resultSummaryFor(run);
+    saveResearchCycleRun(snapshot());
+    return snapshot();
+  }
+
   try {
     startStep("thesis_generation");
+    await yieldToBrowser();
     let generatedThesis: ReturnType<typeof generateThesis> | undefined;
     let structuredDebateSession: AgentDebateSession | undefined;
     let latestSelfImprovementProposal: CalibrationProposal | undefined;
@@ -503,6 +595,7 @@ export async function runResearchCycle({
     }
 
     startStep("backtest");
+    await yieldToBrowser();
     let backtestResult: BacktestResult | undefined;
     try {
       backtestResult = runBacktest(researchCandles, activeConfig);
@@ -561,6 +654,7 @@ export async function runResearchCycle({
     }
 
     startStep("llm_advisory");
+    await yieldToBrowser();
     const startingRunbook = loadSimulationRunbookState();
     const llmPacket = buildLLMResearchContextPacket({
       state: workingState,
@@ -605,47 +699,62 @@ export async function runResearchCycle({
     }
 
     startStep("auto_research");
-    const autoResearchCycle = runAutoResearchCycle({
-      searchMode,
-      maxCandidateCount,
-      createProposal: true,
-      candles: researchCandles,
-      baselineConfig: activeConfig,
-      onCandidateEvaluated: (progress) => {
-        run.candidateProgress = progress;
-        setStep("auto_research", {
-          status: "running",
-          summary: `Pass ${progress.passNumber ?? 1}/${progress.totalPasses ?? 1}: candidate ${progress.currentCandidate}/${progress.totalCandidates}: ${progress.candidateLabel}.`,
-          detail: progress.bestCandidateLabel
-            ? `Best so far: ${progress.bestCandidateLabel} (${progress.bestCandidateCategory}, score ${progress.bestCandidateScore}). Targeting: ${
-                safeArray(progress.failedGatesTargeted).length
-                  ? safeArray(progress.failedGatesTargeted).map((gate) => gate.replace(/_/g, " ")).join(", ")
-                  : "initial bounded search"
-              }.`
-            : "No stable best candidate selected yet."
+    await yieldToBrowser();
+    let autoResearchCycle: ReturnType<typeof runAutoResearchCycle> | undefined;
+    try {
+      autoResearchCycle = runAutoResearchCycle({
+        searchMode: effectiveSearchMode,
+        maxCandidateCount: effectiveMaxCandidateCount,
+        maxAdaptivePasses: effectiveMaxAdaptivePasses,
+        createProposal: true,
+        candles: researchCandles,
+        baselineConfig: activeConfig,
+        onCandidateEvaluated: (progress) => {
+          run.candidateProgress = progress;
+          setStep("auto_research", {
+            status: "running",
+            summary: `Pass ${progress.passNumber ?? 1}/${progress.totalPasses ?? 1}: candidate ${progress.currentCandidate}/${progress.totalCandidates}: ${progress.candidateLabel}.`,
+            detail: progress.bestCandidateLabel
+              ? `Best so far: ${progress.bestCandidateLabel} (${progress.bestCandidateCategory}, score ${progress.bestCandidateScore}). Targeting: ${
+                  safeArray(progress.failedGatesTargeted).length
+                    ? safeArray(progress.failedGatesTargeted).map((gate) => gate.replace(/_/g, " ")).join(", ")
+                    : "initial bounded search"
+                }.`
+              : "No stable best candidate selected yet."
+          });
+        }
+      });
+      run.autoResearchCycle = autoResearchCycle;
+      run.createdProposalId = autoResearchCycle.createdProposalId;
+      run.latestGeneratedProposal = autoResearchCycle.createdProposal;
+      run.bestCandidateSummary = summarizeCandidate(autoResearchCycle.bestCandidate);
+      if (autoResearchCycle.status === "failed") {
+        failStep("auto_research", autoResearchCycle.error ?? "Auto Research cycle failed.");
+      } else {
+        passStep("auto_research", {
+          summary: autoResearchCycle.bestCandidate
+            ? `Best candidate: ${autoResearchCycle.bestCandidate.label}.`
+            : "Auto Research completed without a viable best candidate.",
+          detail: autoResearchCycle.noSafePaperDemoCandidateFound
+            ? autoResearchCycle.recoveryAttempted
+              ? `${safeArray(autoResearchCycle.adaptivePasses).length || 1} adaptive pass${safeArray(autoResearchCycle.adaptivePasses).length === 1 ? "" : "es"} plus recovery completed. Trades after recovery: ${autoResearchCycle.tradesAfterRecovery ?? 0}. Continue research.`
+              : `${safeArray(autoResearchCycle.adaptivePasses).length || 1} adaptive pass${safeArray(autoResearchCycle.adaptivePasses).length === 1 ? "" : "es"} completed. No safe Paper-Demo Candidate found. Continue research.`
+            : `${safeArray(autoResearchCycle.adaptivePasses).length || 1} adaptive pass${safeArray(autoResearchCycle.adaptivePasses).length === 1 ? "" : "es"} completed. Final category: ${autoResearchCycle.finalResultCategory}.`
         });
       }
-    });
-    run.autoResearchCycle = autoResearchCycle;
-    run.createdProposalId = autoResearchCycle.createdProposalId;
-    run.latestGeneratedProposal = autoResearchCycle.createdProposal;
-    run.bestCandidateSummary = summarizeCandidate(autoResearchCycle.bestCandidate);
-    if (autoResearchCycle.status === "failed") {
-      failStep("auto_research", autoResearchCycle.error ?? "Auto Research cycle failed.");
-    } else {
-      passStep("auto_research", {
-        summary: autoResearchCycle.bestCandidate
-          ? `Best candidate: ${autoResearchCycle.bestCandidate.label}.`
-          : "Auto Research completed without a viable best candidate.",
-        detail: autoResearchCycle.noSafePaperDemoCandidateFound
-          ? autoResearchCycle.recoveryAttempted
-            ? `${safeArray(autoResearchCycle.adaptivePasses).length || 1} adaptive pass${safeArray(autoResearchCycle.adaptivePasses).length === 1 ? "" : "es"} plus recovery completed. Trades after recovery: ${autoResearchCycle.tradesAfterRecovery ?? 0}. Continue research.`
-            : `${safeArray(autoResearchCycle.adaptivePasses).length || 1} adaptive pass${safeArray(autoResearchCycle.adaptivePasses).length === 1 ? "" : "es"} completed. No safe Paper-Demo Candidate found. Continue research.`
-          : `${safeArray(autoResearchCycle.adaptivePasses).length || 1} adaptive pass${safeArray(autoResearchCycle.adaptivePasses).length === 1 ? "" : "es"} completed. Final category: ${autoResearchCycle.finalResultCategory}.`
+    } catch (error) {
+      const message =
+        activeCandleSource.mode === "imported"
+          ? "Auto Research exceeded browser-safe processing limits. Keep the Safe preset or reduce search depth."
+          : "Auto Research failed.";
+      warnStep("auto_research", {
+        summary: "Auto Research failed safely; downstream validation will continue where possible.",
+        warning: `${message} ${error instanceof Error ? error.message : ""}`.trim()
       });
     }
 
     startStep("validation");
+    await yieldToBrowser();
     let validationReport: ValidationSuiteReport | undefined;
     try {
       validationReport = runValidationSuite(researchCandles, activeConfig);
@@ -661,6 +770,7 @@ export async function runResearchCycle({
     }
 
     startStep("research_quality");
+    await yieldToBrowser();
     let researchQualityReview: ReturnType<typeof analyzeValidationResults> | undefined;
     if (!validationReport) {
       skipStep("research_quality", "Research quality skipped because validation did not produce a report.");
@@ -680,6 +790,7 @@ export async function runResearchCycle({
     }
 
     startStep("self_improvement");
+    await yieldToBrowser();
     let improvementState = loadSelfImprovementState();
     if (
       run.createdProposalId &&
@@ -725,6 +836,7 @@ export async function runResearchCycle({
     }
 
     startStep("simulation_verification");
+    await yieldToBrowser();
     const runbookBefore = loadSimulationRunbookState();
     const runbookAfter = {
       ...runbookBefore,
@@ -752,6 +864,7 @@ export async function runResearchCycle({
     });
 
     startStep("readiness_gate");
+    await yieldToBrowser();
     const readinessSnapshot = evaluateReadinessGate({
       validation: validationReport,
       quality: researchQualityReview,
@@ -767,18 +880,27 @@ export async function runResearchCycle({
       detail: `${safeArray(readinessSnapshot.failedRequirements).length} failed requirement${safeArray(readinessSnapshot.failedRequirements).length === 1 ? "" : "s"}; no override applied.`
     });
 
-    saveAgentAuditTraces([
-      ...buildAgentAuditTraces({
-        thesis: generatedThesis.thesis,
-        debateMessages: generatedThesis.debateSession.messages,
-        llmRun: run.llmRun
-      }),
-      ...auditCioSynthesis(generatedThesis.thesis, generatedThesis.debateSession.messages),
-      ...auditAgentDebateSession(structuredDebateSession),
-      ...auditAutoResearchDecision(autoResearchCycle),
-      ...auditSelfImprovementDecision(latestSelfImprovementProposal),
-      ...auditReadinessGate(readinessSnapshot)
-    ]);
+    let auditWarning: string | undefined;
+    if (heavyAuditSkipped) {
+      auditWarning = "Heavy agent audit traces were skipped in imported-data Safe mode. Enable Advanced full research mode only for intentional stress testing.";
+    } else {
+      try {
+        saveAgentAuditTraces([
+          ...buildAgentAuditTraces({
+            thesis: generatedThesis.thesis,
+            debateMessages: generatedThesis.debateSession.messages,
+            llmRun: run.llmRun
+          }),
+          ...auditCioSynthesis(generatedThesis.thesis, generatedThesis.debateSession.messages),
+          ...auditAgentDebateSession(structuredDebateSession),
+          ...(autoResearchCycle ? auditAutoResearchDecision(autoResearchCycle) : []),
+          ...auditSelfImprovementDecision(latestSelfImprovementProposal),
+          ...auditReadinessGate(readinessSnapshot)
+        ]);
+      } catch (error) {
+        auditWarning = `Agent audit trace storage failed safely. ${error instanceof Error ? error.message : ""}`.trim();
+      }
+    }
 
     run.status = finalStatusFor(run);
     run.completedAt = now();
@@ -786,19 +908,35 @@ export async function runResearchCycle({
     run.resultSummary = resultSummaryFor(run);
 
     startStep("communications_audit");
-    recordResearchCycleCommunication({
-      cycleId: run.cycleId,
-      status: run.status,
-      summary: resultSummaryFor({ ...run, steps }),
-      validationId: validationReport?.id,
-      proposalId: run.createdProposalId,
-      readinessState: readinessSnapshot.state,
-      actionRequired: Boolean(run.createdProposalId || safeArray(run.blockers).length || run.status === "completed_with_warnings")
-    });
-    passStep("communications_audit", {
-      summary: "Research cycle logged to the in-app communications audit trail.",
-      detail: "Audit message has no execution authority."
-    });
+    await yieldToBrowser();
+    try {
+      recordResearchCycleCommunication({
+        cycleId: run.cycleId,
+        status: run.status,
+        summary: resultSummaryFor({ ...run, steps }),
+        validationId: validationReport?.id,
+        proposalId: run.createdProposalId,
+        readinessState: readinessSnapshot.state,
+        actionRequired: Boolean(run.createdProposalId || safeArray(run.blockers).length || run.status === "completed_with_warnings")
+      });
+      if (auditWarning) {
+        warnStep("communications_audit", {
+          summary: "Research cycle logged with compact audit handling.",
+          warning: auditWarning,
+          detail: "Audit message has no execution authority."
+        });
+      } else {
+        passStep("communications_audit", {
+          summary: "Research cycle logged to the in-app communications audit trail.",
+          detail: "Audit message has no execution authority."
+        });
+      }
+    } catch (error) {
+      warnStep("communications_audit", {
+        summary: "Research cycle completed, but communications audit storage failed safely.",
+        warning: error instanceof Error ? error.message : "Unable to save communication audit entry."
+      });
+    }
 
     run.status = finalStatusFor(run);
     run.completedAt = now();
@@ -815,13 +953,17 @@ export async function runResearchCycle({
     run.completedAt = now();
     run.nextRecommendedAction = nextActionFor(run);
     run.resultSummary = resultSummaryFor(run);
-    recordResearchCycleCommunication({
-      cycleId: run.cycleId,
-      status: "failed",
-      summary: message,
-      readinessState: run.readinessSnapshot?.state,
-      actionRequired: true
-    });
+    try {
+      recordResearchCycleCommunication({
+        cycleId: run.cycleId,
+        status: "failed",
+        summary: message,
+        readinessState: run.readinessSnapshot?.state,
+        actionRequired: true
+      });
+    } catch {
+      // Keep the failed research-cycle result available even if audit logging storage is full.
+    }
     saveResearchCycleRun(snapshot());
     return snapshot();
   }

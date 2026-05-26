@@ -25,6 +25,7 @@ The dashboard **Run AI Research Cycle** control runs a local, simulation-only re
    - Candidate configs are bounded to research settings only.
    - Ranking favors stability over profit.
    - Any created calibration proposal remains approval-required.
+   - Imported historical data defaults to quick mode, 5 candidates, and one adaptive follow-up pass unless Advanced full research mode is enabled.
 
 5. Run Validation Suite.
    - Stores strongest/weakest scenarios and recommended thresholds.
@@ -62,6 +63,22 @@ The dashboard **Run AI Research Cycle** control runs a local, simulation-only re
 - Runbook research timestamp
 - Readiness recalculation
 - Communications audit entry
+
+## Imported Data Safe Mode
+
+When imported MNQ or other historical candles are active, the dashboard runs the pipeline in Safe mode by default:
+
+- latest 500 raw candles
+- 5m aggregation
+- about 100 processed candles
+- quick search only
+- maximum 5 candidates
+- one adaptive pass
+- compact audit traces
+
+This keeps the browser responsive while still proving whether the current research setup can generate and evaluate simulated trades. Standard and Advanced modes remain available from Market Data and Backtest Lab, but the dashboard requires the Advanced full research toggle before allowing larger imported-data runs.
+
+If a phase fails, the pipeline records the failed or warning step and continues where safe. It should not crash the page or silently mark missing work as passed.
 
 ## What Still Requires Approval
 

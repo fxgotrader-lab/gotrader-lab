@@ -139,6 +139,11 @@ export interface ResearchCycleRun {
   processedCandleCount?: number;
   researchTimeframe?: Timeframe;
   performanceMode?: ResearchPerformanceMode;
+  researchPreset?: "mock" | "safe" | "standard" | "advanced";
+  advancedFullResearchMode?: boolean;
+  effectiveSearchMode?: AutoResearchSearchMode;
+  effectiveMaxCandidateCount?: number;
+  heavyAuditSkipped?: boolean;
   candleWindowSettings?: CandleWindowSettings;
   candleWindowWarnings?: string[];
   activeCalibrationId?: string;
@@ -179,5 +184,8 @@ export interface ResearchCycleRunOptions {
   searchMode?: AutoResearchSearchMode;
   maxCandidateCount?: number;
   backtestConfig?: BacktestConfig;
+  candleWindowSettings?: Partial<CandleWindowSettings>;
+  advancedFullResearchMode?: boolean;
+  skipHeavyAudit?: boolean;
   onUpdate?: (run: ResearchCycleRun) => void;
 }

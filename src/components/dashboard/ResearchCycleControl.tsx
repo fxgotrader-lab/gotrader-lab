@@ -19,6 +19,8 @@ import {
 import type { ResearchCycleRun, ResearchCycleStepResult, ResearchCycleStepStatus } from "@/lib/researchCycle";
 import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
+  DASHBOARD_IMPORTED_SAFE_WINDOW_SIZE,
+  dashboardImportedSafeCandleWindowSettings,
   loadCandleWindowSettings,
   loadPreparedCandleSource,
   MARKET_DATA_IMPORT_UPDATED_EVENT,
@@ -102,9 +104,17 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
   const [activeConfigResolution, setActiveConfigResolution] = useState(() => resolveActiveBacktestConfig());
   const [activeCandleSource, setActiveCandleSource] = useState<PreparedCandleSource>(fallbackCandleSource);
   const [searchMode, setSearchMode] = useState<AutoResearchSearchMode>("standard");
+  const [advancedFullResearchMode, setAdvancedFullResearchMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const latestRun = activeRun ?? latestResearchCycleRun(cycleState);
-  const selectedSearchMode = dashboardSearchModes.find((mode) => mode.value === searchMode) ?? dashboardSearchModes[1];
+  const importedSafeMode = activeCandleSource.mode === "imported" && !advancedFullResearchMode;
+  const effectiveSearchMode = importedSafeMode ? "quick" : searchMode;
+  const selectedSearchMode = dashboardSearchModes.find((mode) => mode.value === effectiveSearchMode) ?? dashboardSearchModes[0];
+  const dashboardPreset = activeCandleSource.mode === "imported"
+    ? advancedFullResearchMode
+      ? "Advanced"
+      : "Safe"
+    : "Mock";
   const researchCalibrationAvailable = Boolean(
     latestRun?.createdProposalId && latestRun.autoResearchCycle?.noSafePaperDemoCandidateFound
   );
@@ -115,9 +125,13 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
       setCycleState(loadResearchCycleState());
       setActiveCalibration(loadActiveResearchCalibration());
       setActiveConfigResolution(resolveActiveBacktestConfig());
-      loadPreparedCandleSource().then((source) => {
+      loadPreparedCandleSource().then(async (source) => {
+        const preparedSource =
+          source.mode === "imported" && !advancedFullResearchMode
+            ? await loadPreparedCandleSource(dashboardImportedSafeCandleWindowSettings)
+            : source;
         if (mounted) {
-          setActiveCandleSource(source);
+          setActiveCandleSource(preparedSource);
         }
       });
     };
@@ -135,7 +149,7 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
       window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
-  }, []);
+  }, [advancedFullResearchMode]);
 
   const progress = useMemo(() => {
     const steps = safeArray(latestRun?.steps);
@@ -153,8 +167,14 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
     try {
       const result = await runResearchCycle({
         state,
-        searchMode,
+        searchMode: effectiveSearchMode,
         maxCandidateCount: selectedSearchMode.count,
+        candleWindowSettings:
+          activeCandleSource.mode === "imported" && !advancedFullResearchMode
+            ? dashboardImportedSafeCandleWindowSettings
+            : activeCandleSource.appliedSettings,
+        advancedFullResearchMode,
+        skipHeavyAudit: activeCandleSource.mode === "imported" && !advancedFullResearchMode,
         onUpdate: (run) => {
           setActiveRun(run);
           onCycleUpdate?.();
@@ -169,6 +189,24 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
       setBusy(false);
     }
   };
+
+  const updateAdvancedFullResearchMode = (enabled: boolean) => {
+    if (
+      enabled &&
+      typeof window !== "undefined" &&
+      !window.confirm("Large imported datasets may freeze the browser. Use small windows first.")
+    ) {
+      return;
+    }
+    setAdvancedFullResearchMode(enabled);
+  };
+
+  const previousDataSizeFailure =
+    latestRun?.status === "failed" &&
+    latestRun.dataSourceMode === "imported" &&
+    /dataset|browser|processing|safe limit|large|too large/i.test(
+      `${latestRun.failedStepDetails ?? ""} ${latestRun.resultSummary ?? ""}`
+    );
 
   return (
     <Card className="border-cyan-400/25 bg-cyan-950/20">
@@ -225,7 +263,7 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
                   : ""}
               </span>
             </div>
-            <div className="mt-3 grid gap-2 rounded-md border border-white/10 bg-slate-950/45 p-2 text-xs text-slate-300 md:grid-cols-5">
+            <div className="mt-3 grid gap-2 rounded-md border border-white/10 bg-slate-950/45 p-2 text-xs text-slate-300 md:grid-cols-6">
               <div>
                 <p className="uppercase tracking-[0.14em] text-slate-500">Data source</p>
                 <p className="mt-1 font-mono text-slate-100">
@@ -248,7 +286,16 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
                 <p className="uppercase tracking-[0.14em] text-slate-500">Performance mode</p>
                 <p className="mt-1 font-mono text-slate-100">{activeCandleSource.performanceMode}</p>
               </div>
+              <div>
+                <p className="uppercase tracking-[0.14em] text-slate-500">Research preset</p>
+                <p className="mt-1 font-mono text-slate-100">{dashboardPreset}</p>
+              </div>
             </div>
+            {previousDataSizeFailure ? (
+              <div className="mt-3 rounded-md border border-amber-300/20 bg-amber-300/10 p-2 text-xs text-amber-100">
+                Last run may have exceeded browser limits. Safe mode is recommended.
+              </div>
+            ) : null}
             {activeCandleSource.warnings.length ? (
               <div className="mt-3 rounded-md border border-amber-300/20 bg-amber-300/10 p-2 text-xs text-amber-100">
                 {activeCandleSource.warnings[0]}
@@ -273,11 +320,33 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
             </Label>
             <Select
               id="dashboard-research-depth"
-              disabled={busy}
-              value={searchMode}
+              disabled={busy || importedSafeMode}
+              value={effectiveSearchMode}
               options={dashboardSearchModes.map((mode) => ({ label: mode.label, value: mode.value }))}
               onChange={(event) => setSearchMode(event.target.value as AutoResearchSearchMode)}
             />
+            {importedSafeMode ? (
+              <div className="rounded-md border border-cyan-300/20 bg-cyan-300/10 p-2 text-xs text-cyan-50">
+                Imported data Safe preset is active: latest {DASHBOARD_IMPORTED_SAFE_WINDOW_SIZE.toLocaleString()} raw candles,
+                5m aggregation, quick search, 5 candidates, one adaptive pass, compact audit.
+              </div>
+            ) : null}
+            {activeCandleSource.mode === "imported" ? (
+              <label className="flex items-start gap-2 rounded-md border border-white/10 bg-slate-950/50 p-2 text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={advancedFullResearchMode}
+                  disabled={busy}
+                  onChange={(event) => updateAdvancedFullResearchMode(event.target.checked)}
+                />
+                <span>
+                  Advanced full research mode
+                  <span className="block text-slate-500">
+                    Required for 2,000+ raw candles, deep search, and full audit traces.
+                  </span>
+                </span>
+              </label>
+            ) : null}
             <Button onClick={runCycle} disabled={busy} className="h-12 w-full justify-center gap-2">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
               Run AI Research Cycle
