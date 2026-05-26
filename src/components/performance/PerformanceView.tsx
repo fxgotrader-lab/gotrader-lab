@@ -2,11 +2,13 @@ import { useMemo } from "react";
 import { AlertTriangle, Activity, ShieldAlert, Trophy } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { MetricCard } from "@/components/MetricCard";
+import { SimulatedAccountCard } from "@/components/dashboard/SimulatedAccountCard";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { describeBacktestConfig, runBacktest } from "@/lib/backtesting";
 import { mockCandles } from "@/lib/mockData/mockCandles";
+import { buildSimulatedAccountFromBacktestResult } from "@/lib/performance/simulatedAccount";
 import { resolveActiveBacktestConfig } from "@/lib/selfImprovement";
 import { aggregatePortfolioMetrics, identifyWeakestAgent } from "@/lib/scoring";
 import type { LabState } from "@/lib/types";
@@ -28,6 +30,10 @@ export function PerformanceView({ state }: { state: LabState }) {
   const activeBacktestConfig = useMemo(() => resolveActiveBacktestConfig().config, []);
   const backtest = useMemo(() => runBacktest(mockCandles, activeBacktestConfig), [activeBacktestConfig]);
   const backtestSummary = backtest.summary;
+  const simulatedAccount = useMemo(
+    () => buildSimulatedAccountFromBacktestResult(backtest, "Mock candles"),
+    [backtest]
+  );
   const chartData = state.agents
     .filter((agent) => agent.layer !== "cio")
     .map((agent) => ({
@@ -64,6 +70,8 @@ export function PerformanceView({ state }: { state: LabState }) {
         <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
         Simulation only. No broker connection. No real trades.
       </div>
+
+      <SimulatedAccountCard account={simulatedAccount} />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <MetricCard label="Backtest trades" value={String(backtestSummary.totalTrades)} detail={`${backtestSummary.directionalTrades} directional`} />

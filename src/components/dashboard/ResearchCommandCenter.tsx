@@ -48,9 +48,11 @@ import { ReadinessSummaryCard } from "./ReadinessSummaryCard";
 import { ResearchCycleControl } from "./ResearchCycleControl";
 import { SafetyLockCard } from "./SafetyLockCard";
 import { SelfImprovementStatusCard } from "./SelfImprovementStatusCard";
+import { SimulatedAccountCard } from "./SimulatedAccountCard";
 import { SimulationBridgeStatusCard } from "./SimulationBridgeStatusCard";
 import { SystemStatusGrid } from "./SystemStatusGrid";
 import { ValidationStatusCard } from "./ValidationStatusCard";
+import { buildSimulatedAccountFromResearchCycle } from "@/lib/performance/simulatedAccount";
 
 type ResearchCommandCenterProps = {
   state: LabState;
@@ -98,6 +100,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
   const communicationSummary = getCommunicationSummary(loadCommunicationMessages());
   const agentAuditSummary = summarizeAgentAudit(loadAgentAuditState());
   const agentDebateSummary = summarizeAgentDebate(loadAgentDebateState());
+  const simulatedAccount = buildSimulatedAccountFromResearchCycle(latestResearchCycle);
   const latestThesis = state.tradeTheses[0];
   const marketSymbol = activeCandleSource.metadata?.symbol ?? latestThesis?.symbol ?? "NQ";
   const marketTimeframe =
@@ -205,6 +208,8 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
       </Card>
 
       <ResearchCycleControl state={state} onCycleUpdate={() => setDashboardRefresh((value) => value + 1)} />
+
+      <SimulatedAccountCard account={simulatedAccount} />
 
       <SafetyLockCard />
 

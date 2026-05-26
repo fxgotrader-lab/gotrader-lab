@@ -157,8 +157,10 @@ export interface BacktestSummary {
   losses: number;
   unresolved: number;
   winRate: number;
+  realizedR: number;
   averageR: number;
   maxDrawdown: number;
+  profitFactor: number | null;
   bestTrade?: SimulatedTradeRecord;
   worstTrade?: SimulatedTradeRecord;
   equityCurve: EquityCurvePoint[];

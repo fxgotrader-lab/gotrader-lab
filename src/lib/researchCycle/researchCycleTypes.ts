@@ -68,7 +68,16 @@ export interface ResearchCycleThesisSummary {
 export interface ResearchCycleBacktestSummary
   extends Pick<
     BacktestSummary,
-    "totalTrades" | "winRate" | "averageR" | "maxDrawdown" | "skippedSignals"
+    | "totalTrades"
+    | "wins"
+    | "losses"
+    | "unresolved"
+    | "winRate"
+    | "realizedR"
+    | "averageR"
+    | "maxDrawdown"
+    | "profitFactor"
+    | "skippedSignals"
   > {
   config: Pick<
     ResolvedBacktestConfig,

@@ -265,9 +265,14 @@ const summarizeBacktest = (result: BacktestResult): ResearchCycleBacktestSummary
     stopModel: result.config.stopModel
   },
   totalTrades: result.summary.totalTrades,
+  wins: result.summary.wins,
+  losses: result.summary.losses,
+  unresolved: result.summary.unresolved,
   winRate: result.summary.winRate,
+  realizedR: result.summary.realizedR,
   averageR: result.summary.averageR,
   maxDrawdown: result.summary.maxDrawdown,
+  profitFactor: result.summary.profitFactor,
   skippedSignals: result.summary.skippedSignals,
   bestTradeR: result.summary.bestTrade?.rMultiple,
   worstTradeR: result.summary.worstTrade?.rMultiple

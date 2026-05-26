@@ -225,6 +225,17 @@ const maxDrawdownFor = (equityCurve: ReturnType<typeof equityCurveFor>) => {
   return round(maxDrawdown, 2);
 };
 
+const profitFactorFor = (trades: SimulatedTradeRecord[]) => {
+  const positiveR = trades.filter((trade) => trade.rMultiple > 0).reduce((sum, trade) => sum + trade.rMultiple, 0);
+  const negativeR = Math.abs(
+    trades.filter((trade) => trade.rMultiple < 0).reduce((sum, trade) => sum + trade.rMultiple, 0)
+  );
+  if (negativeR === 0) {
+    return positiveR > 0 ? 99 : null;
+  }
+  return round(positiveR / negativeR, 2);
+};
+
 const agentAttributionFor = (trades: SimulatedTradeRecord[]): BacktestAgentAttributionSummary[] => {
   const map = new Map<string, BacktestAgentAttributionSummary & { confidenceTotal: number; weightTotal: number; aligned: number }>();
 
@@ -283,7 +294,8 @@ const summarizeBacktest = (trades: SimulatedTradeRecord[], skippedSignals: Backt
   const wins = trades.filter((trade) => trade.outcome === "target_hit").length;
   const losses = trades.filter((trade) => trade.outcome === "stop_hit").length;
   const unresolved = trades.filter((trade) => trade.outcome === "expired" || trade.outcome === "neutral").length;
-  const averageR = trades.reduce((sum, trade) => sum + trade.rMultiple, 0) / Math.max(1, totalTrades);
+  const realizedR = trades.reduce((sum, trade) => sum + trade.rMultiple, 0);
+  const averageR = realizedR / Math.max(1, totalTrades);
   const equityCurve = equityCurveFor(trades);
   const bestTrade = [...trades].sort((a, b) => b.rMultiple - a.rMultiple)[0];
   const worstTrade = [...trades].sort((a, b) => a.rMultiple - b.rMultiple)[0];
@@ -297,8 +309,10 @@ const summarizeBacktest = (trades: SimulatedTradeRecord[], skippedSignals: Backt
     losses,
     unresolved,
     winRate: wins / Math.max(1, directionalTrades),
+    realizedR: round(realizedR, 2),
     averageR: round(averageR, 2),
     maxDrawdown: maxDrawdownFor(equityCurve),
+    profitFactor: profitFactorFor(trades),
     bestTrade,
     worstTrade,
     equityCurve,

@@ -35,6 +35,24 @@ Shows the latest autonomous configuration search cycle. Auto Research can compar
 
 Shows the latest validation suite results, including strongest scenario, weakest scenario, win rate, average R, and max drawdown.
 
+### Simulated Account
+
+Shows a simulation-only account model built from the latest dashboard AI Research Cycle backtest:
+
+- simulated balance
+- simulated P&L
+- P&L %
+- total trades
+- win rate
+- average R
+- max drawdown
+- profit factor
+- best and worst trade
+
+The default starting balance is `$50,000`. For now, GoTrader AI Lab assumes `1R = 1%` of starting balance so users can see a dollar-denominated simulation curve. This is not broker account money and is not connected to Tradovate.
+
+If imported MNQ historical data powered the latest cycle, the card states that results are based on imported historical MNQ data. If mock data powered the cycle, the card states that results are based on mock data.
+
 ### Research Quality Status
 
 Shows readiness grade, top weakness, top strength, and recommended next step from the research quality review.
