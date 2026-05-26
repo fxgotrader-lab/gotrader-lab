@@ -320,10 +320,10 @@ export function BacktestLab() {
           </div>
           <div className="grid gap-2 md:grid-cols-3">
             <Button variant="secondary" onClick={() => void applyImportedPreset("safe")} className="justify-center">
-              Safe: 500 raw to 5m
+              Safe: 500 raw → 5m
             </Button>
             <Button variant="outline" onClick={() => void applyImportedPreset("standard")} className="justify-center">
-              Standard: 2,000 raw to 5m
+              Standard: 2,000 raw → 5m
             </Button>
             <Button variant="outline" onClick={() => void applyImportedPreset("advanced")} className="justify-center">
               Advanced custom

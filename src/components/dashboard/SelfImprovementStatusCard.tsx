@@ -39,8 +39,8 @@ export function SelfImprovementStatusCard({ proposal }: SelfImprovementStatusCar
         <div className="rounded-md border border-white/10 bg-white/[0.03] p-3">
           <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Before / after summary</div>
           <div className="mt-2 grid gap-3 text-sm sm:grid-cols-3">
-            <Metric label="Average R" value={`${formatR(proposal?.beforeMetrics.averageR)} -> ${formatR(proposal?.afterMetrics?.averageR)}`} />
-            <Metric label="Drawdown" value={`${formatR(proposal?.beforeMetrics.maxDrawdown)} -> ${formatR(proposal?.afterMetrics?.maxDrawdown)}`} />
+            <Metric label="Average R" value={`${formatR(proposal?.beforeMetrics.averageR)} → ${formatR(proposal?.afterMetrics?.averageR)}`} />
+            <Metric label="Drawdown" value={`${formatR(proposal?.beforeMetrics.maxDrawdown)} → ${formatR(proposal?.afterMetrics?.maxDrawdown)}`} />
             <Metric label="Result" value={proposal?.comparisonResult?.recommendation ?? "Not tested"} />
           </div>
         </div>

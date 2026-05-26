@@ -29,7 +29,7 @@ function scoreLine(label: string, before?: number, after?: number) {
       <span className="text-muted-foreground">{label}</span>
       <span className="font-mono">
         {before === undefined ? "n/a" : label === "Sharpe-like" ? before.toFixed(2) : formatPercent(before)}
-        {" -> "}
+        {" → "}
         {after === undefined ? "pending" : label === "Sharpe-like" ? after.toFixed(2) : formatPercent(after)}
       </span>
     </div>
