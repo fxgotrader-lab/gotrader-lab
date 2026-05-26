@@ -42,6 +42,7 @@ import {
   compareProposalToBaseline,
   attachProposalMetricsSnapshot,
   loadActiveResearchCalibration,
+  materialMetricsChanged,
   resolveActiveBacktestConfig,
   summarizeValidationMetrics,
   upsertCalibrationProposal
@@ -526,10 +527,11 @@ const evaluateCandidate = (
   }
 };
 
-const shouldCreateProposal = (candidate?: AutoResearchCandidateResult) => {
+const shouldCreateProposal = (candidate: AutoResearchCandidateResult | undefined, baselineMetrics: CalibrationProposalMetrics) => {
   const promotionVerdict = candidate?.comparisonResult?.promotionVerdict ?? "needs_follow_up";
   return Boolean(
     candidate &&
+      materialMetricsChanged(baselineMetrics, candidate.metrics) &&
       candidate.promotionEligible &&
       candidate.scoreBreakdown.stabilityImproved &&
       candidate.scoreBreakdown.sufficientSample &&
@@ -538,6 +540,7 @@ const shouldCreateProposal = (candidate?: AutoResearchCandidateResult) => {
       !safeArray(candidate.comparisonResult?.criticalRegressions).length &&
       promotionVerdict !== "needs_follow_up" &&
       promotionVerdict !== "reject" &&
+      promotionVerdict !== "no_material_change" &&
       candidate.scoreBreakdown.totalScore >= 45
   );
 };
@@ -957,11 +960,13 @@ const candidateImprovedForResearch = (
   const promotionVerdict = candidate?.comparisonResult?.promotionVerdict ?? "needs_follow_up";
   return Boolean(
     candidate &&
+      materialMetricsChanged(baselineMetrics, candidate.metrics) &&
       candidate.resultCategory !== "unsafe_overfit" &&
       candidate.metrics.totalTrades > 0 &&
       !safeArray(candidate.comparisonResult?.criticalRegressions).length &&
       promotionVerdict !== "needs_follow_up" &&
       promotionVerdict !== "reject" &&
+      promotionVerdict !== "no_material_change" &&
       (candidate.resultCategory === "improved_but_not_ready" ||
         candidate.resultCategory === "research_ready_candidate" ||
         candidate.resultCategory === "research_ready" ||
@@ -1096,6 +1101,10 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
     const proposalSnapshotContext = (sourceCandidateId?: string) => ({
       sourceCycleId: cycleId,
       sourceCandidateId,
+      beforeMetricsSource: "baseline metrics before candidate change",
+      afterMetricsSource: sourceCandidateId ? "tested candidate metrics" : "not tested",
+      beforeSourceCycleId: cycleId,
+      afterSourceCandidateId: sourceCandidateId,
       dataSource: options.dataSource ?? "mock",
       candleWindow: options.candleWindow ?? `${activeCandles.length} candles`,
       searchMode: options.searchMode,
@@ -1369,7 +1378,7 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       !recoveryStillZero &&
       bestCandidate &&
       options.createProposal !== false &&
-      shouldCreateProposal(bestCandidate)
+      shouldCreateProposal(bestCandidate, baselineMetrics)
     ) {
       const advisorySource = (labStorage.load().advisoryResponses?.length ?? 0) > 0 ? "openclaw" : "internal";
       const proposal = attachProposalMetricsSnapshot(createSelfImprovementFromCandidate({

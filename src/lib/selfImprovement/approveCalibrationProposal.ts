@@ -20,6 +20,7 @@ import type {
 } from "@/lib/selfImprovement/selfImprovementTypes";
 import {
   hasMaterialProposalMetricChange,
+  isNoOpProposalSnapshot,
   proposalSnapshotMismatchReasons
 } from "@/lib/selfImprovement/proposalMetricsSnapshot";
 import { safeArray, uid } from "@/lib/utils";
@@ -355,14 +356,18 @@ export function canApproveProposal(proposal?: CalibrationProposal): ProposalAppr
     reasons.push(...snapshotMismatchReasons);
   }
   if (!hasMaterialProposalMetricChange(proposal)) {
-    reasons.push("Proposal has no material before/after metric change.");
+    reasons.push("Do not approve - no material change detected.");
+  }
+  if (isNoOpProposalSnapshot(proposal)) {
+    reasons.push("This proposal does not materially change the baseline.");
   }
   if (safeArray(proposal.comparisonResult?.criticalRegressions).length) {
     reasons.push("Proposal has critical metric regressions; run a targeted follow-up before approval.");
   }
   if (
     proposal.comparisonResult?.promotionVerdict === "needs_follow_up" ||
-    proposal.comparisonResult?.promotionVerdict === "reject"
+    proposal.comparisonResult?.promotionVerdict === "reject" ||
+    proposal.comparisonResult?.promotionVerdict === "no_material_change"
   ) {
     reasons.push(`Promotion verdict is ${proposal.comparisonResult.promotionVerdict.replace(/_/g, " ")}.`);
   }

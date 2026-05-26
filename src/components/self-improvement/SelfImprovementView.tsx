@@ -16,6 +16,7 @@ import {
   createCalibrationProposal,
   evaluateCalibrationProposal,
   hasMaterialProposalMetricChange,
+  isNoOpProposalSnapshot,
   loadSelfImprovementState,
   proposalSnapshotMismatchReasons,
   rejectCalibrationProposal,
@@ -56,7 +57,7 @@ const verdictVariant = (verdict?: string) =>
       ? "warning"
       : verdict === "needs_follow_up"
         ? "warning"
-        : verdict === "reject"
+        : verdict === "reject" || verdict === "no_material_change"
         ? "danger"
         : "muted";
 const formatToken = (value?: string) => (value ?? "not tested").replace(/_/g, " ");
@@ -541,10 +542,13 @@ export function SelfImprovementView() {
   const snapshotAfterMetrics = latestProposal?.metricsSnapshot?.afterMetrics ?? latestProposal?.afterMetrics;
   const snapshotComparisonResult = latestProposal?.metricsSnapshot?.comparisonResult ?? latestProposal?.comparisonResult;
   const proposalMismatchReasons = proposalSnapshotMismatchReasons(latestProposal);
+  const proposalIsNoOp = isNoOpProposalSnapshot(latestProposal);
   const proposalHasMaterialChange = hasMaterialProposalMetricChange(latestProposal);
   const proposalHasAnyAfterMetrics = Boolean(snapshotAfterMetrics || latestProposal?.afterMetrics);
   const showMetricMismatchWarning =
-    proposalMismatchReasons.length > 0 || (latestProposal && proposalHasAnyAfterMetrics && !proposalHasMaterialChange);
+    proposalMismatchReasons.length > 0 ||
+    proposalIsNoOp ||
+    (latestProposal && proposalHasAnyAfterMetrics && !proposalHasMaterialChange);
   const proposalAndCycleSourcesDiffer = Boolean(
     latestProposal?.metricsSnapshot?.sourceCycleId &&
       latestCycleCanonicalMetrics?.sourceCycleId &&
@@ -954,6 +958,13 @@ export function SelfImprovementView() {
               Metrics are from the same cycle/source.
             </div>
           )}
+          {proposalIsNoOp ? (
+            <div className="rounded-lg border border-red-300/30 bg-red-300/10 p-3 text-sm text-red-100">
+              Proposal Before equals Proposal After across all material metrics. This is either a no-op proposal or a
+              snapshot error; approval stays disabled until a candidate snapshot shows a real baseline-vs-candidate
+              difference.
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -962,16 +973,22 @@ export function SelfImprovementView() {
           <CardHeader>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <CardTitle>Metric Snapshot Guard</CardTitle>
+                <CardTitle>{proposalIsNoOp ? "No-Op Proposal Guard" : "Metric Snapshot Guard"}</CardTitle>
                 <CardDescription>
-                  Approval is blocked until the canonical proposal snapshot matches the source candidate evidence.
+                  {proposalIsNoOp
+                    ? "Approval is blocked because Proposal Before and Proposal After are identical."
+                    : "Approval is blocked until the canonical proposal snapshot matches the source candidate evidence."}
                 </CardDescription>
               </div>
               <Badge variant="danger">approval blocked</Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-red-50">
-            <p>Metric mismatch detected: candidate summary and proposal snapshot disagree.</p>
+            <p>
+              {proposalIsNoOp
+                ? "Do not approve - no material change detected. This proposal does not materially change the baseline."
+                : "Metric mismatch detected: candidate summary and proposal snapshot disagree."}
+            </p>
             <ul className="space-y-1 text-xs text-red-100/85">
               {proposalMismatchReasons.length ? (
                 proposalMismatchReasons.map((reason) => <li key={reason}>{reason}</li>)
@@ -1479,6 +1496,10 @@ export function SelfImprovementView() {
           </CardHeader>
           <CardContent className="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
             {[
+              ["Before metrics source", latestProposal?.metricsSnapshot?.beforeMetricsSource ?? "baseline metrics before candidate change"],
+              ["After metrics source", latestProposal?.metricsSnapshot?.afterMetricsSource ?? "tested candidate metrics"],
+              ["Before source cycle ID", latestProposal?.metricsSnapshot?.beforeSourceCycleId ?? latestProposal?.metricsSnapshot?.sourceCycleId ?? "none"],
+              ["After source candidate ID", latestProposal?.metricsSnapshot?.afterSourceCandidateId ?? latestProposal?.metricsSnapshot?.sourceCandidateId ?? "none"],
               ["Dashboard proposal ID", latestCycleRun?.createdProposalId ?? generatedProposalId ?? "none"],
               ["Self-Improvement proposal ID", latestProposal?.proposalId ?? "none"],
               ["Source candidate ID", latestProposal?.metricsSnapshot?.sourceCandidateId ?? latestProposal?.sourceCandidateId ?? "none"],

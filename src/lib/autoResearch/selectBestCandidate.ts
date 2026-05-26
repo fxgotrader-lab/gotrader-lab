@@ -3,7 +3,7 @@ import type {
   AutoResearchResultCategory,
   AutoResearchScoreBreakdown
 } from "@/lib/autoResearch/autoResearchTypes";
-import type { CalibrationProposalMetrics } from "@/lib/selfImprovement";
+import { materialMetricsChanged, type CalibrationProposalMetrics } from "@/lib/selfImprovement";
 import { safeArray, safeTopN } from "@/lib/utils";
 
 const conservativeScenarioFor = (candidate: AutoResearchCandidateResult) =>
@@ -20,6 +20,9 @@ const rejectionReasonsFor = (
   const score: AutoResearchScoreBreakdown = candidate.scoreBreakdown;
   const conservative = conservativeScenarioFor(candidate);
   const promotionVerdict = candidate.comparisonResult?.promotionVerdict ?? "needs_follow_up";
+  if (!materialMetricsChanged(baselineMetrics, candidate.metrics)) {
+    reasons.push("No material metric change versus baseline.");
+  }
   if (!score.stabilityImproved) {
     reasons.push("Stability did not improve versus baseline.");
   }
@@ -37,6 +40,9 @@ const rejectionReasonsFor = (
   }
   if (promotionVerdict === "needs_follow_up") {
     reasons.push(candidate.comparisonResult?.followUpSearchDirection ?? "Candidate needs targeted follow-up before promotion.");
+  }
+  if (promotionVerdict === "no_material_change") {
+    reasons.push("Candidate did not materially improve the baseline.");
   }
   if (candidate.metrics.falsePositiveCount > Math.max(6, baselineMetrics.falsePositiveCount + 3)) {
     reasons.push("False positives too high.");
@@ -63,6 +69,8 @@ const categoryFor = (
 ): AutoResearchResultCategory => {
   const hardFailures = reasons.filter((reason) =>
     [
+      "No material metric change versus baseline.",
+      "Candidate did not materially improve the baseline.",
       "Candidate did not produce enough simulated trades.",
       "Drawdown too high for bounded simulation readiness.",
       "False positives too high.",
@@ -105,6 +113,7 @@ const categoryFor = (
     candidate.scoreBreakdown.stabilityImproved &&
     candidate.comparisonResult?.stabilityImproved &&
     promotionVerdict !== "reject"
+    && promotionVerdict !== "no_material_change"
   ) {
     return "improved_but_not_ready";
   }
@@ -126,7 +135,8 @@ export function selectBestCandidate(
         ["improved_but_not_ready", "research_ready", "research_ready_candidate", "paper_demo_candidate"].includes(resultCategory) &&
         !safeArray(candidate.comparisonResult?.criticalRegressions).length &&
         promotionVerdict !== "needs_follow_up" &&
-        promotionVerdict !== "reject",
+        promotionVerdict !== "reject" &&
+        promotionVerdict !== "no_material_change",
       rejectionReasons
     };
   });

@@ -25,6 +25,7 @@ export type CalibrationTargetProblem =
 
 export type CalibrationComparisonRecommendation = "accept" | "reject" | "keep_testing";
 export type CalibrationPromotionVerdict =
+  | "no_material_change"
   | "reject"
   | "needs_follow_up"
   | "research_candidate"
@@ -80,6 +81,10 @@ export interface CalibrationProposalMetricsSnapshot {
   proposalId: string;
   sourceCycleId?: string;
   sourceCandidateId?: string;
+  beforeMetricsSource?: string;
+  afterMetricsSource?: string;
+  beforeSourceCycleId?: string;
+  afterSourceCandidateId?: string;
   beforeMetrics: CalibrationProposalMetrics;
   afterMetrics?: CalibrationProposalMetrics;
   comparisonResult?: CalibrationComparisonResult;

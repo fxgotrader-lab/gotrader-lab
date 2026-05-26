@@ -31,6 +31,9 @@ export {
   attachProposalMetricsSnapshot,
   createProposalMetricsSnapshot,
   hasMaterialProposalMetricChange,
+  isNoOpProposalSnapshot,
+  materialMetricsChanged,
+  noMaterialMetricsChanged,
   proposalSnapshotMismatchReasons
 } from "@/lib/selfImprovement/proposalMetricsSnapshot";
 export type {

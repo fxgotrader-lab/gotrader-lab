@@ -2,6 +2,7 @@ import type {
   CalibrationComparisonResult,
   CalibrationProposalMetrics
 } from "@/lib/selfImprovement/selfImprovementTypes";
+import { materialMetricsChanged } from "@/lib/selfImprovement/proposalMetricsSnapshot";
 
 const round = (value: number, digits = 2) => Number(value.toFixed(digits));
 const deltaText = (label: string, before: number, after: number, suffix = "") =>
@@ -56,6 +57,24 @@ export function compareProposalToBaseline(
   before: CalibrationProposalMetrics,
   after: CalibrationProposalMetrics
 ): CalibrationComparisonResult {
+  if (!materialMetricsChanged(before, after)) {
+    return {
+      improved: false,
+      stabilityImproved: false,
+      recommendation: "reject",
+      summary: "This proposal does not materially change the baseline.",
+      positiveChanges: [],
+      negativeChanges: [],
+      neutralChanges: ["No material before/after metric change was detected."],
+      improvedMetrics: [],
+      worsenedMetrics: [],
+      criticalRegressions: ["This proposal does not materially change the baseline."],
+      sanityWarnings: ["Before and after metrics are identical within tolerance."],
+      promotionVerdict: "no_material_change",
+      followUpSearchDirection: "Reject this no-op proposal or rebuild the snapshot from the source candidate."
+    };
+  }
+
   const positiveChanges: string[] = [];
   const negativeChanges: string[] = [];
   const neutralChanges: string[] = [];

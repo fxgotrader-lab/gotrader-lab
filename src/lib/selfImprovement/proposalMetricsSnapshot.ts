@@ -8,6 +8,10 @@ import type {
 export interface ProposalMetricsSnapshotContext {
   sourceCycleId?: string;
   sourceCandidateId?: string;
+  beforeMetricsSource?: string;
+  afterMetricsSource?: string;
+  beforeSourceCycleId?: string;
+  afterSourceCandidateId?: string;
   generatedAt?: string;
   dataSource?: string;
   candleWindow?: string;
@@ -56,7 +60,7 @@ const valuesEqual = (left: unknown, right: unknown) => {
   return left === right;
 };
 
-const importantMetricsChanged = (
+export const materialMetricsChanged = (
   before?: CalibrationProposalMetrics,
   after?: CalibrationProposalMetrics
 ) => {
@@ -66,17 +70,57 @@ const importantMetricsChanged = (
   return metricKeys.some((key) => !valuesEqual(before[key], after[key]));
 };
 
+export const noMaterialMetricsChanged = (
+  before?: CalibrationProposalMetrics,
+  after?: CalibrationProposalMetrics
+) => Boolean(before && after && !materialMetricsChanged(before, after));
+
+const noOpComparison = (comparison: CalibrationComparisonResult | undefined): CalibrationComparisonResult => ({
+  improved: false,
+  stabilityImproved: false,
+  recommendation: "reject",
+  summary: "This proposal does not materially change the baseline.",
+  positiveChanges: [],
+  negativeChanges: [],
+  neutralChanges: [
+    "No material before/after metric change was detected."
+  ],
+  improvedMetrics: [],
+  worsenedMetrics: [],
+  criticalRegressions: [
+    "This proposal does not materially change the baseline."
+  ],
+  sanityWarnings: [
+    "No-op proposal snapshot: before and after metrics are identical within tolerance."
+  ],
+  promotionVerdict: "no_material_change",
+  followUpSearchDirection: comparison?.followUpSearchDirection ?? "Reject or rebuild the snapshot from the source candidate before approval."
+});
+
 export function createProposalMetricsSnapshot(
   proposal: CalibrationProposal,
   context: ProposalMetricsSnapshotContext = {}
 ): CalibrationProposalMetricsSnapshot {
+  const comparisonResult = noMaterialMetricsChanged(proposal.beforeMetrics, proposal.afterMetrics)
+    ? noOpComparison(proposal.comparisonResult)
+    : cloneComparison(proposal.comparisonResult);
   return {
     proposalId: proposal.proposalId,
     sourceCycleId: context.sourceCycleId ?? proposal.metricsSnapshot?.sourceCycleId,
     sourceCandidateId: context.sourceCandidateId ?? proposal.sourceCandidateId ?? proposal.metricsSnapshot?.sourceCandidateId,
+    beforeMetricsSource:
+      context.beforeMetricsSource ?? proposal.metricsSnapshot?.beforeMetricsSource ?? "baseline metrics before candidate change",
+    afterMetricsSource:
+      context.afterMetricsSource ?? proposal.metricsSnapshot?.afterMetricsSource ?? (proposal.afterMetrics ? "tested candidate metrics" : "not tested"),
+    beforeSourceCycleId: context.beforeSourceCycleId ?? proposal.metricsSnapshot?.beforeSourceCycleId ?? context.sourceCycleId,
+    afterSourceCandidateId:
+      context.afterSourceCandidateId ??
+      proposal.metricsSnapshot?.afterSourceCandidateId ??
+      context.sourceCandidateId ??
+      proposal.sourceCandidateId,
     beforeMetrics: cloneMetrics(proposal.beforeMetrics),
     afterMetrics: proposal.afterMetrics ? cloneMetrics(proposal.afterMetrics) : undefined,
-    comparisonResult: cloneComparison(proposal.comparisonResult),
+    comparisonResult,
     generatedAt: context.generatedAt ?? proposal.metricsSnapshot?.generatedAt ?? proposal.timestamp ?? new Date().toISOString(),
     dataSource: context.dataSource ?? proposal.metricsSnapshot?.dataSource,
     candleWindow: context.candleWindow ?? proposal.metricsSnapshot?.candleWindow,
@@ -89,9 +133,11 @@ export function attachProposalMetricsSnapshot(
   proposal: CalibrationProposal,
   context: ProposalMetricsSnapshotContext = {}
 ): CalibrationProposal {
+  const metricsSnapshot = createProposalMetricsSnapshot(proposal, context);
   return {
     ...proposal,
-    metricsSnapshot: createProposalMetricsSnapshot(proposal, context)
+    comparisonResult: metricsSnapshot.comparisonResult ?? proposal.comparisonResult,
+    metricsSnapshot
   };
 }
 
@@ -148,9 +194,13 @@ export function proposalSnapshotMismatchReasons(proposal?: CalibrationProposal):
 
   if (
     candidateReportedImprovement &&
-    !importantMetricsChanged(snapshot.beforeMetrics, snapshot.afterMetrics)
+      !materialMetricsChanged(snapshot.beforeMetrics, snapshot.afterMetrics)
   ) {
     reasons.push("Metric mismatch detected: candidate summary and proposal snapshot disagree.");
+  }
+
+  if (snapshot.afterMetrics && noMaterialMetricsChanged(snapshot.beforeMetrics, snapshot.afterMetrics)) {
+    reasons.push("This proposal does not materially change the baseline.");
   }
 
   return [...new Set(reasons)];
@@ -169,10 +219,16 @@ export function hasMaterialProposalMetricChange(proposal?: CalibrationProposal):
     proposal.tradesAfterRecovery > proposal.tradesBeforeRecovery;
   return Boolean(
     tradeGenerationImproved ||
-      importantMetricsChanged(before, after) ||
-      snapshot?.comparisonResult?.improved ||
-      snapshot?.comparisonResult?.stabilityImproved ||
-      proposal.comparisonResult?.improved ||
-      proposal.comparisonResult?.stabilityImproved
+      materialMetricsChanged(before, after)
   );
+}
+
+export function isNoOpProposalSnapshot(proposal?: CalibrationProposal): boolean {
+  if (!proposal) {
+    return false;
+  }
+  const snapshot = proposal.metricsSnapshot;
+  const before = snapshot?.beforeMetrics ?? proposal.beforeMetrics;
+  const after = snapshot?.afterMetrics ?? proposal.afterMetrics;
+  return noMaterialMetricsChanged(before, after);
 }

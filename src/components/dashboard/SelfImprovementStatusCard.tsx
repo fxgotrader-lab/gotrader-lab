@@ -20,6 +20,7 @@ export function SelfImprovementStatusCard({ proposal, latestCycleMetrics }: Self
   const before = proposal?.metricsSnapshot?.beforeMetrics ?? proposal?.beforeMetrics;
   const after = proposal?.metricsSnapshot?.afterMetrics ?? proposal?.afterMetrics;
   const comparison = proposal?.metricsSnapshot?.comparisonResult ?? proposal?.comparisonResult;
+  const noMaterialChange = comparison?.promotionVerdict === "no_material_change";
 
   return (
     <Card className="border-white/10 bg-slate-950/70">
@@ -52,6 +53,11 @@ export function SelfImprovementStatusCard({ proposal, latestCycleMetrics }: Self
           <p className="mt-2 text-xs text-slate-500">
             {proposal?.metricsSnapshot ? "Using canonical proposal snapshot." : "No canonical snapshot stored yet."}
           </p>
+          {noMaterialChange ? (
+            <p className="mt-2 rounded-md border border-red-300/25 bg-red-300/10 p-2 text-xs text-red-100">
+              No material before/after change detected. Do not approve this proposal.
+            </p>
+          ) : null}
         </div>
         <div className="rounded-md border border-cyan-300/20 bg-cyan-300/5 p-3">
           <div className="text-xs uppercase tracking-[0.16em] text-cyan-100/70">Win rate sources</div>
