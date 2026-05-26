@@ -17,6 +17,7 @@ import {
   backtestStopModels,
   defaultBacktestAgentWeights,
   diagnoseTradeGeneration,
+  diagnoseTradeQuality,
   describeBacktestConfig,
   resetBacktestConfig,
   runBacktest,
@@ -43,7 +44,7 @@ import {
   type PreparedCandleSource
 } from "@/lib/marketData";
 import type { FuturesSymbol, MarketRegime, Timeframe } from "@/lib/types";
-import { formatPercent, formatSigned } from "@/lib/utils";
+import { formatPercent, formatSigned, safeTopN } from "@/lib/utils";
 
 const symbolOptions = ["ES", "NQ", "MES", "MNQ"].map((value) => ({ label: value, value }));
 const timeframeOptions = ["1m", "5m", "15m", "1h"].map((value) => ({ label: value, value }));
@@ -144,6 +145,11 @@ export function BacktestLab() {
   const zeroTradeDiagnostics = summary.totalTrades === 0
     ? diagnoseTradeGeneration({ candles: activeCandles, config: result.config, result })
     : [];
+  const tradeQualityDiagnostics = summary.totalTrades > 0 ? diagnoseTradeQuality({ result }) : [];
+  const topTradeQualityDiagnostic =
+    tradeQualityDiagnostics.find((item) => item.severity === "blocking") ??
+    tradeQualityDiagnostics.find((item) => item.severity === "warning") ??
+    tradeQualityDiagnostics[0];
   const lastEquity = summary.equityCurve[summary.equityCurve.length - 1]?.equityR ?? 0;
   const agentWeightTotal = useMemo(
     () => Object.values(draftConfig.agentWeights).reduce((sum, value) => sum + value, 0),
@@ -433,6 +439,47 @@ export function BacktestLab() {
       </TechnicalDetails>
 
       <CalibrationAssistantPanel result={result} config={result.config} />
+
+      {summary.totalTrades > 0 ? (
+        <Card className={topTradeQualityDiagnostic ? "border-violet-300/25 bg-violet-300/10" : ""}>
+          <CardHeader>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">Why trade quality failed?</CardTitle>
+                <CardDescription>
+                  Diagnose weak win rate, average R, drawdown, stop model, target model, session behavior, and false-positive clusters.
+                </CardDescription>
+              </div>
+              <Badge variant={topTradeQualityDiagnostic?.severity === "blocking" ? "danger" : topTradeQualityDiagnostic ? "warning" : "success"}>
+                {topTradeQualityDiagnostic?.severity ?? "stable"}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {topTradeQualityDiagnostic ? (
+              <>
+                <div className="rounded-lg border border-border bg-background/45 p-3">
+                  <p className="font-medium">{topTradeQualityDiagnostic.reasonCode.replace(/_/g, " ")}</p>
+                  <p className="mt-1 text-muted-foreground">{topTradeQualityDiagnostic.explanation}</p>
+                  <p className="mt-2 text-violet-100">{topTradeQualityDiagnostic.suggestedFix}</p>
+                </div>
+                <div className="grid gap-2 md:grid-cols-3">
+                  {safeTopN(topTradeQualityDiagnostic.candidateConfigHints, 3).map((hint) => (
+                    <div key={hint.label} className="rounded-md border border-border bg-background/45 p-2">
+                      <p className="font-medium">{hint.label}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{hint.reason}</p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="rounded-lg border border-border bg-background/45 p-3 text-muted-foreground">
+                No major trade-quality failure detected in the current backtest.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Card>

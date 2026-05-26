@@ -8,6 +8,7 @@ import {
   generateCandidateConfigs,
   generateTradeRecoveryCandidateConfigs
 } from "@/lib/autoResearch/generateCandidateConfigs";
+import { generateTradeQualityCandidateConfigs } from "@/lib/autoResearch/tradeQualityOptimizer";
 import { scoreCandidateConfig } from "@/lib/autoResearch/scoreCandidateConfig";
 import { selectBestCandidate } from "@/lib/autoResearch/selectBestCandidate";
 import type {
@@ -23,6 +24,7 @@ import type {
 import {
   loadBacktestConfig,
   diagnoseTradeGeneration,
+  diagnoseTradeQuality,
   runBacktest
 } from "@/lib/backtesting";
 import {
@@ -265,6 +267,17 @@ export function compactAutoResearchCycle(cycle: AutoResearchCycle): AutoResearch
     adaptivePasses: safeArray(cycle.adaptivePasses).map(compactAdaptivePass),
     failedGates: safeTopN(cycle.failedGates, 6),
     tradeGenerationDiagnostics: safeTopN(cycle.tradeGenerationDiagnostics, 6),
+    tradeQualityDiagnostics: safeTopN(cycle.tradeQualityDiagnostics, 6),
+    tradeQualityCandidateConfigs: safeTopN(cycle.tradeQualityCandidateConfigs, 12),
+    tradeQualityBestCandidate: cycle.tradeQualityBestCandidate ? compactCandidate(cycle.tradeQualityBestCandidate) : undefined,
+    tradeQualitySummary: cycle.tradeQualitySummary
+      ? {
+          ...cycle.tradeQualitySummary,
+          testedStopModels: safeTopN(cycle.tradeQualitySummary.testedStopModels, 5),
+          testedTargetModels: safeTopN(cycle.tradeQualitySummary.testedTargetModels, 5),
+          sessionDirectionFindings: safeTopN(cycle.tradeQualitySummary.sessionDirectionFindings, 6)
+        }
+      : undefined,
     recoveryCandidates: safeTopN(cycle.recoveryCandidates, 7),
     recoveryResult: cycle.recoveryResult ? compactCandidate(cycle.recoveryResult) : undefined,
     recoveryFailureReasons: safeTopN(cycle.recoveryFailureReasons, 6)
@@ -641,6 +654,51 @@ const recoveryFailureReasonsFor = (
     reasons.unshift("Recovery candidates still produced zero simulated trades.");
   }
   return safeTopN(reasons, 6);
+};
+
+const tradeQualitySummaryFor = ({
+  diagnostics,
+  candidates,
+  bestCandidate
+}: {
+  diagnostics: ReturnType<typeof diagnoseTradeQuality>;
+  candidates: ReturnType<typeof generateTradeQualityCandidateConfigs>;
+  bestCandidate?: AutoResearchCandidateResult;
+}): AutoResearchCycle["tradeQualitySummary"] => {
+  const topIssue =
+    safeArray(diagnostics).find((item) => item.severity === "blocking") ??
+    safeArray(diagnostics).find((item) => item.severity === "warning") ??
+    safeArray(diagnostics)[0];
+  const changed = safeArray(candidates).flatMap((candidate) => safeArray(candidate.changedParameters));
+  return {
+    topIssue: topIssue?.reasonCode,
+    recommendedNextTest: topIssue?.suggestedFix ?? bestCandidate?.label ?? "Run a targeted stop/target/session quality pass.",
+    testedStopModels: safeTopN(
+      safeArray(candidates)
+        .filter((candidate) => safeArray(candidate.changedParameters).includes("stopModel"))
+        .map((candidate) => candidate.label),
+      5
+    ),
+    testedTargetModels: safeTopN(
+      safeArray(candidates)
+        .filter((candidate) => safeArray(candidate.changedParameters).includes("targetRMultiple"))
+        .map((candidate) => candidate.label),
+      5
+    ),
+    sessionDirectionFindings: safeTopN(
+      [
+        ...safeArray(candidates)
+          .filter((candidate) => safeArray(candidate.changedParameters).includes("sessionFilter"))
+          .map((candidate) => candidate.label),
+        ...safeArray(candidates)
+          .filter((candidate) => safeArray(candidate.changedParameters).includes("allowLong") || safeArray(candidate.changedParameters).includes("allowShort"))
+          .map((candidate) => candidate.label),
+        bestCandidate ? `Best quality candidate: ${bestCandidate.label}` : undefined,
+        changed.length ? `Changed parameters tested: ${[...new Set(changed)].join(", ")}` : undefined
+      ].filter((item): item is string => Boolean(item)),
+      6
+    )
+  };
 };
 
 const falsePositivesControlled = (candidate?: AutoResearchCandidateResult) =>
@@ -1045,6 +1103,12 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       : [];
     const baselineValidation = runValidationSuite(activeCandles, baselineConfig);
     const baselineMetrics = summarizeValidationMetrics(baselineValidation);
+    const tradeQualityDiagnostics = tradesBeforeRecovery > 0
+      ? diagnoseTradeQuality({
+          result: baselineBacktest,
+          validation: baselineValidation
+        })
+      : [];
     const maxAdaptivePasses = Math.max(0, Math.min(2, options.maxAdaptivePasses ?? 2));
     const totalPasses = 1 + maxAdaptivePasses;
     const evaluatedCandidateResults: AutoResearchCandidateResult[] = [];
@@ -1062,6 +1126,9 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
     let recoveryMetadata: AutoResearchRecoveryMetadata | undefined;
     let tradesAfterRecovery = 0;
     let recoveryFailureReasons: string[] = [];
+    let tradeQualityCandidateConfigs: ReturnType<typeof generateTradeQualityCandidateConfigs> = [];
+    let tradeQualityBestCandidate: AutoResearchCandidateResult | undefined;
+    let tradeQualitySummary: AutoResearchCycle["tradeQualitySummary"] | undefined;
 
     for (let passIndex = 0; passIndex < totalPasses; passIndex += 1) {
       const passNumber = passIndex + 1;
@@ -1182,6 +1249,53 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       closestCandidates = allSelection.closestCandidates;
       rejectedCandidates = allSelection.rejectedCandidates;
     }
+
+    if (
+      tradesBeforeRecovery > 0 &&
+      safeArray(tradeQualityDiagnostics).some((item) => item.severity === "blocking" || item.severity === "warning")
+    ) {
+      tradeQualityCandidateConfigs = generateTradeQualityCandidateConfigs(
+        baselineConfig,
+        tradeQualityDiagnostics,
+        Math.min(Math.max(6, options.maxCandidateCount), 12)
+      );
+      const qualityResults: AutoResearchCandidateResult[] = [];
+      for (const candidate of tradeQualityCandidateConfigs) {
+        const candidateResult = evaluateCandidate(candidate, baselineMetrics, activeCandles);
+        evaluatedCandidateResults.push(candidateResult);
+        qualityResults.push(candidateResult);
+        const { bestCandidate: bestCandidateSoFar } = selectBestCandidate(evaluatedCandidateResults, baselineMetrics);
+        options.onCandidateEvaluated?.({
+          currentCandidate: evaluatedCandidateResults.length,
+          totalCandidates: allCandidateConfigs.length + tradeQualityCandidateConfigs.length,
+          passNumber: totalPasses,
+          totalPasses,
+          passLabel: "trade quality optimization",
+          failedGatesTargeted: diagnoseFailedGates(bestCandidateSoFar ?? candidateResult, baselineMetrics),
+          candidateId: candidateResult.candidateId,
+          candidateLabel: candidateResult.label,
+          candidateScore: candidateResult.scoreBreakdown.totalScore,
+          bestCandidateId: bestCandidateSoFar?.candidateId,
+          bestCandidateLabel: bestCandidateSoFar?.label,
+          bestCandidateScore: bestCandidateSoFar?.scoreBreakdown.totalScore,
+          bestCandidateCategory: bestCandidateSoFar?.resultCategory
+        });
+      }
+      allCandidateConfigs.push(...tradeQualityCandidateConfigs);
+      const qualitySelection = selectBestCandidate(qualityResults, baselineMetrics);
+      const allSelection = selectBestCandidate(evaluatedCandidateResults, baselineMetrics);
+      tradeQualityBestCandidate = qualitySelection.bestCandidate ?? qualitySelection.closestCandidates[0];
+      tradeQualitySummary = tradeQualitySummaryFor({
+        diagnostics: tradeQualityDiagnostics,
+        candidates: tradeQualityCandidateConfigs,
+        bestCandidate: tradeQualityBestCandidate
+      });
+      bestCandidate = allSelection.bestCandidate;
+      candidateResults = allSelection.candidateResults;
+      closestCandidates = allSelection.closestCandidates;
+      rejectedCandidates = allSelection.rejectedCandidates;
+    }
+
     let createdProposalId: string | undefined;
     let createdProposal: CalibrationProposal | undefined;
     const selectedCandidateId = bestCandidate?.candidateId;
@@ -1321,6 +1435,10 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       failedGates,
       finalOutcome: recoveryStillZero ? "no_safe_candidate_found" : finalOutcome,
       tradeGenerationDiagnostics,
+      tradeQualityDiagnostics,
+      tradeQualityCandidateConfigs,
+      tradeQualityBestCandidate,
+      tradeQualitySummary,
       recoveryAttempted,
       recoveryCandidates,
       recoveryResult,

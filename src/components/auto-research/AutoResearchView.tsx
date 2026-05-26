@@ -621,6 +621,89 @@ export function AutoResearchView() {
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
+              <CardTitle>Trade Quality Optimization</CardTitle>
+              <CardDescription>
+                When trades exist but quality is weak, Auto Research tests stop, target, session, direction, and quality-filter variants.
+              </CardDescription>
+            </div>
+            <Badge variant={safeArray(latestCycle?.tradeQualityDiagnostics).length ? "warning" : "muted"}>
+              {safeArray(latestCycle?.tradeQualityDiagnostics).length ? "quality pass active" : "no quality pass"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {safeArray(latestCycle?.tradeQualityDiagnostics).length ? (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {safeArray(latestCycle?.tradeQualityDiagnostics).map((item) => (
+                <div key={`${item.reasonCode}-${item.currentValue}`} className="rounded-lg border border-border bg-background/45 p-3 text-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="font-medium">{formatToken(item.reasonCode)}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{item.explanation}</p>
+                    </div>
+                    <Badge variant={item.severity === "blocking" ? "danger" : item.severity === "warning" ? "warning" : "muted"}>
+                      {item.severity}
+                    </Badge>
+                  </div>
+                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                    <div className="rounded-md border border-border bg-card/45 p-2">
+                      <p className="text-xs text-muted-foreground">Current</p>
+                      <p className="mt-1 font-mono text-xs">{item.currentValue}</p>
+                    </div>
+                    <div className="rounded-md border border-border bg-card/45 p-2">
+                      <p className="text-xs text-muted-foreground">Required</p>
+                      <p className="mt-1 font-mono text-xs">{item.requiredValue}</p>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs text-amber-100">{item.suggestedFix}</p>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {safeTopN(item.candidateConfigHints, 3).map((hint) => (
+                      <Badge key={hint.label} variant="secondary">{hint.label}</Badge>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-border bg-background/45 p-3 text-sm text-muted-foreground">
+              No trade-quality diagnostics are active for the latest cycle.
+            </div>
+          )}
+
+          {latestCycle?.tradeQualitySummary ? (
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Tested stop models</p>
+                <p className="mt-1 text-sm">{safeArray(latestCycle.tradeQualitySummary.testedStopModels).join(", ") || "none"}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Tested target models</p>
+                <p className="mt-1 text-sm">{safeArray(latestCycle.tradeQualitySummary.testedTargetModels).join(", ") || "none"}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Session/direction findings</p>
+                <p className="mt-1 text-sm">{safeArray(latestCycle.tradeQualitySummary.sessionDirectionFindings).join(" ") || "none"}</p>
+              </div>
+            </div>
+          ) : null}
+
+          {latestCycle?.tradeQualityBestCandidate ? (
+            <div className="rounded-lg border border-violet-300/25 bg-violet-300/10 p-3 text-sm text-violet-100">
+              <p className="font-medium">Best trade-quality candidate: {latestCycle.tradeQualityBestCandidate.label}</p>
+              <p className="mt-1">
+                Win {formatPercent(latestCycle.tradeQualityBestCandidate.metrics.winRate, 0)}, average R{" "}
+                {formatSigned(latestCycle.tradeQualityBestCandidate.metrics.averageR, 2)}R, drawdown{" "}
+                {latestCycle.tradeQualityBestCandidate.metrics.maxDrawdown.toFixed(2)}R. Proposals still require manual approval.
+              </p>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
               <CardTitle>Trade Generation Diagnostics</CardTitle>
               <CardDescription>
                 When zero trades occur, Auto Research explains the blockage and runs bounded recovery candidates before declaring Not Ready.

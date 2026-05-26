@@ -25,6 +25,7 @@ export {
 } from "@/lib/autoResearch/generateCandidateConfigs";
 export { scoreCandidateConfig } from "@/lib/autoResearch/scoreCandidateConfig";
 export { selectBestCandidate } from "@/lib/autoResearch/selectBestCandidate";
+export { generateTradeQualityCandidateConfigs } from "@/lib/autoResearch/tradeQualityOptimizer";
 export type {
   AutoResearchCandidateConfig,
   AutoResearchCandidateResult,

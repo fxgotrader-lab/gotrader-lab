@@ -52,9 +52,18 @@ const verdictVariant = (verdict?: string) =>
       : verdict === "needs_follow_up"
         ? "warning"
         : verdict === "reject"
-          ? "danger"
-          : "muted";
+        ? "danger"
+        : "muted";
 const formatToken = (value?: string) => (value ?? "not tested").replace(/_/g, " ");
+const tradeQualityTargets = new Set([
+  "high_drawdown",
+  "low_win_rate",
+  "weak_average_r",
+  "false_positives",
+  "poor_session_performance"
+]);
+const isTradeQualityProposal = (proposal?: CalibrationProposal) =>
+  Boolean(proposal && tradeQualityTargets.has(proposal.targetProblem));
 const deltaClass = (tone: "positive" | "negative" | "neutral") =>
   tone === "positive" ? "text-emerald-200" : tone === "negative" ? "text-red-200" : "text-muted-foreground";
 const deltaPrefix = (value: number) => (value > 0 ? "+" : "");
@@ -362,6 +371,12 @@ export function SelfImprovementView() {
       ? "research_calibration_candidate"
       : undefined);
   const isResearchCalibration = effectiveProposalIntent === "research_calibration_candidate";
+  const isTradeQualityCalibration = isTradeQualityProposal(latestProposal);
+  const tradeQualitySampleMinimum = latestProposal
+    ? Math.max(30, Math.floor(latestProposal.beforeMetrics.totalTrades * 0.5))
+    : 30;
+  const tradeQualityAfterTrades = latestProposal?.afterMetrics?.totalTrades ?? 0;
+  const tradeQualitySampleAcceptable = tradeQualityAfterTrades >= tradeQualitySampleMinimum;
   const approvalCheck = latestProposalPersisted
     ? canApproveProposal(latestProposal)
     : {
@@ -794,6 +809,40 @@ export function SelfImprovementView() {
                   ) : null}
                   <p>{latestProposal.nextValidationRequirement ?? "Rerun validation after approval."}</p>
                 </div>
+              </div>
+            ) : null}
+            {isTradeQualityCalibration && latestProposal ? (
+              <div className="rounded-lg border border-cyan-300/25 bg-cyan-300/10 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/75">Trade quality proposal</p>
+                    <p className="mt-1 text-sm text-cyan-50">
+                      Targets {problemLabel(latestProposal.targetProblem)} without granting readiness or execution authority.
+                    </p>
+                  </div>
+                  <Badge variant={tradeQualitySampleAcceptable ? "success" : "warning"}>
+                    {tradeQualitySampleAcceptable ? "sample acceptable" : "sample needs follow-up"}
+                  </Badge>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    ["Win rate", formatPercent(latestProposal.beforeMetrics.winRate, 1), latestProposal.afterMetrics ? formatPercent(latestProposal.afterMetrics.winRate, 1) : "not tested"],
+                    ["Average R", `${formatNumber(latestProposal.beforeMetrics.averageR)}R`, latestProposal.afterMetrics ? `${formatNumber(latestProposal.afterMetrics.averageR)}R` : "not tested"],
+                    ["Max drawdown", `${formatNumber(latestProposal.beforeMetrics.maxDrawdown)}R`, latestProposal.afterMetrics ? `${formatNumber(latestProposal.afterMetrics.maxDrawdown)}R` : "not tested"],
+                    ["Trades", String(latestProposal.beforeMetrics.totalTrades), latestProposal.afterMetrics ? String(latestProposal.afterMetrics.totalTrades) : "not tested"]
+                  ].map(([label, beforeValue, afterValue]) => (
+                    <div key={label} className="rounded-md border border-cyan-200/20 bg-cyan-200/5 p-2">
+                      <p className="text-xs text-cyan-100/70">{label}</p>
+                      <p className="mt-1 font-mono text-sm text-cyan-50">
+                        {beforeValue} <span className="text-cyan-100/45">to</span> {afterValue}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs text-cyan-100/75">
+                  Sample guard: after-metrics should keep at least {tradeQualitySampleMinimum} trades. If it falls below that,
+                  treat the proposal as a follow-up candidate, not an approval-ready calibration.
+                </p>
               </div>
             ) : null}
             <div className="rounded-lg border border-border bg-background/45 p-3">

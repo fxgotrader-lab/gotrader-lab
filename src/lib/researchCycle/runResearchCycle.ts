@@ -16,6 +16,7 @@ import {
 } from "@/lib/agentDebate";
 import {
   diagnoseTradeGeneration,
+  diagnoseTradeQuality,
   runBacktest,
   sanitizeBacktestConfig,
   topTradeGenerationDiagnostic
@@ -618,6 +619,7 @@ export async function runResearchCycle({
             : `Auto Research will try threshold, session, direction, stop-model, and resolution-window recovery candidates. Active threshold used ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%; data source: ${dataSourceLabel}; config merge: ${activeResearchConfig.mergeStatusLabel}. ${activeResearchConfig.mergeError ?? ""}`.trim()
         });
       } else {
+        run.tradeQualityDiagnostics = diagnoseTradeQuality({ result: backtestResult });
         passStep("backtest", {
           summary: `Backtest completed with ${backtestResult.summary.totalTrades} simulated trades.`,
           detail: `Win rate ${Math.round(backtestResult.summary.winRate * 100)}%, average R ${backtestResult.summary.averageR.toFixed(2)}, max drawdown ${backtestResult.summary.maxDrawdown.toFixed(2)}R. Active confluence threshold ${(activeConfig.minimumConfluenceThreshold * 100).toFixed(0)}%. Data source: ${dataSourceLabel}.`
@@ -761,6 +763,9 @@ export async function runResearchCycle({
       saveLatestValidationReport(validationReport);
       run.validationReport = validationReport;
       run.validationSummary = summarizeValidation(validationReport);
+      if (backtestResult.summary.totalTrades > 0) {
+        run.tradeQualityDiagnostics = diagnoseTradeQuality({ result: backtestResult, validation: validationReport });
+      }
       passStep("validation", {
         summary: `Validation completed: ${validationReport.calibration.readinessStatus} readiness, score ${validationReport.calibration.readinessScore}.`,
         detail: `Strongest: ${validationReport.calibration.strongestScenario}; weakest: ${validationReport.calibration.weakestScenario}.`

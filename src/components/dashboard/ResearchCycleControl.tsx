@@ -118,6 +118,30 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
   const researchCalibrationAvailable = Boolean(
     latestRun?.createdProposalId && latestRun.autoResearchCycle?.noSafePaperDemoCandidateFound
   );
+  const actualBlockers = useMemo(() => {
+    if (!latestRun) {
+      return [];
+    }
+    return [
+      ...safeArray(latestRun.readinessSnapshot?.failedRequirements).map((requirement) => requirement.label),
+      ...(!latestRun.llmRun?.advisoryPassed ? ["LLM advisory review required before Paper-Demo Candidate."] : [])
+    ].filter((item, index, array) => item && array.indexOf(item) === index);
+  }, [latestRun]);
+  const passedRequirements = useMemo(
+    () => safeArray(latestRun?.readinessSnapshot?.passedRequirements).map((requirement) => requirement.label),
+    [latestRun]
+  );
+  const readinessWarnings = useMemo(
+    () => [
+      ...safeArray(latestRun?.readinessSnapshot?.warnings),
+      ...safeArray(latestRun?.candleWindowWarnings)
+    ],
+    [latestRun]
+  );
+  const topTradeQualityIssue =
+    safeArray(latestRun?.tradeQualityDiagnostics).find((item) => item.severity === "blocking") ??
+    safeArray(latestRun?.tradeQualityDiagnostics).find((item) => item.severity === "warning") ??
+    safeArray(latestRun?.tradeQualityDiagnostics)[0];
 
   useEffect(() => {
     let mounted = true;
@@ -416,7 +440,7 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
             </div>
             <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
               <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Blockers</p>
-              <p className="mt-1 font-semibold text-slate-100">{safeArray(latestRun.blockers).length}</p>
+              <p className="mt-1 font-semibold text-slate-100">{actualBlockers.length}</p>
             </div>
           </div>
         ) : null}
@@ -448,14 +472,80 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
           </div>
         ) : null}
 
-        {safeArray(latestRun?.blockers).length ? (
-          <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
-            <p className="font-medium">Current blockers</p>
-            <ul className="mt-2 space-y-1">
-              {safeTopN(latestRun?.blockers, 4).map((blocker) => (
-                <li key={blocker}>{blocker}</li>
-              ))}
-            </ul>
+        {latestRun ? (
+          <div className="grid gap-3 lg:grid-cols-3">
+            <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+              <p className="font-medium">Actual blockers</p>
+              {actualBlockers.length ? (
+                <ul className="mt-2 space-y-1">
+                  {safeTopN(actualBlockers, 4).map((blocker) => (
+                    <li key={blocker}>{blocker}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-amber-100/75">No active readiness blockers reported.</p>
+              )}
+            </div>
+            <div className="rounded-lg border border-emerald-300/25 bg-emerald-300/10 p-3 text-sm text-emerald-100">
+              <p className="font-medium">Passed requirements</p>
+              {passedRequirements.length ? (
+                <ul className="mt-2 space-y-1">
+                  {safeTopN(passedRequirements, 4).map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-emerald-100/75">No passed requirements recorded yet.</p>
+              )}
+            </div>
+            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-300">
+              <p className="font-medium text-slate-100">Warnings and next action</p>
+              {readinessWarnings.length ? (
+                <ul className="mt-2 space-y-1">
+                  {safeTopN(readinessWarnings, 3).map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-slate-400">No readiness warnings recorded.</p>
+              )}
+              <p className="mt-2 text-cyan-100">{latestRun.nextRecommendedAction}</p>
+            </div>
+          </div>
+        ) : null}
+
+        {latestRun?.backtestSummary && latestRun.backtestSummary.totalTrades > 0 ? (
+          <div className="rounded-lg border border-violet-300/25 bg-violet-300/10 p-3 text-sm text-violet-100">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-medium">Trade Quality Diagnostics</p>
+                <p className="mt-1">
+                  Top issue: {topTradeQualityIssue?.reasonCode.replace(/_/g, " ") ?? "none detected"}.{" "}
+                  {topTradeQualityIssue?.suggestedFix ?? "Keep validating trade quality before readiness review."}
+                </p>
+              </div>
+              <Badge variant={topTradeQualityIssue?.severity === "blocking" ? "danger" : topTradeQualityIssue ? "warning" : "success"}>
+                {topTradeQualityIssue?.severity ?? "stable"}
+              </Badge>
+            </div>
+            <div className="mt-3 grid gap-2 md:grid-cols-4">
+              <div className="rounded-md border border-violet-200/20 bg-violet-200/5 p-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-violet-100/70">Win rate</p>
+                <p className="mt-1 font-mono">{formatPercent(latestRun.backtestSummary.winRate)}</p>
+              </div>
+              <div className="rounded-md border border-violet-200/20 bg-violet-200/5 p-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-violet-100/70">Average R</p>
+                <p className="mt-1 font-mono">{latestRun.backtestSummary.averageR.toFixed(2)}R</p>
+              </div>
+              <div className="rounded-md border border-violet-200/20 bg-violet-200/5 p-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-violet-100/70">Max drawdown</p>
+                <p className="mt-1 font-mono">{latestRun.backtestSummary.maxDrawdown.toFixed(2)}R</p>
+              </div>
+              <div className="rounded-md border border-violet-200/20 bg-violet-200/5 p-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-violet-100/70">Recommended test</p>
+                <p className="mt-1">{topTradeQualityIssue?.candidateConfigHints[0]?.label ?? "Run trade quality optimizer"}</p>
+              </div>
+            </div>
           </div>
         ) : null}
 

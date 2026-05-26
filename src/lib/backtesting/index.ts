@@ -5,7 +5,9 @@ export type {
   BacktestConfig,
   BacktestDecisionPoint,
   BacktestResult,
+  BacktestSessionFilter,
   BacktestSkipReasonSummary,
+  BacktestStopModel,
   BacktestSummary,
   EquityCurvePoint,
   ReplayFrame,
@@ -19,6 +21,16 @@ export {
   diagnoseTradeGeneration,
   topTradeGenerationDiagnostic
 } from "@/lib/backtesting/tradeGenerationDiagnostics";
+export {
+  diagnoseTradeQuality,
+  topTradeQualityDiagnostic
+} from "@/lib/backtesting/tradeQualityDiagnostics";
+export type {
+  TradeQualityCandidateHint,
+  TradeQualityDiagnostic,
+  TradeQualityDiagnosticSeverity,
+  TradeQualityReasonCode
+} from "@/lib/backtesting/tradeQualityDiagnostics";
 export type {
   TradeGenerationDiagnostic,
   TradeGenerationDiagnosticSeverity,

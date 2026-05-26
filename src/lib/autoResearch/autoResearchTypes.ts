@@ -3,6 +3,7 @@ import type {
   BacktestConfig,
   BacktestResult,
   TradeGenerationDiagnostic,
+  TradeQualityDiagnostic,
   ResolvedBacktestConfig
 } from "@/lib/backtesting";
 import type { BacktestSessionFilter, BacktestStopModel } from "@/lib/backtesting/backtestTypes";
@@ -199,6 +200,16 @@ export interface AutoResearchCycle {
   failedGates?: AutoResearchFailedGate[];
   finalOutcome?: AutoResearchAdaptiveOutcome;
   tradeGenerationDiagnostics?: TradeGenerationDiagnostic[];
+  tradeQualityDiagnostics?: TradeQualityDiagnostic[];
+  tradeQualityCandidateConfigs?: AutoResearchCandidateConfig[];
+  tradeQualityBestCandidate?: AutoResearchCandidateResult;
+  tradeQualitySummary?: {
+    topIssue?: string;
+    recommendedNextTest?: string;
+    testedStopModels: string[];
+    testedTargetModels: string[];
+    sessionDirectionFindings: string[];
+  };
   recoveryAttempted?: boolean;
   recoveryCandidates?: AutoResearchCandidateConfig[];
   recoveryResult?: AutoResearchCandidateResult;
