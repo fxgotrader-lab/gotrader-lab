@@ -129,10 +129,14 @@ const isPassLikeText = (value: string) => {
 };
 const uniqueText = (items: Array<string | undefined>) =>
   items.filter((item): item is string => Boolean(item?.trim())).filter((item, index, array) => array.indexOf(item) === index);
-const dashboardSearchModes: Array<{ label: string; value: AutoResearchSearchMode; count: number }> = [
-  { label: "Quick - 5 candidates", value: "quick", count: 5 },
-  { label: "Standard - 10 candidates", value: "standard", count: 10 },
-  { label: "Deep - 25 candidates", value: "deep", count: 25 }
+const dashboardSearchModes: Array<{ label: string; shortLabel: string; value: AutoResearchSearchMode; count: number }> = [
+  { label: "Quick - 5 candidates", shortLabel: "Quick", value: "quick", count: 5 },
+  { label: "Standard - 10 candidates", shortLabel: "Standard", value: "standard", count: 10 },
+  { label: "Deep - 25 candidates", shortLabel: "Deep", value: "deep", count: 25 },
+  { label: "Session Focus - 10 candidates", shortLabel: "Session Focus", value: "session_focus", count: 10 },
+  { label: "Stop Model Focus - 10 candidates", shortLabel: "Stop Model Focus", value: "stop_model_focus", count: 10 },
+  { label: "Long/Short Focus - 10 candidates", shortLabel: "Long/Short Focus", value: "long_short_focus", count: 10 },
+  { label: "Conservative Only - 5 candidates", shortLabel: "Conservative Only", value: "conservative_only", count: 5 }
 ];
 
 const fallbackCandleSource: PreparedCandleSource = {
@@ -162,7 +166,11 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
   const latestProposalSnapshot = latestRun?.latestGeneratedProposal?.metricsSnapshot ?? latestRun?.autoResearchCycle?.createdProposal?.metricsSnapshot;
   const importedSafeMode = activeCandleSource.mode === "imported" && !advancedFullResearchMode;
   const effectiveSearchMode = importedSafeMode ? "quick" : searchMode;
-  const selectedSearchMode = dashboardSearchModes.find((mode) => mode.value === effectiveSearchMode) ?? dashboardSearchModes[0];
+  const selectedSearchMode = dashboardSearchModes.find((mode) => mode.value === searchMode) ?? dashboardSearchModes[1];
+  const effectiveSearchModeDetails =
+    dashboardSearchModes.find((mode) => mode.value === effectiveSearchMode) ?? dashboardSearchModes[0];
+  const effectiveCandidateLimit = effectiveSearchModeDetails.count;
+  const searchDepthCappedBySafeMode = importedSafeMode && selectedSearchMode.value !== effectiveSearchModeDetails.value;
   const dashboardPreset = activeCandleSource.mode === "imported"
     ? advancedFullResearchMode
       ? "Advanced"
@@ -255,7 +263,7 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
       const result = await runResearchCycle({
         state,
         searchMode: effectiveSearchMode,
-        maxCandidateCount: selectedSearchMode.count,
+        maxCandidateCount: effectiveCandidateLimit,
         candleWindowSettings:
           activeCandleSource.mode === "imported" && !advancedFullResearchMode
             ? dashboardImportedSafeCandleWindowSettings
@@ -401,21 +409,53 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
               </div>
             ) : null}
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="dashboard-research-depth" className="text-cyan-100">
-              Search depth
-            </Label>
+          <div className="space-y-3 rounded-lg border border-cyan-300/20 bg-slate-950/55 p-3">
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="dashboard-research-depth" className="text-cyan-100">
+                  Search depth
+                </Label>
+                <Badge variant={searchDepthCappedBySafeMode ? "warning" : "secondary"}>
+                  {effectiveSearchModeDetails.shortLabel}
+                </Badge>
+              </div>
+              <p className="mt-1 text-xs text-slate-400">
+                Choose how many bounded research configurations the dashboard cycle should test.
+              </p>
+            </div>
             <Select
               id="dashboard-research-depth"
-              disabled={busy || importedSafeMode}
-              value={effectiveSearchMode}
+              disabled={busy}
+              value={searchMode}
               options={dashboardSearchModes.map((mode) => ({ label: mode.label, value: mode.value }))}
               onChange={(event) => setSearchMode(event.target.value as AutoResearchSearchMode)}
             />
+            <div className="grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
+              <div className="rounded-md border border-white/10 bg-slate-950/60 p-2">
+                <p className="uppercase tracking-[0.14em] text-slate-500">Selected search depth</p>
+                <p className="mt-1 font-mono text-slate-100">{selectedSearchMode.shortLabel}</p>
+              </div>
+              <div className="rounded-md border border-white/10 bg-slate-950/60 p-2">
+                <p className="uppercase tracking-[0.14em] text-slate-500">Effective mode</p>
+                <p className="mt-1 font-mono text-slate-100">{effectiveSearchModeDetails.shortLabel}</p>
+              </div>
+              <div className="rounded-md border border-white/10 bg-slate-950/60 p-2">
+                <p className="uppercase tracking-[0.14em] text-slate-500">Effective candidate limit</p>
+                <p className="mt-1 font-mono text-slate-100">{effectiveCandidateLimit} candidates</p>
+              </div>
+              <div className="rounded-md border border-white/10 bg-slate-950/60 p-2">
+                <p className="uppercase tracking-[0.14em] text-slate-500">Data preset</p>
+                <p className="mt-1 font-mono text-slate-100">{dashboardPreset}</p>
+              </div>
+            </div>
             {importedSafeMode ? (
               <div className="rounded-md border border-cyan-300/20 bg-cyan-300/10 p-2 text-xs text-cyan-50">
-                Imported data Safe preset is active: latest {DASHBOARD_IMPORTED_SAFE_WINDOW_SIZE.toLocaleString()} raw candles,
-                5m aggregation, quick search, 5 candidates, one adaptive pass, compact audit.
+                Imported-data Safe mode may cap heavy searches to protect the browser. Selected {selectedSearchMode.shortLabel} will run as{" "}
+                {effectiveSearchModeDetails.shortLabel} unless Advanced full research mode is enabled.
+                <span className="mt-1 block">
+                  Safe preset: latest {DASHBOARD_IMPORTED_SAFE_WINDOW_SIZE.toLocaleString()} raw candles, 5m aggregation, 5 candidates,
+                  one adaptive pass, compact audit.
+                </span>
               </div>
             ) : null}
             {activeCandleSource.mode === "imported" ? (
