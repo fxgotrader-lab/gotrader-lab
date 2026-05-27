@@ -13,6 +13,7 @@ import { EvidenceQualityView } from "@/components/evidence/EvidenceQualityView";
 import { ICTLab } from "@/components/ict-lab/ICTLab";
 import { LLMAgentsView } from "@/components/llm-agents/LLMAgentsView";
 import { MarketDataView } from "@/components/market-data/MarketDataView";
+import { ResearchMaturityView } from "@/components/maturity/ResearchMaturityView";
 import { PerformanceView } from "@/components/performance/PerformanceView";
 import { PromptLab } from "@/components/prompt-lab/PromptLab";
 import { ReadinessGateView } from "@/components/readiness/ReadinessGateView";
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/agent-audit" element={<AgentAuditView />} />
         <Route path="/agent-debate" element={<AgentDebateView />} />
         <Route path="/evidence-quality" element={<EvidenceQualityView />} />
+        <Route path="/research-maturity" element={<ResearchMaturityView />} />
         <Route path="/agents" element={<AgentRoster state={state} />} />
         <Route path="/agents/:id" element={<AgentDetail state={state} />} />
         <Route path="/research" element={<ResearchWorkbench state={state} actions={actions} />} />

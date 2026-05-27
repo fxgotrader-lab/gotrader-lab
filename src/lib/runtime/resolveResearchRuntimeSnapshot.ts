@@ -21,6 +21,7 @@ import {
   canonicalMetricsForRun,
   detectCanonicalMetricsMismatch
 } from "@/lib/performance/canonicalMetrics";
+import { calculateResearchMaturity } from "@/lib/maturity";
 import { buildSimulatedAccountFromCanonicalMetrics } from "@/lib/performance/simulatedAccount";
 import { evaluateReadinessGate } from "@/lib/readiness";
 import { loadLatestResearchQualityReview, RESEARCH_QUALITY_STORAGE_KEY } from "@/lib/researchQuality";
@@ -233,6 +234,35 @@ export async function resolveResearchRuntimeSnapshot(
     readinessState: readinessSnapshot.state,
     proposalId: latestProposal?.proposalId
   });
+  const researchMaturitySummary = calculateResearchMaturity({
+    activeCalibrationId: activeConfig.activeCalibrationId,
+    activeCalibrationApprovedAt: activeConfig.activeResearchCalibration?.approvedAt,
+    evidenceQualityScore: evidenceLedgerSummary.overallScore,
+    proposals: selfImprovement.proposals,
+    latestReadinessState: readinessSnapshot.state,
+    cycles: safeArray(researchCycleState.runs).map((run) => {
+      const metrics = canonicalMetricsForRun(run);
+      return {
+        cycleId: run.cycleId,
+        timestamp: run.completedAt ?? run.startedAt,
+        status: run.status,
+        activeCalibrationId: metrics?.activeCalibrationId ?? run.activeCalibrationId,
+        dataSourceMode: run.dataSourceMode,
+        researchPreset: run.researchPreset,
+        candleWindow: metrics?.candleWindow ?? `${run.researchWindowCandles ?? 0} raw / ${run.processedCandleCount ?? 0} processed`,
+        rawCandleCount: metrics?.rawCandleCount ?? run.rawCandleCount,
+        processedCandleCount: metrics?.processedCandleCount ?? run.processedCandleCount,
+        totalTrades: metrics?.totalTrades ?? run.backtestSummary?.totalTrades,
+        winRate: metrics?.winRate ?? run.backtestSummary?.winRate,
+        averageR: metrics?.averageR ?? run.backtestSummary?.averageR,
+        maxDrawdownR: metrics?.maxDrawdownR ?? run.backtestSummary?.maxDrawdown,
+        falsePositiveCount: metrics?.falsePositiveCount,
+        readinessScore: metrics?.readinessScore ?? run.researchQualitySummary?.readinessScore ?? run.validationSummary?.readinessScore,
+        readinessState: run.readinessSnapshot?.state,
+        llmAdvisoryPassed: run.llmRun?.advisoryPassed
+      };
+    })
+  });
   const sourceTrace = [
     `market data: ${marketData.sourceLabel}`,
     `candle window: ${marketData.researchWindow.toLocaleString()} raw -> ${marketData.processedCandleCount.toLocaleString()} processed ${marketData.timeframe}`,
@@ -384,7 +414,7 @@ export async function resolveResearchRuntimeSnapshot(
       readinessSnapshot,
       actualBlockers: safeArray(readinessSnapshot.failedRequirements).map((item) => item.label),
       passedRequirements: safeArray(readinessSnapshot.passedRequirements).map((item) => item.label),
-      warnings: [...readinessSnapshot.warnings, ...evidenceLedgerSummary.readinessEvidenceWarnings],
+      warnings: [...readinessSnapshot.warnings, ...evidenceLedgerSummary.readinessEvidenceWarnings, ...researchMaturitySummary.maturityWarnings],
       nextAction: readinessSnapshot.recommendedNextStep
     },
     performance: {
@@ -396,6 +426,13 @@ export async function resolveResearchRuntimeSnapshot(
       evidenceLedgerSummary,
       weakestEvidenceCategories: evidenceLedgerSummary.weakestEvidenceCategories,
       readinessEvidenceWarnings: evidenceLedgerSummary.readinessEvidenceWarnings
+    },
+    maturity: {
+      maturitySummary: researchMaturitySummary,
+      maturityWarnings: researchMaturitySummary.maturityWarnings,
+      maturityGrade: researchMaturitySummary.grade,
+      maturityScore: researchMaturitySummary.score,
+      nextMaturityRequirement: researchMaturitySummary.nextMaturityRequirement
     },
     fingerprints: {
       activeBaseline: activeBaselineFingerprint,

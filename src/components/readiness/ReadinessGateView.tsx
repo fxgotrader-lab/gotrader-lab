@@ -31,6 +31,7 @@ import {
   type ResearchRuntimeSnapshot
 } from "@/lib/runtime";
 import { evidenceScoreVariant, selectEvidenceReadinessImpact } from "@/lib/evidence";
+import { maturityGradeLabel, maturityGradeVariant, selectMaturityReadinessWarning } from "@/lib/maturity";
 import { loadSelfImprovementState } from "@/lib/selfImprovement";
 import { countCompletedRunbookItems, loadSimulationRunbookState, simulationRunbookChecklist } from "@/lib/simulationRunbook";
 import { loadLatestValidationReport } from "@/lib/validation";
@@ -197,6 +198,18 @@ export function ReadinessGateView() {
           </div>
           <Badge variant={evidenceScoreVariant(runtimeSnapshot?.evidence.evidenceQualityScore)}>
             Evidence {runtimeSnapshot?.evidence.evidenceQualityScore ?? 0}/100
+          </Badge>
+        </CardContent>
+      </Card>
+
+      <Card className="border-violet-300/25 bg-violet-300/10">
+        <CardContent className="flex flex-col gap-3 p-4 text-sm text-violet-100 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="font-medium">Research maturity readiness impact</div>
+            <div className="mt-1">{selectMaturityReadinessWarning(runtimeSnapshot?.maturity.maturitySummary)}</div>
+          </div>
+          <Badge variant={maturityGradeVariant(runtimeSnapshot?.maturity.maturityGrade)}>
+            {maturityGradeLabel(runtimeSnapshot?.maturity.maturityGrade)} / {runtimeSnapshot?.maturity.maturityScore ?? 0}
           </Badge>
         </CardContent>
       </Card>

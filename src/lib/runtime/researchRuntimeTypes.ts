@@ -1,6 +1,7 @@
 import type { ResolvedBacktestConfig } from "@/lib/backtesting";
 import type { EvidenceCategory, EvidenceLedgerSummary } from "@/lib/evidence";
 import type { LLMAdvisoryRun, LLMProviderStatus } from "@/lib/llm";
+import type { ResearchMaturitySummary } from "@/lib/maturity";
 import type { CandleDataSourceMode, CandleWindowSettings, PreparedCandleSource } from "@/lib/marketData";
 import type { CanonicalPerformanceMetrics } from "@/lib/performance/canonicalMetrics";
 import type { SimulatedAccount } from "@/lib/performance/simulatedAccount";
@@ -141,6 +142,14 @@ export interface RuntimeEvidenceState {
   readinessEvidenceWarnings: string[];
 }
 
+export interface RuntimeMaturityState {
+  maturitySummary: ResearchMaturitySummary;
+  maturityWarnings: string[];
+  maturityGrade: ResearchMaturitySummary["grade"];
+  maturityScore: number;
+  nextMaturityRequirement: string;
+}
+
 export interface RuntimeDiagnosticsState {
   sourceTrace: string[];
   staleStateWarnings: string[];
@@ -159,6 +168,7 @@ export interface ResearchRuntimeSnapshot {
   readiness: RuntimeReadinessState;
   performance: RuntimePerformanceState;
   evidence: RuntimeEvidenceState;
+  maturity: RuntimeMaturityState;
   fingerprints: RuntimeFingerprintState;
   metricProvenance: RuntimeMetricProvenanceState;
   diagnostics: RuntimeDiagnosticsState;

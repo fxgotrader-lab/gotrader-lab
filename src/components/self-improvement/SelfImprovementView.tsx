@@ -31,6 +31,7 @@ import type { CalibrationProposal, CalibrationProposalMetrics, SelfImprovementSt
 import type { AutoResearchCandidateResult } from "@/lib/autoResearch";
 import { describeBacktestConfig } from "@/lib/backtesting";
 import { evidenceScoreVariant, selectEvidenceReadinessImpact, selectWeakestEvidenceLabel } from "@/lib/evidence";
+import { maturityGradeLabel, maturityGradeVariant, selectMaturityNextRequirement } from "@/lib/maturity";
 import { canonicalMetricsForRun, type CanonicalPerformanceMetrics } from "@/lib/performance/canonicalMetrics";
 import { latestResearchCycleRun } from "@/lib/researchCycle";
 import {
@@ -943,6 +944,23 @@ export function SelfImprovementView() {
           </div>
           <Badge variant={evidenceScoreVariant(runtimeSnapshot?.evidence.evidenceQualityScore)}>
             Evidence {runtimeSnapshot?.evidence.evidenceQualityScore ?? 0}/100
+          </Badge>
+        </CardContent>
+      </Card>
+
+      <Card className="border-fuchsia-300/20 bg-fuchsia-300/10">
+        <CardContent className="grid gap-3 p-4 text-sm text-fuchsia-50 md:grid-cols-[1fr_auto] md:items-center">
+          <div>
+            <div className="font-medium">Maturity impact of active calibration</div>
+            <div className="mt-1 text-fuchsia-100/75">
+              {runtimeSnapshot?.maturity.maturitySummary.activeCalibrationId
+                ? `Active calibration ${runtimeSnapshot.maturity.maturitySummary.activeCalibrationId} has survived ${runtimeSnapshot.maturity.maturitySummary.cyclesWithCurrentCalibration} cycle(s).`
+                : "Default baseline is active. A newly approved calibration starts with lower maturity until it survives fresh research cycles."}{" "}
+              {selectMaturityNextRequirement(runtimeSnapshot?.maturity.maturitySummary)}
+            </div>
+          </div>
+          <Badge variant={maturityGradeVariant(runtimeSnapshot?.maturity.maturityGrade)}>
+            {maturityGradeLabel(runtimeSnapshot?.maturity.maturityGrade)} / {runtimeSnapshot?.maturity.maturityScore ?? 0}
           </Badge>
         </CardContent>
       </Card>

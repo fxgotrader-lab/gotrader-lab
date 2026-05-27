@@ -43,6 +43,11 @@ export const selectRuntimeEvidenceLabel = (snapshot?: ResearchRuntimeSnapshot) =
     ? `Evidence ${snapshot.evidence.evidenceQualityScore}/100 / real coverage ${snapshot.evidence.evidenceLedgerSummary.realEvidenceCoverage}%`
     : "Evidence snapshot loading";
 
+export const selectRuntimeMaturityLabel = (snapshot?: ResearchRuntimeSnapshot) =>
+  snapshot
+    ? `${snapshot.maturity.maturityGrade.replace(/_/g, " ")} / ${snapshot.maturity.maturityScore}/100`
+    : "Maturity snapshot loading";
+
 export const selectRuntimeConfigSummary = (snapshot?: ResearchRuntimeSnapshot) => {
   if (!snapshot) {
     return "Runtime config loading";
@@ -68,7 +73,8 @@ export const selectRuntimeWarnings = (snapshot?: ResearchRuntimeSnapshot) => [
   ...(snapshot?.diagnostics.staleStateWarnings ?? []),
   ...(snapshot?.diagnostics.mismatchWarnings ?? []),
   ...(snapshot?.metricProvenance.mismatchWarnings ?? []),
-  ...(snapshot?.evidence.readinessEvidenceWarnings ?? [])
+  ...(snapshot?.evidence.readinessEvidenceWarnings ?? []),
+  ...(snapshot?.maturity.maturityWarnings ?? [])
 ];
 
 export const selectRuntimeSnapshotHealth = (snapshot?: ResearchRuntimeSnapshot) => {

@@ -14,6 +14,7 @@ import {
 } from "@/lib/autoResearch";
 import { getCommunicationSummary, loadCommunicationMessages } from "@/lib/communications/communicationSpec";
 import { evidenceScoreVariant, selectStrongestEvidenceLabel, selectWeakestEvidenceLabel } from "@/lib/evidence";
+import { maturityGradeLabel, maturityGradeVariant, selectMaturityNextRequirement } from "@/lib/maturity";
 import {
   getLLMReadinessImpact,
   latestLLMAdvisoryRun,
@@ -278,6 +279,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
         <AICommunicationsCard summary={communicationSummary} />
         <MarketDataContextCard context={marketContext} source={activeCandleSource} />
         <EvidenceQualityCard snapshot={runtimeSnapshot} />
+        <ResearchMaturityCard snapshot={runtimeSnapshot} />
         <AgentDebateCard summary={agentDebateSummary} />
         <AgentAuditCard summary={agentAuditSummary} />
         <LLMAgentStatusCard latestRun={latestLLMRun} providerStatus={providerStatus} state={llmState} />
@@ -451,6 +453,42 @@ function EvidenceQualityCard({ snapshot }: { snapshot?: ResearchRuntimeSnapshot 
         <Link to="/evidence-quality">
           <Button variant="secondary" className="w-full justify-between">
             Open evidence ledger
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </Link>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ResearchMaturityCard({ snapshot }: { snapshot?: ResearchRuntimeSnapshot }) {
+  const summary = snapshot?.maturity.maturitySummary;
+
+  return (
+    <Card className="border-white/10 bg-slate-950/70">
+      <CardHeader className="flex flex-row items-start justify-between gap-3">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base text-slate-100">
+            <Gauge className="h-4 w-4 text-violet-300" aria-hidden="true" />
+            Research Maturity
+          </CardTitle>
+          <p className="mt-1 text-xs text-slate-500">Repeatability score for the active calibration and strategy state.</p>
+        </div>
+        <Badge variant={maturityGradeVariant(summary?.grade)}>{maturityGradeLabel(summary?.grade)}</Badge>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 text-sm sm:grid-cols-2">
+          <StatusLine label="Score" value={summary ? `${summary.score}/100` : "loading"} />
+          <StatusLine label="Cycles tested" value={String(summary?.cyclesTested ?? 0)} />
+          <StatusLine label="Windows tested" value={String(summary?.dataWindowsTested ?? 0)} />
+          <StatusLine label="Evidence score" value={`${summary?.evidenceQualityScore ?? 0}/100`} />
+        </div>
+        <div className="rounded-md border border-violet-300/25 bg-violet-300/10 p-3 text-xs text-violet-100">
+          {selectMaturityNextRequirement(summary)}
+        </div>
+        <Link to="/research-maturity">
+          <Button variant="secondary" className="w-full justify-between">
+            Open maturity score
             <ExternalLink className="h-4 w-4" aria-hidden="true" />
           </Button>
         </Link>
