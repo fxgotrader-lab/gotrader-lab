@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { useEffect, useRef, type ReactNode } from "react";
+import { NavLink, useNavigate } from "react-router-dom";
 import {
   Activity,
   Beaker,
@@ -82,6 +82,39 @@ const navigation = [
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const navigate = useNavigate();
+  const navRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) {
+      return undefined;
+    }
+
+    const onNativeClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) {
+        return;
+      }
+
+      const target = event.target instanceof Element ? event.target : undefined;
+      const anchor = target?.closest<HTMLAnchorElement>("a[href]");
+      if (!anchor || !nav.contains(anchor)) {
+        return;
+      }
+
+      const href = anchor.getAttribute("href");
+      if (!href || !href.startsWith("/")) {
+        return;
+      }
+
+      event.preventDefault();
+      navigate(href);
+    };
+
+    nav.addEventListener("click", onNativeClick, { capture: true });
+    return () => nav.removeEventListener("click", onNativeClick, { capture: true });
+  }, [navigate]);
+
   return (
     <div className="min-h-screen terminal-grid lg:h-screen lg:overflow-hidden">
       <div className="mx-auto flex min-h-screen w-full max-w-[1600px] flex-col lg:h-screen lg:flex-row">
@@ -103,7 +136,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Badge>
           </div>
 
-          <nav className="scrollbar-thin flex gap-3 overflow-x-auto px-3 pb-4 lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-4 lg:overflow-x-hidden lg:overflow-y-auto lg:overscroll-contain lg:pb-5 lg:pr-2">
+          <nav ref={navRef} className="scrollbar-thin flex gap-3 overflow-x-auto px-3 pb-4 lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-4 lg:overflow-x-hidden lg:overflow-y-auto lg:overscroll-contain lg:pb-5 lg:pr-2">
             {navigation.map((group) => (
               <div key={group.section} className="flex min-w-max gap-2 lg:min-w-0 lg:flex-col lg:gap-1">
                 <div className="hidden px-3 text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70 lg:block">

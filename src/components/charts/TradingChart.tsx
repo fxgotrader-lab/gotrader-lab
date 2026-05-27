@@ -50,6 +50,7 @@ export function TradingChart({
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const [chartError, setChartError] = useState<string>();
   const [overlayVisibility, setOverlayVisibility] = useState<Record<string, boolean>>(() => {
     const entries = [...lineOverlays, ...zoneOverlays].map((overlay) => [overlay.id, overlay.visibleByDefault !== false] as const);
     return Object.fromEntries(entries);
@@ -63,12 +64,14 @@ export function TradingChart({
   useEffect(() => {
     setOverlayVisibility((current) => {
       const next = { ...current };
+      let changed = false;
       for (const overlay of [...lineOverlays, ...zoneOverlays]) {
         if (!(overlay.id in next)) {
           next[overlay.id] = overlay.visibleByDefault !== false;
+          changed = true;
         }
       }
-      return next;
+      return changed ? next : current;
     });
   }, [lineOverlays, zoneOverlays]);
 
@@ -78,78 +81,110 @@ export function TradingChart({
       return undefined;
     }
 
-    const chart = createChart(container, {
-      ...missionChartOptions,
-      height: container.clientHeight,
-      width: container.clientWidth
-    });
-    chartRef.current = chart;
+    let chart: IChartApi | null = null;
+    let disposed = false;
+    let resizeFrame: number | undefined;
 
-    const candleSeries = chart.addSeries(CandlestickSeries, missionCandlestickOptions);
-    candleSeries.setData(
-      sortedCandles.map((candle: TradingChartCandle) => ({
-        close: candle.close,
-        high: candle.high,
-        low: candle.low,
-        open: candle.open,
-        time: candle.time
-      }))
-    );
-
-    const markerApi = createSeriesMarkers(candleSeries, safeArray(markers).map(toLightweightMarker), {
-      zOrder: "top"
-    });
-
-    const addedLines: ISeriesApi<"Line", Time>[] = [];
-    const addLine = (overlay: TradingChartLineOverlay) => {
-      if (!overlayVisibility[overlay.id]) {
-        return;
-      }
-      const lineSeries = chart.addSeries(LineSeries, {
-        color: overlay.color ?? "#38bdf8",
-        crosshairMarkerVisible: false,
-        lastValueVisible: false,
-        lineStyle: lineStyleFor(overlay.lineStyle),
-        lineWidth: overlay.lineWidth ?? 1,
-        priceLineVisible: false
+    try {
+      setChartError(undefined);
+      chart = createChart(container, {
+        ...missionChartOptions,
+        height: Math.max(220, container.clientHeight),
+        width: Math.max(320, container.clientWidth)
       });
-      lineSeries.setData(lineDataFor(overlay));
-      addedLines.push(lineSeries);
-    };
+      chartRef.current = chart;
 
-    for (const overlay of lineOverlays) {
-      addLine(overlay);
-    }
-    for (const zone of zoneOverlays) {
-      if (overlayVisibility[zone.id]) {
-        addLine(zone.top);
-        addLine(zone.bottom);
-      }
-    }
+      const candleSeries = chart.addSeries(CandlestickSeries, missionCandlestickOptions);
+      candleSeries.setData(
+        sortedCandles.map((candle: TradingChartCandle) => ({
+          close: candle.close,
+          high: candle.high,
+          low: candle.low,
+          open: candle.open,
+          time: candle.time
+        }))
+      );
 
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) {
-        return;
-      }
-      chart.applyOptions({
-        height: Math.max(220, entry.contentRect.height),
-        width: Math.max(320, entry.contentRect.width)
+      const markerApi = createSeriesMarkers(candleSeries, safeArray(markers).map(toLightweightMarker), {
+        zOrder: "top"
       });
-    });
-    observer.observe(container);
 
-    chart.timeScale().fitContent();
+      const addLine = (overlay: TradingChartLineOverlay) => {
+        if (!overlayVisibility[overlay.id] || !chart) {
+          return;
+        }
+        const lineSeries: ISeriesApi<"Line", Time> = chart.addSeries(LineSeries, {
+          color: overlay.color ?? "#38bdf8",
+          crosshairMarkerVisible: false,
+          lastValueVisible: false,
+          lineStyle: lineStyleFor(overlay.lineStyle),
+          lineWidth: overlay.lineWidth ?? 1,
+          priceLineVisible: false
+        });
+        lineSeries.setData(lineDataFor(overlay));
+      };
 
-    return () => {
-      observer.disconnect();
-      markerApi.setMarkers([]);
-      for (const series of addedLines) {
-        chart.removeSeries(series);
+      for (const overlay of lineOverlays) {
+        addLine(overlay);
       }
-      chart.remove();
+      for (const zone of zoneOverlays) {
+        if (overlayVisibility[zone.id]) {
+          addLine(zone.top);
+          addLine(zone.bottom);
+        }
+      }
+
+      const observer = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        if (!entry || disposed || !chart) {
+          return;
+        }
+        if (resizeFrame !== undefined) {
+          window.cancelAnimationFrame(resizeFrame);
+        }
+        resizeFrame = window.requestAnimationFrame(() => {
+          if (disposed || !chart) {
+            return;
+          }
+          chart.applyOptions({
+            height: Math.max(220, entry.contentRect.height),
+            width: Math.max(320, entry.contentRect.width)
+          });
+        });
+      });
+      observer.observe(container);
+
+      chart.timeScale().fitContent();
+
+      return () => {
+        disposed = true;
+        if (resizeFrame !== undefined) {
+          window.cancelAnimationFrame(resizeFrame);
+        }
+        observer.disconnect();
+        try {
+          markerApi.setMarkers([]);
+        } catch {
+          // Lightweight Charts may already have detached marker primitives during route transitions.
+        }
+        try {
+          chart?.remove();
+        } catch {
+          // Chart cleanup must never block React Router from rendering the next page.
+        }
+        chartRef.current = null;
+        chart = null;
+      };
+    } catch (error) {
+      setChartError(error instanceof Error ? error.message : "Chart renderer failed to initialize.");
+      try {
+        chart?.remove();
+      } catch {
+        // Keep the page navigable even if the renderer failed mid-initialization.
+      }
       chartRef.current = null;
-    };
+      return undefined;
+    }
   }, [lineOverlays, markers, overlayVisibility, sortedCandles, zoneOverlays]);
 
   const onToggleOverlay = (id: string) => {
@@ -160,6 +195,24 @@ export function TradingChart({
   };
 
   const state = stateLabel ?? (bias ? bias.toUpperCase() : undefined);
+
+  if (chartError) {
+    return (
+      <div className={`rounded-xl border border-white/10 bg-slate-950/80 ${className ?? ""}`}>
+        <ChartToolbar
+          lineOverlays={lineOverlays}
+          onToggleOverlay={onToggleOverlay}
+          overlayVisibility={overlayVisibility}
+          source={source}
+          stateLabel={state}
+          zoneOverlays={zoneOverlays}
+        />
+        <div className="flex h-64 items-center justify-center px-4 text-center text-sm text-amber-100">
+          Chart unavailable. {chartError}
+        </div>
+      </div>
+    );
+  }
 
   if (!sortedCandles.length) {
     return (
