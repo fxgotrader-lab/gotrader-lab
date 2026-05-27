@@ -236,12 +236,14 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
       saveWalkForwardProgress(run);
     }
 
-    const stability = analyzeWalkForwardStability(run.windows);
+    const stability = analyzeWalkForwardStability(run.windows, run.runId);
     run = {
       ...run,
       status: stability.verdict === "fail" || run.warnings.length ? "completed_with_warnings" : "completed",
       completedAt: now(),
       stability,
+      failureDiagnostics: stability.diagnostics,
+      followUpPlan: stability.followUpPlan,
       progress: {
         status: stability.verdict === "fail" || run.warnings.length ? "completed_with_warnings" : "completed",
         currentWindow: windows.length,

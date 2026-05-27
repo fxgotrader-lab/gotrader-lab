@@ -163,6 +163,8 @@ export interface RuntimeWalkForwardState {
   windowsTested: number;
   outOfSampleWindowsPassed: number;
   proposalValidated: boolean;
+  failureDiagnostics?: WalkForwardRun["failureDiagnostics"];
+  followUpPlan?: WalkForwardRun["followUpPlan"];
   recommendedNextAction: string;
   warnings: string[];
 }

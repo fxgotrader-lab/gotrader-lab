@@ -283,7 +283,12 @@ export async function resolveResearchRuntimeSnapshot(
   ].filter((warning): warning is string => Boolean(warning));
   const walkForwardWarnings = [
     !latestWalkForward ? "No walk-forward validation exists; proposals and readiness are based on selected-window evidence only." : undefined,
+    latestWalkForward?.stability?.verdict === "fail" ? "Latest walk-forward validation failed; targeted follow-up research is required." : undefined,
     latestWalkForward?.stability?.overfitRisk === "high" ? "Latest walk-forward validation reports high overfit risk." : undefined,
+    latestWalkForward?.stability &&
+    latestWalkForward.stability.outOfSampleWindowsPassed < latestWalkForward.stability.windowCount
+      ? "Walk-forward needs more OOS consistency before maturity can advance."
+      : undefined,
     latestWalkForward && latestWalkForward.dataSource !== "imported" ? "Latest walk-forward validation did not use imported historical data." : undefined
   ].filter((warning): warning is string => Boolean(warning));
 
@@ -458,6 +463,8 @@ export async function resolveResearchRuntimeSnapshot(
           latestWalkForward?.proposalId &&
           latestWalkForward.proposalId === latestProposal.proposalId
       ),
+      failureDiagnostics: latestWalkForward?.failureDiagnostics ?? latestWalkForward?.stability?.diagnostics,
+      followUpPlan: latestWalkForward?.followUpPlan ?? latestWalkForward?.stability?.followUpPlan,
       recommendedNextAction:
         latestWalkForward?.stability?.recommendedNextAction ?? "Run walk-forward validation on imported data before trusting a calibration.",
       warnings: walkForwardWarnings

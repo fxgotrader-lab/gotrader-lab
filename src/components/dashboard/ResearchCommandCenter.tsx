@@ -507,6 +507,8 @@ function WalkForwardStatusCard({
   snapshot?: ResearchRuntimeSnapshot;
 }) {
   const stability = run?.stability;
+  const diagnostics = snapshot?.walkForward.failureDiagnostics ?? run?.failureDiagnostics ?? stability?.diagnostics;
+  const followUpPlan = snapshot?.walkForward.followUpPlan ?? run?.followUpPlan ?? stability?.followUpPlan;
 
   return (
     <Card className="border-white/10 bg-slate-950/70">
@@ -542,6 +544,20 @@ function WalkForwardStatusCard({
         <div className="rounded-md border border-cyan-300/25 bg-cyan-300/10 p-3 text-xs text-cyan-100">
           {snapshot?.walkForward.recommendedNextAction ?? "Run walk-forward validation before trusting a one-window calibration."}
         </div>
+        {diagnostics ? (
+          <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-xs text-amber-100">
+            <div className="font-medium">Failure summary</div>
+            <div className="mt-1">
+              Verdict {stability?.verdict?.replace(/_/g, " ") ?? "unknown"}; OOS passed{" "}
+              {stability?.outOfSampleWindowsPassed ?? 0}/{stability?.windowCount ?? 0}; worst window{" "}
+              {diagnostics.worstWindowId ?? "unknown"}.
+            </div>
+            <div className="mt-1">
+              Top reason: {diagnostics.repeatedFailureReasons[0] ?? "none recorded"}. Next follow-up:{" "}
+              {followUpPlan?.recommendations[0]?.label ?? "run targeted walk-forward follow-up"}.
+            </div>
+          </div>
+        ) : null}
         <Link to="/walk-forward">
           <Button variant="secondary" className="w-full justify-between">
             Open walk-forward validation

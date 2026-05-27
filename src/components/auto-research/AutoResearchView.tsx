@@ -248,6 +248,9 @@ export function AutoResearchView() {
   const researchCalibrationProposalCreated = Boolean(
     latestCycle?.createdProposalId && latestCycle.noSafePaperDemoCandidateFound
   );
+  const latestFollowUpPlan =
+    safeArray(state.followUpSearchPlans).find((plan) => plan.planId === state.latestFollowUpSearchPlanId) ??
+    safeArray(state.followUpSearchPlans)[0];
 
   useEffect(() => {
     let mounted = true;
@@ -330,6 +333,14 @@ export function AutoResearchView() {
     setState(clearAutoResearchHistory());
   };
 
+  const applyFollowUpPlan = () => {
+    if (!latestFollowUpPlan) {
+      return;
+    }
+    setSearchMode(latestFollowUpPlan.recommendedSearchMode);
+    setMaxCandidateCount(String(latestFollowUpPlan.maxCandidateCount));
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
@@ -362,6 +373,36 @@ export function AutoResearchView() {
           <Badge variant="warning">Approval required</Badge>
         </CardContent>
       </Card>
+
+      {latestFollowUpPlan ? (
+        <Card className="border-amber-300/25 bg-amber-300/10">
+          <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <CardTitle>Walk-Forward Follow-Up Search</CardTitle>
+              <CardDescription>
+                Plan {latestFollowUpPlan.planId} targets {latestFollowUpPlan.likelyFailureCause.replace(/_/g, " ")} from
+                walk-forward run {latestFollowUpPlan.sourceRunId}.
+              </CardDescription>
+            </div>
+            <Badge variant="warning">walk_forward_failure_followup</Badge>
+          </CardHeader>
+          <CardContent className="grid gap-3 text-sm md:grid-cols-[1fr_auto] md:items-center">
+            <div className="space-y-2">
+              <div>
+                Recommended mode: <span className="font-medium">{latestFollowUpPlan.recommendedSearchMode.replace(/_/g, " ")}</span>;
+                candidates: <span className="font-medium">{latestFollowUpPlan.maxCandidateCount}</span>.
+              </div>
+              <div className="text-muted-foreground">
+                {latestFollowUpPlan.recommendations[0]?.label ?? "Targeted follow-up"} -{" "}
+                {latestFollowUpPlan.recommendations[0]?.rationale ?? "Use bounded research candidates only."}
+              </div>
+            </div>
+            <Button variant="secondary" onClick={applyFollowUpPlan}>
+              Use follow-up plan
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {state.storageWarning ? (
         <Card className="border-amber-300/25 bg-amber-300/10">

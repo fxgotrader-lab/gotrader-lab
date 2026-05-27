@@ -621,13 +621,29 @@ export function SelfImprovementView() {
   const tradeQualityAverageRImproved = snapshotAfterMetrics && snapshotBeforeMetrics
     ? snapshotAfterMetrics.averageR > snapshotBeforeMetrics.averageR
     : false;
-  const approvalCheck = latestProposalPersisted
+  const walkForwardApprovalBlocked = Boolean(
+    latestProposal &&
+      runtimeSnapshot?.walkForward.proposalValidated &&
+      runtimeSnapshot.walkForward.verdict === "fail"
+  );
+  const baseApprovalCheck = latestProposalPersisted
     ? canApproveProposal(latestProposal)
     : {
         canApprove: false,
         reason: latestProposal ? "Import proposal from latest research cycle first." : "No proposal selected.",
         reasons: [latestProposal ? "Import proposal from latest research cycle first." : "No proposal selected."]
       };
+  const approvalCheck = walkForwardApprovalBlocked
+    ? {
+        canApprove: false,
+        reason: "Do not approve yet - walk-forward failed.",
+        reasons: [
+          "Do not approve yet - walk-forward failed.",
+          ...(runtimeSnapshot?.walkForward.failureDiagnostics?.repeatedFailureReasons ?? []),
+          ...(baseApprovalCheck.reasons ?? [])
+        ]
+      }
+    : baseApprovalCheck;
   const canAccept = approvalCheck.canApprove;
   const acceptedButActiveStorageMissing = Boolean(
     latestProposal?.status === "accepted" &&
@@ -976,8 +992,29 @@ export function SelfImprovementView() {
                   : "This proposal has not been walk-forward validated yet. Treat one-window proposal evidence as preliminary."
                 : "No proposal selected for walk-forward validation."}
             </div>
+            {walkForwardApprovalBlocked ? (
+              <div className="mt-3 rounded-md border border-amber-300/30 bg-amber-300/10 p-3 text-amber-100">
+                <div className="font-medium">Do not approve yet - walk-forward failed.</div>
+                <div className="mt-1">
+                  {runtimeSnapshot?.walkForward.failureDiagnostics?.summary ??
+                    "The latest proposal failed walk-forward validation and needs targeted follow-up research."}
+                </div>
+                <div className="mt-2 text-xs">
+                  Top reason: {runtimeSnapshot?.walkForward.failureDiagnostics?.repeatedFailureReasons?.[0] ?? "not recorded"}.
+                </div>
+              </div>
+            ) : null}
           </div>
-          <Badge variant={runtimeSnapshot?.walkForward.proposalValidated ? "success" : "warning"}>
+          <Badge
+            variant={
+              runtimeSnapshot?.walkForward.verdict === "robust_research" ||
+              runtimeSnapshot?.walkForward.verdict === "paper_demo_review_candidate"
+                ? "success"
+                : runtimeSnapshot?.walkForward.verdict === "fail"
+                  ? "danger"
+                  : "warning"
+            }
+          >
             {runtimeSnapshot?.walkForward.verdict?.replace(/_/g, " ") ?? "not run"}
           </Badge>
         </CardContent>

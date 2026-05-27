@@ -1,5 +1,9 @@
-import { safeArray } from "@/lib/utils";
+import { safeArray, uid } from "@/lib/utils";
 import type {
+  WalkForwardFailureDiagnostics,
+  WalkForwardFollowUpRecommendation,
+  WalkForwardFollowUpSearchPlan,
+  WalkForwardLikelyFailureCause,
   WalkForwardOverfitRisk,
   WalkForwardStabilitySummary,
   WalkForwardStabilityVerdict,
@@ -76,7 +80,263 @@ const verdictFor = (
   return "fail";
 };
 
-export function analyzeWalkForwardStability(windowsInput: WalkForwardWindowResult[]): WalkForwardStabilitySummary {
+const failureCounts = (windows: WalkForwardWindowResult[]) => {
+  const counts = new Map<string, number>();
+  for (const reason of windows.flatMap((window) => safeArray(window.failReasons))) {
+    counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([reason, count]) => (count > 1 ? `${reason} (${count} windows)` : reason));
+};
+
+const likelyFailureCauseFor = (
+  windows: WalkForwardWindowResult[],
+  outOfSample: WalkForwardWindowMetrics[],
+  repeatedFailureReasons: string[],
+  overfitRisk: WalkForwardOverfitRisk
+): WalkForwardLikelyFailureCause => {
+  const reasonText = repeatedFailureReasons.join(" ").toLowerCase();
+  const worstOosAverageR = outOfSample.length ? Math.min(...outOfSample.map((metrics) => metrics.averageR)) : 0;
+  const worstOosDrawdown = outOfSample.length ? Math.max(...outOfSample.map((metrics) => metrics.maxDrawdownR)) : 0;
+  const totalOosTrades = outOfSample.reduce((sum, metrics) => sum + metrics.totalTrades, 0);
+  const worstEvidenceQuality = outOfSample.length ? Math.min(...outOfSample.map((metrics) => metrics.evidenceQualityScore)) : 100;
+  const failedOosWindows = outOfSample.filter((metrics) => !metrics.pass).length;
+
+  if (reasonText.includes("confidence calibration")) {
+    return "confidence_calibration";
+  }
+  if (totalOosTrades < 8 || reasonText.includes("trade count")) {
+    return "sample_size_too_low";
+  }
+  if (worstEvidenceQuality < 55) {
+    return "evidence_quality_weak";
+  }
+  if (overfitRisk === "high") {
+    return "overfit_risk";
+  }
+  if (worstOosAverageR < -0.1 || reasonText.includes("average r")) {
+    return "low_average_r";
+  }
+  if (worstOosDrawdown > 6 || reasonText.includes("drawdown")) {
+    return "stop_model_fragility";
+  }
+  if (failedOosWindows === 1 && windows.length >= 3) {
+    return "session_fragility";
+  }
+  return overfitRisk === "medium" ? "overfit_risk" : "target_model_fragility";
+};
+
+const recommendation = (
+  label: string,
+  rationale: string,
+  target: WalkForwardLikelyFailureCause,
+  candidateConfigHints: string[],
+  suggestedSearchMode: WalkForwardFollowUpRecommendation["suggestedSearchMode"]
+): WalkForwardFollowUpRecommendation => ({
+  recommendationId: uid("walk_forward_recommendation"),
+  label,
+  rationale,
+  target,
+  candidateConfigHints,
+  suggestedSearchMode
+});
+
+const recommendationsFor = (
+  likelyFailureCause: WalkForwardLikelyFailureCause,
+  failedOosWindows: number
+): WalkForwardFollowUpRecommendation[] => {
+  const recommendations: WalkForwardFollowUpRecommendation[] = [];
+
+  if (likelyFailureCause === "confidence_calibration") {
+    recommendations.push(
+      recommendation(
+        "Tighten confidence calibration",
+        "Weak confidence calibration means the model confidence did not match realized outcomes across windows.",
+        "confidence_calibration",
+        [
+          "raise minimum confidence threshold",
+          "apply confidence penalty when evidence quality is weak",
+          "require LLM agreement with CIO before promotion",
+          "compare high/medium/low confidence bands"
+        ],
+        "conservative_only"
+      )
+    );
+  }
+
+  if (likelyFailureCause === "low_average_r" || likelyFailureCause === "target_model_fragility") {
+    recommendations.push(
+      recommendation(
+        "Test target and invalidation models",
+        "Negative or weak average R points to poor target selection, invalidation placement, or target/invalidation distance.",
+        likelyFailureCause,
+        [
+          "test 1R target",
+          "test 1.5R target",
+          "test 2R target",
+          "test FVG invalidation",
+          "test structure-based invalidation",
+          "reject setups with poor target/invalidation distance"
+        ],
+        "stop_model_focus"
+      )
+    );
+  }
+
+  if (failedOosWindows === 1 || likelyFailureCause === "session_fragility") {
+    recommendations.push(
+      recommendation(
+        "Isolate the failed OOS window",
+        "A single failed out-of-sample window can indicate session or directional fragility rather than a global strategy failure.",
+        "session_fragility",
+        [
+          "compare session behavior in the failed window",
+          "test NY AM only",
+          "test London only",
+          "compare long-only vs short-only in the failed window",
+          "detect whether losses cluster around a time/session regime"
+        ],
+        "session_focus"
+      )
+    );
+  }
+
+  if (likelyFailureCause === "stop_model_fragility") {
+    recommendations.push(
+      recommendation(
+        "Retest stop placement",
+        "Worst-window drawdown suggests the current stop model may be too exposed to the failed regime.",
+        "stop_model_fragility",
+        [
+          "test latest swing stop",
+          "test FVG invalidation",
+          "test structure-based invalidation",
+          "reject setups where invalidation is too wide for the target"
+        ],
+        "stop_model_focus"
+      )
+    );
+  }
+
+  if (likelyFailureCause === "overfit_risk") {
+    recommendations.push(
+      recommendation(
+        "Prefer simpler follow-up candidates",
+        "Walk-forward degradation suggests the calibration may be too fitted to the selected window.",
+        "overfit_risk",
+        [
+          "change one variable at a time",
+          "prefer conservative-only candidates",
+          "reduce candidate complexity",
+          "require repeat OOS improvement before proposal approval"
+        ],
+        "conservative_only"
+      )
+    );
+  }
+
+  if (likelyFailureCause === "sample_size_too_low") {
+    recommendations.push(
+      recommendation(
+        "Increase sample without broadening risk",
+        "Too few out-of-sample trades makes the verdict fragile even when headline metrics look acceptable.",
+        "sample_size_too_low",
+        [
+          "slightly lower confidence threshold",
+          "widen session filter one step",
+          "allow both long and short if safety filters pass",
+          "rerun Standard walk-forward after enough trades are generated"
+        ],
+        "balanced"
+      )
+    );
+  }
+
+  if (likelyFailureCause === "evidence_quality_weak") {
+    recommendations.push(
+      recommendation(
+        "Improve evidence quality before promotion",
+        "The failed run relied on incomplete or weak evidence, so confidence should be discounted.",
+        "evidence_quality_weak",
+        [
+          "add real session levels",
+          "add imported higher-timeframe context",
+          "label missing macro/intermarket evidence explicitly",
+          "apply evidence-quality confidence penalty"
+        ],
+        "conservative_only"
+      )
+    );
+  }
+
+  return recommendations.length
+    ? recommendations
+    : [
+        recommendation(
+          "Run targeted Standard follow-up",
+          "Failure cause is mixed, so the next search should test bounded session, direction, stop, and target variants.",
+          "target_model_fragility",
+          ["NY AM only + 1R", "FVG invalidation", "structure-based invalidation", "long-only", "short-only"],
+          "standard"
+        )
+      ];
+};
+
+const buildFailureDiagnostics = (
+  windows: WalkForwardWindowResult[],
+  outOfSample: WalkForwardWindowMetrics[],
+  overfitRisk: WalkForwardOverfitRisk,
+  worstWindowId?: string
+): WalkForwardFailureDiagnostics => {
+  const repeatedFailureReasons = failureCounts(windows);
+  const failedWindowCount = windows.filter((window) => window.verdict !== "pass").length;
+  const failedOosWindows = outOfSample.filter((metrics) => !metrics.pass).length;
+  const likelyFailureCause = likelyFailureCauseFor(windows, outOfSample, repeatedFailureReasons, overfitRisk);
+  const recommendations = recommendationsFor(likelyFailureCause, failedOosWindows);
+
+  return {
+    failedWindowCount,
+    worstWindowId,
+    worstOosWinRate: round(outOfSample.length ? Math.min(...outOfSample.map((metrics) => metrics.winRate)) : 0, 3),
+    worstOosAverageR: round(outOfSample.length ? Math.min(...outOfSample.map((metrics) => metrics.averageR)) : 0, 2),
+    worstOosDrawdown: round(outOfSample.length ? Math.max(...outOfSample.map((metrics) => metrics.maxDrawdownR)) : 0, 2),
+    repeatedFailureReasons: repeatedFailureReasons.length ? repeatedFailureReasons : ["No repeated failure reason was recorded."],
+    likelyFailureCause,
+    recommendations,
+    summary:
+      failedOosWindows > 0
+        ? `${failedOosWindows}/${Math.max(1, outOfSample.length)} out-of-sample window(s) failed; likely cause is ${likelyFailureCause.replace(/_/g, " ")}.`
+        : `Walk-forward did not fully promote; likely cause is ${likelyFailureCause.replace(/_/g, " ")}.`
+  };
+};
+
+const buildFollowUpPlan = (
+  sourceRunId: string,
+  diagnostics: WalkForwardFailureDiagnostics
+): WalkForwardFollowUpSearchPlan => ({
+  planId: uid("walk_forward_followup"),
+  timestamp: new Date().toISOString(),
+  sourceRunId,
+  planType: "walk_forward_failure_followup",
+  likelyFailureCause: diagnostics.likelyFailureCause,
+  worstWindowId: diagnostics.worstWindowId,
+  recommendedSearchMode: diagnostics.recommendations[0]?.suggestedSearchMode ?? "standard",
+  maxCandidateCount: diagnostics.likelyFailureCause === "overfit_risk" ? 5 : 8,
+  recommendations: diagnostics.recommendations,
+  status: "planned",
+  safetyNotes: [
+    "Follow-up search is simulation-only.",
+    "It does not change the active baseline.",
+    "It cannot execute trades, enable demo/live mode, or override readiness.",
+    "Any proposal created later remains approval-required."
+  ]
+});
+
+export function analyzeWalkForwardStability(
+  windowsInput: WalkForwardWindowResult[],
+  sourceRunId = "walk_forward_run"
+): WalkForwardStabilitySummary {
   const windows = safeArray(windowsInput);
   const outOfSample = oosMetrics(windows);
   const winRates = outOfSample.map((metrics) => metrics.winRate);
@@ -121,6 +381,10 @@ export function analyzeWalkForwardStability(windowsInput: WalkForwardWindowResul
     overfitRisk === "high" ? "In-sample results degraded materially out-of-sample; overfit risk is high." : undefined,
     Math.min(...averageRs, 0) < -0.1 ? "Worst-window average R is too weak." : undefined
   ].filter((reason): reason is string => Boolean(reason));
+  const diagnostics = buildFailureDiagnostics(windows, outOfSample, overfitRisk, worstWindow?.windowId);
+  const followUpPlan = verdict === "fail" || failReasons.length || outOfSampleWindowsPassed < outOfSample.length
+    ? buildFollowUpPlan(sourceRunId, diagnostics)
+    : undefined;
 
   return {
     windowCount: windows.length,
@@ -152,6 +416,8 @@ export function analyzeWalkForwardStability(windowsInput: WalkForwardWindowResul
       verdict === "fail"
         ? "Walk-forward validation failed; one selected window is not enough evidence."
         : `Walk-forward validation is ${verdict.replace(/_/g, " ")} with ${overfitRisk} overfit risk.`,
-    failReasons
+    failReasons,
+    diagnostics,
+    followUpPlan
   };
 }

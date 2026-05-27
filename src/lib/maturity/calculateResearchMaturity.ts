@@ -100,11 +100,17 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
   const latestWalkForwardRun = input.latestWalkForwardRun;
   const walkForwardWindowsTested = latestWalkForwardRun?.stability?.windowCount ?? 0;
   const walkForwardOutOfSamplePassed = latestWalkForwardRun?.stability?.outOfSampleWindowsPassed ?? 0;
+  const walkForwardNeedsOosConsistency = Boolean(
+    latestWalkForwardRun?.stability &&
+      (latestWalkForwardRun.stability.verdict === "fail" ||
+        latestWalkForwardRun.stability.outOfSampleWindowsPassed < latestWalkForwardRun.stability.windowCount)
+  );
   const walkForwardScore = latestWalkForwardRun?.stability
     ? Math.min(
         100,
         latestWalkForwardRun.stability.stabilityScore +
-          (latestWalkForwardRun.stability.overfitRisk === "low" ? 8 : latestWalkForwardRun.stability.overfitRisk === "medium" ? 0 : -18)
+          (latestWalkForwardRun.stability.overfitRisk === "low" ? 8 : latestWalkForwardRun.stability.overfitRisk === "medium" ? 0 : -18) +
+          (latestWalkForwardRun.stability.verdict === "fail" ? -20 : walkForwardNeedsOosConsistency ? -10 : 0)
       )
     : 0;
   const safeWindowCycles = maturityCycles.filter((cycle) => cycle.researchPreset === "safe").length;
@@ -160,6 +166,9 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
   if (latestWalkForwardRun && latestWalkForwardRun.stability?.overfitRisk === "high") {
     missingRequirements.push("Walk-forward overfit risk is high; test a simpler calibration across more windows.");
   }
+  if (walkForwardNeedsOosConsistency) {
+    missingRequirements.push("Needs more OOS consistency before robust maturity can be trusted.");
+  }
   if (input.evidenceQualityScore < 60) missingRequirements.push("Improve evidence quality before Paper-Demo Candidate review.");
   if (!importedDataCycles) missingRequirements.push("Use imported historical data; mock-only runs cap maturity.");
   if (readinessTrend === "declining") missingRequirements.push("Readiness trend is declining across tested cycles.");
@@ -174,6 +183,9 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
   if (maturityCycles.length < 2 || dataWindowsTested < 2) caps.push("research_ready");
   if (!latestWalkForwardRun || walkForwardWindowsTested < 2 || latestWalkForwardRun.stability?.overfitRisk === "high") {
     caps.push("robust_research");
+  }
+  if (walkForwardNeedsOosConsistency) {
+    caps.push("research_ready");
   }
   if (importedDataCycles < 3 || totalSimulatedTrades < 100 || llmAdvisoryPassCount < 2 || input.evidenceQualityScore < 70) {
     caps.push("robust_research");
@@ -191,6 +203,7 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
     currentCalibrationCycles.length < 2 ? "New or recently changed calibration must survive more cycles before maturity improves." : undefined,
     !latestWalkForwardRun ? "No walk-forward validation exists yet for the active research state." : undefined,
     latestWalkForwardRun?.stability?.overfitRisk === "high" ? "Walk-forward validation reports high overfit risk." : undefined,
+    walkForwardNeedsOosConsistency ? "Needs more OOS consistency; passing only part of the walk-forward set is not robust." : undefined,
     readinessTrend === "declining" ? "Readiness trend is declining." : undefined
   ].filter((warning): warning is string => Boolean(warning));
 

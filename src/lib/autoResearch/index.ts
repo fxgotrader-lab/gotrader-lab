@@ -11,7 +11,8 @@ export {
   pruneAutoResearchHistory,
   requestAutoResearchCancel,
   runAutoResearchCycle,
-  saveAutoResearchCycle
+  saveAutoResearchCycle,
+  saveAutoResearchFollowUpSearchPlan
 } from "@/lib/autoResearch/runAutoResearchCycle";
 export {
   autoResearchSafetyNotes,

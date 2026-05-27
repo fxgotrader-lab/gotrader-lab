@@ -16,6 +16,7 @@ import type {
 } from "@/lib/selfImprovement";
 import type { Candle, ICTScoringWeights } from "@/lib/types";
 import type { ValidationSuiteReport } from "@/lib/validation";
+import type { WalkForwardFollowUpSearchPlan } from "@/lib/walkForward/walkForwardTypes";
 
 export type AutoResearchSearchMode =
   | "quick"
@@ -266,6 +267,8 @@ export interface AutoResearchRunOptions {
 
 export interface AutoResearchState {
   cycles: AutoResearchCycle[];
+  followUpSearchPlans?: WalkForwardFollowUpSearchPlan[];
+  latestFollowUpSearchPlanId?: string;
   auditTrail: Array<{
     id: string;
     timestamp: string;
@@ -275,7 +278,15 @@ export interface AutoResearchState {
     candidateScores?: AutoResearchCandidateScoreSummary[];
     selectedCandidateId?: string;
     finalResultCategory?: AutoResearchCycle["finalResultCategory"];
-    action: "cycle_started" | "candidate_tested" | "proposal_created" | "cycle_completed" | "cycle_failed" | "cycle_canceled" | "checkpoint";
+    action:
+      | "cycle_started"
+      | "candidate_tested"
+      | "proposal_created"
+      | "cycle_completed"
+      | "cycle_failed"
+      | "cycle_canceled"
+      | "checkpoint"
+      | "followup_plan_created";
     notes: string;
   }>;
   latestCycleId?: string;

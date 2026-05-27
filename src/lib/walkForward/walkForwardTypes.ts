@@ -9,6 +9,29 @@ export type WalkForwardRunStatus = "idle" | "running" | "completed" | "completed
 export type WalkForwardWindowVerdict = "pass" | "warning" | "fail";
 export type WalkForwardOverfitRisk = "low" | "medium" | "high";
 export type WalkForwardStabilityVerdict = "fail" | "promising" | "robust_research" | "paper_demo_review_candidate";
+export type WalkForwardSuggestedSearchMode =
+  | "quick"
+  | "standard"
+  | "deep"
+  | "session_focus"
+  | "stop_model_focus"
+  | "long_short_focus"
+  | "conservative_only"
+  | "conservative"
+  | "balanced"
+  | "aggressive_research_only"
+  | "session_focused"
+  | "stop_model_focused"
+  | "long_short_bias";
+export type WalkForwardLikelyFailureCause =
+  | "confidence_calibration"
+  | "low_average_r"
+  | "session_fragility"
+  | "stop_model_fragility"
+  | "target_model_fragility"
+  | "sample_size_too_low"
+  | "overfit_risk"
+  | "evidence_quality_weak";
 
 export interface WalkForwardSplitRatio {
   preset: WalkForwardSplitRatioPreset;
@@ -84,6 +107,41 @@ export interface WalkForwardWindowResult {
   completedAt: string;
 }
 
+export interface WalkForwardFollowUpRecommendation {
+  recommendationId: string;
+  label: string;
+  rationale: string;
+  target: WalkForwardLikelyFailureCause;
+  candidateConfigHints: string[];
+  suggestedSearchMode: WalkForwardSuggestedSearchMode;
+}
+
+export interface WalkForwardFailureDiagnostics {
+  failedWindowCount: number;
+  worstWindowId?: string;
+  worstOosWinRate: number;
+  worstOosAverageR: number;
+  worstOosDrawdown: number;
+  repeatedFailureReasons: string[];
+  likelyFailureCause: WalkForwardLikelyFailureCause;
+  recommendations: WalkForwardFollowUpRecommendation[];
+  summary: string;
+}
+
+export interface WalkForwardFollowUpSearchPlan {
+  planId: string;
+  timestamp: string;
+  sourceRunId: string;
+  planType: "walk_forward_failure_followup";
+  likelyFailureCause: WalkForwardLikelyFailureCause;
+  worstWindowId?: string;
+  recommendedSearchMode: WalkForwardSuggestedSearchMode;
+  maxCandidateCount: number;
+  recommendations: WalkForwardFollowUpRecommendation[];
+  status: "planned";
+  safetyNotes: string[];
+}
+
 export interface WalkForwardStabilitySummary {
   windowCount: number;
   windowsPassed: number;
@@ -105,6 +163,8 @@ export interface WalkForwardStabilitySummary {
   recommendedNextAction: string;
   summary: string;
   failReasons: string[];
+  diagnostics?: WalkForwardFailureDiagnostics;
+  followUpPlan?: WalkForwardFollowUpSearchPlan;
 }
 
 export interface WalkForwardProgress {
@@ -140,6 +200,8 @@ export interface WalkForwardRun {
   proposalId?: string;
   windows: WalkForwardWindowResult[];
   stability?: WalkForwardStabilitySummary;
+  failureDiagnostics?: WalkForwardFailureDiagnostics;
+  followUpPlan?: WalkForwardFollowUpSearchPlan;
   progress?: WalkForwardProgress;
   warnings: string[];
   error?: string;

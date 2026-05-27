@@ -60,6 +60,7 @@ import { loadSimulationRunbookState } from "@/lib/simulationRunbook";
 import type { Candle } from "@/lib/types";
 import { safeArray, safeTopN, uid } from "@/lib/utils";
 import { runValidationSuite } from "@/lib/validation";
+import type { WalkForwardFollowUpSearchPlan } from "@/lib/walkForward/walkForwardTypes";
 
 export const AUTO_RESEARCH_STORAGE_KEY = "gotrader_ai_lab_auto_research_state";
 export const AUTO_RESEARCH_UPDATED_EVENT = "gotrader-ai-lab-auto-research-updated";
@@ -91,6 +92,7 @@ const yieldToBrowser = () =>
 
 const initialState = (): AutoResearchState => ({
   cycles: [],
+  followUpSearchPlans: [],
   auditTrail: [],
   safetyNotice: "Auto Research is simulation-only and cannot execute trades or override readiness gates."
 });
@@ -336,6 +338,8 @@ export function pruneAutoResearchHistory(state: AutoResearchState): AutoResearch
   return {
     ...state,
     cycles: safeTopN(state.cycles, 5).map(compactAutoResearchCycle),
+    followUpSearchPlans: safeTopN(state.followUpSearchPlans, 10),
+    latestFollowUpSearchPlanId: state.latestFollowUpSearchPlanId,
     activeCheckpoint: state.activeCheckpoint,
     recoveryCheckpoint: state.recoveryCheckpoint,
     checkpointHistory: safeTopN(state.checkpointHistory, 20),
@@ -448,6 +452,8 @@ export function loadAutoResearchState(): AutoResearchState {
       ...initialState(),
       ...parsed,
       cycles: safeArray(parsed.cycles),
+      followUpSearchPlans: safeArray(parsed.followUpSearchPlans),
+      latestFollowUpSearchPlanId: parsed.latestFollowUpSearchPlanId,
       auditTrail: safeArray(parsed.auditTrail),
       activeCheckpoint: parsed.activeCheckpoint,
       recoveryCheckpoint: parsed.recoveryCheckpoint,
@@ -560,6 +566,27 @@ export function saveAutoResearchCycle(cycle: AutoResearchCycle): AutoResearchSta
       ),
       ...safeArray(state.auditTrail)
     ], 80)
+  });
+}
+
+export function saveAutoResearchFollowUpSearchPlan(plan: WalkForwardFollowUpSearchPlan): AutoResearchState {
+  const state = loadAutoResearchState();
+  return publish({
+    ...state,
+    latestFollowUpSearchPlanId: plan.planId,
+    followUpSearchPlans: safeTopN(
+      [plan, ...safeArray(state.followUpSearchPlans).filter((item) => item.planId !== plan.planId)],
+      10
+    ),
+    auditTrail: safeTopN(
+      [
+        audit(plan.sourceRunId, "followup_plan_created", `Created walk-forward follow-up plan ${plan.planId}.`, {
+          searchMode: plan.recommendedSearchMode
+        }),
+        ...safeArray(state.auditTrail)
+      ],
+      80
+    )
   });
 }
 

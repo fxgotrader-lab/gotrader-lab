@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Select } from "@/components/ui/select";
+import { saveAutoResearchFollowUpSearchPlan } from "@/lib/autoResearch";
 import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
   MARKET_DATA_IMPORT_UPDATED_EVENT
@@ -60,6 +61,7 @@ export function WalkForwardView() {
   const [customOutOfSample, setCustomOutOfSample] = useState(20);
   const [busy, setBusy] = useState(false);
   const [controller, setController] = useState<AbortController>();
+  const [actionMessage, setActionMessage] = useState("");
 
   const latestProposal = runtimeSnapshot?.proposal.latestProposal;
   const proposalWalkForwardStatus = latestProposal
@@ -135,6 +137,19 @@ export function WalkForwardView() {
   };
 
   const windowRows = useMemo(() => latestRun?.windows ?? [], [latestRun]);
+  const diagnostics = latestRun?.failureDiagnostics ?? latestRun?.stability?.diagnostics;
+  const followUpPlan = latestRun?.followUpPlan ?? latestRun?.stability?.followUpPlan;
+
+  const createFollowUpSearch = () => {
+    if (!followUpPlan) {
+      setActionMessage("No walk-forward follow-up plan is available yet. Run walk-forward validation first.");
+      return;
+    }
+    saveAutoResearchFollowUpSearchPlan(followUpPlan);
+    setActionMessage(
+      `Created Auto Research follow-up plan ${followUpPlan.planId}. Open Auto Research to use ${followUpPlan.recommendedSearchMode.replace(/_/g, " ")} mode.`
+    );
+  };
 
   return (
     <div className="space-y-5">
@@ -153,6 +168,12 @@ export function WalkForwardView() {
       </div>
 
       <SafetyLockBanner message="Walk-forward validation is research/simulation only. It cannot execute trades, enable demo/live mode, or override readiness." />
+
+      {actionMessage ? (
+        <Card className="border-emerald-300/25 bg-emerald-300/10">
+          <CardContent className="p-4 text-sm font-medium text-emerald-100">{actionMessage}</CardContent>
+        </Card>
+      ) : null}
 
       <Card className="border-cyan-400/20 bg-cyan-400/5">
         <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-2 xl:grid-cols-5">
@@ -282,6 +303,70 @@ export function WalkForwardView() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className={diagnostics ? "border-amber-300/25 bg-amber-300/10" : "border-white/10 bg-slate-950/70"}>
+        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle>Failure Diagnostics and Follow-Up Search</CardTitle>
+            <CardDescription>
+              When walk-forward fails, GoTrader identifies the likely failure mode and prepares bounded research candidates.
+            </CardDescription>
+          </div>
+          <Badge variant={diagnostics ? "warning" : "muted"}>
+            {diagnostics?.likelyFailureCause?.replace(/_/g, " ") ?? "not diagnosed"}
+          </Badge>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {diagnostics ? (
+            <>
+              <div className="grid gap-3 text-sm md:grid-cols-3">
+                <StatusTile label="Failed windows" value={String(diagnostics.failedWindowCount)} />
+                <StatusTile label="Worst window" value={diagnostics.worstWindowId ?? "unknown"} />
+                <StatusTile label="Worst OOS win rate" value={formatPercent(diagnostics.worstOosWinRate, 1)} />
+                <StatusTile label="Worst OOS average R" value={`${diagnostics.worstOosAverageR.toFixed(2)}R`} />
+                <StatusTile label="Worst OOS drawdown" value={`${diagnostics.worstOosDrawdown.toFixed(2)}R`} />
+                <StatusTile label="Follow-up mode" value={followUpPlan?.recommendedSearchMode?.replace(/_/g, " ") ?? "none"} />
+              </div>
+              <div className="rounded-lg border border-amber-200/25 bg-background/45 p-3 text-sm text-amber-50">
+                {diagnostics.summary}
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div>
+                  <div className="mb-2 text-xs uppercase tracking-[0.14em] text-muted-foreground">Repeated failure reasons</div>
+                  <div className="space-y-2">
+                    {diagnostics.repeatedFailureReasons.map((reason) => (
+                      <div key={reason} className="rounded-md border border-border bg-background/45 p-2 text-sm text-muted-foreground">
+                        {reason}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-2 text-xs uppercase tracking-[0.14em] text-muted-foreground">Targeted recommendations</div>
+                  <div className="space-y-2">
+                    {diagnostics.recommendations.map((recommendation) => (
+                      <div key={recommendation.recommendationId} className="rounded-md border border-border bg-background/45 p-2 text-sm">
+                        <div className="font-medium text-foreground">{recommendation.label}</div>
+                        <div className="mt-1 text-muted-foreground">{recommendation.rationale}</div>
+                        <div className="mt-2 text-xs text-cyan-100">
+                          {recommendation.candidateConfigHints.slice(0, 4).join(" / ")}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <Button onClick={createFollowUpSearch} disabled={!followUpPlan}>
+                Create Follow-Up Search
+              </Button>
+            </>
+          ) : (
+            <div className="rounded-lg border border-border bg-background/45 p-3 text-sm text-muted-foreground">
+              Run walk-forward validation to generate failure diagnostics and a bounded follow-up search plan.
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

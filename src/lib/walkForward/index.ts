@@ -17,12 +17,17 @@ export {
 export { runWalkForwardValidation } from "@/lib/walkForward/walkForwardOrchestrator";
 export type {
   WalkForwardConfigSummary,
+  WalkForwardFailureDiagnostics,
+  WalkForwardFollowUpRecommendation,
+  WalkForwardFollowUpSearchPlan,
+  WalkForwardLikelyFailureCause,
   WalkForwardMode,
   WalkForwardOverfitRisk,
   WalkForwardProgress,
   WalkForwardRun,
   WalkForwardRunOptions,
   WalkForwardRunStatus,
+  WalkForwardSuggestedSearchMode,
   WalkForwardSplitData,
   WalkForwardSplitLabel,
   WalkForwardSplitRatio,

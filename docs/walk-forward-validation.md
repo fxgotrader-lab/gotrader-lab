@@ -59,6 +59,29 @@ The stability analyzer compares all out-of-sample windows. It considers:
 
 One good window is never enough. Worst-window behavior and out-of-sample behavior matter more than in-sample performance.
 
+## Failure Diagnostics
+
+When a walk-forward run fails, the app now stores a compact diagnostic summary instead of leaving a generic fail verdict. The diagnostic includes:
+
+- Failed window count.
+- Worst window ID.
+- Worst out-of-sample win rate.
+- Worst out-of-sample average R.
+- Worst out-of-sample drawdown.
+- Repeated failure reasons.
+- A likely failure cause such as confidence calibration, low average R, session fragility, stop-model fragility, target-model fragility, sample size, overfit risk, or weak evidence quality.
+
+## Targeted Follow-Up Search
+
+Failed walk-forward diagnostics can create an Auto Research search plan labeled `walk_forward_failure_followup`. This plan does not run automatically and does not change the active baseline. It only prepares bounded candidate directions such as:
+
+- Raising minimum confidence or applying evidence-quality confidence penalties when calibration is weak.
+- Testing 1R / 1.5R / 2R targets and FVG or structure-based invalidation when average R is weak.
+- Comparing sessions and long-only vs short-only when one out-of-sample window fails.
+- Preferring simpler one-variable candidates when overfit risk is elevated.
+
+Any later self-improvement proposal remains approval-required.
+
 ## Verdicts
 
 Walk-forward verdicts are:
