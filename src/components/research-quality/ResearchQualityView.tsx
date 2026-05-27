@@ -17,13 +17,21 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ValidationGuideCard } from "@/components/validation/ValidationGuideCard";
-import { getLLMReadinessImpact, isLLMAdvisoryReviewPassed } from "@/lib/llm";
 import {
   analyzeValidationResults,
   loadLatestResearchQualityReview,
+  RESEARCH_QUALITY_UPDATED_EVENT,
   saveLatestResearchQualityReview
 } from "@/lib/researchQuality";
 import type { ResearchQualityReadinessGrade, ResearchQualityReview } from "@/lib/researchQuality";
+import {
+  resolveResearchRuntimeSnapshot,
+  selectRuntimeConfigSummary,
+  selectRuntimeMetricSourceLabel,
+  selectRuntimeSourceLabel,
+  selectRuntimeWarnings,
+  type ResearchRuntimeSnapshot
+} from "@/lib/runtime";
 import {
   loadLatestValidationReport,
   VALIDATION_REPORT_UPDATED_EVENT
@@ -37,6 +45,8 @@ const gradeVariant = (grade: ResearchQualityReadinessGrade) =>
   grade === "Paper-Demo Candidate" ? "success" : grade === "Research Ready" ? "warning" : "danger";
 
 const formatPercent = (value: number) => `${Math.round(value * 100)}%`;
+const formatRuntimePercent = (value?: number) =>
+  typeof value === "number" && Number.isFinite(value) ? `${Math.round(value * 100)}%` : "n/a";
 const formatR = (value: number) => `${value.toFixed(2)}R`;
 const formatProfitFactor = (value: number | null) => (value === null ? "n/a" : value >= 99 ? "uncapped" : value.toFixed(2));
 
@@ -55,24 +65,64 @@ export function ResearchQualityView() {
     loadLatestValidationReport()
   );
   const [review, setReview] = useState<ResearchQualityReview | undefined>(() => loadLatestResearchQualityReview());
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
+  const runtimeValidationSummary = runtimeSnapshot?.latestResearchCycle.latestValidationSummary;
+  const runtimeQualitySummary = runtimeSnapshot?.latestResearchCycle.latestResearchQualitySummary;
+  const qualitySource = runtimeQualitySummary
+    ? review?.id === runtimeQualitySummary.reviewId
+      ? `latest dashboard research cycle ${runtimeSnapshot?.latestResearchCycle.latestCycleId ?? "unknown"}`
+      : "recomputed research-quality preview"
+    : review
+      ? "stored standalone quality review"
+      : "no quality review";
+  const validationSource = runtimeValidationSummary
+    ? validationReport?.id === runtimeValidationSummary.validationId
+      ? "latest dashboard research cycle validation"
+      : "stored standalone validation"
+    : validationReport
+      ? "stored validation report"
+      : "missing validation";
+  const isRecomputedPreview = Boolean(review && runtimeQualitySummary && review.id !== runtimeQualitySummary.reviewId);
+  const runtimeWarnings = selectRuntimeWarnings(runtimeSnapshot);
 
   useEffect(() => {
-    const refreshValidationReport = () => setValidationReport(loadLatestValidationReport());
-    window.addEventListener(VALIDATION_REPORT_UPDATED_EVENT, refreshValidationReport);
-    window.addEventListener("storage", refreshValidationReport);
+    let mounted = true;
+    const refresh = () => {
+      setValidationReport(loadLatestValidationReport());
+      setReview(loadLatestResearchQualityReview());
+      resolveResearchRuntimeSnapshot()
+        .then((snapshot) => {
+          if (mounted) {
+            setRuntimeSnapshot(snapshot);
+          }
+        })
+        .catch(() => undefined);
+    };
+    refresh();
+    window.addEventListener(VALIDATION_REPORT_UPDATED_EVENT, refresh);
+    window.addEventListener(RESEARCH_QUALITY_UPDATED_EVENT, refresh);
+    window.addEventListener("storage", refresh);
     return () => {
-      window.removeEventListener(VALIDATION_REPORT_UPDATED_EVENT, refreshValidationReport);
-      window.removeEventListener("storage", refreshValidationReport);
+      mounted = false;
+      window.removeEventListener(VALIDATION_REPORT_UPDATED_EVENT, refresh);
+      window.removeEventListener(RESEARCH_QUALITY_UPDATED_EVENT, refresh);
+      window.removeEventListener("storage", refresh);
     };
   }, []);
 
-  const runReview = () => {
+  const refreshRuntime = async () => {
+    const snapshot = await resolveResearchRuntimeSnapshot();
+    setRuntimeSnapshot(snapshot);
+  };
+
+  const runReview = async () => {
     if (!validationReport) {
       return;
     }
     const nextReview = analyzeValidationResults(validationReport);
     saveLatestResearchQualityReview(nextReview);
     setReview(nextReview);
+    await refreshRuntime().catch(() => undefined);
   };
 
   return (
@@ -83,11 +133,11 @@ export function ResearchQualityView() {
           <h2 className="mt-1 text-3xl font-semibold tracking-normal">Quality Review</h2>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
             Turn validation results into a structured decision review: weak ICT assumptions, session quality, false
-            positives, drawdown clusters, agent usefulness, and paper-demo readiness.
+            positives, drawdown clusters, agent usefulness, and paper-demo readiness using the active runtime context.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={runReview} disabled={!validationReport}>
+          <Button onClick={() => void runReview()} disabled={!validationReport}>
             <Play className="h-4 w-4" aria-hidden="true" />
             Run Quality Review
           </Button>
@@ -100,21 +150,90 @@ export function ResearchQualityView() {
 
       <SafetyLockBanner message="Simulation/backtesting review only. No broker connection, no real trades, and no execution path." />
 
+      <Card className="border-cyan-400/20 bg-cyan-400/5">
+        <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-4">
+          <div>
+            <div className="text-xs uppercase opacity-70">Quality source</div>
+            <div className="mt-1 font-mono">{qualitySource}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Active data source</div>
+            <div className="mt-1 font-mono">{selectRuntimeSourceLabel(runtimeSnapshot)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Runtime metrics source</div>
+            <div className="mt-1 font-mono">{selectRuntimeMetricSourceLabel(runtimeSnapshot)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Active calibration</div>
+            <div className="mt-1 break-all font-mono">{runtimeSnapshot?.activeConfig.activeCalibrationId ?? "none"}</div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-primary/20 bg-primary/10">
+        <CardContent className="grid gap-3 p-4 text-sm text-primary md:grid-cols-4">
+          <div>
+            <div className="text-xs uppercase opacity-70">Active baseline</div>
+            <div className="mt-1 font-mono">{selectRuntimeConfigSummary(runtimeSnapshot)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Resolved confluence</div>
+            <div className="mt-1 font-mono">{formatRuntimePercent(runtimeSnapshot?.activeConfig.resolvedConfluenceThreshold)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Config merge</div>
+            <div className="mt-1 font-mono">{runtimeSnapshot?.activeConfig.configMergeStatusLabel ?? "loading"}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Research window</div>
+            <div className="mt-1 font-mono">
+              {runtimeSnapshot
+                ? `${runtimeSnapshot.marketData.researchWindow.toLocaleString()} raw / ${runtimeSnapshot.marketData.processedCandleCount.toLocaleString()} processed`
+                : "loading"}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {isRecomputedPreview ? (
+        <Card className="border-amber-300/25 bg-amber-300/10">
+          <CardContent className="p-4 text-sm text-amber-100">
+            This is a recomputed research-quality preview and may differ from the latest AI Research Cycle.
+          </CardContent>
+        </Card>
+      ) : null}
+
       <TechnicalDetails
         title="View validation guide"
         description="Open for the longer validation workflow and anti-overfitting guidance."
       >
         <ValidationGuideCard compact />
+        <div className="mt-4 rounded-lg border border-border bg-background/45 p-3 text-xs text-muted-foreground">
+          <div className="font-medium text-foreground">Advanced runtime diagnostics</div>
+          <div>Snapshot ID: {runtimeSnapshot?.snapshotId ?? "not loaded"}</div>
+          <div>Latest cycle ID: {runtimeSnapshot?.latestResearchCycle.latestCycleId ?? "none"}</div>
+          <div>Data source: {runtimeSnapshot?.marketData.sourceLabel ?? "n/a"}</div>
+          <div>Active calibration ID: {runtimeSnapshot?.activeConfig.activeCalibrationId ?? "none"}</div>
+          <div>Resolved confluence: {formatRuntimePercent(runtimeSnapshot?.activeConfig.resolvedConfluenceThreshold)}</div>
+          <div>Validation source: {validationSource}</div>
+          <div>Research quality source: {qualitySource}</div>
+          {runtimeWarnings.length ? (
+            <div className="mt-2 text-amber-100">Warnings: {runtimeWarnings.join(" ")}</div>
+          ) : (
+            <div className="mt-2 text-emerald-100">No runtime snapshot mismatch warnings.</div>
+          )}
+        </div>
       </TechnicalDetails>
 
       <Card className="border-primary/25 bg-primary/10">
         <CardContent className="flex flex-col gap-3 p-4 text-sm text-primary md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-2">
             <ShieldAlert className="h-4 w-4" aria-hidden="true" />
-            <span>{getLLMReadinessImpact()}</span>
+            <span>{runtimeSnapshot?.llm.readinessImpact ?? "LLM advisory state loading."}</span>
           </div>
-          <Badge variant={isLLMAdvisoryReviewPassed() ? "success" : "warning"}>
-            {isLLMAdvisoryReviewPassed() ? "LLM passed" : "LLM required"}
+          <Badge variant={runtimeSnapshot?.llm.advisoryPassed ? "success" : "warning"}>
+            {runtimeSnapshot?.llm.advisoryPassed ? "LLM passed" : "LLM required"}
           </Badge>
         </CardContent>
       </Card>
@@ -147,7 +266,8 @@ export function ResearchQualityView() {
             </CardDescription>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            The review is deterministic and reads only the local validation report stored in this browser.
+            The review is deterministic and reads the active local validation report, which may be from the latest
+            Dashboard cycle or a standalone recomputed preview.
           </CardContent>
         </Card>
       ) : (
@@ -161,7 +281,12 @@ export function ResearchQualityView() {
                   <Badge variant={gradeVariant(review.readinessGrade)}>{review.readinessStatus}</Badge>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">Review generated {review.generatedAt}</CardContent>
+              <CardContent className="space-y-1 text-xs text-muted-foreground">
+                <div>Review generated {review.generatedAt}</div>
+                <Badge variant={runtimeSnapshot?.marketData.isImportedDataActive ? "success" : "muted"}>
+                  {runtimeSnapshot?.marketData.isImportedDataActive ? "imported data" : "mock data"}
+                </Badge>
+              </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">

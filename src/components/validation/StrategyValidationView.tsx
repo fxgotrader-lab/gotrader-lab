@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Activity, AlertTriangle, BarChart3, Download, Play, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
@@ -6,8 +6,21 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ValidationGuideCard } from "@/components/validation/ValidationGuideCard";
+import {
+  CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
+  loadPreparedCandleSource,
+  MARKET_DATA_IMPORT_UPDATED_EVENT
+} from "@/lib/marketData";
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import { resolveActiveBacktestConfig } from "@/lib/selfImprovement";
+import {
+  resolveResearchRuntimeSnapshot,
+  selectRuntimeConfigSummary,
+  selectRuntimeMetricSourceLabel,
+  selectRuntimeSourceLabel,
+  selectRuntimeWarnings,
+  type ResearchRuntimeSnapshot
+} from "@/lib/runtime";
 import {
   loadLatestValidationReport,
   runValidationSuite,
@@ -25,6 +38,8 @@ const readinessVariant = (status: ValidationReadinessStatus) =>
 const formatPercent = (value: number) => `${Math.round(value * 100)}%`;
 const formatNumber = (value: number, digits = 2) => value.toFixed(digits);
 const formatProfitFactor = (value: number | null) => (value === null ? "n/a" : value >= 99 ? "uncapped" : value.toFixed(2));
+const formatRuntimePercent = (value?: number) =>
+  typeof value === "number" && Number.isFinite(value) ? `${Math.round(value * 100)}%` : "n/a";
 
 const average = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
 
@@ -46,7 +61,18 @@ const topAgentFor = (scenario: ValidationScenarioResult) =>
 export function StrategyValidationView() {
   const [report, setReport] = useState<ValidationSuiteReport | undefined>(() => loadLatestValidationReport());
   const [isRunning, setIsRunning] = useState(false);
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
   const activeResolution = useMemo(() => resolveActiveBacktestConfig(), [report?.id]);
+  const runtimeValidationSummary = runtimeSnapshot?.latestResearchCycle.latestValidationSummary;
+  const validationSource = runtimeValidationSummary
+    ? report?.id === runtimeValidationSummary.validationId
+      ? `latest dashboard research cycle ${runtimeSnapshot?.latestResearchCycle.latestCycleId ?? "unknown"}`
+      : "recomputed validation preview"
+    : report
+      ? "stored standalone validation"
+      : "no validation report";
+  const isRecomputedPreview = Boolean(report && runtimeValidationSummary && report.id !== runtimeValidationSummary.validationId);
+  const runtimeWarnings = selectRuntimeWarnings(runtimeSnapshot);
 
   const suiteStats = useMemo(() => {
     if (!report) {
@@ -60,11 +86,46 @@ export function StrategyValidationView() {
     };
   }, [report]);
 
-  const runSuite = () => {
+  const refreshRuntime = async () => {
+    const source = await loadPreparedCandleSource().catch(() => undefined);
+    const snapshot = await resolveResearchRuntimeSnapshot(source ? { preparedCandleSource: source } : {});
+    setRuntimeSnapshot(snapshot);
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    const refresh = () => {
+      loadPreparedCandleSource()
+        .then((source) => resolveResearchRuntimeSnapshot({ preparedCandleSource: source }))
+        .then((snapshot) => {
+          if (mounted) {
+            setRuntimeSnapshot(snapshot);
+          }
+        })
+        .catch(() => undefined);
+      setReport(loadLatestValidationReport());
+    };
+    refresh();
+    window.addEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
+    window.addEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      mounted = false;
+      window.removeEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
+      window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
+
+  const runSuite = async () => {
     setIsRunning(true);
-    const nextReport = runValidationSuite(mockCandles, activeResolution.config);
+    const preparedSource = runtimeSnapshot?.marketData.preparedSource ?? await loadPreparedCandleSource().catch(() => undefined);
+    const candles = preparedSource?.candles.length ? preparedSource.candles : mockCandles;
+    const config = runtimeSnapshot?.activeConfig.resolvedBacktestConfig ?? activeResolution.config;
+    const nextReport = runValidationSuite(candles, config);
     saveLatestValidationReport(nextReport);
     setReport(nextReport);
+    await refreshRuntime().catch(() => undefined);
     setIsRunning(false);
   };
 
@@ -75,12 +136,12 @@ export function StrategyValidationView() {
           <p className="text-sm uppercase text-primary">Strategy validation</p>
           <h2 className="mt-1 text-3xl font-semibold tracking-normal">Validation & Calibration</h2>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Run deterministic mock-candle validation across ICT thresholds, sessions, direction filters, and stop
-            models before any broker-demo architecture work advances.
+            Run simulation validation across ICT thresholds, sessions, direction filters, and stop models using the
+            same active data source and resolved baseline shown on Dashboard.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={runSuite} disabled={isRunning}>
+          <Button onClick={() => void runSuite()} disabled={isRunning}>
             <Play className="h-4 w-4" aria-hidden="true" />
             {isRunning ? "Running" : "Run Validation Suite"}
           </Button>
@@ -91,20 +152,84 @@ export function StrategyValidationView() {
         </div>
       </div>
 
-      <SafetyLockBanner message="Simulation validation only. Mock OHLC only. No broker connection and no real trades." />
+      <SafetyLockBanner message="Simulation validation only. No broker connection, no real trades, and no readiness override." />
 
-      <Card className="border-primary/20 bg-primary/10">
-        <CardContent className="p-4 text-sm text-primary">
-          Active validation baseline: confluence {(activeResolution.finalBacktestConfluenceThreshold * 100).toFixed(0)}%.
-          Config merge: {activeResolution.mergeStatusLabel}.
+      <Card className="border-cyan-400/20 bg-cyan-400/5">
+        <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-4">
+          <div>
+            <div className="text-xs uppercase opacity-70">Validation source</div>
+            <div className="mt-1 font-mono">{validationSource}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Active data source</div>
+            <div className="mt-1 font-mono">{selectRuntimeSourceLabel(runtimeSnapshot)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Runtime metrics source</div>
+            <div className="mt-1 font-mono">{selectRuntimeMetricSourceLabel(runtimeSnapshot)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Active calibration</div>
+            <div className="mt-1 break-all font-mono">{runtimeSnapshot?.activeConfig.activeCalibrationId ?? "none"}</div>
+          </div>
         </CardContent>
       </Card>
+
+      <Card className="border-primary/20 bg-primary/10">
+        <CardContent className="grid gap-3 p-4 text-sm text-primary md:grid-cols-4">
+          <div>
+            <div className="text-xs uppercase opacity-70">Active validation baseline</div>
+            <div className="mt-1 font-mono">{selectRuntimeConfigSummary(runtimeSnapshot)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Resolved confluence</div>
+            <div className="mt-1 font-mono">
+              {formatRuntimePercent(runtimeSnapshot?.activeConfig.resolvedConfluenceThreshold ?? activeResolution.finalBacktestConfluenceThreshold)}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Config merge</div>
+            <div className="mt-1 font-mono">{runtimeSnapshot?.activeConfig.configMergeStatusLabel ?? activeResolution.mergeStatusLabel}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Research window</div>
+            <div className="mt-1 font-mono">
+              {runtimeSnapshot
+                ? `${runtimeSnapshot.marketData.researchWindow.toLocaleString()} raw / ${runtimeSnapshot.marketData.processedCandleCount.toLocaleString()} processed`
+                : "loading"}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {isRecomputedPreview ? (
+        <Card className="border-amber-300/25 bg-amber-300/10">
+          <CardContent className="p-4 text-sm text-amber-100">
+            This is a recomputed preview and may differ from the latest AI Research Cycle.
+          </CardContent>
+        </Card>
+      ) : null}
 
       <TechnicalDetails
         title="View validation methodology"
         description="Open for the full beginner workflow, weekly routine, and anti-overfitting guidance."
       >
         <ValidationGuideCard />
+        <div className="mt-4 rounded-lg border border-border bg-background/45 p-3 text-xs text-muted-foreground">
+          <div className="font-medium text-foreground">Advanced runtime diagnostics</div>
+          <div>Snapshot ID: {runtimeSnapshot?.snapshotId ?? "not loaded"}</div>
+          <div>Latest cycle ID: {runtimeSnapshot?.latestResearchCycle.latestCycleId ?? "none"}</div>
+          <div>Data source: {runtimeSnapshot?.marketData.sourceLabel ?? "n/a"}</div>
+          <div>Active calibration ID: {runtimeSnapshot?.activeConfig.activeCalibrationId ?? "none"}</div>
+          <div>Resolved confluence: {formatRuntimePercent(runtimeSnapshot?.activeConfig.resolvedConfluenceThreshold)}</div>
+          <div>Validation source: {validationSource}</div>
+          <div>Research quality source: {runtimeSnapshot?.latestResearchCycle.latestResearchQualitySummary?.reviewId ?? "none"}</div>
+          {runtimeWarnings.length ? (
+            <div className="mt-2 text-amber-100">Warnings: {runtimeWarnings.join(" ")}</div>
+          ) : (
+            <div className="mt-2 text-emerald-100">No runtime snapshot mismatch warnings.</div>
+          )}
+        </div>
       </TechnicalDetails>
 
       {!report ? (
@@ -116,7 +241,7 @@ export function StrategyValidationView() {
             </CardDescription>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            The suite uses the existing simulation backtest engine and never connects to live data, brokers, or
+            The suite uses the existing simulation backtest engine and active prepared candle source, and never connects to brokers or
             execution paths.
           </CardContent>
         </Card>
@@ -133,7 +258,12 @@ export function StrategyValidationView() {
                   </Badge>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">Generated {report.generatedAt}</CardContent>
+              <CardContent className="space-y-1 text-xs text-muted-foreground">
+                <div>Generated {report.generatedAt}</div>
+                <Badge variant={runtimeSnapshot?.marketData.isImportedDataActive ? "success" : "muted"}>
+                  {runtimeSnapshot?.marketData.isImportedDataActive ? "imported data" : "mock data"}
+                </Badge>
+              </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
