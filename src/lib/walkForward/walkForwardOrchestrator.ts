@@ -1,7 +1,8 @@
 import { runBacktest, type BacktestResult, type ResolvedBacktestConfig } from "@/lib/backtesting";
 import {
   getImportedDataPreset,
-  loadPreparedCandleSource
+  getWalkForwardDataPreset,
+  loadPreparedWalkForwardCandleSource
 } from "@/lib/marketData";
 import { resolveActiveBacktestConfig } from "@/lib/selfImprovement";
 import { uid } from "@/lib/utils";
@@ -31,7 +32,7 @@ const sleepFrame = () => new Promise<void>((resolve) => globalThis.setTimeout(re
 
 const modeMaxWindows: Record<WalkForwardMode, number> = {
   safe: 3,
-  standard: 3,
+  standard: 5,
   advanced: 5
 };
 const DEFAULT_MINIMUM_WINDOWS = 3;
@@ -124,12 +125,13 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
   const started = Date.now();
   const runId = uid("walk_forward");
   const mode = options.mode ?? "safe";
-  const source = await loadPreparedCandleSource();
+  const source = await loadPreparedWalkForwardCandleSource();
   const activeConfig = resolveActiveBacktestConfig();
   const ratio = resolveSplitRatio(options.splitRatioPreset ?? "60_20_20", options.customRatio);
   const requestedMaxWindows = Math.max(1, options.maxWindows ?? modeMaxWindows[mode]);
   const maxWindows = Math.max(1, Math.min(requestedMaxWindows, modeMaxWindows[mode]));
   const dataPreset = source.mode === "imported" ? getImportedDataPreset(source.appliedSettings) : "mock";
+  const walkForwardDataPreset = source.mode === "imported" ? getWalkForwardDataPreset(source.appliedSettings) : "custom";
   const windows = createWalkForwardWindows({
     candles: source.candles,
     source,
@@ -163,6 +165,7 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
     requestedMaxWindows,
     actualWindowsGenerated: windows.length,
     windowGenerationNotes,
+    walkForwardDataPreset,
     dataSource: source.mode,
     dataSourceLabel: source.label,
     dataPreset,

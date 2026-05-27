@@ -2,7 +2,7 @@ import type { ResolvedBacktestConfig } from "@/lib/backtesting";
 import type { EvidenceCategory, EvidenceLedgerSummary } from "@/lib/evidence";
 import type { LLMAdvisoryRun, LLMProviderStatus } from "@/lib/llm";
 import type { ResearchMaturitySummary } from "@/lib/maturity";
-import type { CandleDataSourceMode, CandleWindowSettings, PreparedCandleSource } from "@/lib/marketData";
+import type { CandleDataSourceMode, CandleWindowSettings, PreparedCandleSource, WalkForwardDataPreset } from "@/lib/marketData";
 import type { CanonicalPerformanceMetrics } from "@/lib/performance/canonicalMetrics";
 import type { SimulatedAccount } from "@/lib/performance/simulatedAccount";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
@@ -156,6 +156,7 @@ export interface RuntimeWalkForwardState {
   latestRunId?: string;
   latestStatus?: WalkForwardRun["status"];
   latestTimestamp?: string;
+  dataPreset?: WalkForwardDataPreset;
   stability?: WalkForwardStabilitySummary;
   stabilityScore?: number;
   verdict?: WalkForwardStabilitySummary["verdict"];

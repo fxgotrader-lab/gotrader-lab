@@ -1,4 +1,5 @@
 import type { BacktestSessionFilter, BacktestStopModel, ResolvedBacktestConfig } from "@/lib/backtesting";
+import type { WalkForwardDataPreset } from "@/lib/marketData";
 import type { RuntimeDataPreset } from "@/lib/runtime/researchRuntimeTypes";
 import type { Candle, FuturesSymbol, Timeframe } from "@/lib/types";
 
@@ -213,6 +214,7 @@ export interface WalkForwardRun {
   requestedMaxWindows: number;
   actualWindowsGenerated: number;
   windowGenerationNotes: string[];
+  walkForwardDataPreset?: WalkForwardDataPreset;
   dataSource: string;
   dataSourceLabel: string;
   dataPreset: RuntimeDataPreset;

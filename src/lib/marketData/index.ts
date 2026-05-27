@@ -11,17 +11,26 @@ export {
   defaultCandleWindowSettings,
   DEFAULT_IMPORTED_WINDOW_SIZE,
   getImportedDataPreset,
+  getWalkForwardDataPreset,
   HARD_BROWSER_CANDLE_LIMIT,
   importedDataPresetSettings,
   loadCandleWindowSettings,
   loadPreparedCandleSource,
+  loadPreparedWalkForwardCandleSource,
+  loadWalkForwardCandleWindowSettings,
   prepareCandlesForResearch,
   prepareCandleSourceForResearch,
   resetCandleWindowSettings,
+  resetWalkForwardCandleWindowSettings,
   SAFE_CANDLE_WINDOW_LIMIT,
   safeWindowSizeOptions,
   sanitizeCandleWindowSettings,
-  saveCandleWindowSettings
+  saveCandleWindowSettings,
+  saveWalkForwardCandleWindowSettings,
+  WALK_FORWARD_IMPORTED_SAFE_WINDOW_SIZE,
+  WALK_FORWARD_IMPORTED_STANDARD_WINDOW_SIZE,
+  WALK_FORWARD_WINDOW_SETTINGS_UPDATED_EVENT,
+  walkForwardDataPresetSettings
 } from "@/lib/marketData/candleWindowing";
 export { buildMarketContext, summarizeMarketContext } from "@/lib/marketData/marketContextBuilder";
 export {
@@ -44,7 +53,8 @@ export type {
   ResearchPerformanceMode,
   ResearchSessionFilter,
   ResearchTimeframe,
-  ResearchWindowMode
+  ResearchWindowMode,
+  WalkForwardDataPreset
 } from "@/lib/marketData/candleWindowing";
 export type {
   CandleDataSource,

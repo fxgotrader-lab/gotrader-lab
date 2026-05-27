@@ -456,6 +456,7 @@ export async function resolveResearchRuntimeSnapshot(
       latestRunId: latestWalkForward?.runId,
       latestStatus: latestWalkForward?.status,
       latestTimestamp: latestWalkForward?.completedAt ?? latestWalkForward?.startedAt,
+      dataPreset: latestWalkForward?.walkForwardDataPreset,
       stability: latestWalkForward?.stability,
       stabilityScore: latestWalkForward?.stability?.stabilityScore,
       verdict: latestWalkForward?.stability?.verdict,

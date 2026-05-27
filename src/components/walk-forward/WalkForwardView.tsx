@@ -13,22 +13,34 @@ import { Select } from "@/components/ui/select";
 import { saveAutoResearchFollowUpSearchPlan } from "@/lib/autoResearch";
 import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
-  MARKET_DATA_IMPORT_UPDATED_EVENT
+  getImportedDataPreset,
+  getWalkForwardDataPreset,
+  loadCandleWindowSettings,
+  loadPreparedWalkForwardCandleSource,
+  loadWalkForwardCandleWindowSettings,
+  MARKET_DATA_IMPORT_UPDATED_EVENT,
+  saveWalkForwardCandleWindowSettings,
+  WALK_FORWARD_IMPORTED_STANDARD_WINDOW_SIZE,
+  WALK_FORWARD_WINDOW_SETTINGS_UPDATED_EVENT,
+  walkForwardDataPresetSettings,
+  type CandleWindowSettings,
+  type PreparedCandleSource,
+  type WalkForwardDataPreset
 } from "@/lib/marketData";
 import {
   resolveResearchRuntimeSnapshot,
-  selectRuntimeFingerprintLabel,
-  selectRuntimeSourceLabel,
   type ResearchRuntimeSnapshot
 } from "@/lib/runtime";
 import { SELF_IMPROVEMENT_UPDATED_EVENT } from "@/lib/selfImprovement";
 import { formatPercent, safeArray } from "@/lib/utils";
 import {
   clearWalkForwardHistory,
+  createWalkForwardWindows,
   latestWalkForwardRun,
   loadWalkForwardState,
   runWalkForwardValidation,
   splitRatioPresets,
+  walkForwardModeWindowSize,
   WALK_FORWARD_UPDATED_EVENT,
   type WalkForwardMode,
   type WalkForwardRun,
@@ -51,6 +63,21 @@ const riskVariant = (risk?: string) =>
 
 const formatRatio = (value: number) => `${Math.round(value * 100)}%`;
 const formatDate = (value?: string) => (value ? new Date(value).toLocaleString() : "not run");
+const minimumProcessedCandlesFor = (mode: WalkForwardMode, requiredWindows = 3) =>
+  walkForwardModeWindowSize[mode] + Math.max(0, requiredWindows - 1);
+const emptyWalkForwardSource: PreparedCandleSource = {
+  mode: "mock",
+  label: "Loading walk-forward candles",
+  candles: [],
+  rawCandleCount: 0,
+  researchWindowCandles: 0,
+  processedCandleCount: 0,
+  estimatedProcessedCandles: 0,
+  appliedSettings: walkForwardDataPresetSettings.safe,
+  aggregationApplied: false,
+  performanceMode: "safe",
+  warnings: []
+};
 
 export function WalkForwardView() {
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
@@ -58,6 +85,9 @@ export function WalkForwardView() {
   const [mode, setMode] = useState<WalkForwardMode>("safe");
   const [ratioPreset, setRatioPreset] = useState<WalkForwardSplitRatioPreset>("60_20_20");
   const [maxWindows, setMaxWindows] = useState(3);
+  const [dashboardWindowSettings, setDashboardWindowSettings] = useState<CandleWindowSettings>(() => loadCandleWindowSettings());
+  const [walkForwardSettings, setWalkForwardSettings] = useState<CandleWindowSettings>(() => loadWalkForwardCandleWindowSettings());
+  const [walkForwardSource, setWalkForwardSource] = useState<PreparedCandleSource>(emptyWalkForwardSource);
   const [customInSample, setCustomInSample] = useState(60);
   const [customValidation, setCustomValidation] = useState(20);
   const [customOutOfSample, setCustomOutOfSample] = useState(20);
@@ -74,6 +104,11 @@ export function WalkForwardView() {
 
   const refresh = () => {
     setLatestRun(latestWalkForwardRun(loadWalkForwardState()));
+    setDashboardWindowSettings(loadCandleWindowSettings());
+    setWalkForwardSettings(loadWalkForwardCandleWindowSettings());
+    void loadPreparedWalkForwardCandleSource()
+      .then(setWalkForwardSource)
+      .catch(() => undefined);
     void resolveResearchRuntimeSnapshot()
       .then(setRuntimeSnapshot)
       .catch(() => undefined);
@@ -84,12 +119,14 @@ export function WalkForwardView() {
     window.addEventListener(WALK_FORWARD_UPDATED_EVENT, refresh);
     window.addEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
     window.addEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
+    window.addEventListener(WALK_FORWARD_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
     window.addEventListener(SELF_IMPROVEMENT_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
       window.removeEventListener(WALK_FORWARD_UPDATED_EVENT, refresh);
       window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
       window.removeEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
+      window.removeEventListener(WALK_FORWARD_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener(SELF_IMPROVEMENT_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
@@ -102,6 +139,10 @@ export function WalkForwardView() {
       : 0;
 
   const run = async () => {
+    if (expectedWindows < 3) {
+      setActionMessage("Not enough data for meaningful walk-forward. Increase the walk-forward raw window or select Standard.");
+      return;
+    }
     const abortController = new AbortController();
     setController(abortController);
     setBusy(true);
@@ -142,6 +183,39 @@ export function WalkForwardView() {
   const diagnostics = latestRun?.failureDiagnostics ?? latestRun?.stability?.diagnostics;
   const followUpPlan = latestRun?.followUpPlan ?? latestRun?.stability?.followUpPlan;
   const evidenceSummary = latestRun?.stability?.evidenceSummary;
+  const splitRatio = ratioPreset === "custom"
+    ? {
+        preset: "custom" as const,
+        label: `${customInSample} / ${customValidation} / ${customOutOfSample}`,
+        inSample: customInSample / 100,
+        validation: customValidation / 100,
+        outOfSample: customOutOfSample / 100
+      }
+    : splitRatioPresets[ratioPreset];
+  const feasibilityWindows = createWalkForwardWindows({
+    candles: walkForwardSource.candles,
+    source: walkForwardSource,
+    ratio: splitRatio,
+    mode,
+    maxWindows
+  });
+  const expectedWindows = feasibilityWindows.length;
+  const expectedOosCandles =
+    feasibilityWindows[0]?.splits.find((split) => split.label === "out_of_sample")?.processedCandleCount ?? 0;
+  const minimumProcessedCandles = minimumProcessedCandlesFor(mode);
+  const walkForwardPreset = getWalkForwardDataPreset(walkForwardSettings);
+  const dashboardPreset = getImportedDataPreset(dashboardWindowSettings);
+  const usingDashboardSafeData =
+    walkForwardSource.mode === "imported" &&
+    walkForwardSource.researchWindowCandles <= 500 &&
+    walkForwardSource.appliedSettings.targetTimeframe === "5m";
+  const feasibilityWarnings = [
+    expectedWindows < 3 ? "Not enough data for meaningful walk-forward. Increase raw window." : undefined,
+    usingDashboardSafeData
+      ? "Walk-forward is using Dashboard Safe data. Select a larger walk-forward data preset for meaningful validation."
+      : undefined,
+    walkForwardSettings.windowSize > 10000 ? "Raw walk-forward window above 10,000 candles can be heavy in the browser." : undefined
+  ].filter((warning): warning is string => Boolean(warning));
 
   const createFollowUpSearch = () => {
     if (!followUpPlan) {
@@ -152,6 +226,20 @@ export function WalkForwardView() {
     setActionMessage(
       `Created Auto Research follow-up plan ${followUpPlan.planId}. Open Auto Research to use ${followUpPlan.recommendedSearchMode.replace(/_/g, " ")} mode.`
     );
+  };
+
+  const applyWalkForwardPreset = (preset: Exclude<WalkForwardDataPreset, "custom">) => {
+    const saved = saveWalkForwardCandleWindowSettings(walkForwardDataPresetSettings[preset]);
+    setWalkForwardSettings(saved);
+    setMode(preset === "advanced" ? "advanced" : preset === "standard" ? "standard" : "safe");
+    setMaxWindows(preset === "advanced" ? 5 : preset === "standard" ? 5 : 3);
+    refresh();
+  };
+
+  const patchWalkForwardSettings = (patch: Partial<CandleWindowSettings>) => {
+    const saved = saveWalkForwardCandleWindowSettings({ ...walkForwardSettings, ...patch });
+    setWalkForwardSettings(saved);
+    refresh();
   };
 
   return (
@@ -180,13 +268,23 @@ export function WalkForwardView() {
 
       <Card className="border-cyan-400/20 bg-cyan-400/5">
         <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-2 xl:grid-cols-5">
-          <StatusTile label="Active data" value={selectRuntimeSourceLabel(runtimeSnapshot)} />
-          <StatusTile label="Candle window" value={runtimeSnapshot ? `${runtimeSnapshot.marketData.researchWindow.toLocaleString()} raw / ${runtimeSnapshot.marketData.processedCandleCount.toLocaleString()} ${runtimeSnapshot.marketData.timeframe}` : "loading"} />
+          <StatusTile label="Dashboard research preset" value={`${dashboardPreset} / ${runtimeSnapshot ? `${runtimeSnapshot.marketData.researchWindow.toLocaleString()} raw -> ${runtimeSnapshot.marketData.processedCandleCount.toLocaleString()} ${runtimeSnapshot.marketData.timeframe}` : "loading"}`} />
+          <StatusTile label="Walk-forward data preset" value={`${walkForwardPreset} / ${walkForwardSource.researchWindowCandles.toLocaleString()} raw -> ${walkForwardSource.processedCandleCount.toLocaleString()} ${walkForwardSource.appliedSettings.targetTimeframe}`} />
+          <StatusTile label="Raw imported dataset" value={walkForwardSource.mode === "imported" ? walkForwardSource.rawCandleCount.toLocaleString() : "mock data"} />
+          <StatusTile label="Minimum processed needed" value={`${minimumProcessedCandles.toLocaleString()} for ${mode} / 3 windows`} />
           <StatusTile label="Active calibration" value={runtimeSnapshot?.activeConfig.activeCalibrationId ?? "default baseline"} />
-          <StatusTile label="Config merge" value={runtimeSnapshot?.activeConfig.configMergeStatusLabel ?? "loading"} />
-          <StatusTile label="Fingerprint" value={selectRuntimeFingerprintLabel(runtimeSnapshot)} />
         </CardContent>
       </Card>
+
+      {feasibilityWarnings.length ? (
+        <Card className="border-amber-300/25 bg-amber-300/10">
+          <CardContent className="space-y-1 p-4 text-sm text-amber-100">
+            {feasibilityWarnings.map((warning) => (
+              <div key={warning}>{warning}</div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
         <Card>
@@ -198,7 +296,21 @@ export function WalkForwardView() {
             <CardDescription>Use Safe first. Standard/Advanced increase windows and browser work.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <label className="text-xs uppercase tracking-[0.14em] text-muted-foreground" htmlFor="walk-forward-data-preset">Data preset</label>
+                <Select
+                  id="walk-forward-data-preset"
+                  value={walkForwardPreset === "custom" ? "advanced" : walkForwardPreset}
+                  disabled={busy}
+                  onChange={(event) => applyWalkForwardPreset(event.target.value as Exclude<WalkForwardDataPreset, "custom">)}
+                  options={[
+                    { label: "Walk-forward Safe: 2,000 raw → 5m", value: "safe" },
+                    { label: "Walk-forward Standard: 5,000 raw → 5m", value: "standard" },
+                    { label: "Walk-forward Advanced: custom", value: "advanced" }
+                  ]}
+                />
+              </div>
               <div>
                 <label className="text-xs uppercase tracking-[0.14em] text-muted-foreground" htmlFor="walk-forward-mode">Mode</label>
                 <Select
@@ -208,7 +320,7 @@ export function WalkForwardView() {
                   onChange={(event) => {
                     const next = event.target.value as WalkForwardMode;
                     setMode(next);
-                    setMaxWindows(next === "advanced" ? 5 : next === "standard" ? 3 : 3);
+                    setMaxWindows(next === "advanced" ? 5 : next === "standard" ? 5 : 3);
                   }}
                   options={[
                     { label: "Safe", value: "safe" },
@@ -242,6 +354,45 @@ export function WalkForwardView() {
                   onChange={(event) => setMaxWindows(Number(event.target.value) || 1)}
                 />
               </div>
+            </div>
+
+            {walkForwardSettings.advancedMode ? (
+              <div className="grid gap-3 rounded-lg border border-border bg-background/45 p-3 sm:grid-cols-3">
+                <div>
+                  <label className="text-xs uppercase tracking-[0.14em] text-muted-foreground" htmlFor="walk-forward-raw-window">Raw window</label>
+                  <Input
+                    id="walk-forward-raw-window"
+                    type="number"
+                    min={1000}
+                    max={50000}
+                    value={walkForwardSettings.windowSize}
+                    disabled={busy}
+                    onChange={(event) => patchWalkForwardSettings({ windowSize: Number(event.target.value) || WALK_FORWARD_IMPORTED_STANDARD_WINDOW_SIZE })}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-[0.14em] text-muted-foreground" htmlFor="walk-forward-timeframe">Aggregate</label>
+                  <Select
+                    id="walk-forward-timeframe"
+                    value={walkForwardSettings.targetTimeframe}
+                    disabled={busy}
+                    onChange={(event) => patchWalkForwardSettings({ targetTimeframe: event.target.value as CandleWindowSettings["targetTimeframe"] })}
+                    options={[
+                      { label: "5m", value: "5m" },
+                      { label: "15m", value: "15m" },
+                      { label: "1m", value: "1m" }
+                    ]}
+                  />
+                </div>
+                <StatusTile label="Advanced warning" value={walkForwardSettings.windowSize > 10000 ? "Large browser workload" : "Within normal walk-forward bounds"} />
+              </div>
+            ) : null}
+
+            <div className="grid gap-3 rounded-lg border border-cyan-300/20 bg-cyan-300/5 p-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+              <StatusTile label="Projected windows" value={`${expectedWindows}/${maxWindows}`} />
+              <StatusTile label="Projected OOS candles" value={String(expectedOosCandles)} />
+              <StatusTile label="Processed available" value={walkForwardSource.processedCandleCount.toLocaleString()} />
+              <StatusTile label="Raw selected" value={walkForwardSource.researchWindowCandles.toLocaleString()} />
             </div>
 
             {ratioPreset === "custom" ? (

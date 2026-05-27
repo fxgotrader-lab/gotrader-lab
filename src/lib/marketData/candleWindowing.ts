@@ -6,6 +6,7 @@ export type ResearchTimeframe = Extract<Timeframe, "1m" | "5m" | "15m">;
 export type ResearchSessionFilter = "all" | CandleSession;
 export type ResearchPerformanceMode = "safe" | "advanced";
 export type ImportedDataPreset = "safe" | "standard" | "advanced" | "custom";
+export type WalkForwardDataPreset = "safe" | "standard" | "advanced" | "custom";
 
 export interface CandleWindowSettings {
   windowMode: ResearchWindowMode;
@@ -37,9 +38,13 @@ export const DASHBOARD_IMPORTED_STANDARD_WINDOW_SIZE = 2000;
 export const DASHBOARD_IMPORTED_SAFE_PROCESSED_LIMIT = 500;
 export const DASHBOARD_IMPORTED_RAW_WINDOW_LIMIT = 2000;
 export const DASHBOARD_IMPORTED_CANDIDATE_LIMIT = 10;
+export const WALK_FORWARD_IMPORTED_SAFE_WINDOW_SIZE = 2000;
+export const WALK_FORWARD_IMPORTED_STANDARD_WINDOW_SIZE = 5000;
 export const safeWindowSizeOptions = [500, 1000, 2000, 5000];
 
 const STORAGE_KEY = "gotrader-ai-lab-candle-window-settings";
+const WALK_FORWARD_STORAGE_KEY = "gotrader-ai-lab-walk-forward-candle-window-settings";
+export const WALK_FORWARD_WINDOW_SETTINGS_UPDATED_EVENT = "gotrader-ai-lab-walk-forward-window-settings-updated";
 
 const isBrowser = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 
@@ -74,6 +79,27 @@ export const importedDataPresetSettings = {
   }
 } satisfies Record<"safe" | "standard" | "advanced", CandleWindowSettings>;
 
+export const walkForwardDataPresetSettings = {
+  safe: {
+    ...defaultCandleWindowSettings,
+    windowSize: WALK_FORWARD_IMPORTED_SAFE_WINDOW_SIZE,
+    targetTimeframe: "5m",
+    advancedMode: false
+  },
+  standard: {
+    ...defaultCandleWindowSettings,
+    windowSize: WALK_FORWARD_IMPORTED_STANDARD_WINDOW_SIZE,
+    targetTimeframe: "5m",
+    advancedMode: false
+  },
+  advanced: {
+    ...defaultCandleWindowSettings,
+    windowSize: WALK_FORWARD_IMPORTED_STANDARD_WINDOW_SIZE,
+    targetTimeframe: "5m",
+    advancedMode: true
+  }
+} satisfies Record<"safe" | "standard" | "advanced", CandleWindowSettings>;
+
 export function getImportedDataPreset(settings: Partial<CandleWindowSettings> = loadCandleWindowSettings()): ImportedDataPreset {
   const sanitized = sanitizeCandleWindowSettings(settings);
   if (sanitized.advancedMode) {
@@ -92,6 +118,34 @@ export function getImportedDataPreset(settings: Partial<CandleWindowSettings> = 
   }
   if (
     sanitized.windowSize === DASHBOARD_IMPORTED_STANDARD_WINDOW_SIZE &&
+    sanitized.targetTimeframe === "5m" &&
+    sanitized.sessionFilter === "all"
+  ) {
+    return "standard";
+  }
+  return "custom";
+}
+
+export function getWalkForwardDataPreset(
+  settings: Partial<CandleWindowSettings> = loadWalkForwardCandleWindowSettings()
+): WalkForwardDataPreset {
+  const sanitized = sanitizeCandleWindowSettings(settings);
+  if (sanitized.advancedMode) {
+    return sanitized.windowSize === WALK_FORWARD_IMPORTED_STANDARD_WINDOW_SIZE &&
+      sanitized.targetTimeframe === "5m" &&
+      sanitized.sessionFilter === "all"
+      ? "advanced"
+      : "custom";
+  }
+  if (
+    sanitized.windowSize === WALK_FORWARD_IMPORTED_SAFE_WINDOW_SIZE &&
+    sanitized.targetTimeframe === "5m" &&
+    sanitized.sessionFilter === "all"
+  ) {
+    return "safe";
+  }
+  if (
+    sanitized.windowSize === WALK_FORWARD_IMPORTED_STANDARD_WINDOW_SIZE &&
     sanitized.targetTimeframe === "5m" &&
     sanitized.sessionFilter === "all"
   ) {
@@ -146,6 +200,21 @@ export function loadCandleWindowSettings(): CandleWindowSettings {
   }
 }
 
+export function loadWalkForwardCandleWindowSettings(): CandleWindowSettings {
+  if (!isBrowser()) {
+    return walkForwardDataPresetSettings.safe;
+  }
+  const raw = window.localStorage.getItem(WALK_FORWARD_STORAGE_KEY);
+  if (!raw) {
+    return walkForwardDataPresetSettings.safe;
+  }
+  try {
+    return sanitizeCandleWindowSettings(JSON.parse(raw) as Partial<CandleWindowSettings>);
+  } catch {
+    return walkForwardDataPresetSettings.safe;
+  }
+}
+
 export function saveCandleWindowSettings(settings: Partial<CandleWindowSettings>): CandleWindowSettings {
   const sanitized = sanitizeCandleWindowSettings(settings);
   if (isBrowser()) {
@@ -155,8 +224,21 @@ export function saveCandleWindowSettings(settings: Partial<CandleWindowSettings>
   return sanitized;
 }
 
+export function saveWalkForwardCandleWindowSettings(settings: Partial<CandleWindowSettings>): CandleWindowSettings {
+  const sanitized = sanitizeCandleWindowSettings(settings);
+  if (isBrowser()) {
+    window.localStorage.setItem(WALK_FORWARD_STORAGE_KEY, JSON.stringify(sanitized));
+    window.dispatchEvent(new CustomEvent(WALK_FORWARD_WINDOW_SETTINGS_UPDATED_EVENT, { detail: sanitized }));
+  }
+  return sanitized;
+}
+
 export function resetCandleWindowSettings() {
   return saveCandleWindowSettings(defaultCandleWindowSettings);
+}
+
+export function resetWalkForwardCandleWindowSettings() {
+  return saveWalkForwardCandleWindowSettings(walkForwardDataPresetSettings.safe);
 }
 
 const minutesFromTimestamp = (timestamp: string) => {
@@ -308,5 +390,11 @@ export function prepareCandleSourceForResearch(
 }
 
 export async function loadPreparedCandleSource(settingsInput: Partial<CandleWindowSettings> = loadCandleWindowSettings()) {
+  return prepareCandleSourceForResearch(await loadActiveCandleSource(), settingsInput);
+}
+
+export async function loadPreparedWalkForwardCandleSource(
+  settingsInput: Partial<CandleWindowSettings> = loadWalkForwardCandleWindowSettings()
+) {
   return prepareCandleSourceForResearch(await loadActiveCandleSource(), settingsInput);
 }

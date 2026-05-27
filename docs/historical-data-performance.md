@@ -24,6 +24,16 @@ The Standard preset remains available for focused manual work:
 
 Advanced full research mode is off by default and should only be enabled intentionally.
 
+## Walk-Forward Data Presets
+
+Walk-forward validation has dedicated candle-window presets because it needs more history than the Dashboard Safe cycle:
+
+- Walk-forward Safe: latest 2,000 raw candles aggregated to 5m, usually about 400 processed candles, up to 3 windows.
+- Walk-forward Standard: latest 5,000 raw candles aggregated to 5m, usually about 1,000 processed candles, up to 5 windows.
+- Walk-forward Advanced: custom raw window and max windows, with browser warnings above 10,000 raw candles.
+
+The Dashboard Safe preset is intentionally small for quick research cycles. If walk-forward only sees about 101 processed candles, it cannot generate enough rolling windows; select a larger walk-forward preset before treating the result as a strategy verdict.
+
 ## Window Choices
 
 The UI supports:

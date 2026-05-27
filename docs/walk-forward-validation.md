@@ -21,11 +21,14 @@ Supported split ratios:
 
 The orchestrator creates rolling windows from the active prepared candle source:
 
-- Safe mode uses small windows and fewer passes.
-- Standard mode uses more candles and more rolling windows.
+- Dashboard Safe mode is for fast AI Research Cycles and may use only 500 raw candles, which can become about 100 processed 5m candles. That is not enough for meaningful walk-forward validation.
+- Walk-forward Safe has its own data preset: latest 2,000 raw candles aggregated to 5m, normally about 400 processed candles, with up to 3 windows.
+- Walk-forward Standard has its own data preset: latest 5,000 raw candles aggregated to 5m, normally about 1,000 processed candles, with up to 5 windows.
 - Advanced mode allows more windows, but should be used carefully in the browser.
 
 Each window runs the active resolved backtest configuration against all three splits.
+
+If the page reports something like 101 processed candles, walk-forward is still using too small of a data window. Select Walk-forward Safe or Walk-forward Standard before judging strategy quality.
 
 ## Metrics Collected
 

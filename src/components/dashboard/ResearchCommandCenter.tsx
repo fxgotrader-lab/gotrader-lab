@@ -542,6 +542,8 @@ function WalkForwardStatusCard({
           <StatusLine label="OOS passed" value={`${stability?.outOfSampleWindowsPassed ?? 0}/${stability?.windowCount ?? 0}`} />
           <StatusLine label="Stability score" value={stability ? `${stability.stabilityScore}/100` : "n/a"} />
           <StatusLine label="Overfit risk" value={stability?.overfitRisk === "not_applicable" ? "not applicable" : stability?.overfitRisk ?? "unknown"} />
+          <StatusLine label="Data preset" value={snapshot?.walkForward.dataPreset ?? run?.walkForwardDataPreset ?? "not run"} />
+          <StatusLine label="Candle window" value={run?.candleWindow ?? "not run"} />
         </div>
         {stability?.verdict === "insufficient_evidence" ? (
           <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-xs text-amber-100">
