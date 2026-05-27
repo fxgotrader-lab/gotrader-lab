@@ -57,10 +57,6 @@ export type {
   AutonomousResearchStatus,
   AutonomousResearchStopReason,
   AutonomousScenarioFamily,
-  HermesNotificationEvent,
-  OpenClawFailureAnalysisMemory,
-  OpenClawProposalReview,
-  OpenClawScenarioRecommendation,
   RunAutonomousResearchLoopOptions,
   ScenarioSetEvaluation
 } from "@/lib/autonomousResearch/autonomousResearchTypes";

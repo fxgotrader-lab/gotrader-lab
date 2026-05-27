@@ -71,6 +71,9 @@ export function MissionControlDataFeed({ items }: { items: MissionFeedItem[] }) 
           </div>
         )}
       </div>
+      <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-300/5 p-3 text-xs text-cyan-100/75">
+        Future OpenClaw memory and Hermes notification hooks can mirror these research events, but they remain advisory/notification only with no execution authority.
+      </div>
     </section>
   );
 }

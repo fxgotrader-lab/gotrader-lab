@@ -1,6 +1,8 @@
 export type CommunicationSource =
   | "llm_advisor"
   | "openclaw_research_supervisor"
+  | "openclaw_memory"
+  | "hermes_notification_router"
   | "validation_engine"
   | "self_improvement"
   | "readiness_gate"
@@ -11,6 +13,8 @@ export type CommunicationSource =
 export type CommunicationCategory =
   | "llm_advisor_message"
   | "openclaw_supervisor_message"
+  | "openclaw_memory_note"
+  | "hermes_notification"
   | "validation_alert"
   | "self_improvement_proposal_alert"
   | "readiness_warning"

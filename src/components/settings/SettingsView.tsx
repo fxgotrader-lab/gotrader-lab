@@ -36,8 +36,10 @@ import {
   saveICTScoringWeights
 } from "@/lib/ict";
 import { brokerDemoBridgeSpec } from "@/lib/integrations/brokerDemoBridgeSpec";
+import { hermesNotificationHookSpec } from "@/lib/integrations/hermesNotificationHooks";
 import { openClawHermesBridgeSpec } from "@/lib/integrations/openclawHermesBridgeSpec";
 import { openClawHermesAdvisorySpec } from "@/lib/integrations/openclawHermesSpec";
+import { openClawMemoryHookSpec } from "@/lib/integrations/openclawMemoryHooks";
 import { paperDemoExecutionSpec } from "@/lib/integrations/paperDemoExecutionSpec";
 import {
   getLLMReadinessImpact,
@@ -542,6 +544,38 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
             <div className="rounded-md border border-border bg-background/45 p-3 text-muted-foreground">
               Local bridge contract: watch `{openClawHermesBridgeSpec.pathContract.requestPattern}` and write
               `{openClawHermesBridgeSpec.pathContract.responsePattern}` in a future planning-only bridge.
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <MessageSquareText className="h-4 w-4 text-primary" aria-hidden="true" />
+              <CardTitle>OpenClaw / Hermes Advisory Hooks</CardTitle>
+            </div>
+            <CardDescription>Planned external memory and notification contracts for autonomous research events.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {[
+              ["Status", openClawMemoryHookSpec.status],
+              ["OpenClaw memory", openClawMemoryHookSpec.openClawMemory],
+              ["Hermes notifications", hermesNotificationHookSpec.hermesNotifications],
+              ["OpenClaw events", String(openClawMemoryHookSpec.events.length)],
+              ["Hermes events", String(hermesNotificationHookSpec.events.length)],
+              ["Execution authority", openClawMemoryHookSpec.authority.executionAuthority],
+              ["Broker authority", openClawMemoryHookSpec.authority.brokerAuthority],
+              ["Readiness override", openClawMemoryHookSpec.authority.readinessOverrideAuthority]
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+                <span className="text-muted-foreground">{label}</span>
+                <Badge variant={value === "none" || value === "not_connected" ? "danger" : value === "planned" ? "warning" : "secondary"}>
+                  {formatBridgeValue(value)}
+                </Badge>
+              </div>
+            ))}
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              OpenClaw is advisory memory/review only. Hermes is notification-only. AI Lab remains the source of truth.
             </div>
           </CardContent>
         </Card>

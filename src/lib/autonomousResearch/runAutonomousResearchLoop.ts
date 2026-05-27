@@ -21,6 +21,8 @@ import type {
 } from "@/lib/autonomousResearch/autonomousResearchTypes";
 import { autonomousToSafetyBlockers } from "@/lib/autonomousResearch/autonomousResearchTypes";
 import { recordCommunicationMessage } from "@/lib/communications/communicationSpec";
+import { createHermesNotificationPayload, createPlannedHermesNotificationState } from "@/lib/integrations/hermesNotificationHooks";
+import { createOpenClawMemoryHookPacket, createPlannedOpenClawMemoryHookState } from "@/lib/integrations/openclawMemoryHooks";
 import { resolveResearchRuntimeSnapshot } from "@/lib/runtime";
 import type { CalibrationProposal } from "@/lib/selfImprovement";
 import { safeArray, uid } from "@/lib/utils";
@@ -214,12 +216,16 @@ export async function runAutonomousResearchLoop({
       brokerExecutionDisabled: true
     },
     calibrationDriftHistory: [],
-    openClawHooks: {
-      failureAnalysisMemory: { executionAuthority: "none" },
-      scenarioRecommendation: { executionAuthority: "none" },
-      proposalReview: { executionAuthority: "none" }
+    openClawHooks: createPlannedOpenClawMemoryHookState(),
+    hermesNotifications: {
+      ...createPlannedHermesNotificationState(),
+      latestPayload: createHermesNotificationPayload({
+        eventType: "autonomous_loop_started",
+        title: "Autonomous research loop started",
+        summary: `Loop ${runId} started in ${settings.autoApplyPolicyEnabled ? "policy-enabled" : "proposal-only"} mode.`,
+        routeToOpen: "/autonomous-research"
+      })
     },
-    hermesNotification: { executionAuthority: "none" },
     safetyNotice: "Autonomous research is simulation-only. It cannot execute trades, approve Paper-Demo Candidate, send go-trader handoffs, or override readiness."
   };
 
@@ -323,6 +329,27 @@ export async function runAutonomousResearchLoop({
         scenarioSelectionReasoning: scenarioReasoning
       });
       saveAutonomySafetyDiagnosis(safetyDiagnosis);
+      run = {
+        ...run,
+        openClawHooks: {
+          ...run.openClawHooks,
+          packets: {
+            ...run.openClawHooks.packets,
+            failure_analysis_memory: createOpenClawMemoryHookPacket({
+              eventType: "failure_analysis_memory",
+              snapshot: snapshotBefore,
+              blockers: blockerSummary.blockers,
+              scenarioFamily: scenario.scenarioFamily
+            }),
+            scenario_recommendation: createOpenClawMemoryHookPacket({
+              eventType: "scenario_recommendation",
+              snapshot: snapshotBefore,
+              blockers: blockerSummary.blockers,
+              scenarioFamily: scenario.scenarioFamily
+            })
+          }
+        }
+      };
 
       let iteration: AutonomousLoopIteration = {
         iteration: iterationNumber,
@@ -459,6 +486,74 @@ export async function runAutonomousResearchLoop({
       }
 
       noImprovementCount = finalEligibility.applied ? 0 : noImprovementCount + 1;
+      const latestNotification = createHermesNotificationPayload({
+        eventType: finalEligibility.applied ? "calibration_auto_applied" : "auto_apply_blocked",
+        title: finalEligibility.applied ? "Research calibration auto-applied" : "Auto-apply blocked",
+        summary: finalEligibility.applied
+          ? `Research-only calibration ${finalEligibility.proposalId} was auto-applied.`
+          : finalEligibility.reasons[0] ?? "Auto-apply blocked by policy.",
+        routeToOpen: finalEligibility.proposalId ? `/self-improvement?proposalId=${finalEligibility.proposalId}` : "/autonomous-research",
+        severity: finalEligibility.applied ? "info" : "warning"
+      });
+      run = {
+        ...run,
+        openClawHooks: {
+          ...run.openClawHooks,
+          packets: {
+            ...run.openClawHooks.packets,
+            ...(proposal
+              ? {
+                  proposal_review: createOpenClawMemoryHookPacket({
+                    eventType: "proposal_review",
+                    snapshot: snapshotAfter,
+                    scenarioFamily: scenario.scenarioFamily,
+                    proposalSummary: {
+                      proposalId: proposal.proposalId,
+                      status: proposal.status,
+                      category: proposal.proposalIntent,
+                      sourceCycleId: proposal.metricsSnapshot?.sourceCycleId,
+                      approvalRequired: proposal.approvalRequired
+                    }
+                  })
+                }
+              : {}),
+            ...(driftEntry
+              ? {
+                  calibration_drift_note: createOpenClawMemoryHookPacket({
+                    eventType: "calibration_drift_note",
+                    snapshot: snapshotAfter,
+                    scenarioFamily: scenario.scenarioFamily,
+                    proposalSummary: {
+                      proposalId: driftEntry.proposalId,
+                      status: "auto_applied",
+                      approvalRequired: false
+                    }
+                  })
+                }
+              : {}),
+            post_cycle_summary: createOpenClawMemoryHookPacket({
+              eventType: "post_cycle_summary",
+              snapshot: snapshotAfter,
+              scenarioFamily: scenario.scenarioFamily,
+              candidateSummary: cycle.bestCandidateSummary,
+              walkForwardSummary: walkForwardRun
+                ? {
+                    runId: walkForwardRun.runId,
+                    verdict: walkForwardRun.stability?.verdict,
+                    overfitRisk: walkForwardRun.stability?.overfitRisk,
+                    windowsTested: walkForwardRun.stability?.windowCount,
+                    outOfSampleWindowsPassed: walkForwardRun.stability?.outOfSampleWindowsPassed,
+                    stabilityScore: walkForwardRun.stability?.stabilityScore
+                  }
+                : undefined
+            })
+          }
+        },
+        hermesNotifications: {
+          ...run.hermesNotifications,
+          latestPayload: latestNotification
+        }
+      };
 
       updateProgress({
         stage: "readiness_maturity",

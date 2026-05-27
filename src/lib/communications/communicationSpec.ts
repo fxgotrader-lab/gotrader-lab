@@ -16,6 +16,38 @@ const isBrowser = () => typeof window !== "undefined" && typeof window.localStor
 
 export const mockAgentMessages: AgentMessageAuditEntry[] = [
   {
+    messageId: "msg_openclaw_memory_planned",
+    timestamp: minutesAgo(5),
+    source: "openclaw_memory",
+    agentName: "OpenClaw Advisory Memory",
+    category: "openclaw_memory_note",
+    severity: "info",
+    title: "OpenClaw memory hook planned",
+    summary: "Future memory packets can preserve blocker diagnosis, scenario reasoning, and proposal review context.",
+    body:
+      "OpenClaw memory hooks are advisory-memory only. They can store failure analysis and scenario recommendations later, but they cannot execute trades, approve readiness, change broker settings, or send go-trader handoffs.",
+    actionRequired: false,
+    userResponse: "acknowledged",
+    resolved: true,
+    safetyNotice: "Research communication only. No execution authority.",
+  },
+  {
+    messageId: "msg_hermes_notifications_planned",
+    timestamp: minutesAgo(6),
+    source: "hermes_notification_router",
+    agentName: "Hermes Notification Router",
+    category: "hermes_notification",
+    severity: "info",
+    title: "Hermes notification hook planned",
+    summary: "Hermes may later route notifications for loop events, but the app remains the approval source of truth.",
+    body:
+      "Hermes notification payloads are route-only messages with authority set to none. They may point the user back to GoTrader AI Lab, but cannot accept approvals or execute any research, broker, or readiness action.",
+    actionRequired: false,
+    userResponse: "acknowledged",
+    resolved: true,
+    safetyNotice: "Research communication only. No execution authority.",
+  },
+  {
     messageId: "msg_readiness_llm_required",
     timestamp: minutesAgo(8),
     source: "readiness_gate",
@@ -118,6 +150,8 @@ export const inAppCommunicationSpec: InAppCommunicationSpec = {
   supportedMessageCategories: [
     "llm_advisor_message",
     "openclaw_supervisor_message",
+    "openclaw_memory_note",
+    "hermes_notification",
     "validation_alert",
     "self_improvement_proposal_alert",
     "readiness_warning",

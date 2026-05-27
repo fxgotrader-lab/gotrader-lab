@@ -1,5 +1,6 @@
 import type { AutoResearchSearchMode } from "@/lib/autoResearch";
 import type { AutonomyBlockerCategory, AutonomySafetyDiagnosis, AutonomyScenarioFamily } from "@/lib/autonomousResearch";
+import type { HermesNotificationHookState, OpenClawMemoryHookState } from "@/lib/integrations/advisoryMemoryTypes";
 import type { CalibrationProposal, CalibrationProposalChanges } from "@/lib/selfImprovement";
 import type { WalkForwardRun } from "@/lib/walkForward";
 
@@ -154,31 +155,6 @@ export interface AutonomousLoopIteration {
   notes: string[];
 }
 
-export interface OpenClawFailureAnalysisMemory {
-  memoryId?: string;
-  summary?: string;
-  executionAuthority: "none";
-}
-
-export interface OpenClawScenarioRecommendation {
-  recommendedScenarioFamily?: AutonomousScenarioFamily;
-  rationale?: string;
-  executionAuthority: "none";
-}
-
-export interface OpenClawProposalReview {
-  proposalId?: string;
-  recommendation?: "approve_research_only" | "reject" | "needs_more_evidence";
-  executionAuthority: "none";
-}
-
-export interface HermesNotificationEvent {
-  eventId?: string;
-  title?: string;
-  summary?: string;
-  executionAuthority: "none";
-}
-
 export interface AutonomousResearchRun {
   runId: string;
   startedAt: string;
@@ -204,12 +180,8 @@ export interface AutonomousResearchRun {
     brokerExecutionDisabled: true;
   };
   calibrationDriftHistory: AutonomousCalibrationDriftEntry[];
-  openClawHooks: {
-    failureAnalysisMemory?: OpenClawFailureAnalysisMemory;
-    scenarioRecommendation?: OpenClawScenarioRecommendation;
-    proposalReview?: OpenClawProposalReview;
-  };
-  hermesNotification?: HermesNotificationEvent;
+  openClawHooks: OpenClawMemoryHookState;
+  hermesNotifications: HermesNotificationHookState;
   safetyNotice: "Autonomous research is simulation-only. It cannot execute trades, approve Paper-Demo Candidate, send go-trader handoffs, or override readiness.";
 }
 

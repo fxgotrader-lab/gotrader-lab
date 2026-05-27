@@ -26,6 +26,8 @@ import type {
   AgentMessageAuditEntry,
   CommunicationSeverity,
 } from "@/lib/communications/communicationTypes";
+import { hermesNotificationHookSpec } from "@/lib/integrations/hermesNotificationHooks";
+import { openClawMemoryHookSpec } from "@/lib/integrations/openclawMemoryHooks";
 import { cn } from "@/lib/utils";
 
 const categoryOptions = [
@@ -216,6 +218,30 @@ export function AICommunicationsView() {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>OpenClaw / Hermes Hooks</CardTitle>
+            <CardDescription>Planned external memory and notification surfaces. The app remains source of truth.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {[
+              ["OpenClaw memory", openClawMemoryHookSpec.openClawMemory],
+              ["Hermes notifications", hermesNotificationHookSpec.hermesNotifications],
+              ["OpenClaw mode", openClawMemoryHookSpec.mode],
+              ["Hermes mode", hermesNotificationHookSpec.mode],
+              ["Execution authority", "none"],
+              ["Broker authority", "none"],
+              ["Readiness override", "none"]
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+                <span className="text-muted-foreground">{label}</span>
+                <Badge variant={value === "none" || value === "not_connected" ? "danger" : "secondary"}>
+                  {formatToken(value)}
+                </Badge>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
         <SpecCard title="Supported User Requests" items={inAppCommunicationSpec.supportedUserRequests.map(formatToken)} />
         <SpecCard title="Approval Prompts" items={inAppCommunicationSpec.supportedApprovalPrompts.map(formatToken)} />
         <SpecCard title="Safety Constraints" items={inAppCommunicationSpec.safetyConstraints} tone="warning" />

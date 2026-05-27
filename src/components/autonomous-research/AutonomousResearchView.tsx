@@ -35,6 +35,8 @@ import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
   MARKET_DATA_IMPORT_UPDATED_EVENT
 } from "@/lib/marketData";
+import { hermesNotificationHookSpec } from "@/lib/integrations/hermesNotificationHooks";
+import { openClawMemoryHookSpec } from "@/lib/integrations/openclawMemoryHooks";
 import type { LabState } from "@/lib/types";
 import { safeArray, safeTopN } from "@/lib/utils";
 import { WALK_FORWARD_UPDATED_EVENT } from "@/lib/walkForward";
@@ -151,6 +153,32 @@ export function AutonomousResearchView({ state }: { state: LabState }) {
       <SafetyLockBanner message="Autonomous research is simulation-only. It cannot execute trades, approve Paper-Demo Candidate, send go-trader handoffs, or override readiness." />
 
       <AutonomySafetyPolicyPanel latestAutoResearch={latestAutoResearch} snapshot={runtimeSnapshot} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>External Advisory Memory</CardTitle>
+          <CardDescription>
+            Planned OpenClaw memory and Hermes notification hooks for future local/VPS bridge review.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div className="grid gap-3 md:grid-cols-3">
+            <StatusTile label="OpenClaw memory" value={formatToken(openClawMemoryHookSpec.openClawMemory)} />
+            <StatusTile label="Hermes notifications" value={formatToken(hermesNotificationHookSpec.hermesNotifications)} />
+            <StatusTile label="Authority" value="execution none / broker none / readiness override none" />
+          </div>
+          <div className="rounded-lg border border-border bg-background/45 p-3">
+            <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Events planned for external review</p>
+            <p className="mt-1 text-muted-foreground">
+              {openClawMemoryHookSpec.events.map(formatToken).join(", ")}. Hermes can later notify on{" "}
+              {hermesNotificationHookSpec.events.slice(0, 5).map(formatToken).join(", ")}.
+            </p>
+          </div>
+          <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+            External hooks are planning-only and advisory. They cannot approve proposals, execute trades, change readiness, or send go-trader handoffs.
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

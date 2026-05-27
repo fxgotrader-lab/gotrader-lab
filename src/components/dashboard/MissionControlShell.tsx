@@ -20,6 +20,8 @@ import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
   MARKET_DATA_IMPORT_UPDATED_EVENT
 } from "@/lib/marketData";
+import { createPlannedHermesNotificationState } from "@/lib/integrations/hermesNotificationHooks";
+import { createPlannedOpenClawMemoryHookState } from "@/lib/integrations/openclawMemoryHooks";
 import { RESEARCH_CYCLE_UPDATED_EVENT } from "@/lib/researchCycle";
 import {
   ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
@@ -377,12 +379,8 @@ function createStartingAutonomyRun(settings: AutonomousResearchSettings): Autono
       brokerExecutionDisabled: true
     },
     calibrationDriftHistory: [],
-    openClawHooks: {
-      failureAnalysisMemory: { executionAuthority: "none" },
-      scenarioRecommendation: { executionAuthority: "none" },
-      proposalReview: { executionAuthority: "none" }
-    },
-    hermesNotification: { executionAuthority: "none" },
+    openClawHooks: createPlannedOpenClawMemoryHookState(),
+    hermesNotifications: createPlannedHermesNotificationState(),
     safetyNotice: "Autonomous research is simulation-only. It cannot execute trades, approve Paper-Demo Candidate, send go-trader handoffs, or override readiness."
   };
 }
