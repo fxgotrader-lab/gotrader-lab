@@ -16,7 +16,9 @@ import type {
   AutoResearchCycle,
   AutoResearchAdaptiveOutcome,
   AutoResearchAdaptivePass,
+  AutoResearchExecutionCheckpoint,
   AutoResearchFailedGate,
+  AutoResearchProgressSnapshot,
   AutoResearchRecoveryMetadata,
   AutoResearchRunOptions,
   AutoResearchState
@@ -63,6 +65,29 @@ export const AUTO_RESEARCH_STORAGE_KEY = "gotrader_ai_lab_auto_research_state";
 export const AUTO_RESEARCH_UPDATED_EVENT = "gotrader-ai-lab-auto-research-updated";
 
 const isBrowser = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+
+class AutoResearchCanceledError extends Error {
+  constructor() {
+    super("Auto Research canceled by user.");
+    this.name = "AutoResearchCanceledError";
+  }
+}
+
+class AutoResearchTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AutoResearchTimeoutError";
+  }
+}
+
+const yieldToBrowser = () =>
+  new Promise<void>((resolve) => {
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => resolve());
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
 
 const initialState = (): AutoResearchState => ({
   cycles: [],
@@ -311,6 +336,10 @@ export function pruneAutoResearchHistory(state: AutoResearchState): AutoResearch
   return {
     ...state,
     cycles: safeTopN(state.cycles, 5).map(compactAutoResearchCycle),
+    activeCheckpoint: state.activeCheckpoint,
+    recoveryCheckpoint: state.recoveryCheckpoint,
+    checkpointHistory: safeTopN(state.checkpointHistory, 20),
+    cancelRequestedCycleId: state.cancelRequestedCycleId,
     auditTrail: safeTopN(state.auditTrail, 30)
       .map((entry) => ({
         ...entry,
@@ -420,6 +449,10 @@ export function loadAutoResearchState(): AutoResearchState {
       ...parsed,
       cycles: safeArray(parsed.cycles),
       auditTrail: safeArray(parsed.auditTrail),
+      activeCheckpoint: parsed.activeCheckpoint,
+      recoveryCheckpoint: parsed.recoveryCheckpoint,
+      checkpointHistory: safeArray(parsed.checkpointHistory),
+      cancelRequestedCycleId: parsed.cancelRequestedCycleId,
       lastStoredBytes: parsed.lastStoredBytes,
       storageWarning: parsed.storageWarning,
       storageEmergencyMode: parsed.storageEmergencyMode
@@ -429,18 +462,92 @@ export function loadAutoResearchState(): AutoResearchState {
   }
 }
 
-export function saveAutoResearchCycle(cycle: AutoResearchCycle): AutoResearchState {
+export function publishAutoResearchCheckpoint(checkpoint: AutoResearchExecutionCheckpoint): AutoResearchState {
   const state = loadAutoResearchState();
   return publish({
     ...state,
+    activeCheckpoint: checkpoint.status === "running" ? checkpoint : undefined,
+    recoveryCheckpoint: checkpoint.status === "running" ? state.recoveryCheckpoint : checkpoint,
+    checkpointHistory: safeTopN([checkpoint, ...safeArray(state.checkpointHistory)], 20),
+    auditTrail: safeTopN([
+      audit(checkpoint.cycleId, checkpoint.status === "canceled" ? "cycle_canceled" : "checkpoint", checkpoint.message ?? checkpoint.phase, {
+        candidatesTested: checkpoint.currentCandidate,
+        selectedCandidateId: checkpoint.bestCandidateId
+      }),
+      ...safeArray(state.auditTrail)
+    ], 80)
+  });
+}
+
+export function requestAutoResearchCancel(cycleId?: string): AutoResearchState {
+  const state = loadAutoResearchState();
+  const targetCycleId = cycleId ?? state.activeCheckpoint?.cycleId;
+  return publish({
+    ...state,
+    cancelRequestedCycleId: targetCycleId,
+    activeCheckpoint: state.activeCheckpoint
+      ? {
+          ...state.activeCheckpoint,
+          message: "Cancel requested. The current candidate will finish, then the cycle will stop."
+        }
+      : state.activeCheckpoint
+  });
+}
+
+export function discardAutoResearchRecoveryState(): AutoResearchState {
+  const state = loadAutoResearchState();
+  return publish({
+    ...state,
+    activeCheckpoint: undefined,
+    recoveryCheckpoint: undefined,
+    cancelRequestedCycleId: undefined,
+    checkpointHistory: safeTopN(state.checkpointHistory, 20)
+  });
+}
+
+export function saveAutoResearchCycle(cycle: AutoResearchCycle): AutoResearchState {
+  const state = loadAutoResearchState();
+  const stoppedCheckpoint =
+    cycle.status === "failed" || cycle.status === "canceled"
+      ? {
+          ...(state.activeCheckpoint ?? {
+            checkpointId: uid("auto_checkpoint"),
+            cycleId: cycle.cycleId,
+            startedAt: cycle.timestamp,
+            updatedAt: new Date().toISOString(),
+            elapsedMs: 0,
+            phase: cycle.status,
+            currentCandidate: cycle.candidatesTested,
+            totalCandidates: cycle.candidateConfigs.length,
+            status: cycle.status === "canceled" ? "canceled" : "failed"
+          }),
+          updatedAt: new Date().toISOString(),
+          status: cycle.status === "canceled" ? "canceled" as const : "failed" as const,
+          message: cycle.error ?? (cycle.status === "canceled" ? "Auto Research was canceled before completion." : "Auto Research failed before completion.")
+        }
+      : undefined;
+  return publish({
+    ...state,
     latestCycleId: cycle.cycleId,
+    activeCheckpoint: undefined,
+    recoveryCheckpoint: stoppedCheckpoint ?? (cycle.status === "completed" || cycle.status === "proposal_created" ? undefined : state.recoveryCheckpoint),
+    cancelRequestedCycleId: undefined,
+    checkpointHistory: stoppedCheckpoint ? safeTopN([stoppedCheckpoint, ...safeArray(state.checkpointHistory)], 20) : state.checkpointHistory,
     cycles: safeTopN([compactAutoResearchCycle(cycle), ...safeArray(state.cycles).filter((item) => item.cycleId !== cycle.cycleId)], 5),
     auditTrail: safeTopN([
       audit(
         cycle.cycleId,
-        cycle.status === "proposal_created" ? "proposal_created" : cycle.status === "failed" ? "cycle_failed" : "cycle_completed",
+        cycle.status === "proposal_created"
+          ? "proposal_created"
+          : cycle.status === "failed"
+            ? "cycle_failed"
+            : cycle.status === "canceled"
+              ? "cycle_canceled"
+              : "cycle_completed",
         cycle.createdProposalId
           ? `Created proposal ${cycle.createdProposalId}.`
+          : cycle.status === "canceled"
+            ? "Canceled Auto Research before completion. Partial progress checkpoint was retained."
           : cycle.error ??
             `Completed ${safeArray(cycle.candidateResults).length} candidate evaluations. Final category: ${cycle.finalResultCategory}.`,
         {
@@ -1095,8 +1202,54 @@ const createResearchCalibrationCandidateProposal = ({
   };
 };
 
-export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResearchCycle {
+export async function runAutoResearchCycle(options: AutoResearchRunOptions): Promise<AutoResearchCycle> {
   const cycleId = uid("auto_cycle");
+  const startedAtMs = Date.now();
+  const startedAt = new Date().toISOString();
+  const timeoutMs = options.timeoutMs ?? 45_000;
+  const checkpointId = uid("auto_checkpoint");
+  const isCanceled = () =>
+    Boolean(options.signal?.aborted) ||
+    (isBrowser() && loadAutoResearchState().cancelRequestedCycleId === cycleId);
+  const throwIfStopped = () => {
+    if (isCanceled()) {
+      throw new AutoResearchCanceledError();
+    }
+    if (Date.now() - startedAtMs > timeoutMs) {
+      throw new AutoResearchTimeoutError(`Auto Research stopped after exceeding ${Math.round(timeoutMs / 1000)}s browser-safe limit.`);
+    }
+  };
+  const checkpoint = (partial: Partial<AutoResearchExecutionCheckpoint>) => {
+    const nextCheckpoint: AutoResearchExecutionCheckpoint = {
+      checkpointId,
+      cycleId,
+      startedAt,
+      updatedAt: new Date().toISOString(),
+      elapsedMs: Date.now() - startedAtMs,
+      phase: partial.phase ?? "running",
+      status: partial.status ?? "running",
+      currentCandidate: partial.currentCandidate ?? 0,
+      totalCandidates: partial.totalCandidates ?? options.maxCandidateCount,
+      currentPass: partial.currentPass,
+      totalPasses: partial.totalPasses,
+      currentCandidateName: partial.currentCandidateName,
+      bestCandidateId: partial.bestCandidateId,
+      bestCandidateLabel: partial.bestCandidateLabel,
+      bestCandidateScore: partial.bestCandidateScore,
+      bestCandidateCategory: partial.bestCandidateCategory,
+      message: partial.message
+    };
+    publishAutoResearchCheckpoint(nextCheckpoint);
+    options.onCheckpoint?.(nextCheckpoint);
+    return nextCheckpoint;
+  };
+  checkpoint({
+    phase: "initializing",
+    status: "running",
+    currentCandidate: 0,
+    totalCandidates: options.maxCandidateCount,
+    message: "Preparing Auto Research candidate search."
+  });
   try {
     const activeCandles = options.candles?.length ? options.candles : mockCandles;
     const activeResearchConfig = resolveActiveBacktestConfig();
@@ -1113,6 +1266,14 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       searchMode: options.searchMode,
       activeCalibrationIdUsed: options.activeCalibrationIdUsed ?? activeResearchConfig.activeCalibrationId
     });
+    checkpoint({
+      phase: "baseline_backtest",
+      status: "running",
+      currentCandidate: 0,
+      totalCandidates: options.maxCandidateCount,
+      message: "Running baseline backtest and validation before candidate search."
+    });
+    throwIfStopped();
     const baselineBacktest = runBacktest(activeCandles, baselineConfig);
     const tradesBeforeRecovery = baselineBacktest.summary.totalTrades;
     const tradeGenerationDiagnostics = tradesBeforeRecovery === 0
@@ -1130,6 +1291,8 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
           validation: baselineValidation
         })
       : [];
+    await yieldToBrowser();
+    throwIfStopped();
     const maxAdaptivePasses = Math.max(0, Math.min(2, options.maxAdaptivePasses ?? 2));
     const totalPasses = 1 + maxAdaptivePasses;
     const evaluatedCandidateResults: AutoResearchCandidateResult[] = [];
@@ -1165,6 +1328,17 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
             });
 
       allCandidateConfigs.push(...passCandidateConfigs);
+      checkpoint({
+        phase: passNumber === 1 ? "initial_candidate_pass" : `targeted_pass_${passNumber - 1}`,
+        status: "running",
+        currentCandidate: evaluatedCandidateResults.length,
+        totalCandidates: allCandidateConfigs.length,
+        currentPass: passNumber,
+        totalPasses,
+        message: passNumber === 1 ? "Running initial bounded candidate pass." : "Running targeted adaptive candidate pass."
+      });
+      await yieldToBrowser();
+      throwIfStopped();
 
       const passResults: AutoResearchCandidateResult[] = [];
       for (const candidate of passCandidateConfigs) {
@@ -1172,7 +1346,7 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
         evaluatedCandidateResults.push(candidateResult);
         passResults.push(candidateResult);
         const { bestCandidate: bestCandidateSoFar } = selectBestCandidate(evaluatedCandidateResults, baselineMetrics);
-        options.onCandidateEvaluated?.({
+        const progress: AutoResearchProgressSnapshot = {
           currentCandidate: evaluatedCandidateResults.length,
           totalCandidates: allCandidateConfigs.length,
           passNumber,
@@ -1186,7 +1360,24 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
           bestCandidateLabel: bestCandidateSoFar?.label,
           bestCandidateScore: bestCandidateSoFar?.scoreBreakdown.totalScore,
           bestCandidateCategory: bestCandidateSoFar?.resultCategory
+        };
+        options.onCandidateEvaluated?.(progress);
+        checkpoint({
+          phase: progress.passLabel,
+          status: "running",
+          currentCandidate: progress.currentCandidate,
+          totalCandidates: progress.totalCandidates,
+          currentPass: passNumber,
+          totalPasses,
+          currentCandidateName: candidateResult.label,
+          bestCandidateId: bestCandidateSoFar?.candidateId,
+          bestCandidateLabel: bestCandidateSoFar?.label,
+          bestCandidateScore: bestCandidateSoFar?.scoreBreakdown.totalScore,
+          bestCandidateCategory: bestCandidateSoFar?.resultCategory,
+          message: `Evaluated ${candidateResult.label}.`
         });
+        await yieldToBrowser();
+        throwIfStopped();
       }
 
       const passSelection = selectBestCandidate(passResults, baselineMetrics);
@@ -1228,13 +1419,22 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       recoveryCandidates = generateTradeRecoveryCandidateConfigs(baselineConfig, 8, {
         suggestedConfluenceThreshold: confluenceDiagnosticFor(tradeGenerationDiagnostics)?.suggestedConfluenceThreshold
       });
+      checkpoint({
+        phase: "trade_generation_recovery",
+        status: "running",
+        currentCandidate: evaluatedCandidateResults.length,
+        totalCandidates: allCandidateConfigs.length + recoveryCandidates.length,
+        currentPass: totalPasses,
+        totalPasses,
+        message: "Running bounded zero-trade recovery candidates."
+      });
       const recoveryResults: AutoResearchCandidateResult[] = [];
       for (const candidate of recoveryCandidates) {
         const candidateResult = evaluateCandidate(candidate, baselineMetrics, activeCandles);
         evaluatedCandidateResults.push(candidateResult);
         recoveryResults.push(candidateResult);
         const { bestCandidate: bestCandidateSoFar } = selectBestCandidate(evaluatedCandidateResults, baselineMetrics);
-        options.onCandidateEvaluated?.({
+        const progress: AutoResearchProgressSnapshot = {
           currentCandidate: evaluatedCandidateResults.length,
           totalCandidates: allCandidateConfigs.length + recoveryCandidates.length,
           passNumber: totalPasses,
@@ -1248,7 +1448,24 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
           bestCandidateLabel: bestCandidateSoFar?.label,
           bestCandidateScore: bestCandidateSoFar?.scoreBreakdown.totalScore,
           bestCandidateCategory: bestCandidateSoFar?.resultCategory
+        };
+        options.onCandidateEvaluated?.(progress);
+        checkpoint({
+          phase: "trade_generation_recovery",
+          status: "running",
+          currentCandidate: progress.currentCandidate,
+          totalCandidates: progress.totalCandidates,
+          currentPass: totalPasses,
+          totalPasses,
+          currentCandidateName: candidateResult.label,
+          bestCandidateId: bestCandidateSoFar?.candidateId,
+          bestCandidateLabel: bestCandidateSoFar?.label,
+          bestCandidateScore: bestCandidateSoFar?.scoreBreakdown.totalScore,
+          bestCandidateCategory: bestCandidateSoFar?.resultCategory,
+          message: `Recovery candidate evaluated: ${candidateResult.label}.`
         });
+        await yieldToBrowser();
+        throwIfStopped();
       }
       allCandidateConfigs.push(...recoveryCandidates);
       const recoverySelection = selectBestCandidate(recoveryResults, baselineMetrics);
@@ -1280,13 +1497,22 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
         tradeQualityDiagnostics,
         Math.min(Math.max(6, options.maxCandidateCount), 12)
       );
+      checkpoint({
+        phase: "trade_quality_optimization",
+        status: "running",
+        currentCandidate: evaluatedCandidateResults.length,
+        totalCandidates: allCandidateConfigs.length + tradeQualityCandidateConfigs.length,
+        currentPass: totalPasses,
+        totalPasses,
+        message: "Running trade-quality optimization candidates."
+      });
       const qualityResults: AutoResearchCandidateResult[] = [];
       for (const candidate of tradeQualityCandidateConfigs) {
         const candidateResult = evaluateCandidate(candidate, baselineMetrics, activeCandles);
         evaluatedCandidateResults.push(candidateResult);
         qualityResults.push(candidateResult);
         const { bestCandidate: bestCandidateSoFar } = selectBestCandidate(evaluatedCandidateResults, baselineMetrics);
-        options.onCandidateEvaluated?.({
+        const progress: AutoResearchProgressSnapshot = {
           currentCandidate: evaluatedCandidateResults.length,
           totalCandidates: allCandidateConfigs.length + tradeQualityCandidateConfigs.length,
           passNumber: totalPasses,
@@ -1300,7 +1526,24 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
           bestCandidateLabel: bestCandidateSoFar?.label,
           bestCandidateScore: bestCandidateSoFar?.scoreBreakdown.totalScore,
           bestCandidateCategory: bestCandidateSoFar?.resultCategory
+        };
+        options.onCandidateEvaluated?.(progress);
+        checkpoint({
+          phase: "trade_quality_optimization",
+          status: "running",
+          currentCandidate: progress.currentCandidate,
+          totalCandidates: progress.totalCandidates,
+          currentPass: totalPasses,
+          totalPasses,
+          currentCandidateName: candidateResult.label,
+          bestCandidateId: bestCandidateSoFar?.candidateId,
+          bestCandidateLabel: bestCandidateSoFar?.label,
+          bestCandidateScore: bestCandidateSoFar?.scoreBreakdown.totalScore,
+          bestCandidateCategory: bestCandidateSoFar?.resultCategory,
+          message: `Trade-quality candidate evaluated: ${candidateResult.label}.`
         });
+        await yieldToBrowser();
+        throwIfStopped();
       }
       allCandidateConfigs.push(...tradeQualityCandidateConfigs);
       const qualitySelection = selectBestCandidate(qualityResults, baselineMetrics);
@@ -1469,9 +1712,23 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       recoveryFailureReasons
     };
 
+    checkpoint({
+      phase: "completed",
+      status: "completed",
+      currentCandidate: candidateResults.length,
+      totalCandidates: allCandidateConfigs.length,
+      bestCandidateId: bestCandidate?.candidateId,
+      bestCandidateLabel: bestCandidate?.label,
+      bestCandidateScore: bestCandidate?.scoreBreakdown.totalScore,
+      bestCandidateCategory: bestCandidate?.resultCategory,
+      message: createdProposalId
+        ? `Auto Research completed and created proposal ${createdProposalId}.`
+        : "Auto Research completed without creating a proposal."
+    });
     saveAutoResearchCycle(cycle);
     return cycle;
   } catch (error) {
+    const wasCanceled = error instanceof AutoResearchCanceledError;
     const cycle: AutoResearchCycle = {
       cycleId,
       timestamp: new Date().toISOString(),
@@ -1487,9 +1744,16 @@ export function runAutoResearchCycle(options: AutoResearchRunOptions): AutoResea
       noSafePaperDemoCandidateFound: true,
       scoringCriteria: defaultAutoResearchScoringCriteria,
       safetyNotes: autoResearchSafetyNotes,
-      status: "failed",
+      status: wasCanceled ? "canceled" : "failed",
       error: error instanceof Error ? error.message : "Auto Research cycle failed."
     };
+    checkpoint({
+      phase: wasCanceled ? "canceled" : "failed",
+      status: wasCanceled ? "canceled" : "failed",
+      currentCandidate: 0,
+      totalCandidates: options.maxCandidateCount,
+      message: cycle.error
+    });
     saveAutoResearchCycle(cycle);
     return cycle;
   }

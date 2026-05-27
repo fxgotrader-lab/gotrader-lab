@@ -66,6 +66,7 @@ export type AutoResearchCycleStatus =
   | "idle"
   | "running"
   | "completed"
+  | "canceled"
   | "failed"
   | "proposal_created";
 
@@ -155,6 +156,28 @@ export interface AutoResearchProgressSnapshot {
   bestCandidateCategory?: AutoResearchResultCategory;
 }
 
+export type AutoResearchCheckpointStatus = "running" | "canceled" | "completed" | "failed";
+
+export interface AutoResearchExecutionCheckpoint {
+  checkpointId: string;
+  cycleId: string;
+  updatedAt: string;
+  startedAt: string;
+  elapsedMs: number;
+  phase: string;
+  status: AutoResearchCheckpointStatus;
+  currentCandidate: number;
+  totalCandidates: number;
+  currentPass?: number;
+  totalPasses?: number;
+  currentCandidateName?: string;
+  bestCandidateId?: string;
+  bestCandidateLabel?: string;
+  bestCandidateScore?: number;
+  bestCandidateCategory?: AutoResearchResultCategory;
+  message?: string;
+}
+
 export interface AutoResearchAdaptivePass {
   passNumber: number;
   reasonForPass: string;
@@ -236,6 +259,9 @@ export interface AutoResearchRunOptions {
   candleWindow?: string;
   activeCalibrationIdUsed?: string;
   onCandidateEvaluated?: (progress: AutoResearchProgressSnapshot) => void;
+  onCheckpoint?: (checkpoint: AutoResearchExecutionCheckpoint) => void;
+  signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 export interface AutoResearchState {
@@ -249,10 +275,14 @@ export interface AutoResearchState {
     candidateScores?: AutoResearchCandidateScoreSummary[];
     selectedCandidateId?: string;
     finalResultCategory?: AutoResearchCycle["finalResultCategory"];
-    action: "cycle_started" | "candidate_tested" | "proposal_created" | "cycle_completed" | "cycle_failed";
+    action: "cycle_started" | "candidate_tested" | "proposal_created" | "cycle_completed" | "cycle_failed" | "cycle_canceled" | "checkpoint";
     notes: string;
   }>;
   latestCycleId?: string;
+  activeCheckpoint?: AutoResearchExecutionCheckpoint;
+  recoveryCheckpoint?: AutoResearchExecutionCheckpoint;
+  checkpointHistory?: AutoResearchExecutionCheckpoint[];
+  cancelRequestedCycleId?: string;
   lastStoredBytes?: number;
   storageWarning?: string;
   storageEmergencyMode?: boolean;

@@ -1,5 +1,5 @@
 import { compactAutoResearchCycle, runAutoResearchCycle } from "@/lib/autoResearch";
-import type { AutoResearchCandidateResult } from "@/lib/autoResearch";
+import type { AutoResearchCandidateResult, AutoResearchCycle } from "@/lib/autoResearch";
 import {
   auditAgentDebateSession,
   auditAutoResearchDecision,
@@ -342,6 +342,9 @@ const compactResearchCycleRun = (run: ResearchCycleRun): ResearchCycleRun => ({
 });
 
 const nextActionFor = (run: ResearchCycleRun) => {
+  if (run.status === "canceled") {
+    return "Discard the stopped checkpoint or rerun the research cycle in Safe mode.";
+  }
   if (run.status === "failed") {
     return "Open the failed step details, fix the blocker, then rerun the research cycle.";
   }
@@ -362,6 +365,9 @@ const nextActionFor = (run: ResearchCycleRun) => {
 
 const resultSummaryFor = (run: ResearchCycleRun) => {
   const counts = statusCounts(safeArray(run.steps));
+  if (run.status === "canceled") {
+    return `Research cycle canceled after ${run.candidateProgress?.currentCandidate ?? 0}/${run.candidateProgress?.totalCandidates ?? 0} candidate checkpoints. Broker execution remained disabled.`;
+  }
   if (run.status === "failed") {
     return `Research cycle failed at ${run.failedStepId ?? "unknown step"}. Broker execution remained disabled.`;
   }
@@ -433,11 +439,17 @@ export async function runResearchCycle({
   candleWindowSettings,
   advancedFullResearchMode = false,
   skipHeavyAudit,
-  onUpdate
+  onUpdate,
+  signal
 }: ResearchCycleRunOptions): Promise<ResearchCycleRun> {
   let steps = initialSteps();
   let workingState: LabState = labStorage.load() ?? state;
   const cycleId = uid("research_cycle");
+  const throwIfCanceled = () => {
+    if (signal?.aborted) {
+      throw new Error("Research cycle canceled by user.");
+    }
+  };
   const activeResearchConfig = resolveActiveBacktestConfig(backtestConfig ? sanitizeBacktestConfig(backtestConfig) : undefined);
   const baseActiveConfig = activeResearchConfig.config;
   const requestedCandleWindowSettings = candleWindowSettings ?? dashboardImportedSafeCandleWindowSettings;
@@ -591,6 +603,7 @@ export async function runResearchCycle({
   try {
     startStep("thesis_generation");
     await yieldToBrowser();
+    throwIfCanceled();
     let generatedThesis: ReturnType<typeof generateThesis> | undefined;
     let structuredDebateSession: AgentDebateSession | undefined;
     let latestSelfImprovementProposal: CalibrationProposal | undefined;
@@ -640,6 +653,7 @@ export async function runResearchCycle({
 
     startStep("backtest");
     await yieldToBrowser();
+    throwIfCanceled();
     let backtestResult: BacktestResult | undefined;
     try {
       backtestResult = runBacktest(researchCandles, activeConfig);
@@ -700,6 +714,7 @@ export async function runResearchCycle({
 
     startStep("llm_advisory");
     await yieldToBrowser();
+    throwIfCanceled();
     const startingRunbook = loadSimulationRunbookState();
     const llmMarketContext = buildMarketContext({
       symbol: activeConfig.symbol,
@@ -764,9 +779,10 @@ export async function runResearchCycle({
 
     startStep("auto_research");
     await yieldToBrowser();
-    let autoResearchCycle: ReturnType<typeof runAutoResearchCycle> | undefined;
+    throwIfCanceled();
+    let autoResearchCycle: AutoResearchCycle | undefined;
     try {
-      autoResearchCycle = runAutoResearchCycle({
+      autoResearchCycle = await runAutoResearchCycle({
         searchMode: effectiveSearchMode,
         maxCandidateCount: effectiveMaxCandidateCount,
         maxAdaptivePasses: effectiveMaxAdaptivePasses,
@@ -776,6 +792,8 @@ export async function runResearchCycle({
         dataSource: dataSourceLabel,
         candleWindow: `${activeCandleSource.researchWindowCandles} raw window / ${activeCandleSource.processedCandleCount} processed ${activeCandleSource.appliedSettings.targetTimeframe} candles`,
         activeCalibrationIdUsed: activeResearchConfig.activeCalibrationId,
+        signal,
+        timeoutMs: activeCandleSource.mode === "imported" && !advancedFullResearchMode ? 25_000 : 45_000,
         onCandidateEvaluated: (progress) => {
           run.candidateProgress = progress;
           setStep("auto_research", {
@@ -789,6 +807,24 @@ export async function runResearchCycle({
                 }.`
               : "No stable best candidate selected yet."
           });
+        },
+        onCheckpoint: (checkpoint) => {
+          run.autoResearchCheckpoint = checkpoint;
+          run.candidateProgress = {
+            currentCandidate: checkpoint.currentCandidate,
+            totalCandidates: checkpoint.totalCandidates,
+            passNumber: checkpoint.currentPass,
+            totalPasses: checkpoint.totalPasses,
+            passLabel: checkpoint.phase,
+            candidateId: checkpoint.bestCandidateId ?? checkpoint.cycleId,
+            candidateLabel: checkpoint.currentCandidateName ?? checkpoint.phase,
+            candidateScore: checkpoint.bestCandidateScore ?? 0,
+            bestCandidateId: checkpoint.bestCandidateId,
+            bestCandidateLabel: checkpoint.bestCandidateLabel,
+            bestCandidateScore: checkpoint.bestCandidateScore,
+            bestCandidateCategory: checkpoint.bestCandidateCategory
+          };
+          notify();
         }
       });
       run.autoResearchCycle = autoResearchCycle;
@@ -822,6 +858,7 @@ export async function runResearchCycle({
 
     startStep("validation");
     await yieldToBrowser();
+    throwIfCanceled();
     let validationReport: ValidationSuiteReport | undefined;
     try {
       validationReport = runValidationSuite(researchCandles, activeConfig);
@@ -841,6 +878,7 @@ export async function runResearchCycle({
 
     startStep("research_quality");
     await yieldToBrowser();
+    throwIfCanceled();
     let researchQualityReview: ReturnType<typeof analyzeValidationResults> | undefined;
     if (!validationReport) {
       skipStep("research_quality", "Research quality skipped because validation did not produce a report.");
@@ -861,6 +899,7 @@ export async function runResearchCycle({
 
     startStep("self_improvement");
     await yieldToBrowser();
+    throwIfCanceled();
     let improvementState = loadSelfImprovementState();
     if (
       run.createdProposalId &&
@@ -907,6 +946,7 @@ export async function runResearchCycle({
 
     startStep("simulation_verification");
     await yieldToBrowser();
+    throwIfCanceled();
     const runbookBefore = loadSimulationRunbookState();
     const runbookAfter = {
       ...runbookBefore,
@@ -935,6 +975,7 @@ export async function runResearchCycle({
 
     startStep("readiness_gate");
     await yieldToBrowser();
+    throwIfCanceled();
     const readinessSnapshot = evaluateReadinessGate({
       validation: validationReport,
       quality: researchQualityReview,
@@ -980,6 +1021,7 @@ export async function runResearchCycle({
 
     startStep("communications_audit");
     await yieldToBrowser();
+    throwIfCanceled();
     try {
       recordResearchCycleCommunication({
         cycleId: run.cycleId,
@@ -1020,8 +1062,17 @@ export async function runResearchCycle({
   } catch (error) {
     const message = error instanceof Error ? error.message : "Research cycle failed.";
     const runningStep = steps.find((step) => step.status === "running")?.stepId ?? "communications_audit";
-    failStep(runningStep, message);
-    run.status = "failed";
+    if (signal?.aborted || /canceled/i.test(message)) {
+      setStep(runningStep, {
+        status: "skipped",
+        summary: "Research cycle was canceled before completion.",
+        warning: message
+      });
+      run.status = "canceled";
+    } else {
+      failStep(runningStep, message);
+      run.status = "failed";
+    }
     run.completedAt = now();
     run.canonicalMetrics = buildCanonicalPerformanceMetricsFromRun(run, run.validationReport);
     run.nextRecommendedAction = nextActionFor(run);
@@ -1029,7 +1080,7 @@ export async function runResearchCycle({
     try {
       recordResearchCycleCommunication({
         cycleId: run.cycleId,
-        status: "failed",
+        status: run.status,
         summary: message,
         readinessState: run.readinessSnapshot?.state,
         actionRequired: true

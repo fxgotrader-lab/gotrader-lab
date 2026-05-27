@@ -3,10 +3,13 @@ export {
   AUTO_RESEARCH_UPDATED_EVENT,
   clearAutoResearchHistory,
   compactAutoResearchCycle,
+  discardAutoResearchRecoveryState,
   estimateAutoResearchStateSize,
   latestAutoResearchCycle,
   loadAutoResearchState,
+  publishAutoResearchCheckpoint,
   pruneAutoResearchHistory,
+  requestAutoResearchCancel,
   runAutoResearchCycle,
   saveAutoResearchCycle
 } from "@/lib/autoResearch/runAutoResearchCycle";
@@ -29,6 +32,8 @@ export { generateTradeQualityCandidateConfigs } from "@/lib/autoResearch/tradeQu
 export type {
   AutoResearchCandidateConfig,
   AutoResearchCandidateResult,
+  AutoResearchCheckpointStatus,
+  AutoResearchExecutionCheckpoint,
   AutoResearchAdaptiveOutcome,
   AutoResearchAdaptivePass,
   AutoResearchCycle,

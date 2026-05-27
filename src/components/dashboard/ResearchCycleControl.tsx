@@ -9,7 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import type { AutoResearchSearchMode } from "@/lib/autoResearch";
+import {
+  AUTO_RESEARCH_UPDATED_EVENT,
+  discardAutoResearchRecoveryState,
+  loadAutoResearchState,
+  requestAutoResearchCancel,
+  type AutoResearchExecutionCheckpoint,
+  type AutoResearchSearchMode
+} from "@/lib/autoResearch";
 import {
   latestResearchCycleRun,
   loadResearchCycleState,
@@ -48,6 +55,8 @@ const statusVariant = (status?: ResearchCycleRun["status"]) =>
       ? "warning"
       : status === "failed"
         ? "danger"
+        : status === "canceled"
+          ? "warning"
         : "secondary";
 
 const stepVariant = (status: ResearchCycleStepStatus) =>
@@ -162,7 +171,12 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
   const [searchMode, setSearchMode] = useState<AutoResearchSearchMode>("standard");
   const [advancedFullResearchMode, setAdvancedFullResearchMode] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [abortController, setAbortController] = useState<AbortController>();
+  const [autoResearchState, setAutoResearchState] = useState(() => loadAutoResearchState());
+  const [liveCheckpoint, setLiveCheckpoint] = useState<AutoResearchExecutionCheckpoint>();
   const latestRun = activeRun ?? latestResearchCycleRun(cycleState);
+  const activeCheckpoint = liveCheckpoint ?? autoResearchState.activeCheckpoint ?? latestRun?.autoResearchCheckpoint;
+  const recoveryCheckpoint = autoResearchState.recoveryCheckpoint;
   const latestProposalSnapshot = latestRun?.latestGeneratedProposal?.metricsSnapshot ?? latestRun?.autoResearchCycle?.createdProposal?.metricsSnapshot;
   const importedSafeMode = activeCandleSource.mode === "imported" && !advancedFullResearchMode;
   const effectiveSearchMode = importedSafeMode ? "quick" : searchMode;
@@ -218,6 +232,7 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
     let mounted = true;
     const refresh = () => {
       setCycleState(loadResearchCycleState());
+      setAutoResearchState(loadAutoResearchState());
       setActiveCalibration(loadActiveResearchCalibration());
       setActiveConfigResolution(resolveActiveBacktestConfig());
       loadPreparedCandleSource().then(async (source) => {
@@ -232,6 +247,7 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
     };
     refresh();
     window.addEventListener(RESEARCH_CYCLE_UPDATED_EVENT, refresh);
+    window.addEventListener(AUTO_RESEARCH_UPDATED_EVENT, refresh);
     window.addEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
     window.addEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
     window.addEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
@@ -239,6 +255,7 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
     return () => {
       mounted = false;
       window.removeEventListener(RESEARCH_CYCLE_UPDATED_EVENT, refresh);
+      window.removeEventListener(AUTO_RESEARCH_UPDATED_EVENT, refresh);
       window.removeEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
       window.removeEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
@@ -259,6 +276,9 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
   const runCycle = async () => {
     setBusy(true);
     setActiveRun(undefined);
+    setLiveCheckpoint(undefined);
+    const controller = new AbortController();
+    setAbortController(controller);
     try {
       const result = await runResearchCycle({
         state,
@@ -270,8 +290,10 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
             : activeCandleSource.appliedSettings,
         advancedFullResearchMode,
         skipHeavyAudit: activeCandleSource.mode === "imported" && !advancedFullResearchMode,
+        signal: controller.signal,
         onUpdate: (run) => {
           setActiveRun(run);
+          setLiveCheckpoint(run.autoResearchCheckpoint);
           onCycleUpdate?.();
         }
       });
@@ -282,7 +304,20 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
       onCycleUpdate?.();
     } finally {
       setBusy(false);
+      setAbortController(undefined);
+      setLiveCheckpoint(undefined);
+      setAutoResearchState(loadAutoResearchState());
     }
+  };
+
+  const cancelCycle = () => {
+    abortController?.abort();
+    requestAutoResearchCancel(activeCheckpoint?.cycleId);
+    setAutoResearchState(loadAutoResearchState());
+  };
+
+  const discardRecovery = () => {
+    setAutoResearchState(discardAutoResearchRecoveryState());
   };
 
   const updateAdvancedFullResearchMode = (enabled: boolean) => {
@@ -474,12 +509,65 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
                 </span>
               </label>
             ) : null}
-            <Button onClick={runCycle} disabled={busy} className="h-12 w-full justify-center gap-2">
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
-              Run AI Research Cycle
-            </Button>
+            <div className="grid gap-2">
+              <Button onClick={runCycle} disabled={busy} className="h-12 w-full justify-center gap-2">
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
+                {busy ? "Research cycle running" : "Run AI Research Cycle"}
+              </Button>
+              {busy ? (
+                <Button variant="destructive" onClick={cancelCycle} className="w-full">
+                  Cancel after current candidate
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
+
+        {activeCheckpoint ? (
+          <div className="rounded-lg border border-cyan-300/25 bg-cyan-300/10 p-3 text-sm text-cyan-100">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-medium">Chunked Auto Research progress</p>
+                <p className="mt-1">
+                  {activeCheckpoint.phase}: candidate {activeCheckpoint.currentCandidate}/{activeCheckpoint.totalCandidates}
+                  {activeCheckpoint.currentCandidateName ? ` - ${activeCheckpoint.currentCandidateName}` : ""}
+                </p>
+                <p className="mt-1 text-xs text-cyan-100/75">
+                  Best so far: {activeCheckpoint.bestCandidateLabel ?? "none"}; elapsed {Math.round(activeCheckpoint.elapsedMs / 1000)}s.
+                </p>
+              </div>
+              <Badge variant={activeCheckpoint.status === "running" ? "warning" : "secondary"}>{activeCheckpoint.status}</Badge>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-cyan-950/70">
+              <div
+                className="h-full rounded-full bg-cyan-200 transition-all"
+                style={{
+                  width: `${activeCheckpoint.totalCandidates ? Math.min(100, Math.round((activeCheckpoint.currentCandidate / activeCheckpoint.totalCandidates) * 100)) : 0}%`
+                }}
+                aria-hidden="true"
+              />
+            </div>
+          </div>
+        ) : null}
+
+        {recoveryCheckpoint ? (
+          <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-medium">Previous research cycle stopped before completion.</p>
+                <p className="mt-1">
+                  {recoveryCheckpoint.message ?? `${recoveryCheckpoint.phase} stopped after ${recoveryCheckpoint.currentCandidate}/${recoveryCheckpoint.totalCandidates} candidates.`}
+                </p>
+                <p className="mt-1 text-xs text-amber-100/75">
+                  Resume is not enabled for this local browser run. Discard the checkpoint, then rerun in Safe mode.
+                </p>
+              </div>
+              <Button variant="secondary" onClick={discardRecovery}>
+                Discard checkpoint
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         <div className="grid gap-2 rounded-lg border border-white/10 bg-slate-950/55 p-3 text-xs text-slate-300 md:grid-cols-3">
           <div>

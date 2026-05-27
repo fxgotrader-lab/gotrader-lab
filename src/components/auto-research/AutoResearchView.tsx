@@ -13,13 +13,16 @@ import {
   autoResearchSearchModeDefaults,
   autoResearchSearchModes,
   clearAutoResearchHistory,
+  discardAutoResearchRecoveryState,
   estimateAutoResearchStateSize,
   latestAutoResearchCycle,
   loadAutoResearchState,
+  requestAutoResearchCancel,
   runAutoResearchCycle
 } from "@/lib/autoResearch";
 import type {
   AutoResearchCandidateResult,
+  AutoResearchExecutionCheckpoint,
   AutoResearchSearchMode,
   AutoResearchState
 } from "@/lib/autoResearch";
@@ -63,6 +66,8 @@ const statusVariant = (status?: string) =>
     ? "success"
     : status === "failed"
       ? "danger"
+      : status === "canceled"
+        ? "warning"
       : status === "running"
         ? "warning"
         : "muted";
@@ -187,6 +192,8 @@ export function AutoResearchView() {
   const [searchMode, setSearchMode] = useState<AutoResearchSearchMode>("standard");
   const [maxCandidateCount, setMaxCandidateCount] = useState("10");
   const [isRunning, setIsRunning] = useState(false);
+  const [abortController, setAbortController] = useState<AbortController>();
+  const [liveCheckpoint, setLiveCheckpoint] = useState<AutoResearchExecutionCheckpoint>();
   const [configRefreshKey, setConfigRefreshKey] = useState(0);
   const [activeCandleSource, setActiveCandleSource] = useState<PreparedCandleSource>(fallbackCandleSource);
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
@@ -219,6 +226,8 @@ export function AutoResearchView() {
   const activeCalibrationId = runtimeSnapshot?.activeConfig.activeCalibrationId ?? baselineResolution.activeCalibrationId;
   const runtimeWarnings = selectRuntimeWarnings(runtimeSnapshot);
   const latestCycle = latestAutoResearchCycle(state);
+  const activeCheckpoint = liveCheckpoint ?? state.activeCheckpoint;
+  const recoveryCheckpoint = state.recoveryCheckpoint;
   const bestCandidate = latestCycle?.bestCandidate;
   const createdProposalSnapshot = latestCycle?.createdProposal?.metricsSnapshot;
   const topCandidates = latestCycle?.closestCandidates?.length
@@ -274,23 +283,44 @@ export function AutoResearchView() {
     };
   }, []);
 
-  const runCycle = () => {
+  const runCycle = async () => {
     setIsRunning(true);
-    const cycle = runAutoResearchCycle({
-      searchMode,
-      maxCandidateCount: Number(maxCandidateCount),
-      createProposal: true,
-      candles: activeCandleSource.candles,
-      baselineConfig,
-      dataSource: activeCandleSource.label,
-      candleWindow: `${activeCandleSource.researchWindowCandles} raw window / ${activeCandleSource.processedCandleCount} processed ${activeCandleSource.appliedSettings.targetTimeframe} candles`,
-      activeCalibrationIdUsed: activeCalibrationId
-    });
-    setState(loadAutoResearchState());
-    setIsRunning(false);
-    if (cycle.status === "failed") {
-      window.alert(cycle.error ?? "Auto Research cycle failed.");
+    const controller = new AbortController();
+    setAbortController(controller);
+    setLiveCheckpoint(undefined);
+    try {
+      const cycle = await runAutoResearchCycle({
+        searchMode,
+        maxCandidateCount: Number(maxCandidateCount),
+        createProposal: true,
+        candles: activeCandleSource.candles,
+        baselineConfig,
+        dataSource: activeCandleSource.label,
+        candleWindow: `${activeCandleSource.researchWindowCandles} raw window / ${activeCandleSource.processedCandleCount} processed ${activeCandleSource.appliedSettings.targetTimeframe} candles`,
+        activeCalibrationIdUsed: activeCalibrationId,
+        signal: controller.signal,
+        onCheckpoint: setLiveCheckpoint,
+        timeoutMs: activeCandleSource.mode === "imported" ? 25_000 : 45_000
+      });
+      setState(loadAutoResearchState());
+      if (cycle.status === "failed") {
+        window.alert(cycle.error ?? "Auto Research cycle failed.");
+      }
+    } finally {
+      setIsRunning(false);
+      setAbortController(undefined);
+      setLiveCheckpoint(undefined);
     }
+  };
+
+  const cancelCycle = () => {
+    abortController?.abort();
+    requestAutoResearchCancel(activeCheckpoint?.cycleId);
+    setState(loadAutoResearchState());
+  };
+
+  const discardRecovery = () => {
+    setState(discardAutoResearchRecoveryState());
   };
 
   const clearHistory = () => {
@@ -443,10 +473,62 @@ export function AutoResearchView() {
                 />
               </div>
             </div>
-            <Button onClick={runCycle} disabled={isRunning}>
-              <Play className="h-4 w-4" aria-hidden="true" />
-              Run Auto Research Cycle
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={runCycle} disabled={isRunning}>
+                <Play className="h-4 w-4" aria-hidden="true" />
+                {isRunning ? "Running Auto Research" : "Run Auto Research Cycle"}
+              </Button>
+              {isRunning ? (
+                <Button variant="destructive" onClick={cancelCycle}>
+                  Cancel after current candidate
+                </Button>
+              ) : null}
+            </div>
+            {activeCheckpoint ? (
+              <div className="rounded-lg border border-cyan-300/25 bg-cyan-300/10 p-3 text-sm text-cyan-100">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium">Active execution checkpoint</p>
+                    <p className="mt-1">
+                      {activeCheckpoint.phase}: candidate {activeCheckpoint.currentCandidate}/{activeCheckpoint.totalCandidates}
+                      {activeCheckpoint.currentCandidateName ? ` - ${activeCheckpoint.currentCandidateName}` : ""}
+                    </p>
+                    <p className="mt-1 text-xs text-cyan-100/75">
+                      Best so far: {activeCheckpoint.bestCandidateLabel ?? "none"}; elapsed{" "}
+                      {Math.round(activeCheckpoint.elapsedMs / 1000)}s.
+                    </p>
+                  </div>
+                  <Badge variant="warning">{activeCheckpoint.status}</Badge>
+                </div>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-cyan-950/70">
+                  <div
+                    className="h-full rounded-full bg-cyan-200 transition-all"
+                    style={{
+                      width: `${activeCheckpoint.totalCandidates ? Math.min(100, Math.round((activeCheckpoint.currentCandidate / activeCheckpoint.totalCandidates) * 100)) : 0}%`
+                    }}
+                    aria-hidden="true"
+                  />
+                </div>
+              </div>
+            ) : null}
+            {recoveryCheckpoint ? (
+              <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium">Previous research cycle stopped before completion.</p>
+                    <p className="mt-1">
+                      {recoveryCheckpoint.message ?? `${recoveryCheckpoint.phase} stopped after ${recoveryCheckpoint.currentCandidate}/${recoveryCheckpoint.totalCandidates} candidates.`}
+                    </p>
+                    <p className="mt-1 text-xs text-amber-100/75">
+                      Resume is not enabled for this browser-local run; discard the checkpoint and rerun in Safe mode.
+                    </p>
+                  </div>
+                  <Button variant="secondary" onClick={discardRecovery}>
+                    Discard checkpoint
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             <div className="rounded-lg border border-primary/25 bg-primary/10 p-3 text-sm text-primary">
               <BrainCircuit className="mr-2 inline h-4 w-4" aria-hidden="true" />
               LLM supervisor required for full autonomous research mode. Deterministic search is baseline optimizer only.
@@ -908,6 +990,7 @@ export function AutoResearchView() {
             ["Approx stored size", formatBytes(state.lastStoredBytes ?? storedSize)],
             ["Retained cycles", String(state.cycles.length)],
             ["Candidate summaries", String(candidateSummaryCount)],
+            ["Checkpoint history", String(safeArray(state.checkpointHistory).length)],
             ["Emergency mode", state.storageEmergencyMode ? "yes" : "no"]
           ].map(([label, value]) => (
             <div key={label} className="rounded-lg border border-border bg-background/45 p-3">
@@ -916,6 +999,28 @@ export function AutoResearchView() {
             </div>
           ))}
         </div>
+        {safeArray(state.checkpointHistory).length ? (
+          <div className="mt-3 rounded-lg border border-border bg-background/45 p-3 text-sm">
+            <div className="font-medium text-foreground">Checkpoint history</div>
+            <div className="mt-2 grid gap-2">
+              {safeTopN(state.checkpointHistory, 6).map((checkpoint) => (
+                <div key={`${checkpoint.checkpointId}-${checkpoint.updatedAt}`} className="rounded-md border border-border bg-card/45 p-2 text-xs text-muted-foreground">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-mono text-foreground">{checkpoint.cycleId}</span>
+                    <Badge variant={checkpoint.status === "failed" ? "danger" : checkpoint.status === "canceled" ? "warning" : "muted"}>
+                      {checkpoint.status}
+                    </Badge>
+                  </div>
+                  <div className="mt-1">
+                    {checkpoint.phase}: {checkpoint.currentCandidate}/{checkpoint.totalCandidates} candidates
+                    {checkpoint.bestCandidateLabel ? `; best ${checkpoint.bestCandidateLabel}` : ""}.
+                  </div>
+                  {checkpoint.message ? <div className="mt-1 text-amber-100">{checkpoint.message}</div> : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="mt-3 flex flex-col gap-3 rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100 md:flex-row md:items-center md:justify-between">
           <span>
             Clearing Auto Research history removes stored candidate summaries only. It does not delete validation,

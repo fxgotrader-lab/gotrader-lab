@@ -1,4 +1,4 @@
-import type { AutoResearchCycle, AutoResearchProgressSnapshot, AutoResearchSearchMode } from "@/lib/autoResearch";
+import type { AutoResearchCycle, AutoResearchExecutionCheckpoint, AutoResearchProgressSnapshot, AutoResearchSearchMode } from "@/lib/autoResearch";
 import type { DebatePosition } from "@/lib/agentDebate";
 import type {
   BacktestConfig,
@@ -16,7 +16,7 @@ import type { CalibrationProposal, CalibrationProposalChanges } from "@/lib/self
 import type { FuturesSymbol, MarketBias, Timeframe } from "@/lib/types";
 import type { ValidationSuiteReport } from "@/lib/validation";
 
-export type ResearchCycleStatus = "idle" | "running" | "completed" | "completed_with_warnings" | "failed";
+export type ResearchCycleStatus = "idle" | "running" | "completed" | "completed_with_warnings" | "failed" | "canceled";
 
 export type ResearchCycleStepStatus =
   | "pending"
@@ -140,6 +140,7 @@ export interface ResearchCycleRun {
   steps: ResearchCycleStepResult[];
   llmBridgeAvailable: boolean;
   candidateProgress?: AutoResearchProgressSnapshot;
+  autoResearchCheckpoint?: AutoResearchExecutionCheckpoint;
   llmRun?: LLMAdvisoryRun;
   autoResearchCycle?: AutoResearchCycle;
   validationReport?: ValidationSuiteReport;
@@ -206,4 +207,5 @@ export interface ResearchCycleRunOptions {
   advancedFullResearchMode?: boolean;
   skipHeavyAudit?: boolean;
   onUpdate?: (run: ResearchCycleRun) => void;
+  signal?: AbortSignal;
 }
