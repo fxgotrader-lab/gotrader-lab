@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Bot, BrainCircuit, ClipboardList, Play, ShieldAlert, SlidersHorizontal, Trophy } from "lucide-react";
 import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDetails";
+import { AutonomySafetyPolicyPanel } from "@/components/autonomous-research/AutonomySafetyPolicyPanel";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -373,6 +374,8 @@ export function AutoResearchView() {
           <Badge variant="warning">Approval required</Badge>
         </CardContent>
       </Card>
+
+      <AutonomySafetyPolicyPanel latestAutoResearch={latestCycle} snapshot={runtimeSnapshot} />
 
       {latestFollowUpPlan ? (
         <Card className="border-amber-300/25 bg-amber-300/10">

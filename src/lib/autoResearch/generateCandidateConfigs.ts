@@ -708,6 +708,39 @@ export function generateAdaptiveCandidateConfigs({
     );
   }
 
+  if (gateSet.has("regime_mismatch") || gateSet.has("regime_shift_detected")) {
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive regime-specific session check",
+      "Regime mismatch was detected, so this pass isolates session behavior instead of applying a generic calibration.",
+      { sessionFilter: "NY AM Kill Zone" },
+      ["sessionFilter"]
+    );
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive regime conservative check",
+      "Regime shift evidence requires a conservative retest before any research calibration can be considered.",
+      {
+        minimumConfluenceThreshold: Math.max(0.55, baseline.minimumConfluenceThreshold),
+        minimumConfidenceThreshold: Math.max(0.55, baseline.minimumConfidenceThreshold)
+      },
+      ["confluenceThreshold", "confidenceThreshold"]
+    );
+  }
+
+  if (gateSet.has("regime_evidence_insufficient")) {
+    pushAdaptiveCandidate(
+      candidates,
+      baseline,
+      "Adaptive regime evidence confirmation",
+      "Regime evidence is insufficient, so this pass raises confidence and avoids broadening the search.",
+      { minimumConfidenceThreshold: stricterConfidence },
+      ["confidenceThreshold"]
+    );
+  }
+
   if (!candidates.length) {
     pushAdaptiveCandidate(
       candidates,

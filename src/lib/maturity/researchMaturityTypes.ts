@@ -1,5 +1,6 @@
 import type { CalibrationProposal } from "@/lib/selfImprovement";
 import type { WalkForwardRun } from "@/lib/walkForward";
+import type { MaturityTrendAvailability } from "@/lib/autonomousResearch";
 
 export type ResearchMaturityGrade =
   | "untested"
@@ -81,6 +82,7 @@ export interface ResearchMaturitySummary {
   latestWalkForwardOverfitRisk?: string;
   evidenceQualityScore: number;
   readinessTrend: "improving" | "stable" | "declining" | "unknown";
+  trendAvailability: MaturityTrendAvailability;
   acceptedProposalCount: number;
   rejectedProposalCount: number;
   noOpOrFailedProposalCount: number;

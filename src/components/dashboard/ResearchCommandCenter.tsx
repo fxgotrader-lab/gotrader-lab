@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
+import { AutonomySafetyPolicyPanel } from "@/components/autonomous-research/AutonomySafetyPolicyPanel";
 import { loadAgentAuditState, summarizeAgentAudit } from "@/lib/agentAudit";
 import { loadAgentDebateState, summarizeAgentDebate } from "@/lib/agentDebate";
 import {
@@ -14,7 +15,7 @@ import {
 } from "@/lib/autoResearch";
 import { getCommunicationSummary, loadCommunicationMessages } from "@/lib/communications/communicationSpec";
 import { evidenceScoreVariant, selectStrongestEvidenceLabel, selectWeakestEvidenceLabel } from "@/lib/evidence";
-import { maturityGradeLabel, maturityGradeVariant, selectMaturityNextRequirement } from "@/lib/maturity";
+import { maturityGradeLabel, maturityGradeVariant, selectMaturityNextRequirement, selectMaturityTrendMessage } from "@/lib/maturity";
 import {
   getLLMReadinessImpact,
   latestLLMAdvisoryRun,
@@ -281,6 +282,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
         <MarketDataContextCard context={marketContext} source={activeCandleSource} />
         <EvidenceQualityCard snapshot={runtimeSnapshot} />
         <ResearchMaturityCard snapshot={runtimeSnapshot} />
+        <AutonomySafetyPolicyPanel latestAutoResearch={latestAutoResearch} snapshot={runtimeSnapshot} />
         <WalkForwardStatusCard run={latestWalkForward} snapshot={runtimeSnapshot} />
         <AgentDebateCard summary={agentDebateSummary} />
         <AgentAuditCard summary={agentAuditSummary} />
@@ -484,6 +486,7 @@ function ResearchMaturityCard({ snapshot }: { snapshot?: ResearchRuntimeSnapshot
           <StatusLine label="Cycles tested" value={String(summary?.cyclesTested ?? 0)} />
           <StatusLine label="Windows tested" value={String(summary?.dataWindowsTested ?? 0)} />
           <StatusLine label="Evidence score" value={`${summary?.evidenceQualityScore ?? 0}/100`} />
+          <StatusLine label="Trend status" value={selectMaturityTrendMessage(summary)} />
         </div>
         <div className="rounded-md border border-violet-300/25 bg-violet-300/10 p-3 text-xs text-violet-100">
           {selectMaturityNextRequirement(summary)}

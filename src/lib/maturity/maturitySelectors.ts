@@ -25,3 +25,6 @@ export const selectMaturityReadinessWarning = (summary?: ResearchMaturitySummary
 
 export const selectMaturityNextRequirement = (summary?: ResearchMaturitySummary) =>
   summary?.nextMaturityRequirement ?? "Run repeated AI Research Cycles to establish maturity.";
+
+export const selectMaturityTrendMessage = (summary?: ResearchMaturitySummary) =>
+  summary?.trendAvailability.message ?? "Building history - trend unavailable until at least 3 cycles.";

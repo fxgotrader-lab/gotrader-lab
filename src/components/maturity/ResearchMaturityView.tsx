@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { BarChart3, ShieldAlert } from "lucide-react";
 
 import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDetails";
+import { AutonomySafetyPolicyPanel } from "@/components/autonomous-research/AutonomySafetyPolicyPanel";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
@@ -12,8 +13,10 @@ import {
   maturityGradeVariant,
   maturityScoreVariant,
   selectMaturityNextRequirement,
-  selectMaturityReadinessWarning
+  selectMaturityReadinessWarning,
+  selectMaturityTrendMessage
 } from "@/lib/maturity";
+import { latestAutoResearchCycle, loadAutoResearchState } from "@/lib/autoResearch";
 import { RESEARCH_CYCLE_UPDATED_EVENT } from "@/lib/researchCycle";
 import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
@@ -66,6 +69,7 @@ export function ResearchMaturityView() {
 
   const summary = runtimeSnapshot?.maturity.maturitySummary;
   const breakdown = summary?.breakdown;
+  const latestAutoResearch = latestAutoResearchCycle(loadAutoResearchState());
 
   return (
     <div className="space-y-5">
@@ -111,6 +115,9 @@ export function ResearchMaturityView() {
               <Badge variant={maturityScoreVariant(summary?.score)}>{summary?.readinessTrend ?? "unknown"} trend</Badge>
             </div>
             <Progress value={summary?.score ?? 0} />
+            <div className="rounded-lg border border-white/10 bg-background/45 p-3 text-sm text-muted-foreground">
+              {selectMaturityTrendMessage(summary)}
+            </div>
             <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
               <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
               {selectMaturityReadinessWarning(summary)}
@@ -141,6 +148,8 @@ export function ResearchMaturityView() {
           </CardContent>
         </Card>
       </div>
+
+      <AutonomySafetyPolicyPanel latestAutoResearch={latestAutoResearch} snapshot={runtimeSnapshot} />
 
       <Card>
         <CardHeader>

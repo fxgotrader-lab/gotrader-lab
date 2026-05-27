@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, ClipboardList, PauseCircle, RotateCcw, ShieldAlert, ShieldCheck, XCircle } from "lucide-react";
 import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDetails";
+import { AutonomySafetyPolicyPanel } from "@/components/autonomous-research/AutonomySafetyPolicyPanel";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +33,7 @@ import {
 } from "@/lib/runtime";
 import { evidenceScoreVariant, selectEvidenceReadinessImpact } from "@/lib/evidence";
 import { maturityGradeLabel, maturityGradeVariant, selectMaturityReadinessWarning } from "@/lib/maturity";
+import { latestAutoResearchCycle, loadAutoResearchState } from "@/lib/autoResearch";
 import { loadSelfImprovementState } from "@/lib/selfImprovement";
 import { countCompletedRunbookItems, loadSimulationRunbookState, simulationRunbookChecklist } from "@/lib/simulationRunbook";
 import { loadLatestValidationReport } from "@/lib/validation";
@@ -111,6 +113,7 @@ export function ReadinessGateView() {
   const pendingResearchCalibrationProposal =
     latestProposalIntent === "research_calibration_candidate" &&
     (latestProposal.status === "proposed" || latestProposal.status === "testing");
+  const latestAutoResearch = latestAutoResearchCycle(loadAutoResearchState());
 
   const refresh = () => {
     setValidation(loadLatestValidationReport());
@@ -213,6 +216,8 @@ export function ReadinessGateView() {
           </Badge>
         </CardContent>
       </Card>
+
+      <AutonomySafetyPolicyPanel latestAutoResearch={latestAutoResearch} snapshot={runtimeSnapshot} />
 
       <Card className="border-cyan-300/25 bg-cyan-300/10">
         <CardContent className="flex flex-col gap-3 p-4 text-sm text-cyan-100 md:flex-row md:items-center md:justify-between">

@@ -4,7 +4,8 @@ export {
   maturityGradeVariant,
   maturityScoreVariant,
   selectMaturityNextRequirement,
-  selectMaturityReadinessWarning
+  selectMaturityReadinessWarning,
+  selectMaturityTrendMessage
 } from "@/lib/maturity/maturitySelectors";
 export type {
   ResearchMaturityBreakdown,

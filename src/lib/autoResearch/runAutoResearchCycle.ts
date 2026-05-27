@@ -61,6 +61,10 @@ import type { Candle } from "@/lib/types";
 import { safeArray, safeTopN, uid } from "@/lib/utils";
 import { runValidationSuite } from "@/lib/validation";
 import type { WalkForwardFollowUpSearchPlan } from "@/lib/walkForward/walkForwardTypes";
+import {
+  saveScenarioSelectionReasoning,
+  selectScenarioFamilyFromBlockers
+} from "@/lib/autonomousResearch";
 
 export const AUTO_RESEARCH_STORAGE_KEY = "gotrader_ai_lab_auto_research_state";
 export const AUTO_RESEARCH_UPDATED_EVENT = "gotrader-ai-lab-auto-research-updated";
@@ -152,7 +156,10 @@ const failedGateLabels: Record<AutoResearchFailedGate, string> = {
   session_consistency_weak: "session consistency weak",
   conservative_scenario_unstable: "conservative scenario unstable",
   skipped_signal_imbalance: "skipped signal imbalance",
-  overfitting_risk: "overfitting risk"
+  overfitting_risk: "overfitting risk",
+  regime_mismatch: "regime mismatch",
+  regime_shift_detected: "regime shift detected",
+  regime_evidence_insufficient: "regime evidence insufficient"
 };
 
 const ZERO_TRADE_CONFLUENCE_FLOOR = 0.4;
@@ -296,6 +303,14 @@ export function compactAutoResearchCycle(cycle: AutoResearchCycle): AutoResearch
     })),
     adaptivePasses: safeArray(cycle.adaptivePasses).map(compactAdaptivePass),
     failedGates: safeTopN(cycle.failedGates, 6),
+    scenarioSelectionReasoning: cycle.scenarioSelectionReasoning
+      ? {
+          ...cycle.scenarioSelectionReasoning,
+          blockers: safeTopN(cycle.scenarioSelectionReasoning.blockers, 8),
+          evidenceUsed: safeTopN(cycle.scenarioSelectionReasoning.evidenceUsed, 8),
+          rejectedScenarioFamilies: safeTopN(cycle.scenarioSelectionReasoning.rejectedScenarioFamilies, 8)
+        }
+      : undefined,
     tradeGenerationDiagnostics: safeTopN(cycle.tradeGenerationDiagnostics, 6),
     tradeQualityDiagnostics: safeTopN(cycle.tradeQualityDiagnostics, 6),
     tradeQualityCandidateConfigs: safeTopN(cycle.tradeQualityCandidateConfigs, 12),
@@ -513,6 +528,18 @@ export function discardAutoResearchRecoveryState(): AutoResearchState {
 
 export function saveAutoResearchCycle(cycle: AutoResearchCycle): AutoResearchState {
   const state = loadAutoResearchState();
+  const scenarioAudit = cycle.scenarioSelectionReasoning
+    ? audit(
+        cycle.cycleId,
+        "scenario_selection_logged",
+        cycle.scenarioSelectionReasoning.reasoningSummary,
+        {
+          searchMode: cycle.searchMode,
+          selectedCandidateId: cycle.selectedCandidateId,
+          finalResultCategory: cycle.finalResultCategory
+        }
+      )
+    : undefined;
   const stoppedCheckpoint =
     cycle.status === "failed" || cycle.status === "canceled"
       ? {
@@ -541,6 +568,7 @@ export function saveAutoResearchCycle(cycle: AutoResearchCycle): AutoResearchSta
     checkpointHistory: stoppedCheckpoint ? safeTopN([stoppedCheckpoint, ...safeArray(state.checkpointHistory)], 20) : state.checkpointHistory,
     cycles: safeTopN([compactAutoResearchCycle(cycle), ...safeArray(state.cycles).filter((item) => item.cycleId !== cycle.cycleId)], 5),
     auditTrail: safeTopN([
+      scenarioAudit,
       audit(
         cycle.cycleId,
         cycle.status === "proposal_created"
@@ -565,7 +593,7 @@ export function saveAutoResearchCycle(cycle: AutoResearchCycle): AutoResearchSta
         }
       ),
       ...safeArray(state.auditTrail)
-    ], 80)
+    ].filter((entry): entry is AutoResearchState["auditTrail"][number] => Boolean(entry)), 80)
   });
 }
 
@@ -1598,6 +1626,18 @@ export async function runAutoResearchCycle(options: AutoResearchRunOptions): Pro
       rejectionReasons: candidate.rejectionReasons
     }));
     const failedGates = diagnoseFailedGates(bestCandidate ?? closestCandidates[0], baselineMetrics);
+    const scenarioSelectionReasoning = selectScenarioFamilyFromBlockers(failedGates, {
+      consecutiveCount: Math.max(1, adaptivePasses.filter((pass) => pass.improvementOverPriorPass === false).length + 1),
+      evidenceUsed: [
+        `baseline trades ${baselineMetrics.totalTrades}`,
+        `best candidate ${bestCandidate?.label ?? closestCandidates[0]?.label ?? "none"}`,
+        `adaptive passes ${adaptivePasses.length}`,
+        `recovery attempted ${recoveryAttempted ? "yes" : "no"}`,
+        options.dataSource ? `data source ${options.dataSource}` : undefined,
+        options.candleWindow ? `candle window ${options.candleWindow}` : undefined
+      ].filter((item): item is string => Boolean(item))
+    });
+    saveScenarioSelectionReasoning(scenarioSelectionReasoning);
     const finalOutcome = adaptiveOutcomeFor(
       bestCandidate ?? closestCandidates[0],
       failedGates,
@@ -1724,6 +1764,7 @@ export async function runAutoResearchCycle(options: AutoResearchRunOptions): Pro
       noSafePaperDemoCandidateFound,
       adaptivePasses,
       failedGates,
+      scenarioSelectionReasoning,
       finalOutcome: recoveryStillZero ? "no_safe_candidate_found" : finalOutcome,
       tradeGenerationDiagnostics,
       tradeQualityDiagnostics,

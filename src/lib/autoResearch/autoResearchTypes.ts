@@ -14,6 +14,7 @@ import type {
   CalibrationComparisonResult,
   CalibrationProposalMetrics
 } from "@/lib/selfImprovement";
+import type { ScenarioSelectionReasoning } from "@/lib/autonomousResearch";
 import type { Candle, ICTScoringWeights } from "@/lib/types";
 import type { ValidationSuiteReport } from "@/lib/validation";
 import type { WalkForwardFollowUpSearchPlan } from "@/lib/walkForward/walkForwardTypes";
@@ -53,7 +54,10 @@ export type AutoResearchFailedGate =
   | "session_consistency_weak"
   | "conservative_scenario_unstable"
   | "skipped_signal_imbalance"
-  | "overfitting_risk";
+  | "overfitting_risk"
+  | "regime_mismatch"
+  | "regime_shift_detected"
+  | "regime_evidence_insufficient";
 
 export type AutoResearchAdaptiveOutcome =
   | "no_safe_candidate_found"
@@ -222,6 +226,7 @@ export interface AutoResearchCycle {
   noSafePaperDemoCandidateFound: boolean;
   adaptivePasses?: AutoResearchAdaptivePass[];
   failedGates?: AutoResearchFailedGate[];
+  scenarioSelectionReasoning?: ScenarioSelectionReasoning;
   finalOutcome?: AutoResearchAdaptiveOutcome;
   tradeGenerationDiagnostics?: TradeGenerationDiagnostic[];
   tradeQualityDiagnostics?: TradeQualityDiagnostic[];
@@ -286,6 +291,7 @@ export interface AutoResearchState {
       | "cycle_failed"
       | "cycle_canceled"
       | "checkpoint"
+      | "scenario_selection_logged"
       | "followup_plan_created";
     notes: string;
   }>;

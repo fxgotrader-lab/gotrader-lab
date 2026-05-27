@@ -1,4 +1,5 @@
 import type { ResearchMaturityCycleInput, ResearchMaturityGrade, ResearchMaturityInput, ResearchMaturitySummary } from "@/lib/maturity/researchMaturityTypes";
+import { getMaturityTrendAvailability } from "@/lib/autonomousResearch";
 import { safeArray } from "@/lib/utils";
 
 const clamp = (value: number, min = 0, max = 100) => Math.max(min, Math.min(max, Number.isFinite(value) ? value : 0));
@@ -128,7 +129,8 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
   const drawdownConsistency = normalizedSpreadScore(maturityCycles.map((cycle) => cycle.maxDrawdownR ?? 0), 4);
   const falsePositiveConsistency = normalizedSpreadScore(maturityCycles.map((cycle) => cycle.falsePositiveCount ?? 0), 20);
   const sessionConsistency = Math.round(average([winRateConsistency, averageRConsistency, drawdownConsistency]));
-  const readinessTrend = readinessTrendFor(maturityCycles);
+  const trendAvailability = getMaturityTrendAvailability(maturityCycles.length);
+  const readinessTrend = trendAvailability.basicTrendAvailable ? readinessTrendFor(maturityCycles) : "unknown";
   const acceptedProposalCount = input.proposals.filter((proposal) => proposal.status === "accepted").length;
   const rejectedProposalCount = input.proposals.filter((proposal) => proposal.status === "rejected").length;
   const noOpOrFailedProposalCount = input.proposals.filter((proposal) =>
@@ -182,6 +184,7 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
   if (input.evidenceQualityScore < 60) missingRequirements.push("Improve evidence quality before Paper-Demo Candidate review.");
   if (!importedDataCycles) missingRequirements.push("Use imported historical data; mock-only runs cap maturity.");
   if (readinessTrend === "declining") missingRequirements.push("Readiness trend is declining across tested cycles.");
+  if (!trendAvailability.basicTrendAvailable) missingRequirements.push(trendAvailability.message);
 
   let grade = gradeForScore(score);
   const caps: ResearchMaturityGrade[] = [];
@@ -218,7 +221,8 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
     latestWalkForwardRun?.stability?.overfitRisk === "high" ? "Walk-forward validation reports high overfit risk." : undefined,
     walkForwardInsufficientEvidence ? "Walk-forward evidence is insufficient; this blocks maturity advancement without counting as strategy failure." : undefined,
     walkForwardNeedsOosConsistency ? "Needs more OOS consistency; passing only part of the walk-forward set is not robust." : undefined,
-    readinessTrend === "declining" ? "Readiness trend is declining." : undefined
+    readinessTrend === "declining" ? "Readiness trend is declining." : undefined,
+    !trendAvailability.basicTrendAvailable ? trendAvailability.message : undefined
   ].filter((warning): warning is string => Boolean(warning));
 
   const nextMaturityRequirement =
@@ -256,6 +260,7 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
     latestWalkForwardOverfitRisk: latestWalkForwardRun?.stability?.overfitRisk,
     evidenceQualityScore: input.evidenceQualityScore,
     readinessTrend,
+    trendAvailability,
     acceptedProposalCount,
     rejectedProposalCount,
     noOpOrFailedProposalCount,
