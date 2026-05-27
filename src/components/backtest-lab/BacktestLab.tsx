@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Activity, RotateCcw, ShieldAlert, SlidersHorizontal, Target, TimerReset } from "lucide-react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { CalibrationAssistantPanel } from "@/components/backtest-lab/CalibrationAssistantPanel";
+import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDetails";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { MetricCard } from "@/components/MetricCard";
@@ -46,6 +47,7 @@ import {
 import {
   resolveResearchRuntimeSnapshot,
   selectRuntimeConfigSummary,
+  selectRuntimeFingerprintLabel,
   selectRuntimeMetricSourceLabel,
   selectRuntimeSourceLabel,
   selectRuntimeWarnings,
@@ -299,7 +301,7 @@ export function BacktestLab() {
       <SafetyLockBanner message="Simulation calibration only. No broker connection, live market data, or real trades." />
 
       <Card className="border-cyan-400/20 bg-cyan-400/5">
-        <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-4">
+        <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-5">
           <div>
             <div className="text-xs uppercase opacity-70">Metrics source</div>
             <div className="mt-1 font-mono">{selectRuntimeMetricSourceLabel(runtimeSnapshot)}</div>
@@ -315,6 +317,10 @@ export function BacktestLab() {
           <div>
             <div className="text-xs uppercase opacity-70">Page-local diagnostic</div>
             <div className="mt-1 font-mono">recomputed preview: {summary.totalTrades} trades</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Run fingerprint</div>
+            <div className="mt-1 break-all font-mono">{selectRuntimeFingerprintLabel(runtimeSnapshot)}</div>
           </div>
         </CardContent>
       </Card>
@@ -478,6 +484,9 @@ export function BacktestLab() {
           ) : (
             <div className="mt-2 text-emerald-100">No runtime snapshot mismatch warnings.</div>
           )}
+        </div>
+        <div className="mt-3">
+          <MetricProvenanceDetails snapshot={runtimeSnapshot} source="active_baseline" />
         </div>
       </TechnicalDetails>
 

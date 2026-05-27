@@ -1,10 +1,35 @@
 import type { ResearchRuntimeSnapshot } from "@/lib/runtime/researchRuntimeTypes";
+import type { MetricSourceType } from "@/lib/runtime/researchRuntimeTypes";
 
 export const selectRuntimeSourceLabel = (snapshot?: ResearchRuntimeSnapshot) =>
   snapshot?.marketData.sourceLabel ?? "Runtime snapshot not loaded";
 
 export const selectRuntimeMetricSourceLabel = (snapshot?: ResearchRuntimeSnapshot) =>
   snapshot?.performance.canonicalPerformanceMetrics?.metricSourceLabel ?? "No completed research cycle";
+
+const provenanceFor = (snapshot?: ResearchRuntimeSnapshot, source: MetricSourceType = "latest_cycle") => {
+  if (!snapshot) {
+    return undefined;
+  }
+  if (source === "proposal_snapshot") {
+    return snapshot.metricProvenance.proposalSnapshot;
+  }
+  if (source === "active_baseline") {
+    return snapshot.metricProvenance.activeBaseline;
+  }
+  return snapshot.metricProvenance.latestCycle ?? snapshot.metricProvenance.activeBaseline;
+};
+
+export const selectRuntimeFingerprintLabel = (snapshot?: ResearchRuntimeSnapshot, source: MetricSourceType = "latest_cycle") =>
+  provenanceFor(snapshot, source)?.fingerprint.compactLabel ?? "Fingerprint pending";
+
+export const selectRuntimeProvenanceRows = (snapshot?: ResearchRuntimeSnapshot, source: MetricSourceType = "latest_cycle") =>
+  provenanceFor(snapshot, source)?.rows ?? [];
+
+export const selectRuntimeProvenanceWarnings = (snapshot?: ResearchRuntimeSnapshot, source: MetricSourceType = "latest_cycle") => [
+  ...(snapshot?.metricProvenance.mismatchWarnings ?? []),
+  ...(provenanceFor(snapshot, source)?.mismatchWarnings ?? [])
+];
 
 export const selectRuntimeDataBadge = (snapshot?: ResearchRuntimeSnapshot) => {
   if (!snapshot) {
@@ -36,7 +61,8 @@ export const selectRuntimePassedRequirements = (snapshot?: ResearchRuntimeSnapsh
 export const selectRuntimeWarnings = (snapshot?: ResearchRuntimeSnapshot) => [
   ...(snapshot?.readiness.warnings ?? []),
   ...(snapshot?.diagnostics.staleStateWarnings ?? []),
-  ...(snapshot?.diagnostics.mismatchWarnings ?? [])
+  ...(snapshot?.diagnostics.mismatchWarnings ?? []),
+  ...(snapshot?.metricProvenance.mismatchWarnings ?? [])
 ];
 
 export const selectRuntimeSnapshotHealth = (snapshot?: ResearchRuntimeSnapshot) => {

@@ -1,7 +1,21 @@
 export { describeRuntimeConfig, resolveResearchRuntimeSnapshot } from "@/lib/runtime/resolveResearchRuntimeSnapshot";
 export {
+  LLM_REVIEWER_SCHEMA_VERSION,
+  compareRunFingerprints,
+  createRunFingerprint,
+  sameRunFingerprint
+} from "@/lib/runtime/runFingerprint";
+export {
+  createMetricProvenance,
+  provenanceRows,
+  provenanceWarnings
+} from "@/lib/runtime/metricProvenance";
+export {
   selectRuntimeConfigSummary,
   selectRuntimeDataBadge,
+  selectRuntimeFingerprintLabel,
+  selectRuntimeProvenanceRows,
+  selectRuntimeProvenanceWarnings,
   selectRuntimeMetricSourceLabel,
   selectRuntimeNextAction,
   selectRuntimePassedRequirements,
@@ -17,10 +31,15 @@ export type {
   RuntimeBridgeStatus,
   RuntimeDataPreset,
   RuntimeDiagnosticsState,
+  RuntimeFingerprintState,
   RuntimeLLMState,
   RuntimeMarketDataState,
+  RuntimeMetricProvenanceState,
+  MetricProvenance,
+  MetricSourceType,
   RuntimePerformanceState,
   RuntimeProposalState,
   RuntimeReadinessState,
-  RuntimeResearchCycleState
+  RuntimeResearchCycleState,
+  RunFingerprint
 } from "@/lib/runtime/researchRuntimeTypes";

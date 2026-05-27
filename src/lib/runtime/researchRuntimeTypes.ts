@@ -15,6 +15,50 @@ import type { FuturesSymbol, Timeframe, TradeThesis } from "@/lib/types";
 
 export type RuntimeDataPreset = "mock" | "safe" | "standard" | "advanced" | "custom";
 export type RuntimeBridgeStatus = "not_checked" | "running" | "not_running" | "unknown";
+export type MetricSourceType = "latest_cycle" | "proposal_snapshot" | "active_baseline" | "recomputed_preview";
+
+export interface RunFingerprint {
+  fingerprintId: string;
+  runId?: string;
+  cycleId?: string;
+  proposalId?: string;
+  sourceCandidateId?: string;
+  dataSource: string;
+  symbol: string;
+  timeframe: string;
+  rawCandleCount: number;
+  processedCandleCount: number;
+  candleWindow: string;
+  dataPreset: RuntimeDataPreset;
+  activeCalibrationId?: string;
+  configMergeStatus: string;
+  llmReviewerSchemaVersion: string;
+  llmRunId?: string;
+  generatedAt: string;
+  metricSourceType: MetricSourceType;
+  label: string;
+  compactLabel: string;
+}
+
+export interface MetricProvenance {
+  fingerprint: RunFingerprint;
+  metricSourceLabel: string;
+  rows: Array<{ label: string; value: string }>;
+  mismatchWarnings: string[];
+}
+
+export interface RuntimeFingerprintState {
+  activeBaseline: RunFingerprint;
+  latestCycle?: RunFingerprint;
+  proposalSnapshot?: RunFingerprint;
+}
+
+export interface RuntimeMetricProvenanceState {
+  activeBaseline: MetricProvenance;
+  latestCycle?: MetricProvenance;
+  proposalSnapshot?: MetricProvenance;
+  mismatchWarnings: string[];
+}
 
 export interface RuntimeMarketDataState {
   activeDataSource: CandleDataSourceMode;
@@ -106,6 +150,8 @@ export interface ResearchRuntimeSnapshot {
   proposal: RuntimeProposalState;
   readiness: RuntimeReadinessState;
   performance: RuntimePerformanceState;
+  fingerprints: RuntimeFingerprintState;
+  metricProvenance: RuntimeMetricProvenanceState;
   diagnostics: RuntimeDiagnosticsState;
 }
 

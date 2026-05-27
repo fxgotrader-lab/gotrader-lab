@@ -24,6 +24,8 @@ import { buildSimulatedAccountFromCanonicalMetrics } from "@/lib/performance/sim
 import { evaluateReadinessGate } from "@/lib/readiness";
 import { loadLatestResearchQualityReview, RESEARCH_QUALITY_STORAGE_KEY } from "@/lib/researchQuality";
 import { latestResearchCycleRun, loadResearchCycleState, RESEARCH_CYCLE_STORAGE_KEY } from "@/lib/researchCycle";
+import { createMetricProvenance } from "@/lib/runtime/metricProvenance";
+import { compareRunFingerprints, createRunFingerprint, LLM_REVIEWER_SCHEMA_VERSION } from "@/lib/runtime/runFingerprint";
 import {
   ACTIVE_RESEARCH_CALIBRATION_STORAGE_KEY,
   loadSelfImprovementState,
@@ -59,6 +61,9 @@ const now = () => new Date().toISOString();
 const pct = (value: number) => `${(value * 100).toFixed(0)}%`;
 
 const latestCycleTimestamp = (run?: ReturnType<typeof latestResearchCycleRun>) => run?.completedAt ?? run?.startedAt;
+
+const candleWindowLabel = (marketData: RuntimeMarketDataState) =>
+  `${marketData.researchWindow.toLocaleString()} raw / ${marketData.processedCandleCount.toLocaleString()} processed ${marketData.timeframe}`;
 
 const dataPresetFor = (source: PreparedCandleSource): RuntimeDataPreset => {
   if (source.mode !== "imported") {
@@ -170,6 +175,7 @@ const buildMismatchWarnings = ({
 export async function resolveResearchRuntimeSnapshot(
   options: ResolveResearchRuntimeSnapshotOptions = {}
 ): Promise<ResearchRuntimeSnapshot> {
+  const snapshotGeneratedAt = now();
   const labState = options.labState ?? labStorage.load();
   const researchCycleState = loadResearchCycleState();
   const latestCycle = latestResearchCycleRun(researchCycleState);
@@ -242,10 +248,79 @@ export async function resolveResearchRuntimeSnapshot(
     researchQuality,
     validation
   });
+  const activeBaselineFingerprint = createRunFingerprint({
+    runId: activeConfig.activeCalibrationId ?? "active-baseline",
+    dataSource: marketData.sourceLabel,
+    symbol: marketData.symbol,
+    timeframe: marketData.timeframe,
+    rawCandleCount: marketData.rawCandleCount,
+    processedCandleCount: marketData.processedCandleCount,
+    candleWindow: candleWindowLabel(marketData),
+    dataPreset: marketData.dataPreset,
+    activeCalibrationId: activeConfig.activeCalibrationId,
+    configMergeStatus: activeConfig.mergeStatusLabel,
+    llmReviewerSchemaVersion: LLM_REVIEWER_SCHEMA_VERSION,
+    llmRunId: latestLLMRun?.runId,
+    generatedAt: activeConfig.activeResearchCalibration?.approvedAt ?? snapshotGeneratedAt,
+    metricSourceType: "active_baseline"
+  });
+  const latestCycleFingerprint = latestCycle
+    ? createRunFingerprint({
+        runId: latestCycle.cycleId,
+        cycleId: latestCycle.cycleId,
+        proposalId: latestCycle.createdProposalId,
+        dataSource: canonicalPerformanceMetrics?.dataSource ?? latestCycle.dataSourceLabel ?? marketData.sourceLabel,
+        symbol: canonicalPerformanceMetrics?.symbol ?? latestCycle.backtestSummary?.config.symbol ?? marketData.symbol,
+        timeframe: canonicalPerformanceMetrics?.timeframe ?? latestCycle.researchTimeframe ?? marketData.timeframe,
+        rawCandleCount: canonicalPerformanceMetrics?.rawCandleCount ?? latestCycle.rawCandleCount ?? marketData.rawCandleCount,
+        processedCandleCount:
+          canonicalPerformanceMetrics?.processedCandleCount ?? latestCycle.processedCandleCount ?? marketData.processedCandleCount,
+        candleWindow: canonicalPerformanceMetrics?.candleWindow ?? candleWindowLabel(marketData),
+        dataPreset: marketData.dataPreset,
+        activeCalibrationId: canonicalPerformanceMetrics?.activeCalibrationId ?? latestCycle.activeCalibrationId ?? activeConfig.activeCalibrationId,
+        configMergeStatus: activeConfig.mergeStatusLabel,
+        llmReviewerSchemaVersion: LLM_REVIEWER_SCHEMA_VERSION,
+        llmRunId: latestCycle.llmRun?.runId ?? latestLLMRun?.runId,
+        generatedAt: canonicalPerformanceMetrics?.generatedAt ?? latestCycle.completedAt ?? latestCycle.startedAt,
+        metricSourceType: "latest_cycle"
+      })
+    : undefined;
+  const proposalSnapshot = latestProposal?.metricsSnapshot;
+  const proposalSnapshotFingerprint = proposalSnapshot
+    ? createRunFingerprint({
+        runId: proposalSnapshot.sourceCycleId ?? latestProposal.proposalId,
+        cycleId: proposalSnapshot.sourceCycleId,
+        proposalId: latestProposal.proposalId,
+        sourceCandidateId: proposalSnapshot.sourceCandidateId,
+        dataSource: proposalSnapshot.dataSource ?? marketData.sourceLabel,
+        symbol: latestProposal.proposedConfig.symbol,
+        timeframe: latestProposal.proposedConfig.timeframe,
+        rawCandleCount: marketData.rawCandleCount,
+        processedCandleCount: marketData.processedCandleCount,
+        candleWindow: proposalSnapshot.candleWindow ?? candleWindowLabel(marketData),
+        dataPreset: marketData.dataPreset,
+        activeCalibrationId: proposalSnapshot.activeCalibrationIdUsed ?? activeConfig.activeCalibrationId,
+        configMergeStatus: activeConfig.mergeStatusLabel,
+        llmReviewerSchemaVersion: LLM_REVIEWER_SCHEMA_VERSION,
+        llmRunId: latestLLMRun?.runId,
+        generatedAt: proposalSnapshot.generatedAt,
+        metricSourceType: "proposal_snapshot"
+      })
+    : undefined;
+  const provenanceMismatchWarnings = [
+    ...compareRunFingerprints(latestCycleFingerprint, proposalSnapshotFingerprint)
+  ];
+  const activeBaselineProvenance = createMetricProvenance(activeBaselineFingerprint, "active baseline");
+  const latestCycleProvenance = latestCycleFingerprint
+    ? createMetricProvenance(latestCycleFingerprint, canonicalPerformanceMetrics?.metricSourceLabel ?? latestCycleFingerprint.label)
+    : undefined;
+  const proposalSnapshotProvenance = proposalSnapshotFingerprint
+    ? createMetricProvenance(proposalSnapshotFingerprint, "proposal snapshot", latestCycleFingerprint)
+    : undefined;
 
   return {
     snapshotId: uid("runtime_snapshot"),
-    generatedAt: now(),
+    generatedAt: snapshotGeneratedAt,
     marketData,
     activeConfig: {
       resolvedBacktestConfig: activeConfig.config,
@@ -298,6 +373,17 @@ export async function resolveResearchRuntimeSnapshot(
     performance: {
       canonicalPerformanceMetrics,
       simulatedAccountSummary: buildSimulatedAccountFromCanonicalMetrics(canonicalPerformanceMetrics)
+    },
+    fingerprints: {
+      activeBaseline: activeBaselineFingerprint,
+      latestCycle: latestCycleFingerprint,
+      proposalSnapshot: proposalSnapshotFingerprint
+    },
+    metricProvenance: {
+      activeBaseline: activeBaselineProvenance,
+      latestCycle: latestCycleProvenance,
+      proposalSnapshot: proposalSnapshotProvenance,
+      mismatchWarnings: safeTopN(provenanceMismatchWarnings, 8)
     },
     diagnostics: {
       sourceTrace,

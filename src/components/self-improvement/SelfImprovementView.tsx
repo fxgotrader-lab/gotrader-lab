@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { CheckCircle2, FlaskConical, History, ShieldAlert, SlidersHorizontal, XCircle } from "lucide-react";
+import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDetails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,6 +35,7 @@ import { latestResearchCycleRun } from "@/lib/researchCycle";
 import {
   resolveResearchRuntimeSnapshot,
   selectRuntimeConfigSummary,
+  selectRuntimeFingerprintLabel,
   selectRuntimeMetricSourceLabel,
   selectRuntimeSourceLabel,
   selectRuntimeWarnings,
@@ -811,7 +813,7 @@ export function SelfImprovementView() {
       <SafetyLockBanner message="Simulation self-improvement only. No broker execution, readiness override, paper/demo enablement, or real trades." />
 
       <Card className="border-cyan-400/20 bg-cyan-400/5">
-        <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-4">
+        <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-5">
           <div>
             <div className="text-xs uppercase opacity-70">Metrics source</div>
             <div className="mt-1 font-mono">{selectRuntimeMetricSourceLabel(runtimeSnapshot)}</div>
@@ -827,6 +829,12 @@ export function SelfImprovementView() {
           <div>
             <div className="text-xs uppercase opacity-70">Latest proposal</div>
             <div className="mt-1 break-all font-mono">{runtimeSnapshot?.proposal.latestProposalId ?? "none"}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Proposal fingerprint</div>
+            <div className="mt-1 break-all font-mono">
+              {selectRuntimeFingerprintLabel(runtimeSnapshot, latestProposal?.metricsSnapshot ? "proposal_snapshot" : "latest_cycle")}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -1181,6 +1189,9 @@ export function SelfImprovementView() {
         ) : (
           <div className="mt-2 text-emerald-100">No runtime snapshot mismatch warnings.</div>
         )}
+      </div>
+      <div className="mt-5">
+        <MetricProvenanceDetails snapshot={runtimeSnapshot} source={latestProposal?.metricsSnapshot ? "proposal_snapshot" : "latest_cycle"} />
       </div>
       </TechnicalDetails>
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Activity, AlertTriangle, BarChart3, Download, Play, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDetails";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,7 @@ import { resolveActiveBacktestConfig } from "@/lib/selfImprovement";
 import {
   resolveResearchRuntimeSnapshot,
   selectRuntimeConfigSummary,
+  selectRuntimeFingerprintLabel,
   selectRuntimeMetricSourceLabel,
   selectRuntimeSourceLabel,
   selectRuntimeWarnings,
@@ -155,7 +157,7 @@ export function StrategyValidationView() {
       <SafetyLockBanner message="Simulation validation only. No broker connection, no real trades, and no readiness override." />
 
       <Card className="border-cyan-400/20 bg-cyan-400/5">
-        <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-4">
+        <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-5">
           <div>
             <div className="text-xs uppercase opacity-70">Validation source</div>
             <div className="mt-1 font-mono">{validationSource}</div>
@@ -171,6 +173,10 @@ export function StrategyValidationView() {
           <div>
             <div className="text-xs uppercase opacity-70">Active calibration</div>
             <div className="mt-1 break-all font-mono">{runtimeSnapshot?.activeConfig.activeCalibrationId ?? "none"}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase opacity-70">Run fingerprint</div>
+            <div className="mt-1 break-all font-mono">{selectRuntimeFingerprintLabel(runtimeSnapshot)}</div>
           </div>
         </CardContent>
       </Card>
@@ -229,6 +235,9 @@ export function StrategyValidationView() {
           ) : (
             <div className="mt-2 text-emerald-100">No runtime snapshot mismatch warnings.</div>
           )}
+        </div>
+        <div className="mt-4">
+          <MetricProvenanceDetails snapshot={runtimeSnapshot} source={isRecomputedPreview ? "recomputed_preview" : "latest_cycle"} />
         </div>
       </TechnicalDetails>
 

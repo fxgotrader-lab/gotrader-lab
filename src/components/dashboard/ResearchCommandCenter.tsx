@@ -34,7 +34,10 @@ import {
   resolveResearchRuntimeSnapshot,
   selectRuntimeConfigSummary,
   selectRuntimeDataBadge,
+  selectRuntimeFingerprintLabel,
   selectRuntimeMetricSourceLabel,
+  selectRuntimeProvenanceRows,
+  selectRuntimeProvenanceWarnings,
   selectRuntimeSnapshotHealth,
   selectRuntimeSourceLabel,
   selectRuntimeWarnings,
@@ -241,6 +244,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
           <span>
             Metrics source: {runtimeSnapshot ? selectRuntimeMetricSourceLabel(runtimeSnapshot) : canonicalMetrics ? `latest research cycle ${canonicalMetrics.sourceCycleId}` : "no completed research cycle yet"}
           </span>
+          <span>Fingerprint: {selectRuntimeFingerprintLabel(runtimeSnapshot)}</span>
           <span>
             {canonicalMetrics
               ? `${canonicalMetrics.dataSource} / ${canonicalMetrics.candleWindow}`
@@ -325,8 +329,20 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
                 <StatusLine label="Generated" value={formatDateTime(runtimeSnapshot.generatedAt)} />
                 <StatusLine label="Active threshold" value={`${(runtimeSnapshot.activeConfig.resolvedConfluenceThreshold * 100).toFixed(0)}%`} />
                 <StatusLine label="Latest proposal" value={runtimeSnapshot.proposal.latestProposalId ?? "none"} />
+                <StatusLine label="Run fingerprint" value={selectRuntimeFingerprintLabel(runtimeSnapshot)} />
               </div>
               <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-md border border-white/10 bg-white/[0.03] p-3">
+                  <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Metric provenance</div>
+                  <div className="mt-2 grid gap-2">
+                    {selectRuntimeProvenanceRows(runtimeSnapshot).map((item) => (
+                      <StatusLine key={item.label} label={item.label} value={item.value} />
+                    ))}
+                  </div>
+                  {selectRuntimeProvenanceWarnings(runtimeSnapshot).length ? (
+                    <p className="mt-3 text-amber-100">{selectRuntimeProvenanceWarnings(runtimeSnapshot).join(" ")}</p>
+                  ) : null}
+                </div>
                 <div className="rounded-md border border-white/10 bg-white/[0.03] p-3">
                   <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Source trace</div>
                   <ul className="mt-2 space-y-1">
