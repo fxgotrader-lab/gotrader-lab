@@ -23,6 +23,7 @@ import {
 } from "@/lib/backtesting";
 import type { BacktestResult, ResolvedBacktestConfig } from "@/lib/backtesting";
 import { recordResearchCycleCommunication } from "@/lib/communications/communicationSpec";
+import { buildEvidenceLedger } from "@/lib/evidence";
 import {
   buildLLMResearchContextPacket,
   importLLMAgentResponse,
@@ -37,6 +38,7 @@ import {
   DASHBOARD_IMPORTED_RAW_WINDOW_LIMIT,
   DASHBOARD_IMPORTED_SAFE_PROCESSED_LIMIT,
   DASHBOARD_IMPORTED_SAFE_WINDOW_SIZE,
+  buildMarketContext,
   dashboardImportedSafeCandleWindowSettings,
   loadPreparedCandleSource,
   type PreparedCandleSource
@@ -699,13 +701,32 @@ export async function runResearchCycle({
     startStep("llm_advisory");
     await yieldToBrowser();
     const startingRunbook = loadSimulationRunbookState();
+    const llmMarketContext = buildMarketContext({
+      symbol: activeConfig.symbol,
+      timeframe: activeConfig.timeframe,
+      mode: activeCandleSource.mode === "imported" ? "imported" : "mock",
+      candles: activeCandleSource.candles
+    });
+    const llmEvidenceQualitySummary = buildEvidenceLedger({
+      dataMode: activeCandleSource.mode === "imported" ? "imported" : "mock",
+      sourceLabel: dataSourceLabel,
+      rawCandleCount: activeCandleSource.rawCandleCount,
+      processedCandleCount: activeCandleSource.processedCandleCount,
+      researchWindow: activeCandleSource.researchWindowCandles,
+      latestCycleId: run.cycleId,
+      latestCycleTimestamp: run.startedAt,
+      debateSessionId: run.agentDebateConsensus?.sessionId,
+      readinessState: run.readinessSnapshot?.state
+    });
     const llmPacket = buildLLMResearchContextPacket({
       state: workingState,
       validation: undefined,
       quality: undefined,
       readiness: undefined,
       runbook: startingRunbook,
-      providerMode: "local_command"
+      providerMode: "local_command",
+      marketContext: llmMarketContext,
+      evidenceQualitySummary: llmEvidenceQualitySummary
     });
     const contextValidation = validateLLMContextPacket(llmPacket);
 

@@ -134,6 +134,7 @@ The order-flow planning reviewer is advisory/planning only. It should identify m
 
 export const llmRestrictedContextInstructions = [
   "Context packet is restricted to research data only.",
+  "Respect evidenceQualitySummary labels: real_imported and derived_from_real can support reasoning; mock, planned, and unavailable evidence must be treated as missing or weak evidence.",
   "Do not request broker credentials.",
   "Do not emit execution instructions.",
   "Do not use proceedRecommendation text as approval language; paper_demo_candidate_review is review-only.",

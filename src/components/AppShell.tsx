@@ -40,6 +40,7 @@ const navigation = [
       { href: "/ict-lab", label: "ICT Lab", icon: ChartCandlestick },
       { href: "/agent-debate", label: "Agent Debate", icon: MessagesSquare },
       { href: "/agent-audit", label: "Agent Audit", icon: ClipboardCheck },
+      { href: "/evidence-quality", label: "Evidence Quality", icon: DatabaseZap },
       { href: "/agents", label: "Agents", icon: Bot },
       { href: "/llm-agents", label: "LLM Agents", icon: BrainCircuit },
       { href: "/prompt-lab", label: "Prompt Lab", icon: GitBranch }

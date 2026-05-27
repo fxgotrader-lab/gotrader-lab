@@ -38,6 +38,11 @@ export const selectRuntimeDataBadge = (snapshot?: ResearchRuntimeSnapshot) => {
   return snapshot.marketData.isImportedDataActive ? "Imported data active" : "Mock data active";
 };
 
+export const selectRuntimeEvidenceLabel = (snapshot?: ResearchRuntimeSnapshot) =>
+  snapshot
+    ? `Evidence ${snapshot.evidence.evidenceQualityScore}/100 / real coverage ${snapshot.evidence.evidenceLedgerSummary.realEvidenceCoverage}%`
+    : "Evidence snapshot loading";
+
 export const selectRuntimeConfigSummary = (snapshot?: ResearchRuntimeSnapshot) => {
   if (!snapshot) {
     return "Runtime config loading";
@@ -62,7 +67,8 @@ export const selectRuntimeWarnings = (snapshot?: ResearchRuntimeSnapshot) => [
   ...(snapshot?.readiness.warnings ?? []),
   ...(snapshot?.diagnostics.staleStateWarnings ?? []),
   ...(snapshot?.diagnostics.mismatchWarnings ?? []),
-  ...(snapshot?.metricProvenance.mismatchWarnings ?? [])
+  ...(snapshot?.metricProvenance.mismatchWarnings ?? []),
+  ...(snapshot?.evidence.readinessEvidenceWarnings ?? [])
 ];
 
 export const selectRuntimeSnapshotHealth = (snapshot?: ResearchRuntimeSnapshot) => {

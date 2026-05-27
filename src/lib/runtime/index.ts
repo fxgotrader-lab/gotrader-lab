@@ -13,6 +13,7 @@ export {
 export {
   selectRuntimeConfigSummary,
   selectRuntimeDataBadge,
+  selectRuntimeEvidenceLabel,
   selectRuntimeFingerprintLabel,
   selectRuntimeProvenanceRows,
   selectRuntimeProvenanceWarnings,
@@ -31,6 +32,7 @@ export type {
   RuntimeBridgeStatus,
   RuntimeDataPreset,
   RuntimeDiagnosticsState,
+  RuntimeEvidenceState,
   RuntimeFingerprintState,
   RuntimeLLMState,
   RuntimeMarketDataState,

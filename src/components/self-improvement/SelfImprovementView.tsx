@@ -30,6 +30,7 @@ import {
 import type { CalibrationProposal, CalibrationProposalMetrics, SelfImprovementState } from "@/lib/selfImprovement";
 import type { AutoResearchCandidateResult } from "@/lib/autoResearch";
 import { describeBacktestConfig } from "@/lib/backtesting";
+import { evidenceScoreVariant, selectEvidenceReadinessImpact, selectWeakestEvidenceLabel } from "@/lib/evidence";
 import { canonicalMetricsForRun, type CanonicalPerformanceMetrics } from "@/lib/performance/canonicalMetrics";
 import { latestResearchCycleRun } from "@/lib/researchCycle";
 import {
@@ -928,6 +929,21 @@ export function SelfImprovementView() {
               </div>
             ))}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-violet-300/20 bg-violet-300/10">
+        <CardContent className="grid gap-3 p-4 text-sm text-violet-50 md:grid-cols-[1fr_auto] md:items-center">
+          <div>
+            <div className="font-medium">Evidence behind proposal</div>
+            <div className="mt-1 text-violet-100/75">
+              {selectEvidenceReadinessImpact(runtimeSnapshot?.evidence.evidenceLedgerSummary)} Weakest area:{" "}
+              {selectWeakestEvidenceLabel(runtimeSnapshot?.evidence.evidenceLedgerSummary)}.
+            </div>
+          </div>
+          <Badge variant={evidenceScoreVariant(runtimeSnapshot?.evidence.evidenceQualityScore)}>
+            Evidence {runtimeSnapshot?.evidence.evidenceQualityScore ?? 0}/100
+          </Badge>
         </CardContent>
       </Card>
 

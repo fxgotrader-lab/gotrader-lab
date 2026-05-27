@@ -9,6 +9,7 @@ import { AutoResearchView } from "@/components/auto-research/AutoResearchView";
 import { BacktestLab } from "@/components/backtest-lab/BacktestLab";
 import { AICommunicationsView } from "@/components/communications/AICommunicationsView";
 import { ResearchCommandCenter } from "@/components/dashboard/ResearchCommandCenter";
+import { EvidenceQualityView } from "@/components/evidence/EvidenceQualityView";
 import { ICTLab } from "@/components/ict-lab/ICTLab";
 import { LLMAgentsView } from "@/components/llm-agents/LLMAgentsView";
 import { MarketDataView } from "@/components/market-data/MarketDataView";
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="/communications" element={<AICommunicationsView />} />
         <Route path="/agent-audit" element={<AgentAuditView />} />
         <Route path="/agent-debate" element={<AgentDebateView />} />
+        <Route path="/evidence-quality" element={<EvidenceQualityView />} />
         <Route path="/agents" element={<AgentRoster state={state} />} />
         <Route path="/agents/:id" element={<AgentDetail state={state} />} />
         <Route path="/research" element={<ResearchWorkbench state={state} actions={actions} />} />

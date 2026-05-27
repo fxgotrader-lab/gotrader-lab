@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { evidenceSourceLabel, evidenceSourceVariant } from "@/lib/evidence";
 import {
   AGENT_DEBATE_UPDATED_EVENT,
   clearAgentDebateHistory,
@@ -19,6 +20,7 @@ import {
 } from "@/lib/agentDebate";
 import type { AgentDebateSession, DebatePosition } from "@/lib/agentDebate";
 import { LAB_STORAGE_UPDATED_EVENT, labStorage } from "@/lib/storage";
+import { resolveResearchRuntimeSnapshot, type ResearchRuntimeSnapshot } from "@/lib/runtime";
 import type { LabState, MarketBias } from "@/lib/types";
 import { formatPercent, safeArray } from "@/lib/utils";
 
@@ -71,6 +73,7 @@ export function AgentDebateView() {
     () => latestAgentDebateSession(debateState)?.sessionId
   );
   const [statusMessage, setStatusMessage] = useState("");
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
 
   useEffect(() => {
     const refresh = () => {
@@ -78,6 +81,7 @@ export function AgentDebateView() {
       const next = loadAgentDebateState();
       setDebateState(next);
       setSelectedSessionId((current) => current ?? latestAgentDebateSession(next)?.sessionId);
+      void resolveResearchRuntimeSnapshot().then(setRuntimeSnapshot).catch(() => undefined);
     };
     window.addEventListener(LAB_STORAGE_UPDATED_EVENT, refresh);
     window.addEventListener(AGENT_DEBATE_UPDATED_EVENT, refresh);
@@ -97,6 +101,8 @@ export function AgentDebateView() {
     [debateState, selectedSessionId]
   );
   const latestThesis = labState.tradeTheses[0];
+  const debateEvidenceSource =
+    runtimeSnapshot?.evidence.evidenceLedgerSummary.entries.find((item) => item.category === "ICT structure")?.sourceType ?? "unavailable";
 
   const runDebate = () => {
     const session = debateForLatestThesis(labState);
@@ -135,6 +141,17 @@ export function AgentDebateView() {
       </div>
 
       <SafetyLockBanner message="Agent debate is research-only. It cannot execute trades, approve trades, or override readiness gates." />
+
+      <Card className="border-cyan-400/20 bg-cyan-400/5">
+        <CardContent className="flex flex-col gap-3 p-4 text-sm text-cyan-50 md:flex-row md:items-center md:justify-between">
+          <div>
+            Debate arguments are labeled with the current evidence class so mock/planned evidence is not treated as real confirmation.
+          </div>
+          <Badge variant={evidenceSourceVariant(debateEvidenceSource)}>
+            ICT facts: {evidenceSourceLabel(debateEvidenceSource)}
+          </Badge>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Card>
@@ -243,7 +260,10 @@ export function AgentDebateView() {
                   <div className="mt-3 space-y-2">
                     {statement.evidence.slice(0, 3).map((item) => (
                       <div key={item} className="rounded-md border border-emerald-400/20 bg-emerald-400/5 px-2 py-1 text-xs text-muted-foreground">
-                        {item}
+                        <span>{item}</span>
+                        <Badge className="ml-2" variant={evidenceSourceVariant(debateEvidenceSource)}>
+                          {evidenceSourceLabel(debateEvidenceSource)}
+                        </Badge>
                       </div>
                     ))}
                     {statement.evidence.length === 0 ? (

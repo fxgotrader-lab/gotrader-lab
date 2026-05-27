@@ -30,6 +30,7 @@ import {
   selectRuntimeWarnings,
   type ResearchRuntimeSnapshot
 } from "@/lib/runtime";
+import { evidenceScoreVariant, selectEvidenceReadinessImpact } from "@/lib/evidence";
 import { loadSelfImprovementState } from "@/lib/selfImprovement";
 import { countCompletedRunbookItems, loadSimulationRunbookState, simulationRunbookChecklist } from "@/lib/simulationRunbook";
 import { loadLatestValidationReport } from "@/lib/validation";
@@ -187,6 +188,18 @@ export function ReadinessGateView() {
       </div>
 
       <SafetyLockBanner message="Simulation-only readiness gating. Broker execution remains disabled." />
+
+      <Card className="border-amber-300/25 bg-amber-300/10">
+        <CardContent className="flex flex-col gap-3 p-4 text-sm text-amber-100 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="font-medium">Evidence quality readiness impact</div>
+            <div className="mt-1">{selectEvidenceReadinessImpact(runtimeSnapshot?.evidence.evidenceLedgerSummary)}</div>
+          </div>
+          <Badge variant={evidenceScoreVariant(runtimeSnapshot?.evidence.evidenceQualityScore)}>
+            Evidence {runtimeSnapshot?.evidence.evidenceQualityScore ?? 0}/100
+          </Badge>
+        </CardContent>
+      </Card>
 
       <Card className="border-cyan-400/20 bg-cyan-400/5">
         <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-5">

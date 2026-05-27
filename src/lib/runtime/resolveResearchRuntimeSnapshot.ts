@@ -1,5 +1,6 @@
 import { defaultBacktestConfig, loadBacktestConfig } from "@/lib/backtesting";
 import { latestAutoResearchCycle, loadAutoResearchState, AUTO_RESEARCH_STORAGE_KEY } from "@/lib/autoResearch";
+import { buildEvidenceLedger } from "@/lib/evidence";
 import {
   getLLMReadinessImpact,
   latestLLMAdvisoryRun,
@@ -216,6 +217,22 @@ export async function resolveResearchRuntimeSnapshot(
   const autoResearchState = loadAutoResearchState();
   const latestAutoResearch = latestAutoResearchCycle(autoResearchState);
   const activeImportId = getActiveImportedCandleSetId();
+  const evidenceLedgerSummary = buildEvidenceLedger({
+    dataMode: marketData.activeDataSource === "imported" ? "imported" : "mock",
+    sourceLabel: marketData.sourceLabel,
+    rawCandleCount: marketData.rawCandleCount,
+    processedCandleCount: marketData.processedCandleCount,
+    researchWindow: marketData.researchWindow,
+    latestCycleId: latestCycle?.cycleId,
+    latestCycleTimestamp: latestCycle?.completedAt ?? latestCycle?.startedAt,
+    latestLLMRunId: latestLLMRun?.runId,
+    llmAdvisoryPassed: latestLLMRun?.advisoryPassed,
+    debateSessionId: latestCycle?.agentDebateConsensus?.sessionId,
+    validationId: latestCycle?.validationSummary?.validationId ?? validation?.id,
+    researchQualityId: latestCycle?.researchQualitySummary?.reviewId ?? researchQuality?.id,
+    readinessState: readinessSnapshot.state,
+    proposalId: latestProposal?.proposalId
+  });
   const sourceTrace = [
     `market data: ${marketData.sourceLabel}`,
     `candle window: ${marketData.researchWindow.toLocaleString()} raw -> ${marketData.processedCandleCount.toLocaleString()} processed ${marketData.timeframe}`,
@@ -367,12 +384,18 @@ export async function resolveResearchRuntimeSnapshot(
       readinessSnapshot,
       actualBlockers: safeArray(readinessSnapshot.failedRequirements).map((item) => item.label),
       passedRequirements: safeArray(readinessSnapshot.passedRequirements).map((item) => item.label),
-      warnings: readinessSnapshot.warnings,
+      warnings: [...readinessSnapshot.warnings, ...evidenceLedgerSummary.readinessEvidenceWarnings],
       nextAction: readinessSnapshot.recommendedNextStep
     },
     performance: {
       canonicalPerformanceMetrics,
       simulatedAccountSummary: buildSimulatedAccountFromCanonicalMetrics(canonicalPerformanceMetrics)
+    },
+    evidence: {
+      evidenceQualityScore: evidenceLedgerSummary.overallScore,
+      evidenceLedgerSummary,
+      weakestEvidenceCategories: evidenceLedgerSummary.weakestEvidenceCategories,
+      readinessEvidenceWarnings: evidenceLedgerSummary.readinessEvidenceWarnings
     },
     fingerprints: {
       activeBaseline: activeBaselineFingerprint,

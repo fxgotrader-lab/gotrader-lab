@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, ClipboardCheck, DatabaseZap, ExternalLink, MessageSquareText, MessagesSquare, Route, Sparkles } from "lucide-react";
+import { ArrowRight, ClipboardCheck, DatabaseZap, ExternalLink, Gauge, MessageSquareText, MessagesSquare, Route, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,7 @@ import {
   loadAutoResearchState,
 } from "@/lib/autoResearch";
 import { getCommunicationSummary, loadCommunicationMessages } from "@/lib/communications/communicationSpec";
+import { evidenceScoreVariant, selectStrongestEvidenceLabel, selectWeakestEvidenceLabel } from "@/lib/evidence";
 import {
   getLLMReadinessImpact,
   latestLLMAdvisoryRun,
@@ -276,6 +277,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
       <div className="grid gap-5 xl:grid-cols-2">
         <AICommunicationsCard summary={communicationSummary} />
         <MarketDataContextCard context={marketContext} source={activeCandleSource} />
+        <EvidenceQualityCard snapshot={runtimeSnapshot} />
         <AgentDebateCard summary={agentDebateSummary} />
         <AgentAuditCard summary={agentAuditSummary} />
         <LLMAgentStatusCard latestRun={latestLLMRun} providerStatus={providerStatus} state={llmState} />
@@ -411,6 +413,44 @@ function MarketDataContextCard({
         <Link to="/market-data">
           <Button variant="secondary" className="w-full justify-between">
             Open market data context
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </Link>
+      </CardContent>
+    </Card>
+  );
+}
+
+function EvidenceQualityCard({ snapshot }: { snapshot?: ResearchRuntimeSnapshot }) {
+  const summary = snapshot?.evidence.evidenceLedgerSummary;
+
+  return (
+    <Card className="border-white/10 bg-slate-950/70">
+      <CardHeader className="flex flex-row items-start justify-between gap-3">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base text-slate-100">
+            <Gauge className="h-4 w-4 text-cyan-300" aria-hidden="true" />
+            Evidence Quality
+          </CardTitle>
+          <p className="mt-1 text-xs text-slate-500">How much current research evidence is real, derived, mock, planned, or unavailable.</p>
+        </div>
+        <Badge variant={evidenceScoreVariant(summary?.overallScore)}>
+          {summary ? `${summary.overallScore}/100` : "loading"}
+        </Badge>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 text-sm sm:grid-cols-2">
+          <StatusLine label="Real coverage" value={summary ? `${summary.realEvidenceCoverage}%` : "loading"} />
+          <StatusLine label="Mock/planned/unavailable" value={String(summary?.mockPlannedUnavailableCount ?? 0)} />
+          <StatusLine label="Strongest real evidence" value={selectStrongestEvidenceLabel(summary)} />
+          <StatusLine label="Weakest evidence" value={selectWeakestEvidenceLabel(summary)} />
+        </div>
+        <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-xs text-amber-100">
+          {summary?.readinessEvidenceWarnings[0] ?? "Evidence quality can support research confidence, but cannot approve readiness by itself."}
+        </div>
+        <Link to="/evidence-quality">
+          <Button variant="secondary" className="w-full justify-between">
+            Open evidence ledger
             <ExternalLink className="h-4 w-4" aria-hidden="true" />
           </Button>
         </Link>

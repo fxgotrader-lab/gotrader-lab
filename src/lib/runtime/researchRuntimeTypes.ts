@@ -1,4 +1,5 @@
 import type { ResolvedBacktestConfig } from "@/lib/backtesting";
+import type { EvidenceCategory, EvidenceLedgerSummary } from "@/lib/evidence";
 import type { LLMAdvisoryRun, LLMProviderStatus } from "@/lib/llm";
 import type { CandleDataSourceMode, CandleWindowSettings, PreparedCandleSource } from "@/lib/marketData";
 import type { CanonicalPerformanceMetrics } from "@/lib/performance/canonicalMetrics";
@@ -133,6 +134,13 @@ export interface RuntimePerformanceState {
   simulatedAccountSummary: SimulatedAccount;
 }
 
+export interface RuntimeEvidenceState {
+  evidenceQualityScore: number;
+  evidenceLedgerSummary: EvidenceLedgerSummary;
+  weakestEvidenceCategories: EvidenceCategory[];
+  readinessEvidenceWarnings: string[];
+}
+
 export interface RuntimeDiagnosticsState {
   sourceTrace: string[];
   staleStateWarnings: string[];
@@ -150,6 +158,7 @@ export interface ResearchRuntimeSnapshot {
   proposal: RuntimeProposalState;
   readiness: RuntimeReadinessState;
   performance: RuntimePerformanceState;
+  evidence: RuntimeEvidenceState;
   fingerprints: RuntimeFingerprintState;
   metricProvenance: RuntimeMetricProvenanceState;
   diagnostics: RuntimeDiagnosticsState;

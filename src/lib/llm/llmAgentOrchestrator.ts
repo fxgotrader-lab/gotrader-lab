@@ -2,6 +2,7 @@ import { localCommandLLMProvider } from "@/lib/llm/localCommandLLMProvider";
 import { mockLLMProvider } from "@/lib/llm/mockLLMProvider";
 import { providerStatusForMode } from "@/lib/llm/llmProvider";
 import { requiredLLMAgents } from "@/lib/llm/llmPromptTemplates";
+import { buildEvidenceLedger, compactEvidenceQualitySummary, type EvidenceLedgerSummary } from "@/lib/evidence";
 import type {
   LLMAgentResponse,
   LLMAdvisoryRun,
@@ -12,6 +13,7 @@ import type {
 import { missingRequiredLLMAgents, validateLLMResponse } from "@/lib/llm/validateLLMResponse";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
 import { buildMarketContext, summarizeMarketContext } from "@/lib/marketData";
+import type { MarketContext } from "@/lib/marketData";
 import type { ResearchQualityReview } from "@/lib/researchQuality";
 import type { SimulationRunbookState } from "@/lib/simulationRunbook";
 import { countCompletedRunbookItems, simulationRunbookChecklist } from "@/lib/simulationRunbook";
@@ -40,7 +42,9 @@ export function buildLLMResearchContextPacket({
   quality,
   readiness,
   runbook,
-  providerMode
+  providerMode,
+  marketContext: suppliedMarketContext,
+  evidenceQualitySummary
 }: {
   state: LabState;
   validation?: ValidationSuiteReport;
@@ -48,13 +52,27 @@ export function buildLLMResearchContextPacket({
   readiness?: ReadinessGateSnapshot;
   runbook?: SimulationRunbookState;
   providerMode: LLMProviderMode;
+  marketContext?: MarketContext;
+  evidenceQualitySummary?: EvidenceLedgerSummary;
 }): LLMResearchContextPacket {
   const thesis = safeArray(state.tradeTheses)[0];
   const debate = latestDebateFor(state, thesis);
   const ictContext = thesis?.ictContext;
   const marketContext = thesis
-    ? summarizeMarketContext(buildMarketContext({ symbol: thesis.symbol, timeframe: thesis.timeframe, mode: "mock" }))
+    ? summarizeMarketContext(suppliedMarketContext ?? buildMarketContext({ symbol: thesis.symbol, timeframe: thesis.timeframe, mode: "mock" }))
     : undefined;
+  const compactEvidenceSummary = evidenceQualitySummary
+    ? compactEvidenceQualitySummary(evidenceQualitySummary)
+    : compactEvidenceQualitySummary(buildEvidenceLedger({
+        dataMode: marketContext?.mode === "imported" ? "imported" : "mock",
+        sourceLabel: marketContext?.mode === "imported" ? "Imported candles" : "Mock candles",
+        rawCandleCount: 0,
+        processedCandleCount: 0,
+        researchWindow: 0,
+        validationId: validation?.id,
+        researchQualityId: quality?.id,
+        readinessState: readiness?.state
+      }));
   const validationScenarios = safeArray(validation?.scenarios);
   const qualityWeaknesses = safeArray(quality?.topWeaknesses);
   const qualityFalsePositivePatterns = safeArray(quality?.falsePositivePatterns);
@@ -90,6 +108,7 @@ export function buildLLMResearchContextPacket({
         }
       : undefined,
     marketContextSummary: marketContext,
+    evidenceQualitySummary: compactEvidenceSummary,
     deterministicICTFacts: [
       `Confluence score: ${ictContext?.confluenceScore ?? "missing"}`,
       `Bias: ${ictContext?.bias ?? "missing"}`,
@@ -98,7 +117,11 @@ export function buildLLMResearchContextPacket({
       `Liquidity sweeps: ${safeArray(ictContext?.liquiditySweeps).length}`,
       `Fair value gaps: ${safeArray(ictContext?.fairValueGaps).length}`,
       `Market context mode: ${marketContext?.mode ?? "missing"}`,
-      `Market context missing modules: ${marketContext?.missingModules.join(", ") ?? "missing"}`
+      `Market context missing modules: ${marketContext?.missingModules.join(", ") ?? "missing"}`,
+      `Evidence quality score: ${compactEvidenceSummary.overallScore}/100`,
+      `Evidence quality labels: ${compactEvidenceSummary.entries
+        .map((item) => `${item.category}=${item.sourceType}`)
+        .join("; ")}`
     ],
     internalBaselineAgentDebate:
       safeArray(debate?.messages).map((message) => ({

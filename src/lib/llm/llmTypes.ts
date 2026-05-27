@@ -100,6 +100,19 @@ export interface LLMMarketContextSummary {
   safetyNotice: string;
 }
 
+export interface LLMEvidenceQualitySummary {
+  overallScore: number;
+  realEvidenceCoverage: number;
+  weakestEvidenceCategories: string[];
+  readinessEvidenceWarnings: string[];
+  entries: Array<{
+    category: string;
+    sourceType: string;
+    qualityScore: number;
+    limitations: string[];
+  }>;
+}
+
 export interface LLMResearchContextPacket {
   packetId: string;
   timestamp: string;
@@ -114,6 +127,7 @@ export interface LLMResearchContextPacket {
   timeframe?: Timeframe;
   ictContextSummary?: LLMICTContextSummary;
   marketContextSummary?: LLMMarketContextSummary;
+  evidenceQualitySummary?: LLMEvidenceQualitySummary;
   deterministicICTFacts: string[];
   internalBaselineAgentDebate: LLMBaselineDebateSummary[];
   cioThesis?: {
