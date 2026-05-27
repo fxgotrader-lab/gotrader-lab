@@ -7,7 +7,8 @@ import { resolveActiveBacktestConfig } from "@/lib/selfImprovement";
 import { uid } from "@/lib/utils";
 import {
   createWalkForwardWindows,
-  resolveSplitRatio
+  resolveSplitRatio,
+  walkForwardModeWindowSize
 } from "@/lib/walkForward/dataSplitter";
 import { analyzeWalkForwardStability } from "@/lib/walkForward/stabilityAnalyzer";
 import {
@@ -29,13 +30,18 @@ const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, N
 const sleepFrame = () => new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0));
 
 const modeMaxWindows: Record<WalkForwardMode, number> = {
-  safe: 2,
+  safe: 3,
   standard: 3,
   advanced: 5
 };
+const DEFAULT_MINIMUM_WINDOWS = 3;
+const DEFAULT_MINIMUM_OOS_TRADES_PER_WINDOW = 5;
+const DEFAULT_MINIMUM_TOTAL_OOS_TRADES = 20;
 
 const passFailReasonsFor = (metrics: WalkForwardWindowMetrics, split: WalkForwardSplitLabel) => [
-  metrics.totalTrades < (split === "out_of_sample" ? 1 : 2) ? `${split.replace(/_/g, " ")} trade count too low.` : undefined,
+  metrics.totalTrades < (split === "out_of_sample" ? DEFAULT_MINIMUM_OOS_TRADES_PER_WINDOW : 2)
+    ? `${split.replace(/_/g, " ")} trade count too low.`
+    : undefined,
   metrics.averageR < -0.1 ? `${split.replace(/_/g, " ")} average R is below -0.10R.` : undefined,
   metrics.maxDrawdownR > 6 ? `${split.replace(/_/g, " ")} drawdown exceeds 6R.` : undefined,
   metrics.confidenceCalibration < 0.4 ? `${split.replace(/_/g, " ")} confidence calibration is weak.` : undefined,
@@ -121,7 +127,8 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
   const source = await loadPreparedCandleSource();
   const activeConfig = resolveActiveBacktestConfig();
   const ratio = resolveSplitRatio(options.splitRatioPreset ?? "60_20_20", options.customRatio);
-  const maxWindows = Math.max(1, Math.min(options.maxWindows ?? modeMaxWindows[mode], modeMaxWindows[mode]));
+  const requestedMaxWindows = Math.max(1, options.maxWindows ?? modeMaxWindows[mode]);
+  const maxWindows = Math.max(1, Math.min(requestedMaxWindows, modeMaxWindows[mode]));
   const dataPreset = source.mode === "imported" ? getImportedDataPreset(source.appliedSettings) : "mock";
   const windows = createWalkForwardWindows({
     candles: source.candles,
@@ -130,6 +137,20 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
     mode,
     maxWindows
   });
+  const windowGenerationNotes = [
+    requestedMaxWindows !== maxWindows
+      ? `${mode} mode capped requested windows from ${requestedMaxWindows} to ${maxWindows}.`
+      : undefined,
+    windows.length < maxWindows && source.processedCandleCount <= walkForwardModeWindowSize[mode]
+      ? `Only ${windows.length} rolling window could be created because ${source.processedCandleCount.toLocaleString()} processed candles are at or below the ${mode} window size of ${walkForwardModeWindowSize[mode].toLocaleString()}.`
+      : undefined,
+    windows.length < maxWindows && source.processedCandleCount > walkForwardModeWindowSize[mode]
+      ? `Only ${windows.length}/${maxWindows} rolling windows could be created from the active candle window and split settings.`
+      : undefined,
+    windows.length < DEFAULT_MINIMUM_WINDOWS
+      ? "Use Standard preset, a larger raw candle window, or adjusted split settings to reach the preferred 3 windows."
+      : undefined
+  ].filter((note): note is string => Boolean(note));
   const evidenceQualityScore = source.mode === "imported" ? 82 : 34;
   let run: WalkForwardRun = {
     runId,
@@ -139,6 +160,9 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
     splitRatioPreset: ratio.preset,
     splitRatio: ratio,
     maxWindows,
+    requestedMaxWindows,
+    actualWindowsGenerated: windows.length,
+    windowGenerationNotes,
     dataSource: source.mode,
     dataSourceLabel: source.label,
     dataPreset,
@@ -154,7 +178,9 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
     windows: [],
     warnings: [
       source.mode !== "imported" ? "Walk-forward validation is most meaningful with imported historical OHLCV data; mock candles cap confidence." : undefined,
-      windows.length < 2 ? "Only one walk-forward window could be created from the active candle window." : undefined
+      windows.length < DEFAULT_MINIMUM_WINDOWS
+        ? `Only ${windows.length} walk-forward window(s) could be created; ${DEFAULT_MINIMUM_WINDOWS} are preferred before judging strategy quality.`
+        : undefined
     ].filter((warning): warning is string => Boolean(warning)),
     safetyNotice: "Walk-forward validation is simulation-only. It cannot execute trades, enable demo/live mode, or override readiness."
   };
@@ -236,16 +262,24 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
       saveWalkForwardProgress(run);
     }
 
-    const stability = analyzeWalkForwardStability(run.windows, run.runId);
+    const stability = analyzeWalkForwardStability(run.windows, run.runId, {
+      requestedMaxWindows,
+      actualWindowsGenerated: windows.length,
+      minimumWindows: options.minimumWindows ?? DEFAULT_MINIMUM_WINDOWS,
+      preferredWindows: DEFAULT_MINIMUM_WINDOWS,
+      minimumOosTradesPerWindow: options.minimumOosTradesPerWindow ?? DEFAULT_MINIMUM_OOS_TRADES_PER_WINDOW,
+      minimumTotalOosTrades: options.minimumTotalOosTrades ?? DEFAULT_MINIMUM_TOTAL_OOS_TRADES,
+      windowGenerationNotes
+    });
     run = {
       ...run,
-      status: stability.verdict === "fail" || run.warnings.length ? "completed_with_warnings" : "completed",
+      status: stability.verdict === "fail" || stability.verdict === "insufficient_evidence" || run.warnings.length ? "completed_with_warnings" : "completed",
       completedAt: now(),
       stability,
       failureDiagnostics: stability.diagnostics,
       followUpPlan: stability.followUpPlan,
       progress: {
-        status: stability.verdict === "fail" || run.warnings.length ? "completed_with_warnings" : "completed",
+        status: stability.verdict === "fail" || stability.verdict === "insufficient_evidence" || run.warnings.length ? "completed_with_warnings" : "completed",
         currentWindow: windows.length,
         totalWindows: windows.length,
         elapsedMs: Date.now() - started,

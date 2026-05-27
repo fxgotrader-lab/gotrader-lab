@@ -528,7 +528,9 @@ function WalkForwardStatusCard({
                 ? "warning"
                 : stability?.verdict === "fail"
                   ? "danger"
-                  : "muted"
+                  : stability?.verdict === "insufficient_evidence"
+                    ? "warning"
+                    : "muted"
           }
         >
           {stability?.verdict?.replace(/_/g, " ") ?? "not run"}
@@ -539,8 +541,22 @@ function WalkForwardStatusCard({
           <StatusLine label="Windows tested" value={String(stability?.windowCount ?? 0)} />
           <StatusLine label="OOS passed" value={`${stability?.outOfSampleWindowsPassed ?? 0}/${stability?.windowCount ?? 0}`} />
           <StatusLine label="Stability score" value={stability ? `${stability.stabilityScore}/100` : "n/a"} />
-          <StatusLine label="Overfit risk" value={stability?.overfitRisk ?? "unknown"} />
+          <StatusLine label="Overfit risk" value={stability?.overfitRisk === "not_applicable" ? "not applicable" : stability?.overfitRisk ?? "unknown"} />
         </div>
+        {stability?.verdict === "insufficient_evidence" ? (
+          <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-xs text-amber-100">
+            <div className="font-medium">Walk-forward insufficient evidence</div>
+            <div className="mt-1">
+              Requested {stability.evidenceSummary?.requestedMaxWindows ?? run?.maxWindows ?? 0} window(s), generated{" "}
+              {stability.evidenceSummary?.actualWindowsGenerated ?? stability.windowCount}. OOS trades{" "}
+              {stability.evidenceSummary?.totalOosTrades ?? 0}/{stability.evidenceSummary?.minimumTotalOosTrades ?? 20}.
+            </div>
+            <div className="mt-1">
+              {stability.evidenceSummary?.insufficientEvidenceReasons[0] ??
+                "Use Standard preset or a larger raw candle window before judging strategy quality."}
+            </div>
+          </div>
+        ) : null}
         <div className="rounded-md border border-cyan-300/25 bg-cyan-300/10 p-3 text-xs text-cyan-100">
           {snapshot?.walkForward.recommendedNextAction ?? "Run walk-forward validation before trusting a one-window calibration."}
         </div>

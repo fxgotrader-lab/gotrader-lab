@@ -2,7 +2,8 @@ export {
   createWalkForwardWindows,
   resolveSplitRatio,
   splitCandlesByRatio,
-  splitRatioPresets
+  splitRatioPresets,
+  walkForwardModeWindowSize
 } from "@/lib/walkForward/dataSplitter";
 export { analyzeWalkForwardStability } from "@/lib/walkForward/stabilityAnalyzer";
 export {
@@ -17,6 +18,8 @@ export {
 export { runWalkForwardValidation } from "@/lib/walkForward/walkForwardOrchestrator";
 export type {
   WalkForwardConfigSummary,
+  WalkForwardEvidenceRules,
+  WalkForwardEvidenceSummary,
   WalkForwardFailureDiagnostics,
   WalkForwardFollowUpRecommendation,
   WalkForwardFollowUpSearchPlan,

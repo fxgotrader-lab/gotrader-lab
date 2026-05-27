@@ -624,7 +624,7 @@ export function SelfImprovementView() {
   const walkForwardApprovalBlocked = Boolean(
     latestProposal &&
       runtimeSnapshot?.walkForward.proposalValidated &&
-      runtimeSnapshot.walkForward.verdict === "fail"
+      (runtimeSnapshot.walkForward.verdict === "fail" || runtimeSnapshot.walkForward.verdict === "insufficient_evidence")
   );
   const baseApprovalCheck = latestProposalPersisted
     ? canApproveProposal(latestProposal)
@@ -636,9 +636,14 @@ export function SelfImprovementView() {
   const approvalCheck = walkForwardApprovalBlocked
     ? {
         canApprove: false,
-        reason: "Do not approve yet - walk-forward failed.",
+        reason:
+          runtimeSnapshot?.walkForward.verdict === "insufficient_evidence"
+            ? "Do not approve yet - walk-forward evidence is insufficient."
+            : "Do not approve yet - walk-forward failed.",
         reasons: [
-          "Do not approve yet - walk-forward failed.",
+          runtimeSnapshot?.walkForward.verdict === "insufficient_evidence"
+            ? "Do not approve yet - walk-forward evidence is insufficient."
+            : "Do not approve yet - walk-forward failed.",
           ...(runtimeSnapshot?.walkForward.failureDiagnostics?.repeatedFailureReasons ?? []),
           ...(baseApprovalCheck.reasons ?? [])
         ]
@@ -994,10 +999,14 @@ export function SelfImprovementView() {
             </div>
             {walkForwardApprovalBlocked ? (
               <div className="mt-3 rounded-md border border-amber-300/30 bg-amber-300/10 p-3 text-amber-100">
-                <div className="font-medium">Do not approve yet - walk-forward failed.</div>
+                <div className="font-medium">
+                  {runtimeSnapshot?.walkForward.verdict === "insufficient_evidence"
+                    ? "Do not approve yet - walk-forward evidence is insufficient."
+                    : "Do not approve yet - walk-forward failed."}
+                </div>
                 <div className="mt-1">
                   {runtimeSnapshot?.walkForward.failureDiagnostics?.summary ??
-                    "The latest proposal failed walk-forward validation and needs targeted follow-up research."}
+                    "The latest proposal needs more walk-forward evidence or targeted follow-up research."}
                 </div>
                 <div className="mt-2 text-xs">
                   Top reason: {runtimeSnapshot?.walkForward.failureDiagnostics?.repeatedFailureReasons?.[0] ?? "not recorded"}.
@@ -1012,6 +1021,8 @@ export function SelfImprovementView() {
                 ? "success"
                 : runtimeSnapshot?.walkForward.verdict === "fail"
                   ? "danger"
+                  : runtimeSnapshot?.walkForward.verdict === "insufficient_evidence"
+                    ? "warning"
                   : "warning"
             }
           >

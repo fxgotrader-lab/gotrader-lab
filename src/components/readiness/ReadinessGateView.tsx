@@ -220,11 +220,13 @@ export function ReadinessGateView() {
             <div className="font-medium">Walk-forward validation readiness impact</div>
             <div className="mt-1">
               {runtimeSnapshot?.walkForward.latestRun
-                ? `${runtimeSnapshot.walkForward.windowsTested} window(s), ${runtimeSnapshot.walkForward.outOfSampleWindowsPassed} out-of-sample passed, overfit risk ${runtimeSnapshot.walkForward.overfitRisk ?? "unknown"}.`
+                ? runtimeSnapshot.walkForward.verdict === "insufficient_evidence"
+                  ? `Insufficient evidence: ${runtimeSnapshot.walkForward.windowsTested} window(s), ${runtimeSnapshot.walkForward.stability?.evidenceSummary?.totalOosTrades ?? 0}/${runtimeSnapshot.walkForward.stability?.evidenceSummary?.minimumTotalOosTrades ?? 20} OOS trades.`
+                  : `${runtimeSnapshot.walkForward.windowsTested} window(s), ${runtimeSnapshot.walkForward.outOfSampleWindowsPassed} out-of-sample passed, overfit risk ${runtimeSnapshot.walkForward.overfitRisk ?? "unknown"}.`
                 : "No walk-forward validation exists; Paper-Demo Candidate confidence should remain capped."}
             </div>
           </div>
-          <Badge variant={runtimeSnapshot?.walkForward.verdict === "robust_research" || runtimeSnapshot?.walkForward.verdict === "paper_demo_review_candidate" ? "success" : runtimeSnapshot?.walkForward.verdict === "promising" ? "warning" : "danger"}>
+          <Badge variant={runtimeSnapshot?.walkForward.verdict === "robust_research" || runtimeSnapshot?.walkForward.verdict === "paper_demo_review_candidate" ? "success" : runtimeSnapshot?.walkForward.verdict === "promising" || runtimeSnapshot?.walkForward.verdict === "insufficient_evidence" ? "warning" : "danger"}>
             {runtimeSnapshot?.walkForward.verdict?.replace(/_/g, " ") ?? "not run"}
           </Badge>
         </CardContent>

@@ -22,7 +22,7 @@ import {
   type ResearchRuntimeSnapshot
 } from "@/lib/runtime";
 import { SELF_IMPROVEMENT_UPDATED_EVENT } from "@/lib/selfImprovement";
-import { formatPercent } from "@/lib/utils";
+import { formatPercent, safeArray } from "@/lib/utils";
 import {
   clearWalkForwardHistory,
   latestWalkForwardRun,
@@ -42,6 +42,8 @@ const verdictVariant = (verdict?: string) =>
       ? "warning"
       : verdict === "fail"
         ? "danger"
+        : verdict === "insufficient_evidence"
+          ? "warning"
         : "muted";
 
 const riskVariant = (risk?: string) =>
@@ -55,7 +57,7 @@ export function WalkForwardView() {
   const [latestRun, setLatestRun] = useState<WalkForwardRun | undefined>(() => latestWalkForwardRun());
   const [mode, setMode] = useState<WalkForwardMode>("safe");
   const [ratioPreset, setRatioPreset] = useState<WalkForwardSplitRatioPreset>("60_20_20");
-  const [maxWindows, setMaxWindows] = useState(2);
+  const [maxWindows, setMaxWindows] = useState(3);
   const [customInSample, setCustomInSample] = useState(60);
   const [customValidation, setCustomValidation] = useState(20);
   const [customOutOfSample, setCustomOutOfSample] = useState(20);
@@ -139,6 +141,7 @@ export function WalkForwardView() {
   const windowRows = useMemo(() => latestRun?.windows ?? [], [latestRun]);
   const diagnostics = latestRun?.failureDiagnostics ?? latestRun?.stability?.diagnostics;
   const followUpPlan = latestRun?.followUpPlan ?? latestRun?.stability?.followUpPlan;
+  const evidenceSummary = latestRun?.stability?.evidenceSummary;
 
   const createFollowUpSearch = () => {
     if (!followUpPlan) {
@@ -205,7 +208,7 @@ export function WalkForwardView() {
                   onChange={(event) => {
                     const next = event.target.value as WalkForwardMode;
                     setMode(next);
-                    setMaxWindows(next === "advanced" ? 5 : next === "standard" ? 3 : 2);
+                    setMaxWindows(next === "advanced" ? 5 : next === "standard" ? 3 : 3);
                   }}
                   options={[
                     { label: "Safe", value: "safe" },
@@ -285,7 +288,7 @@ export function WalkForwardView() {
                 {latestRun?.stability?.verdict?.replace(/_/g, " ") ?? "no verdict"}
               </Badge>
               <Badge variant={riskVariant(latestRun?.stability?.overfitRisk)}>
-                overfit: {latestRun?.stability?.overfitRisk ?? "unknown"}
+                overfit: {latestRun?.stability?.overfitRisk === "not_applicable" ? "not applicable" : latestRun?.stability?.overfitRisk ?? "unknown"}
               </Badge>
             </div>
             <Progress value={progressPercent} />
@@ -296,7 +299,23 @@ export function WalkForwardView() {
               <StatusTile label="Worst OOS drawdown" value={latestRun?.stability ? `${latestRun.stability.worstWindowDrawdownR.toFixed(2)}R` : "n/a"} />
               <StatusTile label="Worst OOS win rate" value={latestRun?.stability ? formatPercent(latestRun.stability.worstWindowWinRate, 1) : "n/a"} />
               <StatusTile label="Worst OOS average R" value={latestRun?.stability ? `${latestRun.stability.worstWindowAverageR.toFixed(2)}R` : "n/a"} />
+              <StatusTile label="Requested max windows" value={String(evidenceSummary?.requestedMaxWindows ?? latestRun?.requestedMaxWindows ?? maxWindows)} />
+              <StatusTile label="Actual windows generated" value={String(evidenceSummary?.actualWindowsGenerated ?? latestRun?.actualWindowsGenerated ?? latestRun?.windows.length ?? 0)} />
+              <StatusTile label="Required OOS trades" value={`${evidenceSummary?.minimumOosTradesPerWindow ?? 5}/window, ${evidenceSummary?.minimumTotalOosTrades ?? 20} total`} />
+              <StatusTile label="Actual OOS trades" value={String(evidenceSummary?.totalOosTrades ?? 0)} />
             </div>
+            {latestRun?.stability?.verdict === "insufficient_evidence" ? (
+              <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+                <div className="font-medium">Insufficient evidence</div>
+                <div className="mt-1">
+                  {evidenceSummary?.insufficientEvidenceReasons[0] ??
+                    "Increase windows or out-of-sample trades before treating this as strategy failure."}
+                </div>
+                {safeArray(evidenceSummary?.windowGenerationNotes).length ? (
+                  <div className="mt-2 text-xs">{safeArray(evidenceSummary?.windowGenerationNotes).join(" ")}</div>
+                ) : null}
+              </div>
+            ) : null}
             <div className="rounded-lg border border-cyan-300/25 bg-cyan-300/10 p-3 text-sm text-cyan-100">
               {latestRun?.progress?.message ?? latestRun?.stability?.recommendedNextAction ?? "No walk-forward run has completed yet."}
             </div>
@@ -376,7 +395,16 @@ export function WalkForwardView() {
         <CardContent className="grid gap-3 text-sm md:grid-cols-3">
           <StatusTile label="Latest proposal" value={latestProposal?.proposalId ?? "none"} />
           <StatusTile label="Walk-forward status" value={proposalWalkForwardStatus} />
-          <StatusTile label="Promotion warning" value={latestRun?.stability?.overfitRisk === "high" ? "Likely overfit; do not promote." : "Approval still requires manual review."} />
+          <StatusTile
+            label="Promotion warning"
+            value={
+              latestRun?.stability?.verdict === "insufficient_evidence"
+                ? "Insufficient evidence; do not promote yet."
+                : latestRun?.stability?.overfitRisk === "high"
+                  ? "Likely overfit; do not promote."
+                  : "Approval still requires manual review."
+            }
+          />
         </CardContent>
       </Card>
 

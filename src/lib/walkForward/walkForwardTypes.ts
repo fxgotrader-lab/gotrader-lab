@@ -7,8 +7,13 @@ export type WalkForwardSplitRatioPreset = "60_20_20" | "70_15_15" | "50_25_25" |
 export type WalkForwardMode = "safe" | "standard" | "advanced";
 export type WalkForwardRunStatus = "idle" | "running" | "completed" | "completed_with_warnings" | "canceled" | "failed";
 export type WalkForwardWindowVerdict = "pass" | "warning" | "fail";
-export type WalkForwardOverfitRisk = "low" | "medium" | "high";
-export type WalkForwardStabilityVerdict = "fail" | "promising" | "robust_research" | "paper_demo_review_candidate";
+export type WalkForwardOverfitRisk = "low" | "medium" | "high" | "not_applicable";
+export type WalkForwardStabilityVerdict =
+  | "insufficient_evidence"
+  | "fail"
+  | "promising"
+  | "robust_research"
+  | "paper_demo_review_candidate";
 export type WalkForwardSuggestedSearchMode =
   | "quick"
   | "standard"
@@ -30,8 +35,26 @@ export type WalkForwardLikelyFailureCause =
   | "stop_model_fragility"
   | "target_model_fragility"
   | "sample_size_too_low"
+  | "insufficient_evidence"
   | "overfit_risk"
   | "evidence_quality_weak";
+
+export interface WalkForwardEvidenceRules {
+  minimumWindows: number;
+  preferredWindows: number;
+  minimumOosTradesPerWindow: number;
+  minimumTotalOosTrades: number;
+}
+
+export interface WalkForwardEvidenceSummary extends WalkForwardEvidenceRules {
+  requestedMaxWindows: number;
+  actualWindowsGenerated: number;
+  totalOosTrades: number;
+  windowsBelowMinimumOosTrades: number;
+  enoughEvidence: boolean;
+  insufficientEvidenceReasons: string[];
+  windowGenerationNotes: string[];
+}
 
 export interface WalkForwardSplitRatio {
   preset: WalkForwardSplitRatioPreset;
@@ -163,6 +186,7 @@ export interface WalkForwardStabilitySummary {
   recommendedNextAction: string;
   summary: string;
   failReasons: string[];
+  evidenceSummary?: WalkForwardEvidenceSummary;
   diagnostics?: WalkForwardFailureDiagnostics;
   followUpPlan?: WalkForwardFollowUpSearchPlan;
 }
@@ -186,6 +210,9 @@ export interface WalkForwardRun {
   splitRatioPreset: WalkForwardSplitRatioPreset;
   splitRatio: WalkForwardSplitRatio;
   maxWindows: number;
+  requestedMaxWindows: number;
+  actualWindowsGenerated: number;
+  windowGenerationNotes: string[];
   dataSource: string;
   dataSourceLabel: string;
   dataPreset: RuntimeDataPreset;
@@ -220,6 +247,9 @@ export interface WalkForwardRunOptions {
   splitRatioPreset?: WalkForwardSplitRatioPreset;
   customRatio?: Pick<WalkForwardSplitRatio, "inSample" | "validation" | "outOfSample">;
   maxWindows?: number;
+  minimumWindows?: number;
+  minimumOosTradesPerWindow?: number;
+  minimumTotalOosTrades?: number;
   proposalId?: string;
   signal?: AbortSignal;
   onProgress?: (run: WalkForwardRun) => void;

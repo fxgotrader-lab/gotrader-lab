@@ -100,17 +100,24 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
   const latestWalkForwardRun = input.latestWalkForwardRun;
   const walkForwardWindowsTested = latestWalkForwardRun?.stability?.windowCount ?? 0;
   const walkForwardOutOfSamplePassed = latestWalkForwardRun?.stability?.outOfSampleWindowsPassed ?? 0;
+  const walkForwardInsufficientEvidence = latestWalkForwardRun?.stability?.verdict === "insufficient_evidence";
   const walkForwardNeedsOosConsistency = Boolean(
     latestWalkForwardRun?.stability &&
-      (latestWalkForwardRun.stability.verdict === "fail" ||
+      (!walkForwardInsufficientEvidence &&
+        (latestWalkForwardRun.stability.verdict === "fail" ||
         latestWalkForwardRun.stability.outOfSampleWindowsPassed < latestWalkForwardRun.stability.windowCount)
+      )
   );
   const walkForwardScore = latestWalkForwardRun?.stability
     ? Math.min(
         100,
         latestWalkForwardRun.stability.stabilityScore +
-          (latestWalkForwardRun.stability.overfitRisk === "low" ? 8 : latestWalkForwardRun.stability.overfitRisk === "medium" ? 0 : -18) +
-          (latestWalkForwardRun.stability.verdict === "fail" ? -20 : walkForwardNeedsOosConsistency ? -10 : 0)
+          (latestWalkForwardRun.stability.overfitRisk === "low"
+            ? 8
+            : latestWalkForwardRun.stability.overfitRisk === "medium" || latestWalkForwardRun.stability.overfitRisk === "not_applicable"
+              ? 0
+              : -18) +
+          (latestWalkForwardRun.stability.verdict === "fail" ? -20 : walkForwardNeedsOosConsistency ? -10 : walkForwardInsufficientEvidence ? -6 : 0)
       )
     : 0;
   const safeWindowCycles = maturityCycles.filter((cycle) => cycle.researchPreset === "safe").length;
@@ -166,6 +173,9 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
   if (latestWalkForwardRun && latestWalkForwardRun.stability?.overfitRisk === "high") {
     missingRequirements.push("Walk-forward overfit risk is high; test a simpler calibration across more windows.");
   }
+  if (walkForwardInsufficientEvidence) {
+    missingRequirements.push("Walk-forward evidence is insufficient; increase windows or out-of-sample trade count.");
+  }
   if (walkForwardNeedsOosConsistency) {
     missingRequirements.push("Needs more OOS consistency before robust maturity can be trusted.");
   }
@@ -187,6 +197,9 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
   if (walkForwardNeedsOosConsistency) {
     caps.push("research_ready");
   }
+  if (walkForwardInsufficientEvidence) {
+    caps.push("research_ready");
+  }
   if (importedDataCycles < 3 || totalSimulatedTrades < 100 || llmAdvisoryPassCount < 2 || input.evidenceQualityScore < 70) {
     caps.push("robust_research");
   }
@@ -203,6 +216,7 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
     currentCalibrationCycles.length < 2 ? "New or recently changed calibration must survive more cycles before maturity improves." : undefined,
     !latestWalkForwardRun ? "No walk-forward validation exists yet for the active research state." : undefined,
     latestWalkForwardRun?.stability?.overfitRisk === "high" ? "Walk-forward validation reports high overfit risk." : undefined,
+    walkForwardInsufficientEvidence ? "Walk-forward evidence is insufficient; this blocks maturity advancement without counting as strategy failure." : undefined,
     walkForwardNeedsOosConsistency ? "Needs more OOS consistency; passing only part of the walk-forward set is not robust." : undefined,
     readinessTrend === "declining" ? "Readiness trend is declining." : undefined
   ].filter((warning): warning is string => Boolean(warning));

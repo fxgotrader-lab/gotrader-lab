@@ -5,6 +5,8 @@ import type {
   WalkForwardFollowUpSearchPlan,
   WalkForwardLikelyFailureCause,
   WalkForwardOverfitRisk,
+  WalkForwardEvidenceRules,
+  WalkForwardEvidenceSummary,
   WalkForwardStabilitySummary,
   WalkForwardStabilityVerdict,
   WalkForwardWindowMetrics,
@@ -34,6 +36,13 @@ const consistencyScore = (values: number[], tolerance: number) => {
 
 const oosMetrics = (windows: WalkForwardWindowResult[]) =>
   windows.map((window) => window.metricsBySplit.out_of_sample).filter(Boolean);
+
+const defaultEvidenceRules: WalkForwardEvidenceRules = {
+  minimumWindows: 3,
+  preferredWindows: 3,
+  minimumOosTradesPerWindow: 5,
+  minimumTotalOosTrades: 20
+};
 
 const windowScore = (metrics: WalkForwardWindowMetrics) =>
   clamp(
@@ -66,8 +75,12 @@ const verdictFor = (
   outOfSamplePassRate: number,
   overfitRisk: WalkForwardOverfitRisk,
   windowCount: number,
-  totalOosTrades: number
+  totalOosTrades: number,
+  enoughEvidence: boolean
 ): WalkForwardStabilityVerdict => {
+  if (!enoughEvidence) {
+    return "insufficient_evidence";
+  }
   if (stabilityScore >= 82 && outOfSamplePassRate >= 0.8 && overfitRisk === "low" && windowCount >= 3 && totalOosTrades >= 20) {
     return "paper_demo_review_candidate";
   }
@@ -114,6 +127,9 @@ const likelyFailureCauseFor = (
   }
   if (overfitRisk === "high") {
     return "overfit_risk";
+  }
+  if (windows.length < defaultEvidenceRules.minimumWindows || totalOosTrades < defaultEvidenceRules.minimumTotalOosTrades) {
+    return "insufficient_evidence";
   }
   if (worstOosAverageR < -0.1 || reasonText.includes("average r")) {
     return "low_average_r";
@@ -253,6 +269,24 @@ const recommendationsFor = (
     );
   }
 
+  if (likelyFailureCause === "insufficient_evidence") {
+    recommendations.push(
+      recommendation(
+        "Increase walk-forward evidence",
+        "The run did not produce enough windows or out-of-sample trades for a meaningful verdict.",
+        "insufficient_evidence",
+        [
+          "use Standard preset",
+          "increase max windows",
+          "use a larger raw candle window",
+          "reduce validation split size if needed",
+          "keep Quick Auto Research while increasing data window"
+        ],
+        "quick"
+      )
+    );
+  }
+
   if (likelyFailureCause === "evidence_quality_weak") {
     recommendations.push(
       recommendation(
@@ -287,12 +321,15 @@ const buildFailureDiagnostics = (
   windows: WalkForwardWindowResult[],
   outOfSample: WalkForwardWindowMetrics[],
   overfitRisk: WalkForwardOverfitRisk,
-  worstWindowId?: string
+  worstWindowId?: string,
+  evidenceSummary?: WalkForwardEvidenceSummary
 ): WalkForwardFailureDiagnostics => {
   const repeatedFailureReasons = failureCounts(windows);
   const failedWindowCount = windows.filter((window) => window.verdict !== "pass").length;
   const failedOosWindows = outOfSample.filter((metrics) => !metrics.pass).length;
-  const likelyFailureCause = likelyFailureCauseFor(windows, outOfSample, repeatedFailureReasons, overfitRisk);
+  const likelyFailureCause = evidenceSummary && !evidenceSummary.enoughEvidence
+    ? "insufficient_evidence"
+    : likelyFailureCauseFor(windows, outOfSample, repeatedFailureReasons, overfitRisk);
   const recommendations = recommendationsFor(likelyFailureCause, failedOosWindows);
 
   return {
@@ -301,11 +338,17 @@ const buildFailureDiagnostics = (
     worstOosWinRate: round(outOfSample.length ? Math.min(...outOfSample.map((metrics) => metrics.winRate)) : 0, 3),
     worstOosAverageR: round(outOfSample.length ? Math.min(...outOfSample.map((metrics) => metrics.averageR)) : 0, 2),
     worstOosDrawdown: round(outOfSample.length ? Math.max(...outOfSample.map((metrics) => metrics.maxDrawdownR)) : 0, 2),
-    repeatedFailureReasons: repeatedFailureReasons.length ? repeatedFailureReasons : ["No repeated failure reason was recorded."],
+    repeatedFailureReasons: evidenceSummary && !evidenceSummary.enoughEvidence
+      ? evidenceSummary.insufficientEvidenceReasons
+      : repeatedFailureReasons.length
+        ? repeatedFailureReasons
+        : ["No repeated failure reason was recorded."],
     likelyFailureCause,
     recommendations,
     summary:
-      failedOosWindows > 0
+      evidenceSummary && !evidenceSummary.enoughEvidence
+        ? `Insufficient walk-forward evidence: ${evidenceSummary.insufficientEvidenceReasons[0] ?? "more windows and OOS trades are required"}.`
+        : failedOosWindows > 0
         ? `${failedOosWindows}/${Math.max(1, outOfSample.length)} out-of-sample window(s) failed; likely cause is ${likelyFailureCause.replace(/_/g, " ")}.`
         : `Walk-forward did not fully promote; likely cause is ${likelyFailureCause.replace(/_/g, " ")}.`
   };
@@ -335,9 +378,17 @@ const buildFollowUpPlan = (
 
 export function analyzeWalkForwardStability(
   windowsInput: WalkForwardWindowResult[],
-  sourceRunId = "walk_forward_run"
+  sourceRunId = "walk_forward_run",
+  evidenceOptions: Partial<WalkForwardEvidenceSummary> = {}
 ): WalkForwardStabilitySummary {
   const windows = safeArray(windowsInput);
+  const evidenceRules: WalkForwardEvidenceRules = {
+    minimumWindows: evidenceOptions.minimumWindows ?? defaultEvidenceRules.minimumWindows,
+    preferredWindows: evidenceOptions.preferredWindows ?? defaultEvidenceRules.preferredWindows,
+    minimumOosTradesPerWindow:
+      evidenceOptions.minimumOosTradesPerWindow ?? defaultEvidenceRules.minimumOosTradesPerWindow,
+    minimumTotalOosTrades: evidenceOptions.minimumTotalOosTrades ?? defaultEvidenceRules.minimumTotalOosTrades
+  };
   const outOfSample = oosMetrics(windows);
   const winRates = outOfSample.map((metrics) => metrics.winRate);
   const averageRs = outOfSample.map((metrics) => metrics.averageR);
@@ -347,9 +398,31 @@ export function analyzeWalkForwardStability(
   const readinessScores = outOfSample.map((metrics) => metrics.readinessScore);
   const outOfSampleWindowsPassed = outOfSample.filter((metrics) => metrics.pass).length;
   const windowsPassed = windows.filter((window) => window.verdict === "pass").length;
-  const overfitRisk = overfitRiskFor(windows, outOfSample);
   const outOfSamplePassRate = outOfSampleWindowsPassed / Math.max(1, outOfSample.length);
   const totalOosTrades = outOfSample.reduce((sum, metrics) => sum + metrics.totalTrades, 0);
+  const windowsBelowMinimumOosTrades = outOfSample.filter((metrics) => metrics.totalTrades < evidenceRules.minimumOosTradesPerWindow).length;
+  const insufficientEvidenceReasons = [
+    windows.length < evidenceRules.minimumWindows
+      ? `Only ${windows.length} walk-forward window(s) were generated; ${evidenceRules.minimumWindows} are required for a meaningful verdict.`
+      : undefined,
+    windowsBelowMinimumOosTrades > 0
+      ? `${windowsBelowMinimumOosTrades} out-of-sample window(s) had fewer than ${evidenceRules.minimumOosTradesPerWindow} trades.`
+      : undefined,
+    totalOosTrades < evidenceRules.minimumTotalOosTrades
+      ? `Out-of-sample trade count too low: ${totalOosTrades}/${evidenceRules.minimumTotalOosTrades}.`
+      : undefined
+  ].filter((reason): reason is string => Boolean(reason));
+  const evidenceSummary: WalkForwardEvidenceSummary = {
+    ...evidenceRules,
+    requestedMaxWindows: evidenceOptions.requestedMaxWindows ?? windows.length,
+    actualWindowsGenerated: evidenceOptions.actualWindowsGenerated ?? windows.length,
+    totalOosTrades,
+    windowsBelowMinimumOosTrades,
+    enoughEvidence: insufficientEvidenceReasons.length === 0,
+    insufficientEvidenceReasons,
+    windowGenerationNotes: safeArray(evidenceOptions.windowGenerationNotes)
+  };
+  const overfitRisk = evidenceSummary.enoughEvidence ? overfitRiskFor(windows, outOfSample) : "not_applicable";
   const averageWinRate = average(winRates);
   const averageRConsistency = consistencyScore(averageRs, 0.45);
   const tradeCountConsistency = consistencyScore(tradeCounts, 12);
@@ -367,7 +440,7 @@ export function analyzeWalkForwardStability(
     ),
     0
   );
-  const verdict = verdictFor(stabilityScore, outOfSamplePassRate, overfitRisk, windows.length, totalOosTrades);
+  const verdict = verdictFor(stabilityScore, outOfSamplePassRate, overfitRisk, windows.length, totalOosTrades, evidenceSummary.enoughEvidence);
   const scoredWindows = windows.map((window) => ({
     windowId: window.windowId,
     score: windowScore(window.metricsBySplit.out_of_sample)
@@ -376,13 +449,13 @@ export function analyzeWalkForwardStability(
   const worstWindow = [...scoredWindows].sort((a, b) => a.score - b.score)[0];
   const failReasons = [
     outOfSample.length < 2 ? "At least two out-of-sample windows are needed before trusting walk-forward stability." : undefined,
-    totalOosTrades < 12 ? "Out-of-sample trade sample is too small." : undefined,
+    totalOosTrades < evidenceRules.minimumTotalOosTrades ? "Out-of-sample trade count too low." : undefined,
     outOfSamplePassRate < 0.5 ? "Most out-of-sample windows failed the stability gate." : undefined,
     overfitRisk === "high" ? "In-sample results degraded materially out-of-sample; overfit risk is high." : undefined,
     Math.min(...averageRs, 0) < -0.1 ? "Worst-window average R is too weak." : undefined
   ].filter((reason): reason is string => Boolean(reason));
-  const diagnostics = buildFailureDiagnostics(windows, outOfSample, overfitRisk, worstWindow?.windowId);
-  const followUpPlan = verdict === "fail" || failReasons.length || outOfSampleWindowsPassed < outOfSample.length
+  const diagnostics = buildFailureDiagnostics(windows, outOfSample, overfitRisk, worstWindow?.windowId, evidenceSummary);
+  const followUpPlan = verdict === "insufficient_evidence" || verdict === "fail" || failReasons.length || outOfSampleWindowsPassed < outOfSample.length
     ? buildFollowUpPlan(sourceRunId, diagnostics)
     : undefined;
 
@@ -413,10 +486,13 @@ export function analyzeWalkForwardStability(
             ? "Use the strongest out-of-sample window to guide a bounded calibration follow-up."
             : "Do not promote. Diagnose the weakest out-of-sample window and continue simulation research.",
     summary:
-      verdict === "fail"
+      verdict === "insufficient_evidence"
+        ? "Walk-forward validation has insufficient evidence; increase windows or out-of-sample trade count before judging strategy quality."
+        : verdict === "fail"
         ? "Walk-forward validation failed; one selected window is not enough evidence."
         : `Walk-forward validation is ${verdict.replace(/_/g, " ")} with ${overfitRisk} overfit risk.`,
     failReasons,
+    evidenceSummary,
     diagnostics,
     followUpPlan
   };

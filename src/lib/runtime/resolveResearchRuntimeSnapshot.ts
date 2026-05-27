@@ -283,9 +283,13 @@ export async function resolveResearchRuntimeSnapshot(
   ].filter((warning): warning is string => Boolean(warning));
   const walkForwardWarnings = [
     !latestWalkForward ? "No walk-forward validation exists; proposals and readiness are based on selected-window evidence only." : undefined,
+    latestWalkForward?.stability?.verdict === "insufficient_evidence"
+      ? "Latest walk-forward validation has insufficient evidence; increase windows or OOS trades before judging strategy quality."
+      : undefined,
     latestWalkForward?.stability?.verdict === "fail" ? "Latest walk-forward validation failed; targeted follow-up research is required." : undefined,
     latestWalkForward?.stability?.overfitRisk === "high" ? "Latest walk-forward validation reports high overfit risk." : undefined,
     latestWalkForward?.stability &&
+    latestWalkForward.stability.verdict !== "insufficient_evidence" &&
     latestWalkForward.stability.outOfSampleWindowsPassed < latestWalkForward.stability.windowCount
       ? "Walk-forward needs more OOS consistency before maturity can advance."
       : undefined,

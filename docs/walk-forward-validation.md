@@ -86,10 +86,13 @@ Any later self-improvement proposal remains approval-required.
 
 Walk-forward verdicts are:
 
+- `insufficient_evidence`
 - `fail`
 - `promising`
 - `robust_research`
 - `paper_demo_review_candidate`
+
+`insufficient_evidence` means the app did not generate enough rolling windows or out-of-sample trades to judge strategy quality. It is not treated as overfit or strategy failure. The usual next step is to use Standard preset, increase max windows, increase the raw candle window, reduce the validation split if needed, or keep Quick search while increasing the data window.
 
 These verdicts do not approve broker/demo/live trading. They only increase or reduce research confidence.
 

@@ -34,7 +34,7 @@ export const splitRatioPresets: Record<Exclude<WalkForwardSplitRatioPreset, "cus
   }
 };
 
-const modeWindowSize: Record<WalkForwardMode, number> = {
+export const walkForwardModeWindowSize: Record<WalkForwardMode, number> = {
   safe: 120,
   standard: 240,
   advanced: 480
@@ -129,7 +129,7 @@ export function createWalkForwardWindows({
   }
 
   const clampedMaxWindows = Math.max(1, Math.min(maxWindows, mode === "advanced" ? 8 : mode === "standard" ? 5 : 3));
-  const desiredWindowSize = Math.min(sorted.length, modeWindowSize[mode]);
+  const desiredWindowSize = Math.min(sorted.length, walkForwardModeWindowSize[mode]);
   const minimumWindowSize = Math.min(sorted.length, 45);
   const windowSize = Math.max(minimumWindowSize, desiredWindowSize);
   const starts = new Set<number>();
