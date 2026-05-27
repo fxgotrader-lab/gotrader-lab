@@ -38,6 +38,7 @@ export type {
   RuntimeLLMState,
   RuntimeMarketDataState,
   RuntimeMaturityState,
+  RuntimeWalkForwardState,
   RuntimeMetricProvenanceState,
   MetricProvenance,
   MetricSourceType,

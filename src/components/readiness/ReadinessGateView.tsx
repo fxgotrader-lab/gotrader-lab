@@ -214,6 +214,22 @@ export function ReadinessGateView() {
         </CardContent>
       </Card>
 
+      <Card className="border-cyan-300/25 bg-cyan-300/10">
+        <CardContent className="flex flex-col gap-3 p-4 text-sm text-cyan-100 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="font-medium">Walk-forward validation readiness impact</div>
+            <div className="mt-1">
+              {runtimeSnapshot?.walkForward.latestRun
+                ? `${runtimeSnapshot.walkForward.windowsTested} window(s), ${runtimeSnapshot.walkForward.outOfSampleWindowsPassed} out-of-sample passed, overfit risk ${runtimeSnapshot.walkForward.overfitRisk ?? "unknown"}.`
+                : "No walk-forward validation exists; Paper-Demo Candidate confidence should remain capped."}
+            </div>
+          </div>
+          <Badge variant={runtimeSnapshot?.walkForward.verdict === "robust_research" || runtimeSnapshot?.walkForward.verdict === "paper_demo_review_candidate" ? "success" : runtimeSnapshot?.walkForward.verdict === "promising" ? "warning" : "danger"}>
+            {runtimeSnapshot?.walkForward.verdict?.replace(/_/g, " ") ?? "not run"}
+          </Badge>
+        </CardContent>
+      </Card>
+
       <Card className="border-cyan-400/20 bg-cyan-400/5">
         <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-5">
           <div>

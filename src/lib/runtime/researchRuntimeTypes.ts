@@ -14,6 +14,7 @@ import type {
 } from "@/lib/researchCycle/researchCycleTypes";
 import type { ActiveResearchCalibration, CalibrationProposal, CalibrationProposalChanges, CalibrationProposalMetricsSnapshot } from "@/lib/selfImprovement";
 import type { FuturesSymbol, Timeframe, TradeThesis } from "@/lib/types";
+import type { WalkForwardRun, WalkForwardStabilitySummary } from "@/lib/walkForward";
 
 export type RuntimeDataPreset = "mock" | "safe" | "standard" | "advanced" | "custom";
 export type RuntimeBridgeStatus = "not_checked" | "running" | "not_running" | "unknown";
@@ -150,6 +151,22 @@ export interface RuntimeMaturityState {
   nextMaturityRequirement: string;
 }
 
+export interface RuntimeWalkForwardState {
+  latestRun?: WalkForwardRun;
+  latestRunId?: string;
+  latestStatus?: WalkForwardRun["status"];
+  latestTimestamp?: string;
+  stability?: WalkForwardStabilitySummary;
+  stabilityScore?: number;
+  verdict?: WalkForwardStabilitySummary["verdict"];
+  overfitRisk?: WalkForwardStabilitySummary["overfitRisk"];
+  windowsTested: number;
+  outOfSampleWindowsPassed: number;
+  proposalValidated: boolean;
+  recommendedNextAction: string;
+  warnings: string[];
+}
+
 export interface RuntimeDiagnosticsState {
   sourceTrace: string[];
   staleStateWarnings: string[];
@@ -169,6 +186,7 @@ export interface ResearchRuntimeSnapshot {
   performance: RuntimePerformanceState;
   evidence: RuntimeEvidenceState;
   maturity: RuntimeMaturityState;
+  walkForward: RuntimeWalkForwardState;
   fingerprints: RuntimeFingerprintState;
   metricProvenance: RuntimeMetricProvenanceState;
   diagnostics: RuntimeDiagnosticsState;

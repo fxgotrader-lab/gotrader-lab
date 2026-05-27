@@ -965,6 +965,24 @@ export function SelfImprovementView() {
         </CardContent>
       </Card>
 
+      <Card className="border-cyan-300/20 bg-cyan-300/10">
+        <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-[1fr_auto] md:items-center">
+          <div>
+            <div className="font-medium">Walk-forward validation before approval</div>
+            <div className="mt-1 text-cyan-100/75">
+              {latestProposal
+                ? runtimeSnapshot?.walkForward.proposalValidated
+                  ? `This proposal has walk-forward validation: ${runtimeSnapshot.walkForward.windowsTested} window(s), overfit risk ${runtimeSnapshot.walkForward.overfitRisk ?? "unknown"}.`
+                  : "This proposal has not been walk-forward validated yet. Treat one-window proposal evidence as preliminary."
+                : "No proposal selected for walk-forward validation."}
+            </div>
+          </div>
+          <Badge variant={runtimeSnapshot?.walkForward.proposalValidated ? "success" : "warning"}>
+            {runtimeSnapshot?.walkForward.verdict?.replace(/_/g, " ") ?? "not run"}
+          </Badge>
+        </CardContent>
+      </Card>
+
       {actionMessage ? (
         <Card className="border-emerald-300/25 bg-emerald-300/10">
           <CardContent className="p-4 text-sm font-medium text-emerald-100">{actionMessage}</CardContent>

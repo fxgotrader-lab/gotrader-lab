@@ -60,6 +60,7 @@ const navigation = [
     section: "Validation",
     items: [
       { href: "/validation", label: "Validation", icon: ClipboardCheck },
+      { href: "/walk-forward", label: "Walk Forward", icon: GitBranch },
       { href: "/research-quality", label: "Research Quality", icon: ShieldCheck },
       { href: "/readiness-gate", label: "Readiness Gate", icon: ShieldAlert },
       { href: "/self-improvement", label: "Self-Improvement", icon: SlidersHorizontal },

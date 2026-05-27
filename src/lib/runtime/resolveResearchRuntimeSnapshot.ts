@@ -45,6 +45,7 @@ import { labStorage } from "@/lib/storage";
 import type { FuturesSymbol, LabState, Timeframe } from "@/lib/types";
 import { safeArray, safeTopN, uid } from "@/lib/utils";
 import { loadLatestValidationReport, VALIDATION_REPORT_STORAGE_KEY } from "@/lib/validation";
+import { latestWalkForwardRun, loadWalkForwardState, WALK_FORWARD_STORAGE_KEY } from "@/lib/walkForward";
 
 import type {
   ResearchRuntimeSnapshot,
@@ -209,6 +210,8 @@ export async function resolveResearchRuntimeSnapshot(
   const completedRunbookItems = countCompletedRunbookItems(runbook);
   const autoResearchState = loadAutoResearchState();
   const latestAutoResearch = latestAutoResearchCycle(autoResearchState);
+  const walkForwardState = loadWalkForwardState();
+  const latestWalkForward = latestWalkForwardRun(walkForwardState);
   const activeImportId = getActiveImportedCandleSetId();
   const evidenceLedgerSummary = buildEvidenceLedger({
     dataMode: marketData.activeDataSource === "imported" ? "imported" : "mock",
@@ -232,6 +235,7 @@ export async function resolveResearchRuntimeSnapshot(
     evidenceQualityScore: evidenceLedgerSummary.overallScore,
     proposals: selfImprovement.proposals,
     latestReadinessState: readinessSnapshot.state,
+    latestWalkForwardRun: latestWalkForward,
     cycles: safeArray(researchCycleState.runs).map((run) => {
       const metrics = canonicalMetricsForRun(run);
       return {
@@ -261,6 +265,7 @@ export async function resolveResearchRuntimeSnapshot(
     `config merge: ${activeConfig.mergeStatusLabel}`,
     `latest cycle: ${latestCycle?.cycleId ?? "none"}`,
     `latest auto research: ${latestAutoResearch?.cycleId ?? "none"}`,
+    `latest walk-forward: ${latestWalkForward?.runId ?? "none"}`,
     `latest proposal: ${latestProposal?.proposalId ?? "none"}`,
     `latest LLM run: ${latestLLMRun?.runId ?? "none"}`,
     `readiness: ${readinessSnapshot.state}`
@@ -276,6 +281,12 @@ export async function resolveResearchRuntimeSnapshot(
       ? `Simulation runbook references cycle ${runbook.latestResearchCycleId}, while latest cycle is ${latestCycle.cycleId}.`
       : undefined
   ].filter((warning): warning is string => Boolean(warning));
+  const walkForwardWarnings = [
+    !latestWalkForward ? "No walk-forward validation exists; proposals and readiness are based on selected-window evidence only." : undefined,
+    latestWalkForward?.stability?.overfitRisk === "high" ? "Latest walk-forward validation reports high overfit risk." : undefined,
+    latestWalkForward && latestWalkForward.dataSource !== "imported" ? "Latest walk-forward validation did not use imported historical data." : undefined
+  ].filter((warning): warning is string => Boolean(warning));
+
   const mismatchWarnings = buildMismatchWarnings({
     activeImportId,
     activeCalibrationExists: Boolean(activeConfig.activeResearchCalibration),
@@ -406,7 +417,12 @@ export async function resolveResearchRuntimeSnapshot(
       readinessSnapshot,
       actualBlockers: safeArray(readinessSnapshot.failedRequirements).map((item) => item.label),
       passedRequirements: safeArray(readinessSnapshot.passedRequirements).map((item) => item.label),
-      warnings: [...readinessSnapshot.warnings, ...evidenceLedgerSummary.readinessEvidenceWarnings, ...researchMaturitySummary.maturityWarnings],
+      warnings: [
+        ...readinessSnapshot.warnings,
+        ...evidenceLedgerSummary.readinessEvidenceWarnings,
+        ...researchMaturitySummary.maturityWarnings,
+        ...walkForwardWarnings
+      ],
       nextAction: readinessSnapshot.recommendedNextStep
     },
     performance: {
@@ -425,6 +441,26 @@ export async function resolveResearchRuntimeSnapshot(
       maturityGrade: researchMaturitySummary.grade,
       maturityScore: researchMaturitySummary.score,
       nextMaturityRequirement: researchMaturitySummary.nextMaturityRequirement
+    },
+    walkForward: {
+      latestRun: latestWalkForward,
+      latestRunId: latestWalkForward?.runId,
+      latestStatus: latestWalkForward?.status,
+      latestTimestamp: latestWalkForward?.completedAt ?? latestWalkForward?.startedAt,
+      stability: latestWalkForward?.stability,
+      stabilityScore: latestWalkForward?.stability?.stabilityScore,
+      verdict: latestWalkForward?.stability?.verdict,
+      overfitRisk: latestWalkForward?.stability?.overfitRisk,
+      windowsTested: latestWalkForward?.stability?.windowCount ?? 0,
+      outOfSampleWindowsPassed: latestWalkForward?.stability?.outOfSampleWindowsPassed ?? 0,
+      proposalValidated: Boolean(
+        latestProposal?.proposalId &&
+          latestWalkForward?.proposalId &&
+          latestWalkForward.proposalId === latestProposal.proposalId
+      ),
+      recommendedNextAction:
+        latestWalkForward?.stability?.recommendedNextAction ?? "Run walk-forward validation on imported data before trusting a calibration.",
+      warnings: walkForwardWarnings
     },
     fingerprints: {
       activeBaseline: activeBaselineFingerprint,
@@ -454,6 +490,7 @@ export async function resolveResearchRuntimeSnapshot(
         BACKTEST_CONFIG_STORAGE_KEY,
         CANDLE_WINDOW_STORAGE_KEY,
         ACTIVE_IMPORT_STORAGE_KEY,
+        WALK_FORWARD_STORAGE_KEY,
         INDEXED_DB_NAME,
         CANDLE_WINDOW_SETTINGS_UPDATED_EVENT
       ]

@@ -132,6 +132,9 @@ export function ResearchMaturityView() {
             <StatusTile label="Windows tested" value={String(summary?.dataWindowsTested ?? 0)} />
             <StatusTile label="Total simulated trades" value={String(summary?.totalSimulatedTrades ?? 0)} />
             <StatusTile label="LLM advisory passes" value={String(summary?.llmAdvisoryPassCount ?? 0)} />
+            <StatusTile label="Walk-forward windows" value={String(summary?.walkForwardWindowsTested ?? 0)} />
+            <StatusTile label="OOS windows passed" value={String(summary?.walkForwardOutOfSamplePassed ?? 0)} />
+            <StatusTile label="Overfit risk" value={summary?.latestWalkForwardOverfitRisk ?? "unknown"} />
             <StatusTile label="Evidence score" value={`${summary?.evidenceQualityScore ?? 0}/100`} />
             <StatusTile label="Imported cycles" value={String(summary?.importedDataCycles ?? 0)} />
             <StatusTile label="Mock cycles" value={String(summary?.mockDataCycles ?? 0)} />

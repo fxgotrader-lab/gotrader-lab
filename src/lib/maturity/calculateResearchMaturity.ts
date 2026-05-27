@@ -97,6 +97,16 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
   const dataWindowsTested = distinctCount(maturityCycles.map((cycle) => cycle.candleWindow));
   const totalSimulatedTrades = maturityCycles.reduce((sum, cycle) => sum + (cycle.totalTrades ?? 0), 0);
   const llmAdvisoryPassCount = maturityCycles.filter((cycle) => cycle.llmAdvisoryPassed).length;
+  const latestWalkForwardRun = input.latestWalkForwardRun;
+  const walkForwardWindowsTested = latestWalkForwardRun?.stability?.windowCount ?? 0;
+  const walkForwardOutOfSamplePassed = latestWalkForwardRun?.stability?.outOfSampleWindowsPassed ?? 0;
+  const walkForwardScore = latestWalkForwardRun?.stability
+    ? Math.min(
+        100,
+        latestWalkForwardRun.stability.stabilityScore +
+          (latestWalkForwardRun.stability.overfitRisk === "low" ? 8 : latestWalkForwardRun.stability.overfitRisk === "medium" ? 0 : -18)
+      )
+    : 0;
   const safeWindowCycles = maturityCycles.filter((cycle) => cycle.researchPreset === "safe").length;
   const standardWindowCycles = maturityCycles.filter((cycle) => cycle.researchPreset === "standard").length;
   const advancedWindowCycles = maturityCycles.filter((cycle) => cycle.researchPreset === "advanced").length;
@@ -120,6 +130,7 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
     performanceConsistency: Math.round(average([winRateConsistency, averageRConsistency, drawdownConsistency, falsePositiveConsistency])),
     llmReview: clamp((llmAdvisoryPassCount / 3) * 100),
     evidenceQuality: clamp(input.evidenceQualityScore),
+    walkForward: clamp(walkForwardScore),
     readinessTrend: readinessTrend === "improving" ? 85 : readinessTrend === "stable" ? 70 : readinessTrend === "declining" ? 25 : 35,
     proposalDiscipline: clamp(70 + acceptedProposalCount * 5 - noOpOrFailedProposalCount * 10 - rejectedProposalCount * 2),
     dataReality: importedDataCycles ? clamp((importedDataCycles / Math.max(3, maturityCycles.length)) * 100) : 20
@@ -132,7 +143,8 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
       breakdown.tradeSample * 0.12 +
       breakdown.performanceConsistency * 0.14 +
       breakdown.llmReview * 0.1 +
-      breakdown.evidenceQuality * 0.12 +
+      breakdown.evidenceQuality * 0.1 +
+      breakdown.walkForward * 0.02 +
       breakdown.readinessTrend * 0.08 +
       breakdown.proposalDiscipline * 0.05 +
       breakdown.dataReality * 0.05
@@ -144,6 +156,10 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
   if (dataWindowsTested < 2) missingRequirements.push("Test at least two distinct candle windows or presets.");
   if (totalSimulatedTrades < 50) missingRequirements.push("Collect at least 50 simulated trades before trusting maturity.");
   if (llmAdvisoryPassCount < 1) missingRequirements.push("Run and pass LLM advisory review.");
+  if (!latestWalkForwardRun) missingRequirements.push("Run walk-forward validation on imported data.");
+  if (latestWalkForwardRun && latestWalkForwardRun.stability?.overfitRisk === "high") {
+    missingRequirements.push("Walk-forward overfit risk is high; test a simpler calibration across more windows.");
+  }
   if (input.evidenceQualityScore < 60) missingRequirements.push("Improve evidence quality before Paper-Demo Candidate review.");
   if (!importedDataCycles) missingRequirements.push("Use imported historical data; mock-only runs cap maturity.");
   if (readinessTrend === "declining") missingRequirements.push("Readiness trend is declining across tested cycles.");
@@ -156,6 +172,9 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
   if (totalSimulatedTrades < 50) caps.push("early_research");
   if (llmAdvisoryPassCount < 1) caps.push("early_research");
   if (maturityCycles.length < 2 || dataWindowsTested < 2) caps.push("research_ready");
+  if (!latestWalkForwardRun || walkForwardWindowsTested < 2 || latestWalkForwardRun.stability?.overfitRisk === "high") {
+    caps.push("robust_research");
+  }
   if (importedDataCycles < 3 || totalSimulatedTrades < 100 || llmAdvisoryPassCount < 2 || input.evidenceQualityScore < 70) {
     caps.push("robust_research");
   }
@@ -170,6 +189,8 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
     totalSimulatedTrades < 50 ? "Too few simulated trades to trust calibration maturity." : undefined,
     llmAdvisoryPassCount < 1 ? "Missing LLM advisory review caps maturity." : undefined,
     currentCalibrationCycles.length < 2 ? "New or recently changed calibration must survive more cycles before maturity improves." : undefined,
+    !latestWalkForwardRun ? "No walk-forward validation exists yet for the active research state." : undefined,
+    latestWalkForwardRun?.stability?.overfitRisk === "high" ? "Walk-forward validation reports high overfit risk." : undefined,
     readinessTrend === "declining" ? "Readiness trend is declining." : undefined
   ].filter((warning): warning is string => Boolean(warning));
 
@@ -202,6 +223,10 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
     falsePositiveConsistency,
     sessionConsistency,
     llmAdvisoryPassCount,
+    walkForwardWindowsTested,
+    walkForwardOutOfSamplePassed,
+    latestWalkForwardVerdict: latestWalkForwardRun?.stability?.verdict,
+    latestWalkForwardOverfitRisk: latestWalkForwardRun?.stability?.overfitRisk,
     evidenceQualityScore: input.evidenceQualityScore,
     readinessTrend,
     acceptedProposalCount,

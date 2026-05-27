@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, ClipboardCheck, DatabaseZap, ExternalLink, Gauge, MessageSquareText, MessagesSquare, Route, Sparkles } from "lucide-react";
+import { ArrowRight, ClipboardCheck, DatabaseZap, ExternalLink, Gauge, GitBranch, MessageSquareText, MessagesSquare, Route, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +54,7 @@ import {
 import type { LabState } from "@/lib/types";
 import { safeArray } from "@/lib/utils";
 import { loadLatestValidationReport } from "@/lib/validation";
+import { latestWalkForwardRun, loadWalkForwardState } from "@/lib/walkForward";
 
 import { AutomationTimeline, type AutomationTimelineEvent } from "./AutomationTimeline";
 import { AutoResearchStatusCard } from "./AutoResearchStatusCard";
@@ -102,6 +103,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
   const providerStatus = providerStatusForMode(llmState.providerMode);
   const autoResearchState = loadAutoResearchState();
   const latestAutoResearch = latestAutoResearchCycle(autoResearchState);
+  const latestWalkForward = runtimeSnapshot?.walkForward.latestRun ?? latestWalkForwardRun(loadWalkForwardState());
   const validationReport = loadLatestValidationReport();
   const researchQuality = loadLatestResearchQualityReview();
   const selfImprovement = loadSelfImprovementState();
@@ -279,6 +281,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
         <MarketDataContextCard context={marketContext} source={activeCandleSource} />
         <EvidenceQualityCard snapshot={runtimeSnapshot} />
         <ResearchMaturityCard snapshot={runtimeSnapshot} />
+        <WalkForwardStatusCard run={latestWalkForward} snapshot={runtimeSnapshot} />
         <AgentDebateCard summary={agentDebateSummary} />
         <AgentAuditCard summary={agentAuditSummary} />
         <LLMAgentStatusCard latestRun={latestLLMRun} providerStatus={providerStatus} state={llmState} />
@@ -488,6 +491,60 @@ function ResearchMaturityCard({ snapshot }: { snapshot?: ResearchRuntimeSnapshot
         <Link to="/research-maturity">
           <Button variant="secondary" className="w-full justify-between">
             Open maturity score
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </Link>
+      </CardContent>
+    </Card>
+  );
+}
+
+function WalkForwardStatusCard({
+  run,
+  snapshot
+}: {
+  run?: ReturnType<typeof latestWalkForwardRun>;
+  snapshot?: ResearchRuntimeSnapshot;
+}) {
+  const stability = run?.stability;
+
+  return (
+    <Card className="border-white/10 bg-slate-950/70">
+      <CardHeader className="flex flex-row items-start justify-between gap-3">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base text-slate-100">
+            <GitBranch className="h-4 w-4 text-cyan-300" aria-hidden="true" />
+            Walk-Forward Validation
+          </CardTitle>
+          <p className="mt-1 text-xs text-slate-500">In-sample, validation, and out-of-sample stability for imported data.</p>
+        </div>
+        <Badge
+          variant={
+            stability?.verdict === "paper_demo_review_candidate" || stability?.verdict === "robust_research"
+              ? "success"
+              : stability?.verdict === "promising"
+                ? "warning"
+                : stability?.verdict === "fail"
+                  ? "danger"
+                  : "muted"
+          }
+        >
+          {stability?.verdict?.replace(/_/g, " ") ?? "not run"}
+        </Badge>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 text-sm sm:grid-cols-2">
+          <StatusLine label="Windows tested" value={String(stability?.windowCount ?? 0)} />
+          <StatusLine label="OOS passed" value={`${stability?.outOfSampleWindowsPassed ?? 0}/${stability?.windowCount ?? 0}`} />
+          <StatusLine label="Stability score" value={stability ? `${stability.stabilityScore}/100` : "n/a"} />
+          <StatusLine label="Overfit risk" value={stability?.overfitRisk ?? "unknown"} />
+        </div>
+        <div className="rounded-md border border-cyan-300/25 bg-cyan-300/10 p-3 text-xs text-cyan-100">
+          {snapshot?.walkForward.recommendedNextAction ?? "Run walk-forward validation before trusting a one-window calibration."}
+        </div>
+        <Link to="/walk-forward">
+          <Button variant="secondary" className="w-full justify-between">
+            Open walk-forward validation
             <ExternalLink className="h-4 w-4" aria-hidden="true" />
           </Button>
         </Link>

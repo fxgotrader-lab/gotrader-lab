@@ -1,4 +1,5 @@
 import type { CalibrationProposal } from "@/lib/selfImprovement";
+import type { WalkForwardRun } from "@/lib/walkForward";
 
 export type ResearchMaturityGrade =
   | "untested"
@@ -15,6 +16,7 @@ export interface ResearchMaturityBreakdown {
   performanceConsistency: number;
   llmReview: number;
   evidenceQuality: number;
+  walkForward: number;
   readinessTrend: number;
   proposalDiscipline: number;
   dataReality: number;
@@ -47,6 +49,7 @@ export interface ResearchMaturityInput {
   evidenceQualityScore: number;
   proposals: CalibrationProposal[];
   latestReadinessState?: string;
+  latestWalkForwardRun?: WalkForwardRun;
 }
 
 export interface ResearchMaturitySummary {
@@ -72,6 +75,10 @@ export interface ResearchMaturitySummary {
   falsePositiveConsistency: number;
   sessionConsistency: number;
   llmAdvisoryPassCount: number;
+  walkForwardWindowsTested: number;
+  walkForwardOutOfSamplePassed: number;
+  latestWalkForwardVerdict?: string;
+  latestWalkForwardOverfitRisk?: string;
   evidenceQualityScore: number;
   readinessTrend: "improving" | "stable" | "declining" | "unknown";
   acceptedProposalCount: number;

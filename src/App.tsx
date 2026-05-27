@@ -24,6 +24,7 @@ import { SettingsView } from "@/components/settings/SettingsView";
 import { SelfImprovementView } from "@/components/self-improvement/SelfImprovementView";
 import { SimulationRunbookView } from "@/components/simulation-runbook/SimulationRunbookView";
 import { StrategyValidationView } from "@/components/validation/StrategyValidationView";
+import { WalkForwardView } from "@/components/walk-forward/WalkForwardView";
 import { useLabState } from "@/lib/storage/useLabState";
 
 export default function App() {
@@ -47,6 +48,7 @@ export default function App() {
         <Route path="/replay" element={<ReplayView />} />
         <Route path="/backtest-lab" element={<BacktestLab />} />
         <Route path="/validation" element={<StrategyValidationView />} />
+        <Route path="/walk-forward" element={<WalkForwardView />} />
         <Route path="/research-quality" element={<ResearchQualityView />} />
         <Route path="/simulation-runbook" element={<SimulationRunbookView />} />
         <Route path="/readiness-gate" element={<ReadinessGateView />} />
