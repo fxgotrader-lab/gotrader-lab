@@ -141,6 +141,16 @@ const isPassLikeText = (value: string) => {
 };
 const uniqueText = (items: Array<string | undefined>) =>
   items.filter((item): item is string => Boolean(item?.trim())).filter((item, index, array) => array.indexOf(item) === index);
+const passedRequirementLabel = (requirement: { id?: string; label: string; passed?: boolean }) => {
+  if (requirement.id === "simulated-trade-sample") {
+    return "Simulated trade sample exists.";
+  }
+  return requirement.label;
+};
+const isBlockerLikeRequirementText = (value: string) => {
+  const normalized = value.toLowerCase();
+  return trueBlockerPhrases.some((phrase) => normalized.includes(phrase));
+};
 const dashboardSearchModes: Array<{ label: string; shortLabel: string; value: AutoResearchSearchMode; count: number }> = [
   { label: "Quick - 5 candidates", shortLabel: "Quick", value: "quick", count: 5 },
   { label: "Standard - 10 candidates", shortLabel: "Standard", value: "standard", count: 10 },
@@ -230,7 +240,9 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
   }, [latestRun, topTradeQualityIssue?.reasonCode]);
   const passedRequirements = useMemo(
     () => uniqueText([
-      ...safeArray(latestRun?.readinessSnapshot?.passedRequirements).map((requirement) => requirement.label),
+      ...safeArray(latestRun?.readinessSnapshot?.passedRequirements)
+        .map(passedRequirementLabel)
+        .filter((label) => !isBlockerLikeRequirementText(label)),
       ...safeArray(latestRun?.readinessSnapshot?.failedRequirements)
         .map((requirement) => requirement.label)
         .filter(isPassLikeText)

@@ -120,6 +120,16 @@ export interface RuntimeProposalState {
   latestProposalSnapshot?: CalibrationProposalMetricsSnapshot;
   activeApprovedProposalId?: string;
   proposalSourceCycleId?: string;
+  latestProposalIsCurrent: boolean;
+  latestProposalIsHistorical: boolean;
+  proposalSourceMismatchReason?: string;
+  currentActionItems: Array<{
+    id: string;
+    title: string;
+    detail: string;
+    severity: "info" | "warning" | "critical" | "action_required";
+    href?: string;
+  }>;
 }
 
 export interface RuntimeReadinessState {

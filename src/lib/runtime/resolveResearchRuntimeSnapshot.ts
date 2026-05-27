@@ -109,6 +109,71 @@ const latestProposalFrom = (selfImprovement: ReturnType<typeof loadSelfImproveme
   selfImprovement.proposals.find((proposal) => proposal.proposalId === selfImprovement.latestProposalId) ??
   selfImprovement.proposals[0];
 
+const runtimeProposalFrom = (
+  selfImprovement: ReturnType<typeof loadSelfImprovementState>,
+  latestCycle?: ReturnType<typeof latestResearchCycleRun>
+) =>
+  (latestCycle?.createdProposalId
+    ? selfImprovement.proposals.find((proposal) => proposal.proposalId === latestCycle.createdProposalId)
+    : undefined) ?? latestProposalFrom(selfImprovement);
+
+const blockerLikePhrases = [
+  "insufficient",
+  "cannot be evaluated",
+  "too low",
+  "too high",
+  "missing",
+  "required",
+  "blocked",
+  "failed",
+  "unstable",
+  "weak",
+  "not ready",
+  "no safe"
+];
+
+const isBlockerLikeLabel = (value: string) => {
+  const normalized = value.toLowerCase();
+  return blockerLikePhrases.some((phrase) => normalized.includes(phrase));
+};
+
+const displayLabelForRequirement = (item: { id?: string; label: string; passed?: boolean }) => {
+  if (!item.passed) {
+    switch (item.id) {
+      case "simulated-trade-sample":
+        return "Insufficient simulated trades. Readiness cannot be evaluated.";
+      case "validation-exists":
+        return "Validation suite missing.";
+      case "research-quality-exists":
+        return "Research quality review missing.";
+      case "llm-advisory-review":
+        return "LLM advisory missing.";
+      case "runbook-complete":
+        return "Simulation runbook incomplete.";
+      case "quality-candidate":
+        return "Research Quality must reach Paper-Demo Candidate.";
+      case "drawdown-threshold":
+        return "Drawdown too high.";
+      case "confidence-calibration":
+        return "Confidence calibration too low.";
+      case "false-positive-control":
+        return "False positives too high.";
+      case "session-consistency":
+        return "Session consistency weak.";
+      case "conservative-stability":
+        return "Conservative scenario unstable.";
+      default:
+        return item.label;
+    }
+  }
+  switch (item.id) {
+    case "simulated-trade-sample":
+      return "Simulated trade sample exists.";
+    default:
+      return item.label;
+  }
+};
+
 const thesisFallback = (labState?: LabState) => {
   const thesis = labState?.tradeTheses[0];
   return thesis
@@ -167,6 +232,180 @@ const buildMismatchWarnings = ({
   return warnings;
 };
 
+const proposalCurrencyFor = ({
+  latestCycle,
+  latestProposal,
+  latestAutoResearchCycleId
+}: {
+  latestCycle?: ReturnType<typeof latestResearchCycleRun>;
+  latestProposal?: ReturnType<typeof latestProposalFrom>;
+  latestAutoResearchCycleId?: string;
+}) => {
+  if (!latestProposal) {
+    return {
+      isCurrent: false,
+      isHistorical: false,
+      reason: undefined
+    };
+  }
+  const proposalSourceCycleId = latestProposal.metricsSnapshot?.sourceCycleId;
+  const proposalSourceCandidateId = latestProposal.metricsSnapshot?.sourceCandidateId ?? latestProposal.sourceCandidateId;
+  const latestCycleId = latestCycle?.cycleId;
+  const latestCreatedProposalId = latestCycle?.createdProposalId;
+  const latestCycleAutoResearchId = latestCycle?.autoResearchCycle?.cycleId ?? latestAutoResearchCycleId;
+  const current =
+    Boolean(latestCreatedProposalId && latestCreatedProposalId === latestProposal.proposalId) ||
+    Boolean(latestCycleId && proposalSourceCycleId && proposalSourceCycleId === latestCycleId);
+
+  if (current) {
+    return {
+      isCurrent: true,
+      isHistorical: false,
+      reason: undefined
+    };
+  }
+
+  const reason = latestCycleId
+    ? proposalSourceCycleId
+      ? `Proposal snapshot source ${proposalSourceCycleId} does not match latest dashboard cycle ${latestCycleId}.`
+      : proposalSourceCandidateId
+        ? `Proposal candidate ${proposalSourceCandidateId} is not linked to latest dashboard cycle ${latestCycleId}.`
+        : latestCycleAutoResearchId
+          ? `Proposal is not linked to latest dashboard auto-research cycle ${latestCycleAutoResearchId}.`
+          : `Proposal is not linked to latest dashboard cycle ${latestCycleId}.`
+    : "No latest dashboard cycle exists to prove this proposal is current.";
+
+  return {
+    isCurrent: false,
+    isHistorical: true,
+    reason
+  };
+};
+
+const buildCurrentActionItems = ({
+  evidenceScore,
+  latestProposal,
+  maturityScore,
+  proposalCurrency,
+  readinessBlockers,
+  snapshotLLMPassed,
+  walkForwardRecommendedNextAction,
+  walkForwardVerdict
+}: {
+  evidenceScore: number;
+  latestProposal?: ReturnType<typeof latestProposalFrom>;
+  maturityScore: number;
+  proposalCurrency: ReturnType<typeof proposalCurrencyFor>;
+  readinessBlockers: string[];
+  snapshotLLMPassed: boolean;
+  walkForwardRecommendedNextAction: string;
+  walkForwardVerdict?: string;
+}) => {
+  const items: ResearchRuntimeSnapshot["proposal"]["currentActionItems"] = [];
+  if (!snapshotLLMPassed) {
+    items.push({
+      id: "llm-advisory",
+      title: "LLM advisory not passed",
+      detail: "Paper-Demo review remains blocked until advisory-only LLM review passes.",
+      href: "/llm-agents",
+      severity: "action_required"
+    });
+  }
+  if (walkForwardVerdict === "fail" || walkForwardVerdict === "insufficient_evidence") {
+    items.push({
+      id: "walk-forward",
+      title: walkForwardVerdict === "fail" ? "Walk-forward failed" : "Walk-forward insufficient evidence",
+      detail: walkForwardRecommendedNextAction,
+      href: "/walk-forward",
+      severity: walkForwardVerdict === "fail" ? "critical" : "warning"
+    });
+  }
+  if (evidenceScore < 55) {
+    items.push({
+      id: "evidence-quality",
+      title: "Evidence quality is weak",
+      detail: "Evidence quality is not strong enough for advancement.",
+      href: "/evidence-quality",
+      severity: "warning"
+    });
+  }
+  if (maturityScore < 45) {
+    items.push({
+      id: "maturity",
+      title: "Research maturity too low",
+      detail: "Run more consistent cycles/windows before advancing readiness.",
+      href: "/research-maturity",
+      severity: "warning"
+    });
+  }
+  if (
+    latestProposal &&
+    proposalCurrency.isCurrent &&
+    (latestProposal.status === "proposed" || latestProposal.status === "testing")
+  ) {
+    items.push({
+      id: "proposal",
+      title: "Proposal review required",
+      detail: `Current proposal ${latestProposal.proposalId} is ${latestProposal.status}.`,
+      href: `/self-improvement?proposalId=${latestProposal.proposalId}`,
+      severity: "action_required"
+    });
+  }
+  const blocker = readinessBlockers[0];
+  if (blocker) {
+    items.push({
+      id: "readiness",
+      title: "Readiness gate blocked",
+      detail: blocker,
+      href: "/readiness-gate",
+      severity: "action_required"
+    });
+  }
+  return safeTopN(items, 8);
+};
+
+const runtimeNextActionFor = ({
+  latestCycle,
+  latestProposal,
+  latestWalkForward,
+  marketData,
+  proposalCurrency,
+  readinessSnapshot
+}: {
+  latestCycle?: ReturnType<typeof latestResearchCycleRun>;
+  latestProposal?: ReturnType<typeof latestProposalFrom>;
+  latestWalkForward?: ReturnType<typeof latestWalkForwardRun>;
+  marketData: RuntimeMarketDataState;
+  proposalCurrency: ReturnType<typeof proposalCurrencyFor>;
+  readinessSnapshot: ReturnType<typeof evaluateReadinessGate>;
+}) => {
+  const latestCycleCreatedNoProposal = Boolean(latestCycle && !latestCycle.createdProposalId);
+  const currentPendingProposal =
+    latestProposal &&
+    proposalCurrency.isCurrent &&
+    (latestProposal.status === "proposed" || latestProposal.status === "testing");
+
+  if (currentPendingProposal) {
+    return "Review the current research calibration proposal, then rerun the AI Research Cycle after any approved change.";
+  }
+
+  if (latestCycleCreatedNoProposal && readinessSnapshot.state === "Research Ready") {
+    if (!latestWalkForward || latestWalkForward.stability?.verdict === "insufficient_evidence") {
+      return "Run walk-forward with enough windows before treating the latest Research Ready result as durable.";
+    }
+    if (marketData.dataPreset === "safe") {
+      return "Run a larger sample / Standard data test before considering any review gate.";
+    }
+    return "Resolve readiness blockers and rerun validation/research quality on a larger sample.";
+  }
+
+  if (latestCycleCreatedNoProposal && proposalCurrency.isHistorical) {
+    return "No current proposal came from the latest cycle. Resolve current blockers or run a larger data test.";
+  }
+
+  return readinessSnapshot.recommendedNextStep;
+};
+
 export async function resolveResearchRuntimeSnapshot(
   options: ResolveResearchRuntimeSnapshotOptions = {}
 ): Promise<ResearchRuntimeSnapshot> {
@@ -175,7 +414,7 @@ export async function resolveResearchRuntimeSnapshot(
   const researchCycleState = loadResearchCycleState();
   const latestCycle = latestResearchCycleRun(researchCycleState);
   const selfImprovement = loadSelfImprovementState();
-  const latestProposal = latestProposalFrom(selfImprovement);
+  const latestProposal = runtimeProposalFrom(selfImprovement, latestCycle);
   const validation = loadLatestValidationReport();
   const researchQuality = loadLatestResearchQualityReview();
   const runbook = loadSimulationRunbookState();
@@ -345,6 +584,11 @@ export async function resolveResearchRuntimeSnapshot(
       })
     : undefined;
   const proposalSnapshot = latestProposal?.metricsSnapshot;
+  const proposalCurrency = proposalCurrencyFor({
+    latestCycle,
+    latestProposal,
+    latestAutoResearchCycleId: latestAutoResearch?.cycleId
+  });
   const proposalSnapshotFingerprint = proposalSnapshot
     ? createRunFingerprint({
         runId: proposalSnapshot.sourceCycleId ?? latestProposal.proposalId,
@@ -376,6 +620,43 @@ export async function resolveResearchRuntimeSnapshot(
   const proposalSnapshotProvenance = proposalSnapshotFingerprint
     ? createMetricProvenance(proposalSnapshotFingerprint, "proposal snapshot", latestCycleFingerprint)
     : undefined;
+  const actualBlockers = safeArray(readinessSnapshot.failedRequirements)
+    .map((item) => displayLabelForRequirement(item))
+    .filter((label) => Boolean(label?.trim()));
+  const passedRequirements = safeArray(readinessSnapshot.passedRequirements)
+    .map((item) => displayLabelForRequirement(item))
+    .filter((label) => Boolean(label?.trim()) && !isBlockerLikeLabel(label));
+  const readinessWarnings = [
+    ...readinessSnapshot.warnings,
+    ...safeArray(readinessSnapshot.passedRequirements)
+      .map((item) => displayLabelForRequirement(item))
+      .filter((label) => isBlockerLikeLabel(label)),
+    ...evidenceLedgerSummary.readinessEvidenceWarnings,
+    ...researchMaturitySummary.maturityWarnings,
+    ...walkForwardWarnings,
+    proposalCurrency.isHistorical && proposalCurrency.reason
+      ? `Historical proposal available: ${proposalCurrency.reason}`
+      : undefined
+  ].filter((warning): warning is string => Boolean(warning));
+  const currentActionItems = buildCurrentActionItems({
+    evidenceScore: evidenceLedgerSummary.overallScore,
+    latestProposal,
+    maturityScore: researchMaturitySummary.score,
+    proposalCurrency,
+    readinessBlockers: actualBlockers,
+    snapshotLLMPassed: Boolean(latestLLMRun?.advisoryPassed),
+    walkForwardRecommendedNextAction:
+      latestWalkForward?.stability?.recommendedNextAction ?? "Run walk-forward validation on imported data before trusting a calibration.",
+    walkForwardVerdict: latestWalkForward?.stability?.verdict
+  });
+  const runtimeNextAction = runtimeNextActionFor({
+    latestCycle,
+    latestProposal,
+    latestWalkForward,
+    marketData,
+    proposalCurrency,
+    readinessSnapshot
+  });
 
   return {
     snapshotId: uid("runtime_snapshot"),
@@ -419,20 +700,19 @@ export async function resolveResearchRuntimeSnapshot(
       latestProposal,
       latestProposalSnapshot: latestProposal?.metricsSnapshot,
       activeApprovedProposalId: selfImprovement.lastAcceptedProposalId ?? selfImprovement.activeResearchCalibration?.sourceProposalId,
-      proposalSourceCycleId: latestProposal?.metricsSnapshot?.sourceCycleId
+      proposalSourceCycleId: latestProposal?.metricsSnapshot?.sourceCycleId,
+      latestProposalIsCurrent: proposalCurrency.isCurrent,
+      latestProposalIsHistorical: proposalCurrency.isHistorical,
+      proposalSourceMismatchReason: proposalCurrency.reason,
+      currentActionItems
     },
     readiness: {
       readinessState: readinessSnapshot.state,
       readinessSnapshot,
-      actualBlockers: safeArray(readinessSnapshot.failedRequirements).map((item) => item.label),
-      passedRequirements: safeArray(readinessSnapshot.passedRequirements).map((item) => item.label),
-      warnings: [
-        ...readinessSnapshot.warnings,
-        ...evidenceLedgerSummary.readinessEvidenceWarnings,
-        ...researchMaturitySummary.maturityWarnings,
-        ...walkForwardWarnings
-      ],
-      nextAction: readinessSnapshot.recommendedNextStep
+      actualBlockers,
+      passedRequirements,
+      warnings: readinessWarnings,
+      nextAction: runtimeNextAction
     },
     performance: {
       canonicalPerformanceMetrics,

@@ -250,7 +250,14 @@ export function MissionControlShell({ state }: { state: LabState }) {
             ["Data source", runtimeSnapshot?.marketData.sourceLabel ?? "loading"],
             ["Active config", runtimeSnapshot?.activeConfig.configMergeStatusLabel ?? "loading"],
             ["Latest cycle", runtimeSnapshot?.latestResearchCycle.latestCycleId ?? "none"],
-            ["Latest proposal", runtimeSnapshot?.proposal.latestProposalId ?? "none"]
+            [
+              "Proposal context",
+              runtimeSnapshot?.proposal.latestProposalIsCurrent
+                ? `current: ${runtimeSnapshot.proposal.latestProposalId}`
+                : runtimeSnapshot?.proposal.latestProposalIsHistorical
+                  ? `historical: ${runtimeSnapshot.proposal.latestProposalId}`
+                  : "no current proposal"
+            ]
           ].map(([label, value]) => (
             <div key={label} className="rounded-lg border border-white/10 bg-slate-950/55 p-3">
               <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{label}</p>
@@ -258,6 +265,27 @@ export function MissionControlShell({ state }: { state: LabState }) {
             </div>
           ))}
         </div>
+        {runtimeSnapshot?.proposal.latestProposalIsHistorical && runtimeSnapshot.proposal.latestProposal ? (
+          <div className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="font-semibold">Historical proposal</p>
+                <p className="mt-1 text-amber-100/80">
+                  This proposal is from a previous cycle, so it is not shown as primary action required.
+                </p>
+                <p className="mt-1 break-words font-mono text-xs text-amber-100/70">
+                  {runtimeSnapshot.proposal.proposalSourceMismatchReason ?? runtimeSnapshot.proposal.latestProposal.proposalId}
+                </p>
+              </div>
+              <Link to={`/self-improvement?proposalId=${encodeURIComponent(runtimeSnapshot.proposal.latestProposal.proposalId)}`}>
+                <Button variant="secondary" className="w-full sm:w-auto">
+                  Open historical proposal
+                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </Link>
+            </div>
+          </div>
+        ) : null}
         {warnings.length ? (
           <div className="mt-3 rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
             <p className="font-semibold">Runtime warnings</p>
@@ -378,6 +406,8 @@ function buildPipelineStages(
   const activeReadiness = running && (activeStage === "readiness_maturity" || activeStage === "audit_communications");
   const walkForwardVerdict = snapshot?.walkForward.verdict;
   const latestProposal = snapshot?.proposal.latestProposal;
+  const currentProposal = snapshot?.proposal.latestProposalIsCurrent ? latestProposal : undefined;
+  const historicalProposal = snapshot?.proposal.latestProposalIsHistorical ? latestProposal : undefined;
 
   return [
     {
@@ -456,16 +486,22 @@ function buildPipelineStages(
       href: "/self-improvement",
       status: activeSelfImprovement
         ? "active"
-        : latestProposal?.status === "proposed" || latestProposal?.status === "testing"
+        : currentProposal?.status === "proposed" || currentProposal?.status === "testing"
           ? "blocked"
-          : latestProposal
+          : currentProposal
             ? "complete"
+            : historicalProposal
+              ? "warning"
             : "waiting",
-      task: latestProposal
-        ? `Proposal ${latestProposal.status}; approval or policy decision required.`
-        : "No current calibration proposal.",
-      countLabel: latestProposal?.proposalIntent?.replace(/_/g, " "),
-      lastEvent: latestProposal?.timestamp
+      task: currentProposal
+        ? `Current proposal ${currentProposal.status}; approval or policy decision required.`
+        : historicalProposal
+          ? "Historical proposal available in Self-Improvement. No new proposal from latest cycle."
+          : latestCycle?.createdProposalId
+            ? "Latest cycle proposal is being indexed."
+            : "No new proposal from latest cycle.",
+      countLabel: (currentProposal ?? historicalProposal)?.proposalIntent?.replace(/_/g, " "),
+      lastEvent: (currentProposal ?? historicalProposal)?.timestamp
     },
     {
       id: "go-trader",
@@ -492,8 +528,6 @@ function buildPipelineStages(
 
 function buildActionItems(snapshot?: ResearchRuntimeSnapshot, run?: AutonomousResearchRun): MissionActionItem[] {
   const items: MissionActionItem[] = [];
-  const latestProposal = snapshot?.proposal.latestProposal;
-  const firstBlocker = snapshot?.readiness.actualBlockers[0];
 
   if (!snapshot) {
     return [
@@ -514,60 +548,7 @@ function buildActionItems(snapshot?: ResearchRuntimeSnapshot, run?: AutonomousRe
       severity: "warning"
     });
   }
-  if (!snapshot.llm.advisoryPassed) {
-    items.push({
-      id: "llm-advisory",
-      title: snapshot.llm.providerConfigured ? "LLM advisory not passed" : "LLM bridge unavailable",
-      detail: "Paper-Demo review remains blocked until advisory-only LLM review passes.",
-      href: "/llm-agents",
-      severity: "action_required"
-    });
-  }
-  if (snapshot.walkForward.verdict === "fail" || snapshot.walkForward.verdict === "insufficient_evidence") {
-    items.push({
-      id: "walk-forward",
-      title: snapshot.walkForward.verdict === "fail" ? "Walk-forward failed" : "Walk-forward insufficient evidence",
-      detail: snapshot.walkForward.recommendedNextAction,
-      href: "/walk-forward",
-      severity: snapshot.walkForward.verdict === "fail" ? "critical" : "warning"
-    });
-  }
-  if (snapshot.evidence.evidenceQualityScore < 55) {
-    items.push({
-      id: "evidence-quality",
-      title: "Evidence quality is weak",
-      detail: snapshot.evidence.readinessEvidenceWarnings[0] ?? "Add real/imported evidence before advancing readiness.",
-      href: "/evidence-quality",
-      severity: "warning"
-    });
-  }
-  if (snapshot.maturity.maturityScore < 45) {
-    items.push({
-      id: "maturity",
-      title: "Research maturity too low",
-      detail: snapshot.maturity.nextMaturityRequirement,
-      href: "/research-maturity",
-      severity: "warning"
-    });
-  }
-  if (latestProposal?.status === "proposed" || latestProposal?.status === "testing") {
-    items.push({
-      id: "proposal",
-      title: "Proposal review required",
-      detail: `Proposal ${latestProposal.proposalId} is ${latestProposal.status}.`,
-      href: `/self-improvement?proposalId=${latestProposal.proposalId}`,
-      severity: "action_required"
-    });
-  }
-  if (firstBlocker) {
-    items.push({
-      id: "readiness",
-      title: "Readiness gate blocked",
-      detail: firstBlocker,
-      href: "/readiness-gate",
-      severity: "action_required"
-    });
-  }
+  items.push(...snapshot.proposal.currentActionItems);
   if (run?.status === "paused" && run.stopReason === "regime_mismatch_detected") {
     items.unshift({
       id: "regime-mismatch",
@@ -582,7 +563,15 @@ function buildActionItems(snapshot?: ResearchRuntimeSnapshot, run?: AutonomousRe
 }
 
 function buildFeedItems(run?: AutonomousResearchRun): MissionFeedItem[] {
-  const communicationItems: MissionFeedItem[] = safeTopN(loadCommunicationMessages(), 8).map((message) => ({
+  const communicationItems: MissionFeedItem[] = safeTopN(
+    loadCommunicationMessages().filter((message) => {
+      if (message.category !== "self_improvement_proposal_alert") {
+        return true;
+      }
+      return Boolean(run?.iterations.some((iteration) => iteration.proposalId && iteration.proposalId === message.relatedProposalId));
+    }),
+    8
+  ).map((message) => ({
     id: message.messageId,
     title: message.title,
     detail: message.summary,
