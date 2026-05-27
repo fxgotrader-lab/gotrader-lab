@@ -1,6 +1,7 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { BarChart3, DatabaseZap, FileSpreadsheet, RadioTower, ShieldCheck, Upload } from "lucide-react";
 
+import { TradingChart } from "@/components/charts/TradingChart";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +27,7 @@ import {
   type ImportedCandleMetadata,
   type PreparedCandleSource
 } from "@/lib/marketData";
+import { buildVwapOverlay, createTradingChartData } from "@/lib/charting";
 import type { FuturesSymbol, Timeframe } from "@/lib/types";
 
 const symbolOptions = ["ES", "NQ", "MES", "MNQ"].map((value) => ({ label: value, value }));
@@ -82,6 +84,21 @@ export function MarketDataView() {
       }),
     [activeSource, contextSymbol, contextTimeframe]
   );
+  const previewChartData = useMemo(() => {
+    const candles = activeSource.candles.slice(-240);
+    const vwap = buildVwapOverlay(candles);
+    return {
+      ...createTradingChartData({
+        candles,
+        sourceLabel: activeSource.label,
+        sourceType: activeSource.mode === "imported" ? "imported" : "mock",
+        symbol: contextSymbol,
+        timeframe: contextTimeframe
+      }),
+      lineOverlays: vwap ? [vwap] : [],
+      stateLabel: "Data preview"
+    };
+  }, [activeSource.candles, activeSource.label, activeSource.mode, contextSymbol, contextTimeframe]);
   const importOptions = [
     { label: "Mock candles", value: "mock" },
     ...imports.map((item) => ({
@@ -359,6 +376,21 @@ export function MarketDataView() {
           </div>
 
           {activeSource.metadata ? <ImportMetadataPanel metadata={activeSource.metadata} /> : null}
+
+          <div className="rounded-lg border border-border bg-background/45 p-3">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="font-semibold">Prepared Candle Preview</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Shared Lightweight Charts preview of the current research window. This is historical or mock data, not a live feed.
+                </p>
+              </div>
+              <Badge variant={activeSource.mode === "imported" ? "success" : "warning"}>
+                {activeSource.mode === "imported" ? "IMPORTED" : "MOCK"}
+              </Badge>
+            </div>
+            <TradingChart {...previewChartData} heightClassName="h-[280px]" />
+          </div>
         </CardContent>
       </Card>
 

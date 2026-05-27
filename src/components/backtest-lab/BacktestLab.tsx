@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Activity, RotateCcw, ShieldAlert, SlidersHorizontal, Target, TimerReset } from "lucide-react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { CalibrationAssistantPanel } from "@/components/backtest-lab/CalibrationAssistantPanel";
+import { TradingChart } from "@/components/charts/TradingChart";
 import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDetails";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
@@ -26,6 +27,7 @@ import {
   saveBacktestConfig
 } from "@/lib/backtesting";
 import type { BacktestAgentWeightId, ResolvedBacktestConfig } from "@/lib/backtesting";
+import { buildVwapOverlay, createTradingChartData } from "@/lib/charting";
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import {
   ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
@@ -163,6 +165,21 @@ export function BacktestLab() {
     tradeQualityDiagnostics.find((item) => item.severity === "warning") ??
     tradeQualityDiagnostics[0];
   const lastEquity = summary.equityCurve[summary.equityCurve.length - 1]?.equityR ?? 0;
+  const backtestChartData = useMemo(() => {
+    const previewCandles = activeCandles.slice(-240);
+    const vwap = buildVwapOverlay(previewCandles);
+    return {
+      ...createTradingChartData({
+        candles: previewCandles,
+        sourceLabel: candleSource.label,
+        sourceType: candleSource.mode === "imported" ? "imported" : "mock",
+        symbol: result.config.symbol,
+        timeframe: result.config.timeframe
+      }),
+      lineOverlays: vwap ? [vwap] : [],
+      stateLabel: "Backtest preview"
+    };
+  }, [activeCandles, candleSource.label, candleSource.mode, result.config.symbol, result.config.timeframe]);
   const agentWeightTotal = useMemo(
     () => Object.values(draftConfig.agentWeights).reduce((sum, value) => sum + value, 0),
     [draftConfig.agentWeights]
@@ -744,6 +761,21 @@ export function BacktestLab() {
                 </div>
               </div>
             ) : null}
+
+            <div className="rounded-lg border border-border bg-background/45 p-3">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">Active Candle Preview</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Shared Lightweight Charts engine using the same candle source as this backtest run.
+                  </p>
+                </div>
+                <Badge variant={candleSource.mode === "imported" ? "success" : "warning"}>
+                  {candleSource.mode === "imported" ? "IMPORTED" : "MOCK"}
+                </Badge>
+              </div>
+              <TradingChart {...backtestChartData} heightClassName="h-[260px]" />
+            </div>
 
             <div className="rounded-lg border border-border bg-background/45 p-3">
               <div className="flex flex-wrap items-center justify-between gap-3">

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ExternalLink, Lock, ShieldCheck } from "lucide-react";
 
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
+import { TradingChart } from "@/components/charts/TradingChart";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +23,7 @@ import {
 } from "@/lib/marketData";
 import { createPlannedHermesNotificationState } from "@/lib/integrations/hermesNotificationHooks";
 import { createPlannedOpenClawMemoryHookState } from "@/lib/integrations/openclawMemoryHooks";
+import { buildVwapOverlay, createTradingChartData } from "@/lib/charting";
 import { RESEARCH_CYCLE_UPDATED_EVENT } from "@/lib/researchCycle";
 import {
   ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
@@ -56,6 +58,26 @@ const pct = (value?: number) =>
   typeof value === "number" && Number.isFinite(value) ? `${(value * 100).toFixed(0)}%` : "n/a";
 
 const formatToken = (value?: string) => (value ?? "idle").replace(/_/g, " ");
+
+const buildCommandCenterChartData = (snapshot?: ResearchRuntimeSnapshot) => {
+  const candles = snapshot?.marketData.preparedSource.candles.slice(-160) ?? [];
+  if (!snapshot || !candles.length) {
+    return undefined;
+  }
+  const sourceType = snapshot.marketData.isImportedDataActive ? "imported" : "mock";
+  const vwap = buildVwapOverlay(candles);
+  return {
+    ...createTradingChartData({
+      candles,
+      sourceLabel: snapshot.marketData.sourceLabel,
+      sourceType,
+      symbol: snapshot.marketData.symbol,
+      timeframe: snapshot.marketData.timeframe
+    }),
+    lineOverlays: vwap ? [vwap] : [],
+    stateLabel: `${formatToken(snapshot.latestResearchCycle.latestCycleStatus)} / broker disabled`
+  };
+};
 
 export function MissionControlShell({ state }: { state: LabState }) {
   const [autonomyState, setAutonomyState] = useState<AutonomousResearchState>(() => loadAutonomousResearchState());
@@ -143,6 +165,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
   );
   const actionItems = useMemo(() => buildActionItems(runtimeSnapshot, latestRun), [runtimeSnapshot, latestRun]);
   const feedItems = useMemo(() => buildFeedItems(latestRun), [latestRun]);
+  const commandCenterChart = useMemo(() => buildCommandCenterChartData(runtimeSnapshot), [runtimeSnapshot]);
   const keyMetrics = buildKeyMetrics(runtimeSnapshot, latestRun);
   const simulatedAccount = runtimeSnapshot?.performance.simulatedAccountSummary;
   const warnings = selectRuntimeWarnings(runtimeSnapshot);
@@ -200,6 +223,12 @@ export function MissionControlShell({ state }: { state: LabState }) {
         recoveryRun={recoveryRun}
         run={latestRun}
       />
+
+      {commandCenterChart ? (
+        <section className="rounded-xl border border-cyan-300/15 bg-slate-950/70 p-3">
+          <TradingChart {...commandCenterChart} heightClassName="h-[260px]" />
+        </section>
+      ) : null}
 
       <MissionControlPipeline stages={pipelineStages} />
 

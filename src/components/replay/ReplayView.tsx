@@ -1,6 +1,7 @@
 import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Pause, Play, RotateCcw, ShieldAlert, SkipBack, SkipForward } from "lucide-react";
 import { MetricCard } from "@/components/MetricCard";
+import { TradingChart } from "@/components/charts/TradingChart";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,9 +16,16 @@ import {
   stepReplay
 } from "@/lib/backtesting";
 import type { BacktestResult } from "@/lib/backtesting";
+import {
+  buildIctMarkers,
+  buildTradePlanOverlays,
+  buildVwapOverlay,
+  createTradingChartData,
+  type TradingChartLineOverlay
+} from "@/lib/charting";
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import { resolveActiveBacktestConfig } from "@/lib/selfImprovement";
-import type { Candle, MarketBias, TradeThesis } from "@/lib/types";
+import type { MarketBias, TradeThesis } from "@/lib/types";
 import { formatPercent, formatSigned } from "@/lib/utils";
 
 const formatTime = (timestamp?: string) => timestamp ? timestamp.slice(11, 16) : "n/a";
@@ -32,109 +40,33 @@ const biasVariant = (bias?: MarketBias) => {
   return "warning" as const;
 };
 
-function ReplayCandleChart({
-  candles,
-  currentCandle,
-  thesis
-}: {
-  candles: Candle[];
-  currentCandle?: Candle;
+function ReplayTradingChart({ frameCandles, thesis, currentCandle }: {
+  frameCandles: BacktestResult["candles"];
   thesis?: TradeThesis;
+  currentCandle?: BacktestResult["candles"][number];
 }) {
-  const width = 920;
-  const height = 300;
-  const left = 54;
-  const right = 42;
-  const top = 20;
-  const bottom = 44;
-  const chartWidth = width - left - right;
-  const chartHeight = height - top - bottom;
-  const levels = thesis
-    ? [thesis.simulatedTradePlan.entryZone[0], thesis.simulatedTradePlan.entryZone[1], thesis.invalidationLevel, thesis.targetLiquidity]
-    : [];
-  const high = Math.max(...candles.map((candle) => candle.high), ...levels);
-  const low = Math.min(...candles.map((candle) => candle.low), ...levels);
-  const padding = Math.max(6, (high - low) * 0.08);
-  const maxPrice = high + padding;
-  const minPrice = low - padding;
-  const range = maxPrice - minPrice || 1;
-  const step = chartWidth / Math.max(1, candles.length);
-  const candleWidth = Math.max(5, step * 0.54);
-  const yFor = (price: number) => top + ((maxPrice - price) / range) * chartHeight;
-  const xFor = (index: number) => left + index * step + step / 2;
-
-  const line = (price: number, label: string, color: string) => (
-    <g key={label}>
-      <line x1={left} x2={left + chartWidth} y1={yFor(price)} y2={yFor(price)} stroke={color} strokeDasharray="6 5" />
-      <text x={width - 10} y={yFor(price) - 4} textAnchor="end" fill={color} fontSize="10" fontFamily="ui-monospace, monospace">
-        {label}
-      </text>
-    </g>
-  );
+  const chartData = useMemo(() => {
+    const base = createTradingChartData({
+      candles: frameCandles,
+      sourceLabel: "Replay candles revealed through current step",
+      sourceType: "replay",
+      symbol: currentCandle?.symbol ?? frameCandles[0]?.symbol,
+      timeframe: currentCandle?.timeframe ?? frameCandles[0]?.timeframe
+    });
+    const vwap = buildVwapOverlay(frameCandles);
+    return {
+      ...base,
+      bias: thesis?.finalBias ?? "neutral",
+      lineOverlays: [vwap, ...buildTradePlanOverlays(frameCandles, thesis)].filter(
+        (overlay): overlay is TradingChartLineOverlay => Boolean(overlay)
+      ),
+      markers: buildIctMarkers({ currentCandle, thesis }),
+      stateLabel: "REPLAY"
+    };
+  }, [currentCandle, frameCandles, thesis]);
 
   return (
-    <div className="overflow-x-auto scrollbar-thin">
-      <svg
-        role="img"
-        aria-label="Replay candle window using mock OHLC data"
-        viewBox={`0 0 ${width} ${height}`}
-        className="min-w-[840px]"
-      >
-        <rect x="0" y="0" width={width} height={height} rx="8" fill="#0b1220" />
-        {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-          const y = top + chartHeight * ratio;
-          const price = maxPrice - range * ratio;
-          return (
-            <g key={ratio}>
-              <line x1={left} x2={left + chartWidth} y1={y} y2={y} stroke="rgba(148,163,184,0.12)" />
-              <text x={width - 10} y={y + 4} textAnchor="end" fill="#94a3b8" fontSize="10" fontFamily="ui-monospace, monospace">
-                {price.toFixed(0)}
-              </text>
-            </g>
-          );
-        })}
-
-        {thesis ? (
-          <>
-            {line(thesis.targetLiquidity, "target", "#34d399")}
-            {line(thesis.invalidationLevel, "invalid", "#fb7185")}
-            {line((thesis.simulatedTradePlan.entryZone[0] + thesis.simulatedTradePlan.entryZone[1]) / 2, "entry", "#facc15")}
-          </>
-        ) : null}
-
-        {candles.map((candle, index) => {
-          const isUp = candle.close >= candle.open;
-          const color = isUp ? "#2dd4bf" : "#fb7185";
-          const x = xFor(index);
-          const bodyTop = yFor(Math.max(candle.open, candle.close));
-          const bodyBottom = yFor(Math.min(candle.open, candle.close));
-          const isCurrent = candle.id === currentCandle?.id;
-
-          return (
-            <g key={candle.id}>
-              {isCurrent ? (
-                <rect x={x - step / 2} y={top - 8} width={step} height={chartHeight + 16} fill="rgba(250,204,21,0.08)" />
-              ) : null}
-              <line x1={x} x2={x} y1={yFor(candle.high)} y2={yFor(candle.low)} stroke={color} strokeWidth={isCurrent ? "2" : "1.35"} />
-              <rect
-                x={x - candleWidth / 2}
-                y={bodyTop}
-                width={candleWidth}
-                height={Math.max(2, bodyBottom - bodyTop)}
-                rx="1.5"
-                fill={color}
-                opacity={isUp ? 0.86 : 0.75}
-              />
-              {index % 4 === 0 || isCurrent ? (
-                <text x={x} y={height - 14} textAnchor="middle" fill={isCurrent ? "#fde68a" : "#94a3b8"} fontSize="10" fontFamily="ui-monospace, monospace">
-                  {formatTime(candle.timestamp)}
-                </text>
-              ) : null}
-            </g>
-          );
-        })}
-      </svg>
-    </div>
+    <TradingChart {...chartData} heightClassName="h-[340px]" />
   );
 }
 
@@ -214,7 +146,8 @@ export function ReplayView() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Badge variant="warning">Mock data only</Badge>
+          <Badge variant="warning">Replay simulation</Badge>
+          <Badge variant="muted">Underlying candles are local/mock unless imported replay is added later</Badge>
           <Badge variant="muted">No execution</Badge>
           <Badge variant="secondary">{activeConfig.sessionFilter}</Badge>
         </div>
@@ -260,7 +193,7 @@ export function ReplayView() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <ReplayCandleChart candles={frame.visibleCandles} currentCandle={frame.currentCandle} thesis={activeThesis} />
+          <ReplayTradingChart frameCandles={frame.visibleCandles} currentCandle={frame.currentCandle} thesis={activeThesis} />
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>Replay progress</span>

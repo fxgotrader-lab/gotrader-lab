@@ -30,6 +30,12 @@ Each adapter must expose:
 
 Secrets must never be committed or placed in browser code. Future authenticated providers should run through local command, backend endpoint, Supabase Edge Function, or another secure service boundary.
 
+## Charting Boundary
+
+GoTrader AI Lab uses TradingView Lightweight Charts as the shared renderer for Command Center, ICT Lab, Replay, Backtest Lab, and Market Data previews. Lightweight Charts renders normalized OHLCV and overlays only; it does not provide market data or broker connectivity.
+
+Future live-feed work should plug into the market-data adapter boundary first, then feed normalized candles into the shared chart component. The placeholder live adapter remains labeled `future/live not connected` until a safe backend or local bridge exists.
+
 ## Data Contracts
 
 ### Price & Volume
