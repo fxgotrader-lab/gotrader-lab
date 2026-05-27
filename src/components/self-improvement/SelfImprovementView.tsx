@@ -1187,6 +1187,30 @@ export function SelfImprovementView() {
                 : "No proposal has been created yet."}
             </p>
           </div>
+          <div className="rounded-lg border border-border bg-background/45 p-3">
+            <p className="text-xs text-muted-foreground">Autonomous loop status</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Badge
+                variant={
+                  latestProposal?.autoApplyStatus === "auto_applied"
+                    ? "success"
+                    : latestProposal?.autoApplyStatus === "blocked"
+                      ? "warning"
+                      : "secondary"
+                }
+              >
+                {latestProposal?.autoApplyStatus?.replace(/_/g, " ") ?? "not evaluated"}
+              </Badge>
+              {latestProposal?.autoApplyRunId ? <Badge variant="muted">{latestProposal.autoApplyRunId}</Badge> : null}
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {latestProposal?.autoApplyStatus === "auto_applied"
+                ? "Auto-applied as a research-only calibration. Rerun validation and readiness before any further review."
+                : latestProposal?.autoApplyStatus === "blocked"
+                  ? `Blocked: ${latestProposal.autoApplyBlockedReasons?.[0] ?? "autonomy safety policy did not allow auto-apply."}`
+                  : "No autonomous auto-apply decision has been recorded for this proposal."}
+            </p>
+          </div>
         </CardContent>
       </Card>
 

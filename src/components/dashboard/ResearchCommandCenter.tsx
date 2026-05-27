@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, ClipboardCheck, DatabaseZap, ExternalLink, Gauge, GitBranch, MessageSquareText, MessagesSquare, Route, Sparkles } from "lucide-react";
+import { ArrowRight, Bot, ClipboardCheck, DatabaseZap, ExternalLink, Gauge, GitBranch, MessageSquareText, MessagesSquare, Route, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,7 @@ import {
   latestAutoResearchCycle,
   loadAutoResearchState,
 } from "@/lib/autoResearch";
+import { latestAutonomousResearchRun, loadAutonomousResearchState } from "@/lib/autonomousResearch";
 import { getCommunicationSummary, loadCommunicationMessages } from "@/lib/communications/communicationSpec";
 import { evidenceScoreVariant, selectStrongestEvidenceLabel, selectWeakestEvidenceLabel } from "@/lib/evidence";
 import { maturityGradeLabel, maturityGradeVariant, selectMaturityNextRequirement, selectMaturityTrendMessage } from "@/lib/maturity";
@@ -104,6 +105,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
   const providerStatus = providerStatusForMode(llmState.providerMode);
   const autoResearchState = loadAutoResearchState();
   const latestAutoResearch = latestAutoResearchCycle(autoResearchState);
+  const latestAutonomousResearch = latestAutonomousResearchRun(loadAutonomousResearchState());
   const latestWalkForward = runtimeSnapshot?.walkForward.latestRun ?? latestWalkForwardRun(loadWalkForwardState());
   const validationReport = loadLatestValidationReport();
   const researchQuality = loadLatestResearchQualityReview();
@@ -283,6 +285,7 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
         <EvidenceQualityCard snapshot={runtimeSnapshot} />
         <ResearchMaturityCard snapshot={runtimeSnapshot} />
         <AutonomySafetyPolicyPanel latestAutoResearch={latestAutoResearch} snapshot={runtimeSnapshot} />
+        <AutonomousResearchStatusCard run={latestAutonomousResearch} />
         <WalkForwardStatusCard run={latestWalkForward} snapshot={runtimeSnapshot} />
         <AgentDebateCard summary={agentDebateSummary} />
         <AgentAuditCard summary={agentAuditSummary} />
@@ -494,6 +497,58 @@ function ResearchMaturityCard({ snapshot }: { snapshot?: ResearchRuntimeSnapshot
         <Link to="/research-maturity">
           <Button variant="secondary" className="w-full justify-between">
             Open maturity score
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </Link>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AutonomousResearchStatusCard({
+  run
+}: {
+  run?: ReturnType<typeof latestAutonomousResearchRun>;
+}) {
+  return (
+    <Card className="border-white/10 bg-slate-950/70">
+      <CardHeader className="flex flex-row items-start justify-between gap-3">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base text-slate-100">
+            <Bot className="h-4 w-4 text-amber-300" aria-hidden="true" />
+            Autonomous Research
+          </CardTitle>
+          <p className="mt-1 text-xs text-slate-500">Policy-gated supervisor loop for bounded research calibrations.</p>
+        </div>
+        <Badge
+          variant={
+            run?.status === "completed"
+              ? "success"
+              : run?.status === "failed"
+                ? "danger"
+                : run?.status === "paused" || run?.status === "canceled"
+                  ? "warning"
+                  : "secondary"
+          }
+        >
+          {run?.status?.replace(/_/g, " ") ?? "not run"}
+        </Badge>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 text-sm sm:grid-cols-2">
+          <StatusLine label="Mode" value={run?.settings.autoApplyPolicyEnabled ? "policy-gated auto-apply" : "proposal-only"} />
+          <StatusLine label="Current iteration" value={`${run?.currentIteration ?? 0}/${run?.settings.maxIterations ?? 3}`} />
+          <StatusLine label="Latest scenario" value={run?.latestScenarioFamily?.replace(/_/g, " ") ?? "none"} />
+          <StatusLine label="Last auto-applied" value={run?.latestAutoAppliedCalibrationId ?? "none"} />
+          <StatusLine label="Stop reason" value={run?.stopReason?.replace(/_/g, " ") ?? "not stopped"} />
+          <StatusLine label="Handoff eligibility" value={run?.goTraderHandoffGate.eligibleForReview ? "review only" : "blocked"} />
+        </div>
+        <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-xs text-amber-100">
+          {run?.latestScenarioReason ?? "Run the autonomous supervisor after evidence, walk-forward, and maturity are available."}
+        </div>
+        <Link to="/autonomous-research">
+          <Button variant="secondary" className="w-full justify-between">
+            Open autonomous loop
             <ExternalLink className="h-4 w-4" aria-hidden="true" />
           </Button>
         </Link>

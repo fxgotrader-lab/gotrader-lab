@@ -64,7 +64,8 @@ const navigation = [
       { href: "/research-quality", label: "Research Quality", icon: ShieldCheck },
       { href: "/readiness-gate", label: "Readiness Gate", icon: ShieldAlert },
       { href: "/self-improvement", label: "Self-Improvement", icon: SlidersHorizontal },
-      { href: "/auto-research", label: "Auto Research", icon: Bot }
+      { href: "/auto-research", label: "Auto Research", icon: Bot },
+      { href: "/autonomous-research", label: "Autonomous Loop", icon: Bot }
     ]
   },
   {

@@ -60,6 +60,8 @@ const compactAllowedConfigPatch = (changes: CalibrationProposalChanges = {}): Ca
   sessionFilter: changes.sessionFilter,
   stopModel: changes.stopModel,
   targetRMultiple: changes.targetRMultiple,
+  allowLong: changes.allowLong,
+  allowShort: changes.allowShort,
   agentWeights: changes.agentWeights,
   ictScoringWeights: changes.ictScoringWeights
 });
@@ -106,6 +108,8 @@ const inferPatchFromConfigs = (
     sessionFilter: before.sessionFilter !== after.sessionFilter ? after.sessionFilter : undefined,
     stopModel: before.stopModel !== after.stopModel ? after.stopModel : undefined,
     targetRMultiple: before.targetRMultiple !== after.targetRMultiple ? after.targetRMultiple : undefined,
+    allowLong: before.allowLong !== after.allowLong ? after.allowLong : undefined,
+    allowShort: before.allowShort !== after.allowShort ? after.allowShort : undefined,
     agentWeights: diffAgentWeights(before, after)
   });
 
@@ -291,6 +295,8 @@ const hasAllowedProposedChanges = (proposal: CalibrationProposal) => {
       changes.sessionFilter !== undefined ||
       changes.stopModel !== undefined ||
       changes.targetRMultiple !== undefined ||
+      changes.allowLong !== undefined ||
+      changes.allowShort !== undefined ||
       hasKeys(changes.agentWeights) ||
       hasKeys(changes.ictScoringWeights)
   );
@@ -401,6 +407,8 @@ export function applyResearchCalibrationPatchToConfig(
     sessionFilter: changes.sessionFilter ?? currentConfig.sessionFilter,
     stopModel: changes.stopModel ?? currentConfig.stopModel,
     targetRMultiple: changes.targetRMultiple ?? currentConfig.targetRMultiple,
+    allowLong: changes.allowLong ?? currentConfig.allowLong,
+    allowShort: changes.allowShort ?? currentConfig.allowShort,
     agentWeights: changes.agentWeights
       ? {
           ...currentConfig.agentWeights,

@@ -38,8 +38,12 @@ export interface CalibrationProposalChanges {
   sessionFilter?: BacktestSessionFilter;
   stopModel?: BacktestStopModel;
   targetRMultiple?: number;
+  allowLong?: boolean;
+  allowShort?: boolean;
   agentWeights?: Partial<BacktestAgentWeights>;
   ictScoringWeights?: Partial<ICTScoringWeights>;
+  confidencePenaltyRules?: string[];
+  evidenceQualityPenaltyRules?: string[];
 }
 
 export interface CalibrationProposalMetrics {
@@ -143,6 +147,11 @@ export interface CalibrationProposal {
   nextValidationRequirement?: string;
   baselineStabilityScore?: number;
   candidateStabilityScore?: number;
+  autoApplyStatus?: "not_evaluated" | "eligible" | "blocked" | "auto_applied";
+  autoApplyBlockedReasons?: string[];
+  autoAppliedAt?: string;
+  autoAppliedBy?: "autonomous_research_supervisor";
+  autoApplyRunId?: string;
 }
 
 export interface ActiveResearchCalibration {

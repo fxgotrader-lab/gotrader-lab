@@ -38,6 +38,8 @@ const changesFor = (
   sessionFilter: baseline.sessionFilter !== candidate.config.sessionFilter ? candidate.config.sessionFilter : undefined,
   stopModel: baseline.stopModel !== candidate.config.stopModel ? candidate.config.stopModel : undefined,
   targetRMultiple: baseline.targetRMultiple !== candidate.config.targetRMultiple ? candidate.config.targetRMultiple : undefined,
+  allowLong: baseline.allowLong !== candidate.config.allowLong ? candidate.config.allowLong : undefined,
+  allowShort: baseline.allowShort !== candidate.config.allowShort ? candidate.config.allowShort : undefined,
   agentWeights: diffAgentWeights(baseline, candidate.config),
   ictScoringWeights: candidate.ictScoringWeights as Partial<ICTScoringWeights> | undefined
 });

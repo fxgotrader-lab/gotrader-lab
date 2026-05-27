@@ -6,6 +6,7 @@ import { AgentDebateView } from "@/components/agent-debate/AgentDebateView";
 import { AdvisoryAgentsView } from "@/components/advisory/AdvisoryAgentsView";
 import { AppShell } from "@/components/AppShell";
 import { AutoResearchView } from "@/components/auto-research/AutoResearchView";
+import { AutonomousResearchView } from "@/components/autonomous-research/AutonomousResearchView";
 import { BacktestLab } from "@/components/backtest-lab/BacktestLab";
 import { AICommunicationsView } from "@/components/communications/AICommunicationsView";
 import { ResearchCommandCenter } from "@/components/dashboard/ResearchCommandCenter";
@@ -54,6 +55,7 @@ export default function App() {
         <Route path="/readiness-gate" element={<ReadinessGateView />} />
         <Route path="/llm-agents" element={<LLMAgentsView state={state} />} />
         <Route path="/auto-research" element={<AutoResearchView />} />
+        <Route path="/autonomous-research" element={<AutonomousResearchView state={state} />} />
         <Route path="/advisory-agents" element={<AdvisoryAgentsView state={state} actions={actions} />} />
         <Route path="/self-improvement" element={<SelfImprovementView />} />
         <Route path="/performance" element={<PerformanceView state={state} />} />
