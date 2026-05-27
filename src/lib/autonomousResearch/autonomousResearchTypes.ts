@@ -48,6 +48,47 @@ export type AutonomousScenarioFamily =
   | "conservative_only"
   | "walk_forward_followup";
 
+export type AutonomousLoopStage =
+  | "idle"
+  | "resolving_runtime"
+  | "thesis_generation"
+  | "backtest"
+  | "llm_advisory"
+  | "auto_research"
+  | "walk_forward"
+  | "self_improvement"
+  | "readiness_maturity"
+  | "audit_communications"
+  | "completed"
+  | "paused"
+  | "canceled"
+  | "failed";
+
+export interface AutonomousLoopProgressEvent {
+  eventId: string;
+  timestamp: string;
+  stage: AutonomousLoopStage;
+  title: string;
+  detail: string;
+}
+
+export interface AutonomousLoopProgressState {
+  status: AutonomousResearchStatus;
+  activeStage: AutonomousLoopStage;
+  activeStageLabel: string;
+  currentIteration: number;
+  maxIterations: number;
+  progressPercent: number;
+  startedAt: string;
+  updatedAt: string;
+  currentTask: string;
+  lastCompletedStage?: AutonomousLoopStage;
+  lastCompletedStageLabel?: string;
+  stopReason?: AutonomousResearchStopReason;
+  stopReasonDetail?: string;
+  events: AutonomousLoopProgressEvent[];
+}
+
 export interface AutonomousResearchSettings {
   maxIterations: number;
   noImprovementStop: number;
@@ -145,6 +186,7 @@ export interface AutonomousResearchRun {
   status: AutonomousResearchStatus;
   settings: AutonomousResearchSettings;
   currentIteration: number;
+  progress: AutonomousLoopProgressState;
   iterations: AutonomousLoopIteration[];
   latestBlocker?: AutonomousResearchBlocker;
   latestScenarioFamily?: AutonomousScenarioFamily;

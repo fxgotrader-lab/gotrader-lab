@@ -7,9 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   AUTONOMOUS_RESEARCH_UPDATED_EVENT,
+  discardAutonomousResearchCheckpoint,
   latestAutonomousResearchRun,
   loadAutonomousResearchState,
   runAutonomousResearchLoop,
+  type AutonomousResearchSettings,
   type AutonomousResearchRun,
   type AutonomousResearchState
 } from "@/lib/autonomousResearch";
@@ -31,10 +33,11 @@ import {
   type ResearchRuntimeSnapshot
 } from "@/lib/runtime";
 import type { LabState } from "@/lib/types";
-import { safeArray, safeTopN } from "@/lib/utils";
+import { safeArray, safeTopN, uid } from "@/lib/utils";
 import { WALK_FORWARD_UPDATED_EVENT } from "@/lib/walkForward";
 
 import { formatDateTime } from "./dashboardFormatters";
+import { AutonomousLoopProgress } from "./AutonomousLoopProgress";
 import { MissionControlActionPanel, type MissionActionItem } from "./MissionControlActionPanel";
 import { MissionControlDataFeed, type MissionFeedItem } from "./MissionControlDataFeed";
 import { MissionControlPipeline, type MissionPipelineStage } from "./MissionControlPipeline";
@@ -64,6 +67,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const [advancedFullResearchMode, setAdvancedFullResearchMode] = useState(false);
   const latestRun = liveRun ?? latestAutonomousResearchRun(autonomyState);
   const currentIteration = latestRun?.iterations.find((iteration) => iteration.iteration === latestRun.currentIteration);
+  const recoveryRun = !busy && autonomyState.activeRun?.status === "running" ? autonomyState.activeRun : undefined;
 
   const refresh = () => {
     setAutonomyState(loadAutonomousResearchState());
@@ -96,19 +100,20 @@ export function MissionControlShell({ state }: { state: LabState }) {
 
   const startLoop = async () => {
     const controller = new AbortController();
+    const settings: AutonomousResearchSettings = {
+      maxIterations: Number(maxIterations),
+      noImprovementStop: Number(noImprovementStop),
+      safeImportedDataMode: true,
+      advancedFullResearchMode,
+      autoApplyPolicyEnabled
+    };
     setAbortController(controller);
     setBusy(true);
-    setLiveRun(undefined);
+    setLiveRun(createStartingAutonomyRun(settings));
     try {
       const run = await runAutonomousResearchLoop({
         state,
-        settings: {
-          maxIterations: Number(maxIterations),
-          noImprovementStop: Number(noImprovementStop),
-          safeImportedDataMode: true,
-          advancedFullResearchMode,
-          autoApplyPolicyEnabled
-        },
+        settings,
         signal: controller.signal,
         onUpdate: setLiveRun
       });
@@ -123,6 +128,11 @@ export function MissionControlShell({ state }: { state: LabState }) {
 
   const stopLoop = () => {
     abortController?.abort();
+  };
+
+  const discardRecovery = () => {
+    setAutonomyState(discardAutonomousResearchCheckpoint());
+    setLiveRun(undefined);
   };
 
   const pipelineStages = useMemo(
@@ -180,6 +190,13 @@ export function MissionControlShell({ state }: { state: LabState }) {
         onStop={stopLoop}
         searchDepthLabel={latestRun?.latestScenarioFamily ? formatToken(latestRun.latestScenarioFamily) : "auto-selected"}
         selectedScenarioFamily={formatToken(latestRun?.latestScenarioFamily)}
+      />
+
+      <AutonomousLoopProgress
+        busy={busy}
+        onDiscardRecovery={discardRecovery}
+        recoveryRun={recoveryRun}
+        run={latestRun}
       />
 
       <MissionControlPipeline stages={pipelineStages} />
@@ -295,6 +312,53 @@ export function MissionControlShell({ state }: { state: LabState }) {
   );
 }
 
+function createStartingAutonomyRun(settings: AutonomousResearchSettings): AutonomousResearchRun {
+  const startedAt = new Date().toISOString();
+  return {
+    runId: uid("autonomous_research_starting"),
+    startedAt,
+    status: "running",
+    settings,
+    currentIteration: 0,
+    progress: {
+      status: "running",
+      activeStage: "resolving_runtime",
+      activeStageLabel: "Resolving runtime",
+      currentIteration: 0,
+      maxIterations: settings.maxIterations,
+      progressPercent: 10,
+      startedAt,
+      updatedAt: startedAt,
+      currentTask: "Starting autonomous research loop...",
+      events: [
+        {
+          eventId: uid("autonomy_event"),
+          timestamp: startedAt,
+          stage: "resolving_runtime",
+          title: "Loop start requested",
+          detail: "Starting autonomous research loop from Mission Control."
+        }
+      ]
+    },
+    iterations: [],
+    readinessTrend: "unknown",
+    maturityTrend: "unknown",
+    goTraderHandoffGate: {
+      eligibleForReview: false,
+      reasons: ["Loop is starting. Go-trader review remains locked."],
+      brokerExecutionDisabled: true
+    },
+    calibrationDriftHistory: [],
+    openClawHooks: {
+      failureAnalysisMemory: { executionAuthority: "none" },
+      scenarioRecommendation: { executionAuthority: "none" },
+      proposalReview: { executionAuthority: "none" }
+    },
+    hermesNotification: { executionAuthority: "none" },
+    safetyNotice: "Autonomous research is simulation-only. It cannot execute trades, approve Paper-Demo Candidate, send go-trader handoffs, or override readiness."
+  };
+}
+
 function buildPipelineStages(
   snapshot?: ResearchRuntimeSnapshot,
   run?: AutonomousResearchRun,
@@ -304,9 +368,14 @@ function buildPipelineStages(
   const latestCycle = snapshot?.latestResearchCycle.latestRun;
   const running = busy || run?.status === "running";
   const currentIteration = run?.iterations.find((iteration) => iteration.iteration === run.currentIteration);
-  const activeBeforeCycle = running && !currentIteration?.cycleId;
-  const activeWalkForward = running && Boolean(currentIteration?.proposalId) && !currentIteration?.walkForwardRunId;
-  const activeSelfImprovement = running && Boolean(currentIteration?.walkForwardRunId) && !currentIteration?.autoApplyEligibility;
+  const activeStage = run?.progress?.activeStage;
+  const activeMarketData = running && activeStage === "resolving_runtime";
+  const activeAiResearch = running && (activeStage === "thesis_generation" || activeStage === "auto_research");
+  const activeDebate = running && activeStage === "llm_advisory";
+  const activeValidation = running && activeStage === "backtest";
+  const activeWalkForward = running && activeStage === "walk_forward";
+  const activeSelfImprovement = running && activeStage === "self_improvement";
+  const activeReadiness = running && (activeStage === "readiness_maturity" || activeStage === "audit_communications");
   const walkForwardVerdict = snapshot?.walkForward.verdict;
   const latestProposal = snapshot?.proposal.latestProposal;
 
@@ -315,7 +384,7 @@ function buildPipelineStages(
       id: "market-data",
       label: "Lab / Market Data",
       href: "/market-data",
-      status: snapshot?.marketData.processedCandleCount ? "complete" : "warning",
+      status: activeMarketData ? "active" : snapshot?.marketData.processedCandleCount ? "complete" : "warning",
       task: snapshot
         ? `${snapshot.marketData.sourceLabel}; ${snapshot.marketData.processedCandleCount.toLocaleString()} processed candles.`
         : "Preparing runtime data source.",
@@ -326,9 +395,9 @@ function buildPipelineStages(
       id: "ai-research",
       label: "AI Research",
       href: "/research",
-      status: activeBeforeCycle ? "active" : latestCycle ? "complete" : "waiting",
-      task: activeBeforeCycle
-        ? "Diagnosing blockers and running scenario search."
+      status: activeAiResearch ? "active" : latestCycle ? "complete" : "waiting",
+      task: activeAiResearch
+        ? run?.progress?.currentTask ?? "Diagnosing blockers and running scenario search."
         : latestCycle?.resultSummary ?? "Waiting for the first research cycle.",
       countLabel: run ? `${run.currentIteration}/${run.settings.maxIterations}` : undefined,
       lastEvent: latestCycle?.completedAt ?? latestCycle?.startedAt ?? iterationStartedAt
@@ -337,8 +406,10 @@ function buildPipelineStages(
       id: "agent-debate",
       label: "Agent Debate / CIO",
       href: "/agent-debate",
-      status: latestCycle?.agentDebateConsensus ? "complete" : latestCycle ? "warning" : "waiting",
-      task: latestCycle?.agentDebateConsensus
+      status: activeDebate ? "active" : latestCycle?.agentDebateConsensus ? "complete" : latestCycle ? "warning" : "waiting",
+      task: activeDebate
+        ? run?.progress?.currentTask ?? "Running LLM advisory and CIO interpretation."
+        : latestCycle?.agentDebateConsensus
         ? `CIO consensus ${latestCycle.agentDebateConsensus.position}; facts remain immutable.`
         : "Debate summary appears after a cycle produces agent context.",
       lastEvent: latestCycle?.completedAt
@@ -347,12 +418,16 @@ function buildPipelineStages(
       id: "validation",
       label: "Backtest / Validation",
       href: "/validation",
-      status: snapshot?.latestResearchCycle.latestValidationSummary
+      status: activeValidation
+        ? "active"
+        : snapshot?.latestResearchCycle.latestValidationSummary
         ? "complete"
         : latestCycle?.backtestSummary
           ? "warning"
           : "waiting",
-      task: snapshot?.latestResearchCycle.latestValidationSummary
+      task: activeValidation
+        ? run?.progress?.currentTask ?? "Running backtest and validation."
+        : snapshot?.latestResearchCycle.latestValidationSummary
         ? `Trades ${snapshot.latestResearchCycle.latestBacktestSummary?.totalTrades ?? 0}; validation ready.`
         : "Backtest and validation evidence not complete yet.",
       countLabel: latestCycle?.backtestSummary ? `${latestCycle.backtestSummary.totalTrades} trades` : undefined,
@@ -399,6 +474,8 @@ function buildPipelineStages(
       status: "locked",
       task: run?.goTraderHandoffGate.eligibleForReview
         ? "Review eligibility only. Handoff remains locked until human process."
+        : activeReadiness
+          ? run?.progress?.currentTask ?? "Updating readiness, maturity, and audit state."
         : "Locked. Simulation runbook and readiness must pass first.",
       countLabel: "review only",
       lastEvent: run?.completedAt
@@ -513,6 +590,19 @@ function buildFeedItems(run?: AutonomousResearchRun): MissionFeedItem[] {
     severity: message.severity,
     href: "/communications"
   }));
+  const progressItems: MissionFeedItem[] = safeTopN(run?.progress?.events, 10).map((event) => ({
+    id: event.eventId,
+    title: event.title,
+    detail: event.detail,
+    timestamp: event.timestamp,
+    severity:
+      event.stage === "failed"
+        ? "critical"
+        : event.stage === "canceled" || event.stage === "paused"
+          ? "warning"
+          : "info",
+    href: "/autonomous-research"
+  }));
   const loopItems: MissionFeedItem[] = safeArray(run?.iterations).flatMap((iteration) => [
     {
       id: `iteration-${iteration.iteration}-scenario`,
@@ -532,7 +622,7 @@ function buildFeedItems(run?: AutonomousResearchRun): MissionFeedItem[] {
     }
   ]);
 
-  return safeTopN([...loopItems, ...communicationItems].sort((a, b) => {
+  return safeTopN([...progressItems, ...loopItems, ...communicationItems].sort((a, b) => {
     const left = a.timestamp ? new Date(a.timestamp).getTime() : 0;
     const right = b.timestamp ? new Date(b.timestamp).getTime() : 0;
     return right - left;

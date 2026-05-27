@@ -13,6 +13,7 @@ import { saveAutonomousResearchRun } from "@/lib/autonomousResearch/autonomousRe
 import { selectNextScenarioSet } from "@/lib/autonomousResearch/selectNextScenarioSet";
 import type {
   AutonomousLoopIteration,
+  AutonomousLoopStage,
   AutonomousResearchRun,
   AutonomousResearchSettings,
   AutonomousResearchStopReason,
@@ -35,6 +36,36 @@ const defaultSettings: AutonomousResearchSettings = {
 };
 
 const now = () => new Date().toISOString();
+
+const stageMeta: Record<AutonomousLoopStage, { label: string; percent: number }> = {
+  idle: { label: "Idle", percent: 0 },
+  resolving_runtime: { label: "Resolving runtime", percent: 10 },
+  thesis_generation: { label: "Thesis generation", percent: 20 },
+  backtest: { label: "Backtest / validation", percent: 30 },
+  llm_advisory: { label: "LLM advisory", percent: 40 },
+  auto_research: { label: "Auto Research", percent: 50 },
+  walk_forward: { label: "Walk-forward", percent: 60 },
+  self_improvement: { label: "Self-improvement", percent: 70 },
+  readiness_maturity: { label: "Readiness / maturity", percent: 80 },
+  audit_communications: { label: "Audit / communications", percent: 90 },
+  completed: { label: "Completed", percent: 100 },
+  paused: { label: "Paused", percent: 100 },
+  canceled: { label: "Canceled", percent: 100 },
+  failed: { label: "Failed", percent: 100 }
+};
+
+const researchStepToProgressStage: Record<string, AutonomousLoopStage> = {
+  thesis_generation: "thesis_generation",
+  backtest: "backtest",
+  llm_advisory: "llm_advisory",
+  auto_research: "auto_research",
+  validation: "backtest",
+  research_quality: "readiness_maturity",
+  self_improvement: "self_improvement",
+  simulation_verification: "readiness_maturity",
+  readiness_gate: "readiness_maturity",
+  communications_audit: "audit_communications"
+};
 
 const emit = (run: AutonomousResearchRun, onUpdate?: (run: AutonomousResearchRun) => void) => {
   saveAutonomousResearchRun(run);
@@ -147,12 +178,33 @@ export async function runAutonomousResearchLoop({
   };
   const runId = uid("autonomous_research");
   let noImprovementCount = 0;
+  const startedAt = now();
   let run: AutonomousResearchRun = {
     runId,
-    startedAt: now(),
+    startedAt,
     status: "running",
     settings,
     currentIteration: 0,
+    progress: {
+      status: "running",
+      activeStage: "resolving_runtime",
+      activeStageLabel: stageMeta.resolving_runtime.label,
+      currentIteration: 0,
+      maxIterations: settings.maxIterations,
+      progressPercent: stageMeta.resolving_runtime.percent,
+      startedAt,
+      updatedAt: startedAt,
+      currentTask: "Starting autonomous research loop...",
+      events: [
+        {
+          eventId: uid("autonomy_event"),
+          timestamp: startedAt,
+          stage: "resolving_runtime",
+          title: "Loop started",
+          detail: "Starting autonomous research loop..."
+        }
+      ]
+    },
     iterations: [],
     readinessTrend: "unknown",
     maturityTrend: "unknown",
@@ -169,6 +221,55 @@ export async function runAutonomousResearchLoop({
     },
     hermesNotification: { executionAuthority: "none" },
     safetyNotice: "Autonomous research is simulation-only. It cannot execute trades, approve Paper-Demo Candidate, send go-trader handoffs, or override readiness."
+  };
+
+  const updateProgress = ({
+    detail,
+    stage,
+    status = run.status,
+    title
+  }: {
+    detail: string;
+    stage: AutonomousLoopStage;
+    status?: AutonomousResearchRun["status"];
+    title: string;
+  }) => {
+    const previous = run.progress;
+    const timestamp = now();
+    const stageChanged = previous.activeStage !== stage;
+    const previousStageCanComplete = !["idle", "completed", "paused", "canceled", "failed"].includes(previous.activeStage);
+    run = {
+      ...run,
+      status,
+      progress: {
+        ...previous,
+        status,
+        activeStage: stage,
+        activeStageLabel: stageMeta[stage].label,
+        currentIteration: run.currentIteration,
+        maxIterations: settings.maxIterations,
+        progressPercent: stageMeta[stage].percent,
+        updatedAt: timestamp,
+        currentTask: detail,
+        lastCompletedStage: stageChanged && previousStageCanComplete ? previous.activeStage : previous.lastCompletedStage,
+        lastCompletedStageLabel:
+          stageChanged && previousStageCanComplete ? previous.activeStageLabel : previous.lastCompletedStageLabel,
+        stopReason: run.stopReason,
+        stopReasonDetail: run.stopReasonDetail,
+        events: stageChanged
+          ? [
+              {
+                eventId: uid("autonomy_event"),
+                timestamp,
+                stage,
+                title,
+                detail
+              },
+              ...safeArray(previous.events)
+            ]
+          : safeArray(previous.events)
+      }
+    };
   };
 
   recordCommunicationMessage({
@@ -190,6 +291,17 @@ export async function runAutonomousResearchLoop({
       if (signal?.aborted) {
         throw new Error("Autonomous research loop canceled by user.");
       }
+
+      run = {
+        ...run,
+        currentIteration: iterationNumber
+      };
+      updateProgress({
+        stage: "resolving_runtime",
+        title: "Resolving runtime",
+        detail: `Resolving runtime snapshot for iteration ${iterationNumber}/${settings.maxIterations}.`
+      });
+      emit(run, onUpdate);
 
       const snapshotBefore = await resolveResearchRuntimeSnapshot();
       const blockerSummary = summarizeScenarioEvaluation(snapshotBefore);
@@ -234,6 +346,11 @@ export async function runAutonomousResearchLoop({
         maturityTrend: snapshotBefore.maturity.maturitySummary.trendAvailability.message,
         goTraderHandoffGate: goTraderHandoffGateFor(snapshotBefore)
       };
+      updateProgress({
+        stage: "thesis_generation",
+        title: "Research cycle started",
+        detail: `Iteration ${iterationNumber}/${settings.maxIterations}: ${scenario.reason}`
+      });
       emit(run, onUpdate);
 
       recordCommunicationMessage({
@@ -254,7 +371,20 @@ export async function runAutonomousResearchLoop({
         maxCandidateCount: scenario.maxCandidateCount,
         advancedFullResearchMode: settings.advancedFullResearchMode,
         skipHeavyAudit: settings.safeImportedDataMode,
-        signal
+        signal,
+        onUpdate: (cycleRun) => {
+          const runningStep = safeArray(cycleRun.steps).find((step) => step.status === "running");
+          const latestCompletedStep = [...safeArray(cycleRun.steps)].reverse().find((step) =>
+            ["passed", "completed", "warning", "failed", "skipped"].includes(step.status)
+          );
+          const stage = researchStepToProgressStage[runningStep?.stepId ?? latestCompletedStep?.stepId ?? "thesis_generation"];
+          updateProgress({
+            stage,
+            title: runningStep?.label ?? latestCompletedStep?.label ?? "Research cycle running",
+            detail: runningStep?.summary ?? latestCompletedStep?.summary ?? "Research cycle running."
+          });
+          emit(run, onUpdate);
+        }
       });
       const proposal = latestProposalFromCycle(cycle);
       const bestCandidateLabel =
@@ -278,6 +408,12 @@ export async function runAutonomousResearchLoop({
 
       let walkForwardRun;
       if (proposal) {
+        updateProgress({
+          stage: "walk_forward",
+          title: "Walk-forward validation",
+          detail: `Validating proposal ${proposal.proposalId} across walk-forward windows.`
+        });
+        emit(run, onUpdate);
         walkForwardRun = await runWalkForwardValidation({
           mode: settings.safeImportedDataMode ? "safe" : "standard",
           proposalId: proposal.proposalId,
@@ -285,6 +421,15 @@ export async function runAutonomousResearchLoop({
           signal
         });
       }
+
+      updateProgress({
+        stage: "self_improvement",
+        title: "Evaluating self-improvement",
+        detail: proposal
+          ? `Evaluating auto-apply eligibility for proposal ${proposal.proposalId}.`
+          : "No proposal created; recording policy decision."
+      });
+      emit(run, onUpdate);
 
       const snapshotAfter = await resolveResearchRuntimeSnapshot();
       const postSafetyDiagnosis = diagnoseAutonomySafety(snapshotAfter, cycle.autoResearchCycle);
@@ -314,6 +459,13 @@ export async function runAutonomousResearchLoop({
       }
 
       noImprovementCount = finalEligibility.applied ? 0 : noImprovementCount + 1;
+
+      updateProgress({
+        stage: "readiness_maturity",
+        title: "Updating readiness and maturity",
+        detail: `Readiness ${snapshotAfter.readiness.readinessState}; maturity ${snapshotAfter.maturity.maturityScore}/100.`
+      });
+      emit(run, onUpdate);
 
       iteration = {
         ...iteration,
@@ -346,6 +498,13 @@ export async function runAutonomousResearchLoop({
         maturityTrend: snapshotAfter.maturity.maturitySummary.trendAvailability.message,
         goTraderHandoffGate: goTraderHandoffGateFor(snapshotAfter)
       };
+      updateProgress({
+        stage: "audit_communications",
+        title: "Writing audit event",
+        detail: finalEligibility.applied
+          ? `Research-only calibration ${finalEligibility.proposalId} was auto-applied.`
+          : `Auto-apply blocked: ${finalEligibility.reasons[0] ?? "policy did not allow it"}.`
+      });
       emit(run, onUpdate);
 
       recordCommunicationMessage({
@@ -385,6 +544,12 @@ export async function runAutonomousResearchLoop({
           stopReason: stopCheck.reason,
           stopReasonDetail: stopCheck.detail
         };
+        updateProgress({
+          stage: run.status === "paused" ? "paused" : "completed",
+          status: run.status,
+          title: run.status === "paused" ? "Loop paused" : "Loop completed",
+          detail: stopCheck.detail ?? "Autonomous research loop stopped."
+        });
         emit(run, onUpdate);
         return run;
       }
@@ -397,6 +562,12 @@ export async function runAutonomousResearchLoop({
       stopReason: "max_iterations_reached",
       stopReasonDetail: `Reached configured max iterations (${settings.maxIterations}).`
     };
+    updateProgress({
+      stage: "completed",
+      status: "completed",
+      title: "Loop completed",
+      detail: `Reached configured max iterations (${settings.maxIterations}).`
+    });
     emit(run, onUpdate);
     return run;
   } catch (error) {
@@ -408,6 +579,12 @@ export async function runAutonomousResearchLoop({
       stopReason: canceled ? "user_canceled" : "failed",
       stopReasonDetail: error instanceof Error ? error.message : "Autonomous research loop failed."
     };
+    updateProgress({
+      stage: canceled ? "canceled" : "failed",
+      status: run.status,
+      title: canceled ? "Loop canceled" : "Loop failed",
+      detail: run.stopReasonDetail ?? (canceled ? "Loop canceled." : "Loop failed.")
+    });
     emit(run, onUpdate);
     return run;
   }

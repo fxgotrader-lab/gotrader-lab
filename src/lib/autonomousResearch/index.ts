@@ -21,6 +21,7 @@ export {
   AUTONOMOUS_RESEARCH_STORAGE_KEY,
   AUTONOMOUS_RESEARCH_UPDATED_EVENT,
   clearAutonomousResearchHistory,
+  discardAutonomousResearchCheckpoint,
   latestAutonomousResearchRun,
   loadAutonomousResearchState,
   saveAutonomousResearchRun,
@@ -44,6 +45,9 @@ export type {
 } from "@/lib/autonomousResearch/autonomySafetyTypes";
 export type {
   AutoApplyEligibility,
+  AutonomousLoopProgressEvent,
+  AutonomousLoopProgressState,
+  AutonomousLoopStage,
   AutonomousCalibrationDriftEntry,
   AutonomousLoopIteration,
   AutonomousResearchBlocker,
