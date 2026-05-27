@@ -10,6 +10,7 @@ export {
   dashboardImportedSafeCandleWindowSettings,
   defaultCandleWindowSettings,
   DEFAULT_IMPORTED_WINDOW_SIZE,
+  getImportedDataPreset,
   HARD_BROWSER_CANDLE_LIMIT,
   importedDataPresetSettings,
   loadCandleWindowSettings,
@@ -38,6 +39,7 @@ export { createMockMarketContext, mockMarketContext } from "@/lib/marketData/moc
 export { marketDataProviderRoadmap as marketDataRoadmap, plannedMarketDataAgents as plannedMarketAgents } from "@/lib/marketData/marketDataRoadmap";
 export type {
   CandleWindowSettings,
+  ImportedDataPreset,
   PreparedCandleSource,
   ResearchPerformanceMode,
   ResearchSessionFilter,

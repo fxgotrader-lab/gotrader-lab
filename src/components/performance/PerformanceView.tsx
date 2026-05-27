@@ -9,9 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
-  buildCanonicalPerformanceMetricsFromRun,
-  canonicalMetricsForRun,
-  detectCanonicalMetricsMismatch
+  detectCanonicalMetricsMismatch,
+  normalizeCycleMetricsForDisplay
 } from "@/lib/performance/canonicalMetrics";
 import { buildSimulatedAccountFromCanonicalMetrics } from "@/lib/performance/simulatedAccount";
 import { latestResearchCycleRun, loadResearchCycleState } from "@/lib/researchCycle";
@@ -24,14 +23,16 @@ import {
 import { aggregatePortfolioMetrics, identifyWeakestAgent } from "@/lib/scoring";
 import type { LabState } from "@/lib/types";
 import { formatPercent, formatSigned } from "@/lib/utils";
+import { loadLatestValidationReport } from "@/lib/validation";
 
 export function PerformanceView({ state }: { state: LabState }) {
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
   const metrics = aggregatePortfolioMetrics(state);
   const weakest = identifyWeakestAgent(state);
   const latestCycle = latestResearchCycleRun(loadResearchCycleState());
-  const canonicalMetrics = runtimeSnapshot?.performance.canonicalPerformanceMetrics ?? canonicalMetricsForRun(latestCycle);
-  const derivedCanonicalMetrics = buildCanonicalPerformanceMetricsFromRun(latestCycle);
+  const latestValidation = loadLatestValidationReport();
+  const canonicalMetrics = runtimeSnapshot?.performance.canonicalPerformanceMetrics ?? normalizeCycleMetricsForDisplay(latestCycle, latestValidation);
+  const derivedCanonicalMetrics = normalizeCycleMetricsForDisplay(latestCycle, latestValidation);
   const canonicalMismatchWarnings = detectCanonicalMetricsMismatch(latestCycle?.canonicalMetrics, derivedCanonicalMetrics);
   const simulatedAccount = useMemo(
     () => runtimeSnapshot?.performance.simulatedAccountSummary ?? buildSimulatedAccountFromCanonicalMetrics(canonicalMetrics),

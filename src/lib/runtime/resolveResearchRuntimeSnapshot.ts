@@ -12,14 +12,15 @@ import {
 import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
   getActiveImportedCandleSetId,
+  getImportedDataPreset,
   loadCandleWindowSettings,
   loadPreparedCandleSource,
   type PreparedCandleSource
 } from "@/lib/marketData";
 import {
-  buildCanonicalPerformanceMetricsFromRun,
   canonicalMetricsForRun,
-  detectCanonicalMetricsMismatch
+  detectCanonicalMetricsMismatch,
+  normalizeCycleMetricsForDisplay
 } from "@/lib/performance/canonicalMetrics";
 import { calculateResearchMaturity } from "@/lib/maturity";
 import { buildSimulatedAccountFromCanonicalMetrics } from "@/lib/performance/simulatedAccount";
@@ -71,16 +72,7 @@ const dataPresetFor = (source: PreparedCandleSource): RuntimeDataPreset => {
   if (source.mode !== "imported") {
     return "mock";
   }
-  if (source.appliedSettings.advancedMode) {
-    return "advanced";
-  }
-  if (source.researchWindowCandles <= 500 && source.appliedSettings.targetTimeframe === "5m") {
-    return "safe";
-  }
-  if (source.researchWindowCandles <= 2000 && source.appliedSettings.targetTimeframe === "5m") {
-    return "standard";
-  }
-  return "custom";
+  return getImportedDataPreset(source.appliedSettings);
 };
 
 const marketStateFor = (source: PreparedCandleSource, fallbackSymbol?: FuturesSymbol, fallbackTimeframe?: Timeframe): RuntimeMarketDataState => {
@@ -211,8 +203,8 @@ export async function resolveResearchRuntimeSnapshot(
     quality: researchQuality,
     runbook
   });
-  const canonicalPerformanceMetrics = canonicalMetricsForRun(latestCycle);
-  const derivedMetrics = buildCanonicalPerformanceMetricsFromRun(latestCycle);
+  const canonicalPerformanceMetrics = normalizeCycleMetricsForDisplay(latestCycle, validation);
+  const derivedMetrics = normalizeCycleMetricsForDisplay(latestCycle, validation);
   const canonicalMismatchWarnings = detectCanonicalMetricsMismatch(latestCycle?.canonicalMetrics, derivedMetrics);
   const completedRunbookItems = countCompletedRunbookItems(runbook);
   const autoResearchState = loadAutoResearchState();

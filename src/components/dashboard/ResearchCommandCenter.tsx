@@ -68,9 +68,8 @@ import { SimulationBridgeStatusCard } from "./SimulationBridgeStatusCard";
 import { SystemStatusGrid } from "./SystemStatusGrid";
 import { ValidationStatusCard } from "./ValidationStatusCard";
 import {
-  buildCanonicalPerformanceMetricsFromRun,
-  canonicalMetricsForRun,
-  detectCanonicalMetricsMismatch
+  detectCanonicalMetricsMismatch,
+  normalizeCycleMetricsForDisplay
 } from "@/lib/performance/canonicalMetrics";
 import { buildSimulatedAccountFromCanonicalMetrics } from "@/lib/performance/simulatedAccount";
 
@@ -122,8 +121,8 @@ export function ResearchCommandCenter({ state }: ResearchCommandCenterProps) {
   const communicationSummary = getCommunicationSummary(loadCommunicationMessages());
   const agentAuditSummary = summarizeAgentAudit(loadAgentAuditState());
   const agentDebateSummary = summarizeAgentDebate(loadAgentDebateState());
-  const canonicalMetrics = runtimeSnapshot?.performance.canonicalPerformanceMetrics ?? canonicalMetricsForRun(latestResearchCycle);
-  const derivedCanonicalMetrics = buildCanonicalPerformanceMetricsFromRun(latestResearchCycle);
+  const canonicalMetrics = runtimeSnapshot?.performance.canonicalPerformanceMetrics ?? normalizeCycleMetricsForDisplay(latestResearchCycle, validationReport);
+  const derivedCanonicalMetrics = normalizeCycleMetricsForDisplay(latestResearchCycle, validationReport);
   const canonicalMismatchWarnings = detectCanonicalMetricsMismatch(latestResearchCycle?.canonicalMetrics, derivedCanonicalMetrics);
   const simulatedAccount = runtimeSnapshot?.performance.simulatedAccountSummary ?? buildSimulatedAccountFromCanonicalMetrics(canonicalMetrics);
   const latestThesis = state.tradeTheses[0];

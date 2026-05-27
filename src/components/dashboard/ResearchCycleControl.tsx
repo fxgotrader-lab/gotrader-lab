@@ -27,10 +27,13 @@ import type { ResearchCycleRun, ResearchCycleStepResult, ResearchCycleStepStatus
 import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
   DASHBOARD_IMPORTED_SAFE_WINDOW_SIZE,
-  dashboardImportedSafeCandleWindowSettings,
+  DASHBOARD_IMPORTED_CANDIDATE_LIMIT,
+  getImportedDataPreset,
+  importedDataPresetSettings,
   loadCandleWindowSettings,
   loadPreparedCandleSource,
   MARKET_DATA_IMPORT_UPDATED_EVENT,
+  saveCandleWindowSettings,
   type PreparedCandleSource
 } from "@/lib/marketData";
 import {
@@ -178,17 +181,30 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
   const activeCheckpoint = liveCheckpoint ?? autoResearchState.activeCheckpoint ?? latestRun?.autoResearchCheckpoint;
   const recoveryCheckpoint = autoResearchState.recoveryCheckpoint;
   const latestProposalSnapshot = latestRun?.latestGeneratedProposal?.metricsSnapshot ?? latestRun?.autoResearchCycle?.createdProposal?.metricsSnapshot;
-  const importedSafeMode = activeCandleSource.mode === "imported" && !advancedFullResearchMode;
-  const effectiveSearchMode = importedSafeMode ? "quick" : searchMode;
+  const selectedDataPreset = activeCandleSource.mode === "imported"
+    ? getImportedDataPreset(activeCandleSource.appliedSettings)
+    : "mock";
+  const importedGuardedMode = activeCandleSource.mode === "imported" && !advancedFullResearchMode;
+  const effectiveSearchMode = searchMode;
   const selectedSearchMode = dashboardSearchModes.find((mode) => mode.value === searchMode) ?? dashboardSearchModes[1];
   const effectiveSearchModeDetails =
     dashboardSearchModes.find((mode) => mode.value === effectiveSearchMode) ?? dashboardSearchModes[0];
-  const effectiveCandidateLimit = effectiveSearchModeDetails.count;
-  const searchDepthCappedBySafeMode = importedSafeMode && selectedSearchMode.value !== effectiveSearchModeDetails.value;
+  const selectedCandidateLimit = selectedSearchMode.count;
+  const effectiveCandidateLimit = importedGuardedMode
+    ? Math.min(selectedCandidateLimit, DASHBOARD_IMPORTED_CANDIDATE_LIMIT)
+    : selectedCandidateLimit;
+  const searchDepthCappedBySafeMode = importedGuardedMode && selectedCandidateLimit > effectiveCandidateLimit;
   const dashboardPreset = activeCandleSource.mode === "imported"
-    ? advancedFullResearchMode
+    ? selectedDataPreset === "custom"
+      ? "Custom"
+      : selectedDataPreset[0].toUpperCase() + selectedDataPreset.slice(1)
+    : "Mock";
+  const effectiveDashboardPreset = activeCandleSource.mode === "imported"
+    ? advancedFullResearchMode || activeCandleSource.appliedSettings.advancedMode
       ? "Advanced"
-      : "Safe"
+      : activeCandleSource.researchWindowCandles <= DASHBOARD_IMPORTED_SAFE_WINDOW_SIZE
+        ? "Safe"
+        : "Standard"
     : "Mock";
   const researchCalibrationAvailable = Boolean(
     latestRun?.createdProposalId && latestRun.autoResearchCycle?.noSafePaperDemoCandidateFound
@@ -236,12 +252,8 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
       setActiveCalibration(loadActiveResearchCalibration());
       setActiveConfigResolution(resolveActiveBacktestConfig());
       loadPreparedCandleSource().then(async (source) => {
-        const preparedSource =
-          source.mode === "imported" && !advancedFullResearchMode
-            ? await loadPreparedCandleSource(dashboardImportedSafeCandleWindowSettings)
-            : source;
         if (mounted) {
-          setActiveCandleSource(preparedSource);
+          setActiveCandleSource(source);
         }
       });
     };
@@ -284,10 +296,7 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
         state,
         searchMode: effectiveSearchMode,
         maxCandidateCount: effectiveCandidateLimit,
-        candleWindowSettings:
-          activeCandleSource.mode === "imported" && !advancedFullResearchMode
-            ? dashboardImportedSafeCandleWindowSettings
-            : activeCandleSource.appliedSettings,
+        candleWindowSettings: activeCandleSource.appliedSettings,
         advancedFullResearchMode,
         skipHeavyAudit: activeCandleSource.mode === "imported" && !advancedFullResearchMode,
         signal: controller.signal,
@@ -329,6 +338,13 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
       return;
     }
     setAdvancedFullResearchMode(enabled);
+  };
+
+  const updateDashboardDataPreset = async (preset: "safe" | "standard" | "advanced") => {
+    const saved = saveCandleWindowSettings(importedDataPresetSettings[preset]);
+    const source = await loadPreparedCandleSource(saved);
+    setActiveCandleSource(source);
+    setAdvancedFullResearchMode(preset === "advanced");
   };
 
   const previousDataSizeFailure =
@@ -417,10 +433,42 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
                 <p className="mt-1 font-mono text-slate-100">{activeCandleSource.performanceMode}</p>
               </div>
               <div>
-                <p className="uppercase tracking-[0.14em] text-slate-500">Research preset</p>
+                <p className="uppercase tracking-[0.14em] text-slate-500">Selected preset</p>
                 <p className="mt-1 font-mono text-slate-100">{dashboardPreset}</p>
               </div>
             </div>
+            {activeCandleSource.mode === "imported" ? (
+              <div className="mt-3 rounded-md border border-white/10 bg-slate-950/45 p-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Dashboard data preset</p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Selected {dashboardPreset}; effective {effectiveDashboardPreset}. Window{" "}
+                      {activeCandleSource.researchWindowCandles.toLocaleString()} raw to{" "}
+                      {activeCandleSource.processedCandleCount.toLocaleString()} {activeCandleSource.appliedSettings.targetTimeframe}.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {(["safe", "standard", "advanced"] as const).map((preset) => (
+                      <Button
+                        key={preset}
+                        size="sm"
+                        variant={selectedDataPreset === preset ? "default" : "outline"}
+                        disabled={busy}
+                        onClick={() => updateDashboardDataPreset(preset)}
+                      >
+                        {preset[0].toUpperCase() + preset.slice(1)}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                {selectedDataPreset === "custom" ? (
+                  <p className="mt-2 text-xs text-amber-100">
+                    Custom imported-data settings are active from Market Data. Dashboard will use them unless a hard browser limit is hit.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             {previousDataSizeFailure ? (
               <div className="mt-3 rounded-md border border-amber-300/20 bg-amber-300/10 p-2 text-xs text-amber-100">
                 Last run may have exceeded browser limits. Safe mode is recommended.
@@ -480,17 +528,21 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
               </div>
               <div className="rounded-md border border-white/10 bg-slate-950/60 p-2">
                 <p className="uppercase tracking-[0.14em] text-slate-500">Data preset</p>
-                <p className="mt-1 font-mono text-slate-100">{dashboardPreset}</p>
+                <p className="mt-1 font-mono text-slate-100">
+                  {dashboardPreset} selected / {effectiveDashboardPreset} effective
+                </p>
               </div>
             </div>
-            {importedSafeMode ? (
+            {importedGuardedMode ? (
               <div className="rounded-md border border-cyan-300/20 bg-cyan-300/10 p-2 text-xs text-cyan-50">
-                Imported-data Safe mode may cap heavy searches to protect the browser. Selected {selectedSearchMode.shortLabel} will run as{" "}
-                {effectiveSearchModeDetails.shortLabel} unless Advanced full research mode is enabled.
-                <span className="mt-1 block">
-                  Safe preset: latest {DASHBOARD_IMPORTED_SAFE_WINDOW_SIZE.toLocaleString()} raw candles, 5m aggregation, 5 candidates,
-                  one adaptive pass, compact audit.
-                </span>
+                Imported-data guarded mode keeps browser-heavy work bounded. Selected {selectedSearchMode.shortLabel} uses{" "}
+                {effectiveCandidateLimit.toLocaleString()} candidate{effectiveCandidateLimit === 1 ? "" : "s"} with the {effectiveDashboardPreset} data preset.
+                {searchDepthCappedBySafeMode ? (
+                  <span className="mt-1 block">
+                    Candidate count was capped from {selectedCandidateLimit.toLocaleString()} to{" "}
+                    {effectiveCandidateLimit.toLocaleString()}. Enable Advanced full research mode for larger searches.
+                  </span>
+                ) : null}
               </div>
             ) : null}
             {activeCandleSource.mode === "imported" ? (

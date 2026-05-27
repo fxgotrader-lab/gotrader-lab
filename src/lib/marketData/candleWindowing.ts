@@ -5,6 +5,7 @@ export type ResearchWindowMode = "latest" | "date_range";
 export type ResearchTimeframe = Extract<Timeframe, "1m" | "5m" | "15m">;
 export type ResearchSessionFilter = "all" | CandleSession;
 export type ResearchPerformanceMode = "safe" | "advanced";
+export type ImportedDataPreset = "safe" | "standard" | "advanced" | "custom";
 
 export interface CandleWindowSettings {
   windowMode: ResearchWindowMode;
@@ -72,6 +73,32 @@ export const importedDataPresetSettings = {
     advancedMode: true
   }
 } satisfies Record<"safe" | "standard" | "advanced", CandleWindowSettings>;
+
+export function getImportedDataPreset(settings: Partial<CandleWindowSettings> = loadCandleWindowSettings()): ImportedDataPreset {
+  const sanitized = sanitizeCandleWindowSettings(settings);
+  if (sanitized.advancedMode) {
+    return sanitized.windowSize === DASHBOARD_IMPORTED_STANDARD_WINDOW_SIZE &&
+      sanitized.targetTimeframe === "5m" &&
+      sanitized.sessionFilter === "all"
+      ? "advanced"
+      : "custom";
+  }
+  if (
+    sanitized.windowSize === DASHBOARD_IMPORTED_SAFE_WINDOW_SIZE &&
+    sanitized.targetTimeframe === "5m" &&
+    sanitized.sessionFilter === "all"
+  ) {
+    return "safe";
+  }
+  if (
+    sanitized.windowSize === DASHBOARD_IMPORTED_STANDARD_WINDOW_SIZE &&
+    sanitized.targetTimeframe === "5m" &&
+    sanitized.sessionFilter === "all"
+  ) {
+    return "standard";
+  }
+  return "custom";
+}
 
 const timeframeMinutes: Record<ResearchTimeframe, number> = {
   "1m": 1,

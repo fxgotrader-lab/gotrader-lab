@@ -39,7 +39,8 @@ import {
   DASHBOARD_IMPORTED_SAFE_PROCESSED_LIMIT,
   DASHBOARD_IMPORTED_SAFE_WINDOW_SIZE,
   buildMarketContext,
-  dashboardImportedSafeCandleWindowSettings,
+  getImportedDataPreset,
+  loadCandleWindowSettings,
   loadPreparedCandleSource,
   type PreparedCandleSource
 } from "@/lib/marketData";
@@ -452,7 +453,7 @@ export async function runResearchCycle({
   };
   const activeResearchConfig = resolveActiveBacktestConfig(backtestConfig ? sanitizeBacktestConfig(backtestConfig) : undefined);
   const baseActiveConfig = activeResearchConfig.config;
-  const requestedCandleWindowSettings = candleWindowSettings ?? dashboardImportedSafeCandleWindowSettings;
+  const requestedCandleWindowSettings = candleWindowSettings ?? loadCandleWindowSettings();
   const activeCandleSource: PreparedCandleSource = await loadPreparedCandleSource(requestedCandleWindowSettings).catch(() => ({
     mode: "mock" as const,
     label: "Mock candles",
@@ -472,13 +473,14 @@ export async function runResearchCycle({
     performanceMode: "safe" as const,
     warnings: []
   }));
-  const importedSafeMode = activeCandleSource.mode === "imported" && !advancedFullResearchMode;
-  const effectiveSearchMode = importedSafeMode ? "quick" : searchMode;
-  const effectiveMaxCandidateCount = importedSafeMode
-    ? Math.min(maxCandidateCount, 5)
+  const importedPreset = activeCandleSource.mode === "imported" ? getImportedDataPreset(activeCandleSource.appliedSettings) : "mock";
+  const importedGuardedMode = activeCandleSource.mode === "imported" && !advancedFullResearchMode;
+  const effectiveSearchMode = searchMode;
+  const effectiveMaxCandidateCount = importedGuardedMode
+    ? Math.min(maxCandidateCount, DASHBOARD_IMPORTED_CANDIDATE_LIMIT)
     : maxCandidateCount;
-  const effectiveMaxAdaptivePasses = importedSafeMode ? 1 : undefined;
-  const heavyAuditSkipped = skipHeavyAudit ?? importedSafeMode;
+  const effectiveMaxAdaptivePasses = importedGuardedMode && importedPreset === "safe" ? 1 : undefined;
+  const heavyAuditSkipped = skipHeavyAudit ?? importedGuardedMode;
   const researchPreset =
     activeCandleSource.mode !== "imported"
       ? "mock"

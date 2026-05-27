@@ -112,6 +112,13 @@ export function canonicalMetricsForRun(run?: ResearchCycleRun): CanonicalPerform
   return run?.canonicalMetrics ?? buildCanonicalPerformanceMetricsFromRun(run);
 }
 
+export function normalizeCycleMetricsForDisplay(
+  run?: ResearchCycleRun,
+  validationReport?: ValidationSuiteReport
+): CanonicalPerformanceMetrics | undefined {
+  return run?.canonicalMetrics ?? buildCanonicalPerformanceMetricsFromRun(run, validationReport);
+}
+
 type MetricKey = keyof Pick<
   CanonicalPerformanceMetrics,
   | "totalTrades"
@@ -153,6 +160,9 @@ export function detectCanonicalMetricsMismatch(
   derived?: CanonicalPerformanceMetrics
 ) {
   if (!stored || !derived) {
+    return [];
+  }
+  if (stored === derived) {
     return [];
   }
   if (stored.sourceCycleId !== derived.sourceCycleId) {
