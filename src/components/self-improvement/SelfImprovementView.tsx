@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { CheckCircle2, FlaskConical, History, ShieldAlert, SlidersHorizontal, XCircle } from "lucide-react";
 import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDetails";
+import { WhyNotReadyCard } from "@/components/common/WhyNotReadyCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -834,6 +835,8 @@ export function SelfImprovementView() {
       </div>
 
       <SafetyLockBanner message="Simulation self-improvement only. No broker execution, readiness override, paper/demo enablement, or real trades." />
+
+      <WhyNotReadyCard context="self_improvement" snapshot={runtimeSnapshot} />
 
       <Card className="border-cyan-400/20 bg-cyan-400/5">
         <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-5">

@@ -5,6 +5,7 @@ import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDet
 import { AutonomySafetyPolicyPanel } from "@/components/autonomous-research/AutonomySafetyPolicyPanel";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
+import { WhyNotReadyCard } from "@/components/common/WhyNotReadyCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -192,6 +193,8 @@ export function ReadinessGateView() {
       </div>
 
       <SafetyLockBanner message="Simulation-only readiness gating. Broker execution remains disabled." />
+
+      <WhyNotReadyCard context="readiness" snapshot={runtimeSnapshot} />
 
       <Card className="border-amber-300/25 bg-amber-300/10">
         <CardContent className="flex flex-col gap-3 p-4 text-sm text-amber-100 md:flex-row md:items-center md:justify-between">

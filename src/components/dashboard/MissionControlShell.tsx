@@ -4,6 +4,7 @@ import { ExternalLink, Lock, ShieldCheck } from "lucide-react";
 
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { TradingChart } from "@/components/charts/TradingChart";
+import { WhyNotReadyCard } from "@/components/common/WhyNotReadyCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -198,6 +199,8 @@ export function MissionControlShell({ state }: { state: LabState }) {
         loopStatus={latestRun?.status}
         snapshot={runtimeSnapshot}
       />
+
+      <WhyNotReadyCard context="command_center" snapshot={runtimeSnapshot} />
 
       <MissionControlActionPanel
         actionItems={actionItems}

@@ -4,6 +4,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { MetricCard } from "@/components/MetricCard";
 import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDetails";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
+import { WhyNotReadyCard } from "@/components/common/WhyNotReadyCard";
 import { SimulatedAccountCard } from "@/components/dashboard/SimulatedAccountCard";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -134,6 +135,8 @@ export function PerformanceView({ state }: { state: LabState }) {
           </CardContent>
         </Card>
       ) : null}
+
+      <WhyNotReadyCard context="performance" snapshot={runtimeSnapshot} />
 
       <SimulatedAccountCard account={simulatedAccount} />
 
