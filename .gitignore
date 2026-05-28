@@ -21,3 +21,5 @@ llm/errors/*.json
 !llm/requests/.gitkeep
 !llm/responses/.gitkeep
 !llm/errors/.gitkeep
+.gotrader/journal/
+*.jsonl

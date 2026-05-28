@@ -38,6 +38,7 @@ MarketSnapshot + ScannerOutput + MarketContextSnapshot
   -> flat StrategyCandidate
   -> rejected paper-mode RiskDecision
   -> local JournalEvent object
+  -> optional local JSONL journal
   -> bounded OpenClaw advisory packet
 ```
 
@@ -146,7 +147,7 @@ The Strategy/Risk Context Evaluator adds reject/caution reasons for missing mark
 
 ### JournalEvent
 
-The journal must record accepted and rejected signals, including no-trade outputs and failed data-quality checks. This phase returns structured journal objects only and does not write to Supabase.
+The journal must record accepted and rejected signals, including no-trade outputs and failed data-quality checks. This phase can persist compact local JSONL records, but it does not write to Supabase.
 
 Required fields:
 
@@ -254,6 +255,16 @@ Supabase should persist:
 
 Supabase writes are not implemented in this phase.
 
+## Local Journal Position
+
+Local journal persistence stores compact audit/replay records under:
+
+```text
+.gotrader/journal/YYYY-MM-DD/research-events.jsonl
+```
+
+It persists `LocalJournalRecord` wrappers around `JournalEvent` objects only after sanitization. It never stores API keys, raw provider payloads, broker credentials, MT5 credentials, execution secrets, frontend session data, unbounded candle history, or approved executable decisions in this phase.
+
 ## Files Added In This Phase
 
 - `src/lib/agentBridge/agentBridgeTypes.ts`
@@ -272,6 +283,11 @@ Supabase writes are not implemented in this phase.
 - `scripts/services/strategy-risk-context-evaluator.mjs`
 - `scripts/test-strategy-risk-context.mjs`
 - `docs/strategy-risk-context-evaluator.md`
+- `src/lib/journal/localJournalTypes.ts`
+- `src/lib/journal/localJournalContracts.ts`
+- `scripts/services/local-journal-service.mjs`
+- `scripts/test-local-journal.mjs`
+- `docs/local-journal-persistence.md`
 
 ## What Not To Build Yet
 
@@ -287,4 +303,4 @@ Supabase writes are not implemented in this phase.
 
 ## Next Phase
 
-The next safe phase is local journal persistence for rejected/no-trade/research-only records. It should store compact journal-ready events for audit and replay without Supabase writes, MT5 calls, or broker connectivity.
+The next safe phase is a local replay/report reader for the JSONL journal so rejected/no-trade/research-only history can be inspected without Supabase writes, MT5 calls, or broker connectivity.

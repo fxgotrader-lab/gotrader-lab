@@ -14,6 +14,7 @@ Current implementation:
 - agent bridge: normalized MarketSnapshot, ScannerOutput, StrategyCandidate, RiskDecision, and JournalEvent contracts are defined for the market-scanner flow
 - market context service: FMP local/server-side service normalizes economic calendar, news, macro risk flags, and bounded context-only sentiment
 - strategy/risk evaluator: combines MarketSnapshot, ScannerOutput, and MarketContextSnapshot into research-only StrategyCandidate, conservative RiskDecision, local JournalEvent, and bounded OpenClaw advisory packet
+- local journal: optional JSONL persistence under `.gotrader/journal/` for rejected, no-trade, data-quality-failure, macro-risk-block, and research-only records
 - broker execution: disabled
 - live trading: disabled
 - API keys in frontend: none
@@ -261,6 +262,12 @@ The Strategy/Risk Context Evaluator consumes normalized market data, scanner out
 - bounded OpenClaw advisory packet
 
 It can reject for missing data, insufficient candles, zero latest close, raw provider payload inclusion, non-paper mode, and active high-impact macro event windows. It cannot create long/short direction, grant execution permission, or bypass the Risk Manager.
+
+## Local Journal Boundary
+
+The local journal stores compact `LocalJournalRecord` JSONL records for audit and replay. It is not a trading ledger and not a broker/account record. It never stores raw provider payloads, API keys, broker credentials, MT5 credentials, execution secrets, frontend session data, unbounded candle history, or approved executable decisions in this phase.
+
+Future Supabase persistence should migrate from these sanitized contracts instead of raw provider payloads.
 
 ## Safety Rules
 

@@ -81,6 +81,8 @@ Journal events can record:
 - macro-risk blocks
 - context/provenance for future replay and audit
 
+When explicitly requested by tooling, the evaluator service can append the journal-ready object to the local JSONL journal under `.gotrader/journal/YYYY-MM-DD/research-events.jsonl`. Persistence is opt-in via service options such as `persistLocalJournal`; default evaluator runs do not write files.
+
 ## OpenClaw Advisory Boundary
 
 OpenClaw may receive:
@@ -120,6 +122,9 @@ The evaluator rejects/no-trades when:
 - `src/lib/strategy/strategyContextEvaluator.ts`
 - `scripts/services/strategy-risk-context-evaluator.mjs`
 - `scripts/test-strategy-risk-context.mjs`
+- `scripts/services/local-journal-service.mjs`
+- `scripts/test-local-journal.mjs`
+- `docs/local-journal-persistence.md`
 
 ## Future Path
 

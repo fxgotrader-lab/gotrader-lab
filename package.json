@@ -12,7 +12,8 @@
     "test:twelvedata": "node scripts/test-twelve-data.mjs",
     "test:agent-bridge-contracts": "node scripts/test-agent-bridge-contracts.mjs",
     "test:fmp-market-context": "node scripts/test-fmp-market-context.mjs",
-    "test:strategy-risk-context": "node scripts/test-strategy-risk-context.mjs"
+    "test:strategy-risk-context": "node scripts/test-strategy-risk-context.mjs",
+    "test:local-journal": "node scripts/test-local-journal.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.1.1",

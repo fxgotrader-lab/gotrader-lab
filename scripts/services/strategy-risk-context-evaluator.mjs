@@ -10,6 +10,10 @@ import {
   buildMarketContextSnapshot,
   buildOpenClawMarketContextPacket
 } from "./fmp-market-context-service.mjs";
+import {
+  appendLocalJournalRecord,
+  createLocalJournalRecord
+} from "./local-journal-service.mjs";
 
 export const STRATEGY_CONTEXT_EVALUATOR_VERSION = "strategy_risk_context_evaluator_v1";
 export const STRATEGY_CONTEXT_STRATEGY_VERSION = "strategy_context_research_only_v1";
@@ -342,7 +346,7 @@ export function evaluateStrategyRiskContext({ gotraderMode = normalizeMode(), ma
   };
 }
 
-export async function runStrategyRiskContextFlow({ dryRun, interval = "5min", outputsize = 8, symbol = "EUR/USD" } = {}) {
+export async function runStrategyRiskContextFlow({ dryRun, interval = "5min", outputsize = 8, persistLocalJournal = false, symbol = "EUR/USD" } = {}) {
   const marketSnapshotResult = await buildMarketSnapshot({ dryRun, interval, outputsize, symbol });
   const marketContextResult = await buildMarketContextSnapshot({ dryRun, symbol });
   const scannerOutput = await buildScannerOutput({
@@ -358,6 +362,13 @@ export async function runStrategyRiskContextFlow({ dryRun, interval = "5min", ou
     marketSnapshot: marketSnapshotResult.snapshot,
     scannerOutput
   });
+  const localJournalWrite = persistLocalJournal
+    ? appendLocalJournalRecord(
+        createLocalJournalRecord(evaluation.journalEvent, {
+          riskDecision: evaluation.riskDecision
+        })
+      )
+    : undefined;
   return {
     ok: marketSnapshotResult.ok && marketContextResult.ok,
     mode: normalizeMode(),
@@ -365,6 +376,7 @@ export async function runStrategyRiskContextFlow({ dryRun, interval = "5min", ou
     scannerOutput,
     marketContext: marketContextResult.ok ? marketContextResult.data : undefined,
     evaluation,
+    localJournalWrite,
     error: marketSnapshotResult.error ?? marketContextResult.error
   };
 }
