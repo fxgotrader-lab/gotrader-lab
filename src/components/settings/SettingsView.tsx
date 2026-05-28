@@ -40,6 +40,7 @@ import { hermesNotificationHookSpec } from "@/lib/integrations/hermesNotificatio
 import { openClawHermesBridgeSpec } from "@/lib/integrations/openclawHermesBridgeSpec";
 import { openClawHermesAdvisorySpec } from "@/lib/integrations/openclawHermesSpec";
 import { openClawMemoryHookSpec } from "@/lib/integrations/openclawMemoryHooks";
+import { paperclipAgentOperationsPolicy } from "@/lib/integrations/paperclipAuthorityPolicy";
 import { paperDemoExecutionSpec } from "@/lib/integrations/paperDemoExecutionSpec";
 import {
   getLLMReadinessImpact,
@@ -590,24 +591,41 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             {[
-              ["Status", "evaluation/planned"],
-              ["Best fit", "external agent operations"],
-              ["Authority", "task orchestration only"],
-              ["Execution authority", "none"],
-              ["Broker authority", "none"],
-              ["Readiness override", "none"],
-              ["Live integration", "not connected"]
+              ["Status", paperclipAgentOperationsPolicy.statusLabel],
+              ["Role", paperclipAgentOperationsPolicy.roleLabel],
+              ["Authority", paperclipAgentOperationsPolicy.authorityLabel],
+              ["Execution authority", paperclipAgentOperationsPolicy.authorityBlock.executionAuthority],
+              ["Broker authority", paperclipAgentOperationsPolicy.authorityBlock.brokerAuthority],
+              ["Readiness override", paperclipAgentOperationsPolicy.authorityBlock.readinessOverrideAuthority],
+              ["Live integration", paperclipAgentOperationsPolicy.liveIntegration]
             ].map(([label, value]) => (
               <div key={label} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
                 <span className="text-muted-foreground">{label}</span>
-                <Badge variant={value === "none" || value === "not connected" ? "danger" : value === "evaluation/planned" ? "warning" : "secondary"}>
+                <Badge variant={value === "none" || value === "not_connected" ? "danger" : value === "planned / evaluation" ? "warning" : "secondary"}>
                   {formatBridgeValue(value)}
                 </Badge>
               </div>
             ))}
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-md border border-emerald-300/25 bg-emerald-300/10 p-3 text-emerald-50">
+                <div className="mb-2 font-medium">Allowed future uses</div>
+                <ul className="space-y-1 text-xs">
+                  {paperclipAgentOperationsPolicy.allowedFutureUses.map((use) => (
+                    <li key={use.id}>{use.label}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="rounded-md border border-red-300/25 bg-red-300/10 p-3 text-red-50">
+                <div className="mb-2 font-medium">Forbidden uses</div>
+                <ul className="space-y-1 text-xs">
+                  {paperclipAgentOperationsPolicy.forbiddenUses.map((use) => (
+                    <li key={use.id}>{use.label}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
             <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
-              Paperclip may eventually coordinate research tasks, reports, heartbeats, and budgets. AI Lab remains the
-              source of truth for metrics, readiness, proposals, and safety gates.
+              {paperclipAgentOperationsPolicy.safetyNotice}
             </div>
           </CardContent>
         </Card>

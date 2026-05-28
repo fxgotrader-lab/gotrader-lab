@@ -24,6 +24,7 @@ import {
 } from "@/lib/marketData";
 import { createPlannedHermesNotificationState } from "@/lib/integrations/hermesNotificationHooks";
 import { createPlannedOpenClawMemoryHookState } from "@/lib/integrations/openclawMemoryHooks";
+import { paperclipAgentOperationsPolicy } from "@/lib/integrations/paperclipAuthorityPolicy";
 import { buildVwapOverlay, createTradingChartData } from "@/lib/charting";
 import { RESEARCH_CYCLE_UPDATED_EVENT } from "@/lib/researchCycle";
 import {
@@ -330,6 +331,39 @@ export function MissionControlShell({ state }: { state: LabState }) {
             </ul>
           </div>
         ) : null}
+        <div className="mt-3 rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-3 text-sm text-cyan-100">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="font-semibold">Paperclip Agent Operations</p>
+              <p className="mt-1 text-cyan-100/80">
+                Planned external control plane for research tasks, agent governance, work products, heartbeats, and budgets.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="warning">{paperclipAgentOperationsPolicy.statusLabel}</Badge>
+              <Badge variant="secondary">{paperclipAgentOperationsPolicy.authorityLabel}</Badge>
+              <Badge variant="danger">execution {paperclipAgentOperationsPolicy.authorityBlock.executionAuthority}</Badge>
+            </div>
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <div className="rounded-md border border-cyan-100/15 bg-cyan-100/5 p-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-cyan-100/70">Allowed later</p>
+              <ul className="mt-2 space-y-1 text-xs">
+                {safeTopN(paperclipAgentOperationsPolicy.allowedFutureUses, 4).map((use) => (
+                  <li key={use.id}>{use.label}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="rounded-md border border-red-200/20 bg-red-200/10 p-3 text-red-100">
+              <p className="text-xs uppercase tracking-[0.16em] text-red-100/70">Never allowed</p>
+              <ul className="mt-2 space-y-1 text-xs">
+                {safeTopN(paperclipAgentOperationsPolicy.forbiddenUses, 4).map((use) => (
+                  <li key={use.id}>{use.label}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {[
             ["Market Data", "/market-data"],

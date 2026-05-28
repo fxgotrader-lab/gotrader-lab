@@ -209,6 +209,15 @@ Minimal request examples:
 
 The minimal integration should not trigger autonomous loops automatically until the scheduler policy is designed and tested.
 
+Current planning artifacts in AI Lab:
+
+- `src/lib/integrations/paperclipTypes.ts` defines the planning-only Paperclip contract shape.
+- `src/lib/integrations/paperclipAuthorityPolicy.ts` defines allowed future uses, forbidden uses, and authority-none safety rules.
+- Settings shows a "Paperclip Agent Operations" card with planned/evaluation status.
+- Mission Control advanced details show the same planned authority boundary.
+- No Paperclip package is installed.
+- No Paperclip webhook, credential, API call, or live integration exists.
+
 ## 10. Full Future Integration
 
 A fuller future integration could include:
@@ -344,4 +353,3 @@ Plan only now.
 Paperclip is a strong architectural fit as an external agent operations/control plane for GoTrader AI Lab, especially for task orchestration, scheduling, work products, heartbeats, budgets, and governance. It should manage OpenClaw/Hermes/Codex work around the trading research system rather than manage trading logic inside it.
 
 Do not integrate live Paperclip yet. The safest next step is to keep the Settings planning card, preserve this audit, and later add a read-only Paperclip status/export contract after the runtime snapshot and deployment model are stable.
-
