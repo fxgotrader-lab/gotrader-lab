@@ -583,6 +583,38 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
+              <ClipboardList className="h-4 w-4 text-primary" aria-hidden="true" />
+              <CardTitle>Paperclip Agent Operations</CardTitle>
+            </div>
+            <CardDescription>Evaluation-only control-plane planning for agent task orchestration.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {[
+              ["Status", "evaluation/planned"],
+              ["Best fit", "external agent operations"],
+              ["Authority", "task orchestration only"],
+              ["Execution authority", "none"],
+              ["Broker authority", "none"],
+              ["Readiness override", "none"],
+              ["Live integration", "not connected"]
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+                <span className="text-muted-foreground">{label}</span>
+                <Badge variant={value === "none" || value === "not connected" ? "danger" : value === "evaluation/planned" ? "warning" : "secondary"}>
+                  {formatBridgeValue(value)}
+                </Badge>
+              </div>
+            ))}
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              Paperclip may eventually coordinate research tasks, reports, heartbeats, and budgets. AI Lab remains the
+              source of truth for metrics, readiness, proposals, and safety gates.
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
               <BrainCircuit className="h-4 w-4 text-primary" aria-hidden="true" />
               <CardTitle>LLM Research Agents</CardTitle>
             </div>
