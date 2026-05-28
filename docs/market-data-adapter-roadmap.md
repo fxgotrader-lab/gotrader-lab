@@ -10,6 +10,10 @@ Current implementation:
 
 - mode: `mock`
 - source: mock candles and mock/planning context
+- provider service: Twelve Data local/server-side service is available for forex, metals, crypto, and index/CFD research smoke tests
+- agent bridge: normalized MarketSnapshot, ScannerOutput, StrategyCandidate, RiskDecision, and JournalEvent contracts are defined for the market-scanner flow
+- market context service: FMP local/server-side service normalizes economic calendar, news, macro risk flags, and bounded context-only sentiment
+- strategy/risk evaluator: combines MarketSnapshot, ScannerOutput, and MarketContextSnapshot into research-only StrategyCandidate, conservative RiskDecision, local JournalEvent, and bounded OpenClaw advisory packet
 - broker execution: disabled
 - live trading: disabled
 - API keys in frontend: none
@@ -60,8 +64,8 @@ Future provider path:
 
 - CSV import first
 - broker feed later
+- Twelve Data local/server-side service for forex, metals, crypto, and index/CFD candles
 - Polygon
-- Twelve Data
 - Alpaca
 - Tradovate later
 
@@ -103,6 +107,10 @@ Future provider path:
 Macro context covers:
 
 - economic calendar
+- market news
+- forex news
+- crypto news
+- stock/index news
 - FOMC
 - CPI
 - NFP
@@ -116,10 +124,16 @@ Macro context covers:
 
 Future provider path:
 
+- FMP economic calendar and market news as the first provider implementation
 - Trading Economics
 - ForexFactory manual/CSV
+- FXStreet
+- Finnhub
+- Alpha Vantage
 - FRED macro series
 - Stooq/Yahoo-style adapter for public market series
+
+Provider output must be normalized into `EconomicCalendarEvent`, `MarketNewsItem`, `MacroRiskFlag`, `NewsSentimentSummary`, and `MarketContextSnapshot`. It cannot create trade direction or execution permission.
 
 ### Intermarket
 
@@ -236,6 +250,17 @@ LLM context packets can include a compact `marketContextSummary`. This summary i
 - order-flow status
 
 LLM agents may interpret this context but cannot execute trades, approve readiness, modify risk settings, or control brokers.
+
+## Strategy/Risk Context Evaluator
+
+The Strategy/Risk Context Evaluator consumes normalized market data, scanner output, and market context. It is the provider-neutral gate that turns context into:
+
+- flat/no-trade `StrategyCandidate`
+- paper-mode `RiskDecision` with `approved=false`
+- local journal-ready `JournalEvent`
+- bounded OpenClaw advisory packet
+
+It can reject for missing data, insufficient candles, zero latest close, raw provider payload inclusion, non-paper mode, and active high-impact macro event windows. It cannot create long/short direction, grant execution permission, or bypass the Risk Manager.
 
 ## Safety Rules
 

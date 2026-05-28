@@ -8,7 +8,11 @@
     "llm:bridge": "node scripts/llm-local-bridge-server.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "smoke:routes": "node scripts/smoke-routes.mjs"
+    "smoke:routes": "node scripts/smoke-routes.mjs",
+    "test:twelvedata": "node scripts/test-twelve-data.mjs",
+    "test:agent-bridge-contracts": "node scripts/test-agent-bridge-contracts.mjs",
+    "test:fmp-market-context": "node scripts/test-fmp-market-context.mjs",
+    "test:strategy-risk-context": "node scripts/test-strategy-risk-context.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.1.1",
