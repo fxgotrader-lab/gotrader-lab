@@ -6,7 +6,10 @@ import type {
   ResolvedBacktestConfig,
   TradeQualityDiagnostic
 } from "@/lib/backtesting";
-import type { AutoResearchCandidateConfig } from "@/lib/autoResearch/autoResearchTypes";
+import type {
+  AutoResearchCandidateConfig,
+  AutoResearchCandidateFamily
+} from "@/lib/autoResearch/autoResearchTypes";
 import { safeArray, uid } from "@/lib/utils";
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
@@ -17,14 +20,16 @@ const candidate = (
   label: string,
   rationale: string,
   patch: BacktestConfig,
-  changedParameters: string[]
+  changedParameters: string[],
+  candidateFamily?: AutoResearchCandidateFamily
 ): AutoResearchCandidateConfig => ({
   candidateId: uid("trade_quality_candidate"),
   label,
   searchMode: "standard",
   rationale,
   config: sanitizeBacktestConfig({ ...baseline, ...patch }),
-  changedParameters
+  changedParameters,
+  candidateFamily
 });
 
 const patchKey = (patch: BacktestConfig) =>
@@ -46,14 +51,15 @@ const addUnique = (
   label: string,
   rationale: string,
   patch: BacktestConfig,
-  changedParameters: string[]
+  changedParameters: string[],
+  candidateFamily?: AutoResearchCandidateFamily
 ) => {
   const key = patchKey(patch);
   if (seen.has(key)) {
     return;
   }
   seen.add(key);
-  candidates.push(candidate(baseline, label, rationale, patch, changedParameters));
+  candidates.push(candidate(baseline, label, rationale, patch, changedParameters, candidateFamily));
 };
 
 export function generateTradeQualityCandidateConfigs(
@@ -68,8 +74,9 @@ export function generateTradeQualityCandidateConfigs(
     label: string,
     rationale: string,
     patch: BacktestConfig,
-    changedParameters: string[]
-  ) => addUnique(candidates, baseline, seen, label, rationale, patch, changedParameters);
+    changedParameters: string[],
+    candidateFamily?: AutoResearchCandidateFamily
+  ) => addUnique(candidates, baseline, seen, label, rationale, patch, changedParameters, candidateFamily);
   const addNyAmWinRateFocus = () => {
     add(
       "NY AM 1R win-rate test",
@@ -209,7 +216,8 @@ export function generateTradeQualityCandidateConfigs(
           "grinch-pd-array-hierarchy-agent": round(Math.min(1.5, baseline.agentWeights["grinch-pd-array-hierarchy-agent"] + 0.05), 3)
         }
       },
-      ["confluenceThreshold", "agentWeights"]
+      ["confluenceThreshold", "agentWeights"],
+      "grinch_require_pd_array_hierarchy_alignment"
     );
     add(
       "Grinch opening-price alignment gate",
@@ -222,7 +230,8 @@ export function generateTradeQualityCandidateConfigs(
           "grinch-time-price-alignment-agent": round(Math.min(1.5, baseline.agentWeights["grinch-time-price-alignment-agent"] + 0.04), 3)
         }
       },
-      ["confidenceThreshold", "agentWeights"]
+      ["confidenceThreshold", "agentWeights"],
+      "grinch_require_opening_price_alignment"
     );
     add(
       "Grinch Model 1 confirmation gate",
@@ -236,7 +245,8 @@ export function generateTradeQualityCandidateConfigs(
           "grinch-entry-confirmation-agent": round(Math.min(1.5, baseline.agentWeights["grinch-entry-confirmation-agent"] + 0.06), 3)
         }
       },
-      ["confluenceThreshold", "confidenceThreshold", "agentWeights"]
+      ["confluenceThreshold", "confidenceThreshold", "agentWeights"],
+      "grinch_model_model1_only"
     );
     add(
       "Grinch reversal profile validation gate",
@@ -251,7 +261,8 @@ export function generateTradeQualityCandidateConfigs(
           "grinch-time-price-alignment-agent": round(Math.min(1.5, baseline.agentWeights["grinch-time-price-alignment-agent"] + 0.04), 3)
         }
       },
-      ["confluenceThreshold", "confidenceThreshold", "agentWeights"]
+      ["confluenceThreshold", "confidenceThreshold", "agentWeights"],
+      "grinch_model_reversal_only"
     );
     add(
       "Grinch consolidation profile validation gate",
@@ -266,7 +277,8 @@ export function generateTradeQualityCandidateConfigs(
           "grinch-time-price-alignment-agent": round(Math.min(1.5, baseline.agentWeights["grinch-time-price-alignment-agent"] + 0.04), 3)
         }
       },
-      ["confluenceThreshold", "confidenceThreshold", "agentWeights"]
+      ["confluenceThreshold", "confidenceThreshold", "agentWeights"],
+      "grinch_model_consolidation_only"
     );
     add(
       "Grinch SMT confirmation gate",
@@ -282,7 +294,46 @@ export function generateTradeQualityCandidateConfigs(
           "grinch-reversal-profile-agent": round(Math.min(1.5, (baseline.agentWeights["grinch-reversal-profile-agent"] ?? 0.06) + 0.02), 3)
         }
       },
-      ["confluenceThreshold", "confidenceThreshold", "agentWeights"]
+      ["confluenceThreshold", "confidenceThreshold", "agentWeights"],
+      "grinch_penalize_missing_smt"
+    );
+  }
+
+  if (reasonCodes.has("win_rate_too_low") || reasonCodes.has("average_r_too_low")) {
+    add(
+      "Grinch balanced quality filter",
+      "Weak win rate or average R can mean the baseline is accepting mistimed, weak-PD, or profile-mismatched setups; this tests balanced Grinch filtering.",
+      {
+        minimumConfluenceThreshold: round(clamp01(baseline.minimumConfluenceThreshold + 0.05), 2),
+        agentWeights: {
+          ...baseline.agentWeights,
+          "grinch-htf-bias-agent": round(Math.min(1.5, baseline.agentWeights["grinch-htf-bias-agent"] + 0.04), 3),
+          "grinch-pd-array-hierarchy-agent": round(Math.min(1.5, baseline.agentWeights["grinch-pd-array-hierarchy-agent"] + 0.04), 3),
+          "grinch-opening-price-equilibrium-agent": round(Math.min(1.5, baseline.agentWeights["grinch-opening-price-equilibrium-agent"] + 0.04), 3),
+          "grinch-time-price-alignment-agent": round(Math.min(1.5, baseline.agentWeights["grinch-time-price-alignment-agent"] + 0.04), 3),
+          "grinch-entry-confirmation-agent": round(Math.min(1.5, baseline.agentWeights["grinch-entry-confirmation-agent"] + 0.04), 3)
+        }
+      },
+      ["grinchModel", "confluenceThreshold", "agentWeights"],
+      "grinch_model_balanced"
+    );
+    add(
+      "Grinch strict false-positive filter",
+      "Test whether stricter Grinch profile validity reduces low-quality trades and false positives before changing readiness rules.",
+      {
+        minimumConfluenceThreshold: round(clamp01(Math.max(0.56, baseline.minimumConfluenceThreshold + 0.09)), 2),
+        minimumConfidenceThreshold: round(clamp01(Math.max(0.54, baseline.minimumConfidenceThreshold + 0.07)), 2),
+        agentWeights: {
+          ...baseline.agentWeights,
+          "grinch-htf-bias-agent": round(Math.min(1.5, baseline.agentWeights["grinch-htf-bias-agent"] + 0.07), 3),
+          "grinch-pd-array-hierarchy-agent": round(Math.min(1.5, baseline.agentWeights["grinch-pd-array-hierarchy-agent"] + 0.07), 3),
+          "grinch-opening-price-equilibrium-agent": round(Math.min(1.5, baseline.agentWeights["grinch-opening-price-equilibrium-agent"] + 0.07), 3),
+          "grinch-time-price-alignment-agent": round(Math.min(1.5, baseline.agentWeights["grinch-time-price-alignment-agent"] + 0.07), 3),
+          "grinch-entry-confirmation-agent": round(Math.min(1.5, baseline.agentWeights["grinch-entry-confirmation-agent"] + 0.07), 3)
+        }
+      },
+      ["grinchModel", "confluenceThreshold", "confidenceThreshold", "agentWeights"],
+      "grinch_model_strict"
     );
   }
 

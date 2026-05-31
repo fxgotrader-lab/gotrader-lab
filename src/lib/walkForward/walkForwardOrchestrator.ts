@@ -22,6 +22,7 @@ import type {
   WalkForwardRunOptions,
   WalkForwardSplitLabel,
   WalkForwardWindowMetrics,
+  WalkForwardWindowVerdict,
   WalkForwardWindowResult
 } from "@/lib/walkForward/walkForwardTypes";
 
@@ -87,6 +88,7 @@ const metricsFromBacktest = (
   const confidenceCalibration = confidenceCalibrationFor(result);
   const readinessScore = readinessScoreFor(result, confidenceCalibration, evidenceQualityScore);
   const falsePositiveCount = result.summary.losses + result.trades.filter((trade) => trade.outcome === "expired").length;
+  const latestGrinchScore = result.summary.grinchSummary?.latestScore;
   const base: WalkForwardWindowMetrics = {
     totalTrades: result.summary.totalTrades,
     winRate: round(result.summary.winRate, 3),
@@ -99,7 +101,19 @@ const metricsFromBacktest = (
     readinessScore,
     evidenceQualityScore,
     pass: false,
-    failReasons: []
+    failReasons: [],
+    grinchMetrics: latestGrinchScore
+      ? {
+          profileDetected: latestGrinchScore.activeProfile,
+          profileValidity: latestGrinchScore.profileValidity,
+          grinchScore: result.summary.grinchSummary?.averageGrinchModelScore ?? latestGrinchScore.grinchModelScore,
+          timeAlignment: latestGrinchScore.timingAlignment,
+          pdAlignment: latestGrinchScore.pdArrayHierarchyAlignment,
+          openingPriceAlignment: latestGrinchScore.openingPriceAlignment,
+          smtState: latestGrinchScore.smtState,
+          falsePositiveRisk: result.summary.grinchSummary?.averageFalsePositiveRisk ?? latestGrinchScore.falsePositiveRisk
+        }
+      : undefined
   };
   const failReasons = passFailReasonsFor(base, split);
   return {
@@ -108,6 +122,14 @@ const metricsFromBacktest = (
     failReasons
   };
 };
+
+const attachOosVerdict = (
+  metrics: WalkForwardWindowMetrics,
+  verdict: WalkForwardWindowVerdict
+): WalkForwardWindowMetrics => ({
+  ...metrics,
+  grinchMetrics: metrics.grinchMetrics ? { ...metrics.grinchMetrics, oosResult: verdict } : undefined
+});
 
 const configSummary = (config: ResolvedBacktestConfig): WalkForwardWindowResult["configUsed"] => ({
   symbol: config.symbol,
@@ -244,6 +266,7 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
           : metricsBySplit.out_of_sample.pass || metricsBySplit.validation.pass
             ? "warning"
             : "fail";
+      metricsBySplit.out_of_sample = attachOosVerdict(metricsBySplit.out_of_sample, verdict);
       run = {
         ...run,
         windows: [

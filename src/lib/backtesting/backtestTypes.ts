@@ -1,5 +1,6 @@
 import type { CIOSynthesisResult, InternalAgentOpinion } from "@/lib/agents";
 import type { InternalAgentId } from "@/lib/agents";
+import type { GrinchActiveProfile, GrinchStrategyScore } from "@/lib/strategyLibrary";
 import type {
   Candle,
   ICTContext,
@@ -70,6 +71,7 @@ export interface BacktestDecisionPoint {
   agentOpinions: InternalAgentOpinion[];
   cioSynthesis: CIOSynthesisResult;
   thesis: TradeThesis;
+  grinchScore?: GrinchStrategyScore;
 }
 
 export interface SimulatedTradeAgentAttribution {
@@ -111,6 +113,7 @@ export interface SimulatedTradeRecord {
   reason: string;
   simulatedTradePlan: SimulatedTradePlan;
   agentAttribution: SimulatedTradeAgentAttribution[];
+  grinchScore?: GrinchStrategyScore;
 }
 
 export interface EquityCurvePoint {
@@ -141,6 +144,7 @@ export interface BacktestSkippedSignal {
   confidence: number;
   confluenceScore: number;
   sessionLabel: string;
+  grinchRuleBlock?: string;
 }
 
 export interface BacktestSkipReasonSummary {
@@ -165,6 +169,20 @@ export interface BacktestSummary {
   worstTrade?: SimulatedTradeRecord;
   equityCurve: EquityCurvePoint[];
   agentAttribution: BacktestAgentAttributionSummary[];
+  grinchSummary?: BacktestGrinchSummary;
+}
+
+export interface BacktestGrinchSummary {
+  averageGrinchModelScore: number;
+  averageFalsePositiveRisk: number;
+  averageProfileValidity: number;
+  latestScore?: GrinchStrategyScore;
+  activeProfile: GrinchActiveProfile;
+  activeProfileCounts: Partial<Record<GrinchActiveProfile, number>>;
+  dominantRuleBlock?: string;
+  ruleBlocks: string[];
+  missingEvidence: string[];
+  grinchImprovedLatestRun?: boolean;
 }
 
 export interface BacktestResult {

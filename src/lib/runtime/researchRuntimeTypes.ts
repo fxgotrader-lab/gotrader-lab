@@ -10,7 +10,8 @@ import type {
   GrinchPhase1ModelOutput,
   GrinchPhase2ReversalModelOutput,
   GrinchPhase3ConsolidationModelOutput,
-  GrinchPhase4SmtModelOutput
+  GrinchPhase4SmtModelOutput,
+  GrinchStrategyScore
 } from "@/lib/strategyLibrary";
 import type {
   ResearchCycleBacktestSummary,
@@ -110,6 +111,7 @@ export interface RuntimeResearchCycleState {
   grinchPhase2ReversalSummary?: GrinchPhase2ReversalModelOutput;
   grinchPhase3ConsolidationSummary?: GrinchPhase3ConsolidationModelOutput;
   grinchPhase4SmtSummary?: GrinchPhase4SmtModelOutput;
+  grinchStrategyScore?: GrinchStrategyScore;
   smtSummary?: {
     smtState: GrinchPhase4SmtModelOutput["smtState"];
     primaryPair: GrinchPhase4SmtModelOutput["primaryPair"];
@@ -125,6 +127,9 @@ export interface RuntimeResearchCycleState {
     state: string;
     entryIntent: string;
     timingGrade: string;
+    grinchModelScore?: number;
+    falsePositiveRisk?: number;
+    improvedLatestRun?: boolean;
     detail: string;
   };
   latestRun?: ResearchCycleRun;

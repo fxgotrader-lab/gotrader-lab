@@ -15,6 +15,7 @@ import type {
   CalibrationProposalMetrics
 } from "@/lib/selfImprovement";
 import type { ScenarioSelectionReasoning } from "@/lib/autonomousResearch";
+import type { GrinchStrategyScore } from "@/lib/strategyLibrary";
 import type { Candle, ICTScoringWeights } from "@/lib/types";
 import type { ValidationSuiteReport } from "@/lib/validation";
 import type { WalkForwardFollowUpSearchPlan } from "@/lib/walkForward/walkForwardTypes";
@@ -67,6 +68,19 @@ export type AutoResearchAdaptiveOutcome =
   | "unsafe_overfit"
   | "max_passes_exhausted";
 
+export type AutoResearchCandidateFamily =
+  | "baseline"
+  | "grinch_model_balanced"
+  | "grinch_model_strict"
+  | "grinch_model_model1_only"
+  | "grinch_model_reversal_only"
+  | "grinch_model_consolidation_only"
+  | "grinch_require_opening_price_alignment"
+  | "grinch_require_pd_array_hierarchy_alignment"
+  | "grinch_require_time_price_alignment"
+  | "grinch_penalize_missing_smt"
+  | "grinch_allow_smt_unavailable_but_discount_confidence";
+
 export type AutoResearchCycleStatus =
   | "idle"
   | "running"
@@ -83,6 +97,7 @@ export interface AutoResearchCandidateConfig {
   config: ResolvedBacktestConfig;
   ictScoringWeights?: Partial<ICTScoringWeights>;
   changedParameters: string[];
+  candidateFamily?: AutoResearchCandidateFamily;
 }
 
 export interface AutoResearchScoringCriteria {
@@ -98,6 +113,7 @@ export interface AutoResearchScoringCriteria {
     skippedSignalBalance: number;
     profitFactor: number;
     robustnessAcrossScenarios: number;
+    grinchModelSupport: number;
   };
 }
 
@@ -113,6 +129,9 @@ export interface AutoResearchScoreBreakdown {
   skippedSignalBalanceScore: number;
   profitFactorScore: number;
   robustnessScore: number;
+  grinchModelScore?: number;
+  grinchFalsePositiveRisk?: number;
+  grinchProfileValidity?: number;
   stabilityImproved: boolean;
   sufficientSample: boolean;
   rationale: string;
@@ -131,10 +150,20 @@ export interface AutoResearchCandidateResult {
   readinessEstimate: ReadinessGateSnapshot;
   metrics: CalibrationProposalMetrics;
   scoreBreakdown: AutoResearchScoreBreakdown;
+  grinchScore?: GrinchStrategyScore;
+  grinchComparison?: {
+    baselineScore?: number;
+    candidateScore: number;
+    scoreDelta?: number;
+    falsePositiveRiskDelta?: number;
+    improved: boolean;
+    source: string;
+  };
   comparisonResult: CalibrationComparisonResult;
   resultCategory: AutoResearchResultCategory;
   promotionEligible: boolean;
   rejectionReasons: string[];
+  candidateFamily?: AutoResearchCandidateFamily;
 }
 
 export interface AutoResearchCandidateScoreSummary {
@@ -143,6 +172,20 @@ export interface AutoResearchCandidateScoreSummary {
   totalScore: number;
   resultCategory: AutoResearchResultCategory;
   rejectionReasons: string[];
+  candidateFamily?: AutoResearchCandidateFamily;
+  grinchModelScore?: number;
+}
+
+export interface AutoResearchGrinchComparison {
+  baseline?: {
+    score?: number;
+    activeProfile?: string;
+    falsePositiveRisk?: number;
+  };
+  grinchFiltered?: AutoResearchCandidateScoreSummary;
+  grinchStrict?: AutoResearchCandidateScoreSummary;
+  grinchBalanced?: AutoResearchCandidateScoreSummary;
+  notes: string[];
 }
 
 export interface AutoResearchProgressSnapshot {
@@ -239,6 +282,7 @@ export interface AutoResearchCycle {
     testedTargetModels: string[];
     sessionDirectionFindings: string[];
   };
+  grinchComparison?: AutoResearchGrinchComparison;
   recoveryAttempted?: boolean;
   recoveryCandidates?: AutoResearchCandidateConfig[];
   recoveryResult?: AutoResearchCandidateResult;

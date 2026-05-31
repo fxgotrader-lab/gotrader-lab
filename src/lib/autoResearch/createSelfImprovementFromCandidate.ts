@@ -70,6 +70,23 @@ const targetProblemFor = (candidate: AutoResearchCandidateResult): CalibrationTa
   return "overfitting_risk";
 };
 
+const grinchImprovementText = (candidate: AutoResearchCandidateResult) => {
+  if (!candidate.candidateFamily?.startsWith("grinch_") && !candidate.scoreBreakdown.grinchModelScore) {
+    return undefined;
+  }
+  const family = candidate.candidateFamily?.replace(/_/g, " ") ?? "Grinch scoring";
+  const targets = [
+    candidate.candidateFamily?.includes("opening") ? "opening-price filter" : undefined,
+    candidate.candidateFamily?.includes("pd_array") ? "PD hierarchy filter" : undefined,
+    candidate.candidateFamily?.includes("time_price") ? "timing alignment" : undefined,
+    candidate.candidateFamily?.includes("smt") ? "SMT penalty/discount" : undefined,
+    candidate.candidateFamily?.includes("reversal") ? "reversal profile selection" : undefined,
+    candidate.candidateFamily?.includes("consolidation") ? "consolidation profile selection" : undefined,
+    candidate.candidateFamily?.includes("model1") ? "Model 1 profile selection" : undefined
+  ].filter((item): item is string => Boolean(item));
+  return `${family}; targets ${targets.length ? targets.join(", ") : "Grinch filter quality"}. Grinch score ${candidate.scoreBreakdown.grinchModelScore ?? "n/a"}/100, false-positive risk ${candidate.scoreBreakdown.grinchFalsePositiveRisk ?? "n/a"}/100.`;
+};
+
 export function createSelfImprovementFromCandidate({
   baselineConfig,
   baselineMetrics,
@@ -90,6 +107,7 @@ export function createSelfImprovementFromCandidate({
     proposalIntent === "paper_demo_candidate_review"
       ? "paper-demo candidate review"
       : "research calibration candidate";
+  const grinchContext = grinchImprovementText(candidate);
 
   return {
     proposalId: uid("calibration_proposal"),
@@ -101,13 +119,15 @@ export function createSelfImprovementFromCandidate({
     executionAuthority: "none",
     brokerAuthority: "none",
     readinessOverrideAuthority: "none",
-    reason: `Auto Research selected ${candidate.label} as a ${intentLabel}: ${candidate.scoreBreakdown.rationale}`,
+    reason: `Auto Research selected ${candidate.label} as a ${intentLabel}: ${candidate.scoreBreakdown.rationale}${grinchContext ? ` Grinch context: ${grinchContext}` : ""}`,
     targetProblem: targetProblemFor(candidate),
     proposedChanges: changesFor(baselineConfig, candidate),
     expectedImprovement:
       proposalIntent === "paper_demo_candidate_review"
         ? "Review a Paper-Demo Candidate calibration in simulation. Approval remains required and broker/demo execution stays disabled."
-        : "Improve stability-first validation metrics as a research calibration candidate without changing broker settings, execution authority, or readiness gates.",
+        : grinchContext
+          ? `Improve stability-first validation metrics with ${grinchContext} Broker settings, execution authority, and readiness gates stay unchanged.`
+          : "Improve stability-first validation metrics as a research calibration candidate without changing broker settings, execution authority, or readiness gates.",
     safetyNotes: [
       "Auto Research cannot execute trades.",
       proposalIntent === "paper_demo_candidate_review"

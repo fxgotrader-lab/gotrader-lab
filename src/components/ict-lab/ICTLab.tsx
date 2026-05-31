@@ -35,7 +35,8 @@ import {
   analyzeGrinchPhase1,
   analyzeGrinchPhase2Reversal,
   analyzeGrinchPhase3Consolidation,
-  analyzeGrinchPhase4Smt
+  analyzeGrinchPhase4Smt,
+  calculateGrinchStrategyScore
 } from "@/lib/strategyLibrary";
 import type { Candle, MarketStructureEvent, SessionContext } from "@/lib/types";
 
@@ -145,7 +146,23 @@ export function ICTLab() {
         currentTimestamp: latestAnalysisCandle?.timestamp
       }
     });
-    return { bos, gaps, grinchConsolidationProfile, grinchPhase1, grinchReversalProfile, grinchSmtProfile, mss, sessions, structureEvents, sweeps, swings, zone };
+    const grinchStrategyScore = calculateGrinchStrategyScore({
+      candles: activeCandles,
+      fairValueGaps: gaps,
+      liquiditySweeps: sweeps,
+      structureEvents,
+      swings,
+      phase1: grinchPhase1,
+      reversal: grinchReversalProfile,
+      consolidation: grinchConsolidationProfile,
+      smt: grinchSmtProfile,
+      options: {
+        symbol: latestAnalysisCandle?.symbol,
+        timeframe: latestAnalysisCandle?.timeframe,
+        currentTimestamp: latestAnalysisCandle?.timestamp
+      }
+    });
+    return { bos, gaps, grinchConsolidationProfile, grinchPhase1, grinchReversalProfile, grinchSmtProfile, grinchStrategyScore, mss, sessions, structureEvents, sweeps, swings, zone };
   }, [activeCandles]);
 
   const latestCandle = activeCandles[activeCandles.length - 1];
@@ -259,6 +276,61 @@ export function ICTLab() {
         <MetricCard label="Sweeps" value={String(analysis.sweeps.length)} detail={latestSweep?.direction ?? "none"} icon={<Target className="h-4 w-4" />} />
         <MetricCard label="Open FVGs" value={String(unmitigatedGaps.length)} detail={`${analysis.zone.currentZone} now`} icon={<Activity className="h-4 w-4" />} />
       </div>
+
+      <Card className="border-emerald-300/20 bg-emerald-300/5">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Grinch Strategy Score</CardTitle>
+              <CardDescription>
+                Research-only score used by Auto Research and walk-forward as supporting evidence. It cannot approve readiness by itself.
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={analysis.grinchStrategyScore.grinchModelScore >= 70 ? "success" : analysis.grinchStrategyScore.grinchModelScore >= 50 ? "warning" : "muted"}>
+                Score {analysis.grinchStrategyScore.grinchModelScore}/100
+              </Badge>
+              <Badge variant={analysis.grinchStrategyScore.falsePositiveRisk >= 55 ? "danger" : analysis.grinchStrategyScore.falsePositiveRisk >= 35 ? "warning" : "success"}>
+                False-positive risk {analysis.grinchStrategyScore.falsePositiveRisk}/100
+              </Badge>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <StatusTile label="Active profile" value={analysis.grinchStrategyScore.activeProfile.replace(/_/g, " ")} detail={analysis.grinchStrategyScore.profileState} />
+            <StatusTile label="HTF alignment" value={`${analysis.grinchStrategyScore.htfBiasAlignment}/100`} detail={analysis.grinchPhase1.htfBias} />
+            <StatusTile label="PD alignment" value={`${analysis.grinchStrategyScore.pdArrayHierarchyAlignment}/100`} detail={analysis.grinchPhase1.activePdArrays[0]?.label ?? "none active"} />
+            <StatusTile label="Opening alignment" value={`${analysis.grinchStrategyScore.openingPriceAlignment}/100`} detail={`12AM ${analysis.grinchPhase1.twelveAmOpenState.currentRelation}`} />
+            <StatusTile label="SMT confirmation" value={`${analysis.grinchStrategyScore.smtConfirmationScore}/100`} detail={analysis.grinchStrategyScore.smtState.replace(/_/g, " ")} />
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <InfoBox title="Entry confirmation" body={`${analysis.grinchStrategyScore.entryConfirmationScore}/100; timing ${analysis.grinchStrategyScore.timingAlignment}/100.`} />
+            <InfoBox title="Primary rule block" body={analysis.grinchStrategyScore.primaryRuleBlock ?? "No blocking Grinch rule on the latest profile."} />
+            <InfoBox title="Why it matters" body={analysis.grinchStrategyScore.reasons[0] ?? "Grinch scoring is waiting for enough profile evidence."} />
+          </div>
+          {analysis.grinchStrategyScore.ruleBlocks.length || analysis.grinchStrategyScore.missingEvidence.length ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+                <p className="font-medium">Rules blocking or discounting setup quality</p>
+                <ul className="mt-2 space-y-1">
+                  {(analysis.grinchStrategyScore.ruleBlocks.length ? analysis.grinchStrategyScore.ruleBlocks : ["No hard Grinch rule block on the latest profile."]).slice(0, 5).map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="rounded-lg border border-border bg-background/45 p-3 text-sm text-muted-foreground">
+                <p className="font-medium text-foreground">Missing evidence</p>
+                <ul className="mt-2 space-y-1">
+                  {(analysis.grinchStrategyScore.missingEvidence.length ? analysis.grinchStrategyScore.missingEvidence : ["No missing evidence flagged by the score."]).slice(0, 5).map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <Card className="border-cyan-400/20 bg-cyan-400/5">
         <CardHeader>

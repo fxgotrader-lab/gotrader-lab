@@ -65,7 +65,8 @@ export const defaultAutoResearchScoringCriteria: AutoResearchScoringCriteria = {
     sufficientTradeCount: 0.1,
     skippedSignalBalance: 0.05,
     profitFactor: 0.05,
-    robustnessAcrossScenarios: 0.1
+    robustnessAcrossScenarios: 0.1,
+    grinchModelSupport: 0.06
   }
 };
 

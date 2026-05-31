@@ -1,6 +1,7 @@
 import type { BacktestSessionFilter, BacktestStopModel, ResolvedBacktestConfig } from "@/lib/backtesting";
 import type { WalkForwardDataPreset } from "@/lib/marketData";
 import type { RuntimeDataPreset } from "@/lib/runtime/researchRuntimeTypes";
+import type { GrinchActiveProfile, GrinchSmtState } from "@/lib/strategyLibrary";
 import type { Candle, FuturesSymbol, Timeframe } from "@/lib/types";
 
 export type WalkForwardSplitLabel = "in_sample" | "validation" | "out_of_sample";
@@ -105,6 +106,19 @@ export interface WalkForwardWindowMetrics {
   evidenceQualityScore: number;
   pass: boolean;
   failReasons: string[];
+  grinchMetrics?: WalkForwardGrinchMetrics;
+}
+
+export interface WalkForwardGrinchMetrics {
+  profileDetected: GrinchActiveProfile;
+  profileValidity: number;
+  grinchScore: number;
+  timeAlignment: number;
+  pdAlignment: number;
+  openingPriceAlignment: number;
+  smtState: GrinchSmtState;
+  falsePositiveRisk: number;
+  oosResult?: WalkForwardWindowVerdict;
 }
 
 export interface WalkForwardWindowResult {

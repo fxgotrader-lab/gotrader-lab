@@ -296,7 +296,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
             [
               "Active Grinch profile",
               runtimeSnapshot?.latestResearchCycle.activeGrinchProfileSummary
-                ? `${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.profile.replace(/_/g, " ")} / ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.state} / ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.entryIntent}`
+                ? `${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.profile.replace(/_/g, " ")} / ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.state} / score ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.grinchModelScore ?? "n/a"} / risk ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.falsePositiveRisk ?? "n/a"}`
                 : "not available"
             ],
             [
@@ -696,6 +696,7 @@ function buildFeedItems(run?: AutonomousResearchRun): MissionFeedItem[] {
 
 function buildKeyMetrics(snapshot?: ResearchRuntimeSnapshot, run?: AutonomousResearchRun) {
   const account = snapshot?.performance.simulatedAccountSummary;
+  const grinch = snapshot?.latestResearchCycle.activeGrinchProfileSummary;
   return [
     {
       label: "Readiness",
@@ -703,9 +704,11 @@ function buildKeyMetrics(snapshot?: ResearchRuntimeSnapshot, run?: AutonomousRes
       detail: snapshot?.readiness.actualBlockers[0] ?? "No current blocker"
     },
     {
-      label: "Current blocker",
-      value: snapshot?.readiness.actualBlockers[0] ?? "none",
-      detail: snapshot?.readiness.nextAction ?? "Next action pending"
+      label: "Grinch model",
+      value: grinch?.grinchModelScore !== undefined ? `${grinch.grinchModelScore}/100` : "n/a",
+      detail: grinch
+        ? `${grinch.profile.replace(/_/g, " ")} / risk ${grinch.falsePositiveRisk ?? "n/a"}/100 / ${grinch.improvedLatestRun ? "improved latest run" : "not proven yet"}`
+        : "Profile score pending"
     },
     {
       label: "Last auto-apply",

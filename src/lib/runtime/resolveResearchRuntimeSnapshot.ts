@@ -40,10 +40,12 @@ import {
   analyzeGrinchPhase2Reversal,
   analyzeGrinchPhase3Consolidation,
   analyzeGrinchPhase4Smt,
+  calculateGrinchStrategyScore,
   summarizeGrinchConsolidationProfile,
   summarizeGrinchPhase1,
   summarizeGrinchReversalProfile,
-  summarizeGrinchSmtIntermarket
+  summarizeGrinchSmtIntermarket,
+  summarizeGrinchStrategyScore
 } from "@/lib/strategyLibrary";
 import {
   countCompletedRunbookItems,
@@ -493,6 +495,20 @@ export async function resolveResearchRuntimeSnapshot(
         }
       })
     : undefined;
+  const grinchStrategyScore = source.candles.length && grinchPhase1Summary
+    ? calculateGrinchStrategyScore({
+        candles: source.candles,
+        phase1: grinchPhase1Summary,
+        reversal: grinchPhase2ReversalSummary,
+        consolidation: grinchPhase3ConsolidationSummary,
+        smt: grinchPhase4SmtSummary,
+        options: {
+          symbol: marketData.symbol,
+          timeframe: marketData.timeframe,
+          currentTimestamp: source.candles[source.candles.length - 1]?.timestamp
+        }
+      })
+    : undefined;
   const smtSummary = grinchPhase4SmtSummary
     ? {
         smtState: grinchPhase4SmtSummary.smtState,
@@ -511,6 +527,9 @@ export async function resolveResearchRuntimeSnapshot(
         state: grinchPhase3ConsolidationSummary.consolidationProfileState,
         entryIntent: grinchPhase3ConsolidationSummary.entryIntent,
         timingGrade: grinchPhase3ConsolidationSummary.timingGrade,
+        grinchModelScore: grinchStrategyScore?.grinchModelScore,
+        falsePositiveRisk: grinchStrategyScore?.falsePositiveRisk,
+        improvedLatestRun: latestCycle?.backtestSummary?.grinchSummary?.grinchImprovedLatestRun,
         detail: summarizeGrinchConsolidationProfile(grinchPhase3ConsolidationSummary)
       }
     : grinchPhase2ReversalSummary?.reversalProfileState === "valid"
@@ -519,6 +538,9 @@ export async function resolveResearchRuntimeSnapshot(
           state: grinchPhase2ReversalSummary.reversalProfileState,
           entryIntent: grinchPhase2ReversalSummary.entryIntent,
           timingGrade: grinchPhase2ReversalSummary.timingGrade,
+          grinchModelScore: grinchStrategyScore?.grinchModelScore,
+          falsePositiveRisk: grinchStrategyScore?.falsePositiveRisk,
+          improvedLatestRun: latestCycle?.backtestSummary?.grinchSummary?.grinchImprovedLatestRun,
           detail: summarizeGrinchReversalProfile(grinchPhase2ReversalSummary)
         }
       : grinchPhase1Summary
@@ -527,6 +549,9 @@ export async function resolveResearchRuntimeSnapshot(
             state: grinchPhase1Summary.modelOneState,
             entryIntent: grinchPhase1Summary.tradeIntent,
             timingGrade: grinchPhase1Summary.timingGrade,
+            grinchModelScore: grinchStrategyScore?.grinchModelScore,
+            falsePositiveRisk: grinchStrategyScore?.falsePositiveRisk,
+            improvedLatestRun: latestCycle?.backtestSummary?.grinchSummary?.grinchImprovedLatestRun,
             detail: summarizeGrinchPhase1(grinchPhase1Summary)
           }
         : {
@@ -534,6 +559,9 @@ export async function resolveResearchRuntimeSnapshot(
             state: "not_available",
             entryIntent: "no_trade",
             timingGrade: "unknown",
+            grinchModelScore: grinchStrategyScore?.grinchModelScore,
+            falsePositiveRisk: grinchStrategyScore?.falsePositiveRisk,
+            improvedLatestRun: latestCycle?.backtestSummary?.grinchSummary?.grinchImprovedLatestRun,
             detail: "No Grinch profile available."
           };
   const readinessSnapshot = evaluateReadinessGate({
@@ -610,6 +638,7 @@ export async function resolveResearchRuntimeSnapshot(
     `Grinch Reversal Profile: ${summarizeGrinchReversalProfile(grinchPhase2ReversalSummary)}`,
     `Grinch Consolidation Profile: ${summarizeGrinchConsolidationProfile(grinchPhase3ConsolidationSummary)}`,
     `Grinch SMT: ${summarizeGrinchSmtIntermarket(grinchPhase4SmtSummary)}`,
+    `Grinch Score: ${summarizeGrinchStrategyScore(grinchStrategyScore)}`,
     `Active Grinch Profile: ${activeGrinchProfileSummary.detail}`,
     `readiness: ${readinessSnapshot.state}`
   ];
@@ -791,6 +820,7 @@ export async function resolveResearchRuntimeSnapshot(
       grinchPhase2ReversalSummary,
       grinchPhase3ConsolidationSummary,
       grinchPhase4SmtSummary,
+      grinchStrategyScore,
       smtSummary,
       activeGrinchProfileSummary,
       latestRun: latestCycle

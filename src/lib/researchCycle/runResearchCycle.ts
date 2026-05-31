@@ -278,6 +278,7 @@ const summarizeBacktest = (result: BacktestResult): ResearchCycleBacktestSummary
   maxDrawdown: result.summary.maxDrawdown,
   profitFactor: result.summary.profitFactor,
   skippedSignals: result.summary.skippedSignals,
+  grinchSummary: result.summary.grinchSummary,
   bestTradeR: result.summary.bestTrade?.rMultiple,
   worstTradeR: result.summary.worstTrade?.rMultiple
 });

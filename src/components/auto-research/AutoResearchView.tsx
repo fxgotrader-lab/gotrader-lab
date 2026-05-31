@@ -120,12 +120,13 @@ const scoreValue = (candidate?: AutoResearchCandidateResult) => candidate?.score
 
 const CandidateTable = ({ candidates }: { candidates: AutoResearchCandidateResult[] }) => (
   <div className="overflow-x-auto rounded-lg border border-border">
-    <table className="w-full min-w-[1220px] text-left text-sm">
+    <table className="w-full min-w-[1320px] text-left text-sm">
       <thead className="border-b border-border bg-muted/45 text-xs uppercase text-muted-foreground">
         <tr>
           <th className="px-3 py-3 font-medium">Candidate</th>
           <th className="px-3 py-3 font-medium">Category</th>
           <th className="px-3 py-3 text-right font-medium">Score</th>
+          <th className="px-3 py-3 text-right font-medium">Grinch</th>
           <th className="px-3 py-3 text-right font-medium">Trades</th>
           <th className="px-3 py-3 text-right font-medium">Win</th>
           <th className="px-3 py-3 text-right font-medium">Avg R</th>
@@ -150,11 +151,17 @@ const CandidateTable = ({ candidates }: { candidates: AutoResearchCandidateResul
             <td className="px-3 py-3">
               <div className="font-medium">{candidate.label}</div>
               <div className="mt-1 max-w-md text-xs text-muted-foreground">{candidate.rationale}</div>
+              {candidate.candidateFamily ? (
+                <Badge className="mt-2" variant="secondary">{formatToken(candidate.candidateFamily)}</Badge>
+              ) : null}
             </td>
             <td className="px-3 py-3">
               <Badge variant={categoryVariant(candidate.resultCategory)}>{formatToken(candidate.resultCategory)}</Badge>
             </td>
             <td className="px-3 py-3 text-right font-mono tabular-nums">{scoreValue(candidate)}</td>
+            <td className="px-3 py-3 text-right font-mono tabular-nums">
+              {candidate.scoreBreakdown?.grinchModelScore ?? "n/a"}
+            </td>
             <td className="px-3 py-3 text-right font-mono tabular-nums">{metrics.totalTrades}</td>
             <td className="px-3 py-3 text-right font-mono tabular-nums">{formatPercent(metrics.winRate, 0)}</td>
             <td className="px-3 py-3 text-right font-mono tabular-nums">{formatSigned(metrics.averageR, 2)}R</td>
@@ -1090,6 +1097,48 @@ export function AutoResearchView() {
         </div>
       </TechnicalDetails>
 
+      {latestCycle?.grinchComparison ? (
+        <Card className="border-cyan-300/20 bg-cyan-300/5">
+          <CardHeader>
+            <CardTitle>Grinch vs ICT Baseline</CardTitle>
+            <CardDescription>
+              Compares the existing ICT baseline against Grinch-filtered, strict, and balanced research candidates. This is supporting evidence only.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-lg border border-border bg-background/45 p-3">
+              <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">ICT baseline</p>
+              <p className="mt-1 font-mono text-sm">{latestCycle.grinchComparison.baseline?.score ?? "n/a"}/100</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {latestCycle.grinchComparison.baseline?.activeProfile?.replace(/_/g, " ") ?? "profile unavailable"}
+              </p>
+            </div>
+            {[
+              { label: "Grinch filtered", summary: latestCycle.grinchComparison.grinchFiltered },
+              { label: "Grinch strict", summary: latestCycle.grinchComparison.grinchStrict },
+              { label: "Grinch balanced", summary: latestCycle.grinchComparison.grinchBalanced }
+            ].map(({ label, summary }) => (
+              <div key={label} className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+                {summary ? (
+                  <>
+                    <p className="mt-1 font-mono text-sm">{summary.totalScore} score</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Grinch {summary.grinchModelScore ?? "n/a"} / {summary.label}
+                    </p>
+                  </>
+                ) : (
+                  <p className="mt-1 text-xs text-muted-foreground">Not evaluated in this cycle.</p>
+                )}
+              </div>
+            ))}
+            <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-3 text-sm text-cyan-100 md:col-span-2 xl:col-span-4">
+              {latestCycle.grinchComparison.notes.join(" ")}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1126,7 +1175,9 @@ export function AutoResearchView() {
                 tradeCount: bestCandidate.scoreBreakdown?.tradeCountScore ?? 0,
                 skippedBalance: bestCandidate.scoreBreakdown?.skippedSignalBalanceScore ?? 0,
                 profitFactor: bestCandidate.scoreBreakdown?.profitFactorScore ?? 0,
-                robustness: bestCandidate.scoreBreakdown?.robustnessScore ?? 0
+                robustness: bestCandidate.scoreBreakdown?.robustnessScore ?? 0,
+                grinchModel: bestCandidate.scoreBreakdown?.grinchModelScore ?? 0,
+                grinchRisk: bestCandidate.scoreBreakdown?.grinchFalsePositiveRisk ?? 0
               }).map(([label, value]) => (
                 <div key={label} className="rounded-lg border border-border bg-background/45 p-3">
                   <p className="text-xs text-muted-foreground">{label}</p>

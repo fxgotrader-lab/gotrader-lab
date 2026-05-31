@@ -8,6 +8,7 @@ import type {
   BacktestAgentWeightId,
   BacktestConfig,
   BacktestDecisionPoint,
+  BacktestGrinchSummary,
   BacktestResult,
   BacktestSkippedSignal,
   BacktestSummary,
@@ -16,6 +17,7 @@ import type {
 } from "@/lib/backtesting/backtestTypes";
 import { scoreSimulatedTradeOutcome } from "@/lib/backtesting/outcomeScoring";
 import { buildICTContext, tagSession } from "@/lib/ict";
+import { calculateGrinchStrategyScore } from "@/lib/strategyLibrary";
 import type { Candle, FairValueGap, MarketBias, SimulatedTradePlan, ThesisInput, TradingSession } from "@/lib/types";
 
 const round = (value: number, digits = 2) => Number(value.toFixed(digits));
@@ -162,6 +164,16 @@ function buildDecision(
   };
   const historicalCandles = candles.slice(0, decisionIndex + 1);
   const ictContext = buildICTContext(historicalCandles, input);
+  const grinchScore = calculateGrinchStrategyScore({
+    candles: historicalCandles,
+    fairValueGaps: ictContext.fairValueGaps,
+    liquiditySweeps: ictContext.liquiditySweeps,
+    options: {
+      symbol: input.symbol,
+      timeframe: input.timeframe,
+      currentTimestamp: candle.timestamp
+    }
+  });
   const agentOpinions = runAgents(input, ictContext, historicalCandles).map((opinion) => ({
     ...opinion,
     weight: config.agentWeights[opinion.agentId as BacktestAgentWeightId] ?? opinion.weight
@@ -198,7 +210,8 @@ function buildDecision(
     ictContext,
     agentOpinions: [...agentOpinions, cioSynthesis.cioOpinion],
     cioSynthesis,
-    thesis
+    thesis,
+    grinchScore
   };
 }
 
@@ -288,7 +301,59 @@ const skipReasonsFor = (skippedSignals: BacktestSkippedSignal[]) =>
     .map(([reason, count]) => ({ reason, count }))
     .sort((a, b) => b.count - a.count);
 
-const summarizeBacktest = (trades: SimulatedTradeRecord[], skippedSignals: BacktestSkippedSignal[]): BacktestSummary => {
+const grinchSummaryFor = (
+  trades: SimulatedTradeRecord[],
+  skippedSignals: BacktestSkippedSignal[],
+  decisions: BacktestDecisionPoint[]
+): BacktestGrinchSummary | undefined => {
+  const scores = decisions.map((decision) => decision.grinchScore).filter((score): score is NonNullable<typeof score> => Boolean(score));
+  if (!scores.length) {
+    return undefined;
+  }
+  const average = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
+  const activeProfileCounts = scores.reduce<BacktestGrinchSummary["activeProfileCounts"]>((counts, score) => {
+    counts[score.activeProfile] = (counts[score.activeProfile] ?? 0) + 1;
+    return counts;
+  }, {});
+  const activeProfile = (Object.entries(activeProfileCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "none") as BacktestGrinchSummary["activeProfile"];
+  const ruleBlocks = [
+    ...scores.flatMap((score) => score.ruleBlocks),
+    ...skippedSignals.map((skip) => skip.grinchRuleBlock).filter((item): item is string => Boolean(item))
+  ];
+  const blockCounts = ruleBlocks.reduce<Record<string, number>>((counts, block) => {
+    counts[block] = (counts[block] ?? 0) + 1;
+    return counts;
+  }, {});
+  const latestScore = scores[scores.length - 1];
+  const tradeScores = trades.map((trade) => trade.grinchScore).filter((score): score is NonNullable<typeof score> => Boolean(score));
+  const skippedScores = skippedSignals
+    .map((skip) => decisions.find((decision) => decision.decisionIndex === skip.decisionIndex)?.grinchScore)
+    .filter((score): score is NonNullable<typeof score> => Boolean(score));
+  const tradeAverage = average(tradeScores.map((score) => score.grinchModelScore));
+  const skippedAverage = average(skippedScores.map((score) => score.grinchModelScore));
+
+  return {
+    averageGrinchModelScore: round(average(scores.map((score) => score.grinchModelScore))),
+    averageFalsePositiveRisk: round(average(scores.map((score) => score.falsePositiveRisk))),
+    averageProfileValidity: round(average(scores.map((score) => score.profileValidity))),
+    latestScore,
+    activeProfile,
+    activeProfileCounts,
+    dominantRuleBlock: Object.entries(blockCounts).sort((a, b) => b[1] - a[1])[0]?.[0],
+    ruleBlocks: Object.entries(blockCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([block]) => block),
+    missingEvidence: Array.from(new Set(scores.flatMap((score) => score.missingEvidence))).slice(0, 8),
+    grinchImprovedLatestRun: tradeScores.length ? tradeAverage >= skippedAverage : undefined
+  };
+};
+
+const summarizeBacktest = (
+  trades: SimulatedTradeRecord[],
+  skippedSignals: BacktestSkippedSignal[],
+  decisions: BacktestDecisionPoint[]
+): BacktestSummary => {
   const totalTrades = trades.length;
   const directionalTrades = trades.filter((trade) => trade.bias !== "neutral").length;
   const wins = trades.filter((trade) => trade.outcome === "target_hit").length;
@@ -316,7 +381,8 @@ const summarizeBacktest = (trades: SimulatedTradeRecord[], skippedSignals: Backt
     bestTrade,
     worstTrade,
     equityCurve,
-    agentAttribution: agentAttributionFor(trades)
+    agentAttribution: agentAttributionFor(trades),
+    grinchSummary: grinchSummaryFor(trades, skippedSignals, decisions)
   };
 };
 
@@ -349,16 +415,18 @@ export function runBacktest(candles: Candle[], config: BacktestConfig = {}): Bac
         bias: decision.thesis.finalBias,
         confidence: decision.thesis.confidence,
         confluenceScore: decision.ictContext.confluenceScore,
-        sessionLabel: tagSession(decision.candle).label
+        sessionLabel: tagSession(decision.candle).label,
+        grinchRuleBlock: decision.grinchScore?.primaryRuleBlock
       });
     } else {
       eligibleDecisions.push(decision);
     }
   }
 
-  const trades = eligibleDecisions.map((decision) =>
-    scoreSimulatedTradeOutcome(decision, sample, resolved.maxBarsToResolveTrade)
-  );
+  const trades = eligibleDecisions.map((decision) => ({
+    ...scoreSimulatedTradeOutcome(decision, sample, resolved.maxBarsToResolveTrade),
+    grinchScore: decision.grinchScore
+  }));
 
   return {
     config: resolved,
@@ -366,7 +434,7 @@ export function runBacktest(candles: Candle[], config: BacktestConfig = {}): Bac
     decisions,
     skippedSignals,
     trades,
-    summary: summarizeBacktest(trades, skippedSignals)
+    summary: summarizeBacktest(trades, skippedSignals, decisions)
   };
 }
 

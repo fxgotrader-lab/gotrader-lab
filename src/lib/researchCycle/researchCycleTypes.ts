@@ -79,6 +79,7 @@ export interface ResearchCycleBacktestSummary
     | "maxDrawdown"
     | "profitFactor"
     | "skippedSignals"
+    | "grinchSummary"
   > {
   config: Pick<
     ResolvedBacktestConfig,

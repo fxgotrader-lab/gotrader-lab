@@ -1,6 +1,7 @@
 import { sanitizeBacktestConfig } from "@/lib/backtesting";
 import type { BacktestAgentWeightId, ResolvedBacktestConfig } from "@/lib/backtesting";
 import type {
+  AutoResearchCandidateFamily,
   AutoResearchCandidateConfig,
   AutoResearchFailedGate,
   AutoResearchSafeConfigPatch,
@@ -17,7 +18,8 @@ const candidate = (
   label: string,
   rationale: string,
   patch: AutoResearchSafeConfigPatch,
-  changedParameters: string[]
+  changedParameters: string[],
+  candidateFamily?: AutoResearchCandidateFamily
 ): AutoResearchCandidateConfig => {
   const { ictScoringWeights, ...configPatch } = patch;
   return {
@@ -27,7 +29,8 @@ const candidate = (
     rationale,
     config: sanitizeBacktestConfig({ ...baseline, ...configPatch }),
     ictScoringWeights,
-    changedParameters
+    changedParameters,
+    candidateFamily
   };
 };
 
@@ -41,6 +44,20 @@ const nudgeAgent = (
 });
 
 const isAnyMode = (searchMode: AutoResearchSearchMode, modes: AutoResearchSearchMode[]) => modes.includes(searchMode);
+
+const nudgeAgents = (
+  baseline: ResolvedBacktestConfig,
+  nudges: Partial<Record<BacktestAgentWeightId, number>>
+) => {
+  const next = { ...baseline.agentWeights };
+  for (const [agentId, delta] of Object.entries(nudges)) {
+    next[agentId as BacktestAgentWeightId] = round(
+      Math.min(1.5, Math.max(0.05, baseline.agentWeights[agentId as BacktestAgentWeightId] + (delta ?? 0))),
+      3
+    );
+  }
+  return next;
+};
 
 const dedupeCandidates = (candidates: AutoResearchCandidateConfig[]) => {
   const seen = new Set<string>();
@@ -415,6 +432,179 @@ export function generateCandidateConfigs(
     );
   }
 
+  if (isAnyMode(searchMode, ["quick", "standard", "deep", "balanced", "conservative", "conservative_only"])) {
+    candidates.push(
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch balanced model filter",
+        "Compare the existing ICT baseline against a balanced Grinch profile emphasis across HTF bias, PD hierarchy, opening prices, timing, entries, and SMT.",
+        {
+          minimumConfluenceThreshold: round(clamp01(baseline.minimumConfluenceThreshold + 0.04), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-htf-bias-agent": 0.04,
+            "grinch-pd-array-hierarchy-agent": 0.04,
+            "grinch-opening-price-equilibrium-agent": 0.04,
+            "grinch-time-price-alignment-agent": 0.04,
+            "grinch-entry-confirmation-agent": 0.04,
+            "grinch-smt-intermarket-agent": 0.02
+          })
+        },
+        ["grinchModel", "confluenceThreshold", "agentWeights"],
+        "grinch_model_balanced"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch strict model gate",
+        "Stress-test whether strict Grinch alignment reduces mistimed entries, weak PD reactions, and profile mismatch false positives.",
+        {
+          minimumConfluenceThreshold: round(clamp01(Math.max(0.58, baseline.minimumConfluenceThreshold + 0.1)), 2),
+          minimumConfidenceThreshold: round(clamp01(Math.max(0.55, baseline.minimumConfidenceThreshold + 0.08)), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-htf-bias-agent": 0.08,
+            "grinch-pd-array-hierarchy-agent": 0.08,
+            "grinch-opening-price-equilibrium-agent": 0.08,
+            "grinch-model-one-power-three-agent": 0.06,
+            "grinch-reversal-profile-agent": 0.06,
+            "grinch-consolidation-profile-agent": 0.06,
+            "grinch-time-price-alignment-agent": 0.08,
+            "grinch-entry-confirmation-agent": 0.08,
+            "grinch-smt-intermarket-agent": 0.05
+          })
+        },
+        ["grinchModel", "confluenceThreshold", "confidenceThreshold", "agentWeights"],
+        "grinch_model_strict"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch opening-price alignment",
+        "Test whether Sunday Open and 12AM Open alignment filters out weak delivery narratives.",
+        {
+          minimumConfidenceThreshold: round(clamp01(baseline.minimumConfidenceThreshold + 0.05), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-opening-price-equilibrium-agent": 0.1,
+            "grinch-time-price-alignment-agent": 0.04
+          })
+        },
+        ["grinchOpeningPrice", "confidenceThreshold", "agentWeights"],
+        "grinch_require_opening_price_alignment"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch PD hierarchy alignment",
+        "Test whether stronger PD array hierarchy alignment reduces weak reaction and low-quality setup selection.",
+        {
+          minimumConfluenceThreshold: round(clamp01(baseline.minimumConfluenceThreshold + 0.06), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-pd-array-hierarchy-agent": 0.1,
+            "grinch-dealing-range-agent": 0.05
+          })
+        },
+        ["grinchPdHierarchy", "confluenceThreshold", "agentWeights"],
+        "grinch_require_pd_array_hierarchy_alignment"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch time-price alignment",
+        "Test whether requiring London/NY timing alignment reduces early, late, and expired profile entries.",
+        {
+          sessionFilter: "NY AM Kill Zone",
+          minimumConfidenceThreshold: round(clamp01(baseline.minimumConfidenceThreshold + 0.04), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-time-price-alignment-agent": 0.1,
+            "session-timing-agent": 0.04
+          })
+        },
+        ["grinchTimePrice", "sessionFilter", "confidenceThreshold", "agentWeights"],
+        "grinch_require_time_price_alignment"
+      )
+    );
+  }
+
+  if (isAnyMode(searchMode, ["standard", "deep", "balanced"])) {
+    candidates.push(
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch Model 1 only",
+        "Isolate the Phase 1 Power 3 OTE profile against reversal and consolidation profile noise.",
+        {
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-model-one-power-three-agent": 0.12,
+            "grinch-reversal-profile-agent": -0.03,
+            "grinch-consolidation-profile-agent": -0.03
+          })
+        },
+        ["grinchModel1Only", "agentWeights"],
+        "grinch_model_model1_only"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch reversal profile only",
+        "Test whether failed London/12AM interaction and NY reversal profile evidence improves selection.",
+        {
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-reversal-profile-agent": 0.12,
+            "grinch-model-one-power-three-agent": -0.02,
+            "grinch-consolidation-profile-agent": -0.03
+          })
+        },
+        ["grinchReversalOnly", "agentWeights"],
+        "grinch_model_reversal_only"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch consolidation profile only",
+        "Test whether 12AM consolidation, side raid, and expansion profile evidence improves setup selection.",
+        {
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-consolidation-profile-agent": 0.12,
+            "grinch-model-one-power-three-agent": -0.02,
+            "grinch-reversal-profile-agent": -0.03
+          })
+        },
+        ["grinchConsolidationOnly", "agentWeights"],
+        "grinch_model_consolidation_only"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch missing SMT penalty",
+        "Penalize missing or conflicting SMT when other setup evidence is weak, without treating missing SMT as automatic invalidation.",
+        {
+          minimumConfidenceThreshold: round(clamp01(baseline.minimumConfidenceThreshold + 0.06), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-smt-intermarket-agent": 0.1,
+            "intermarket-confirmation-agent": 0.04
+          })
+        },
+        ["grinchSmtPenalty", "confidenceThreshold", "agentWeights"],
+        "grinch_penalize_missing_smt"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch SMT unavailable discount",
+        "Allow SMT to remain unavailable when ES/YM data are missing, but discount confidence instead of fabricating confirmation.",
+        {
+          minimumConfidenceThreshold: round(clamp01(baseline.minimumConfidenceThreshold + 0.03), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-smt-intermarket-agent": 0.05,
+            "grinch-entry-confirmation-agent": 0.04
+          })
+        },
+        ["grinchSmtUnavailableDiscount", "confidenceThreshold", "agentWeights"],
+        "grinch_allow_smt_unavailable_but_discount_confidence"
+      )
+    );
+  }
+
   if (!candidates.length) {
     candidates.push(
       candidate(
@@ -428,7 +618,15 @@ export function generateCandidateConfigs(
     );
   }
 
-  return dedupeCandidates(candidates).slice(0, Math.max(1, Math.min(25, maxCandidateCount)));
+  const maxCount = Math.max(1, Math.min(25, maxCandidateCount));
+  const deduped = dedupeCandidates(candidates);
+  const grinchCandidates = deduped.filter((item) => item.candidateFamily?.startsWith("grinch_"));
+  const otherCandidates = deduped.filter((item) => !item.candidateFamily?.startsWith("grinch_"));
+  const grinchQuota = Math.min(grinchCandidates.length, maxCount <= 5 ? 2 : searchMode === "deep" ? 5 : 3);
+  return [
+    ...otherCandidates.slice(0, Math.max(0, maxCount - grinchQuota)),
+    ...grinchCandidates.slice(0, grinchQuota)
+  ].slice(0, maxCount);
 }
 
 const pushAdaptiveCandidate = (

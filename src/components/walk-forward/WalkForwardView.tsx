@@ -565,7 +565,7 @@ export function WalkForwardView() {
           <CardDescription>Each row is one rolling window with its out-of-sample result.</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          <table className="w-full min-w-[920px] text-left text-sm">
+          <table className="w-full min-w-[1120px] text-left text-sm">
             <thead className="border-b border-border bg-muted/45 text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-3 py-3 font-medium">Window</th>
@@ -574,6 +574,8 @@ export function WalkForwardView() {
                 <th className="px-3 py-3 text-right font-medium">OOS win</th>
                 <th className="px-3 py-3 text-right font-medium">OOS avg R</th>
                 <th className="px-3 py-3 text-right font-medium">OOS DD</th>
+                <th className="px-3 py-3 text-right font-medium">Grinch</th>
+                <th className="px-3 py-3 font-medium">Profile / SMT</th>
                 <th className="px-3 py-3 text-right font-medium">Readiness</th>
                 <th className="px-3 py-3 font-medium">Failure reason</th>
               </tr>
@@ -590,6 +592,12 @@ export function WalkForwardView() {
                       <td className="px-3 py-3 text-right tabular-nums">{formatPercent(oos.winRate, 1)}</td>
                       <td className="px-3 py-3 text-right tabular-nums">{oos.averageR.toFixed(2)}R</td>
                       <td className="px-3 py-3 text-right tabular-nums">{oos.maxDrawdownR.toFixed(2)}R</td>
+                      <td className="px-3 py-3 text-right tabular-nums">{oos.grinchMetrics?.grinchScore ?? "n/a"}</td>
+                      <td className="px-3 py-3 text-muted-foreground">
+                        {oos.grinchMetrics
+                          ? `${oos.grinchMetrics.profileDetected.replace(/_/g, " ")} / SMT ${oos.grinchMetrics.smtState.replace(/_/g, " ")}`
+                          : "Grinch metrics unavailable"}
+                      </td>
                       <td className="px-3 py-3 text-right tabular-nums">{oos.readinessScore}</td>
                       <td className="px-3 py-3 text-muted-foreground">{row.failReasons[0] ?? "Passed validation and out-of-sample checks."}</td>
                     </tr>
@@ -597,7 +605,7 @@ export function WalkForwardView() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">
+                  <td colSpan={10} className="px-3 py-6 text-center text-muted-foreground">
                     No walk-forward windows have been run yet.
                   </td>
                 </tr>

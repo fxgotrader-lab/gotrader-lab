@@ -14,6 +14,7 @@ import { selectBestCandidate } from "@/lib/autoResearch/selectBestCandidate";
 import type {
   AutoResearchCandidateResult,
   AutoResearchCycle,
+  AutoResearchGrinchComparison,
   AutoResearchAdaptiveOutcome,
   AutoResearchAdaptivePass,
   AutoResearchExecutionCheckpoint,
@@ -141,6 +142,9 @@ const fallbackScoreBreakdown = (): AutoResearchCandidateResult["scoreBreakdown"]
   skippedSignalBalanceScore: 0,
   profitFactorScore: 0,
   robustnessScore: 0,
+  grinchModelScore: undefined,
+  grinchFalsePositiveRisk: undefined,
+  grinchProfileValidity: undefined,
   stabilityImproved: false,
   sufficientSample: false,
   rationale: "Score summary unavailable in compact stored history."
@@ -219,6 +223,7 @@ const compactCandidate = (candidate: AutoResearchCandidateResult): AutoResearchC
     config: source.config ?? loadBacktestConfig(),
     ictScoringWeights: source.ictScoringWeights,
     changedParameters: safeArray(source.changedParameters),
+    candidateFamily: source.candidateFamily,
     readinessEstimate: compactReadinessEstimate(source.readinessEstimate),
     metrics: {
       validationId: metrics.validationId,
@@ -239,6 +244,15 @@ const compactCandidate = (candidate: AutoResearchCandidateResult): AutoResearchC
       weakestScenario: metrics.weakestScenario
     },
     scoreBreakdown,
+    grinchScore: source.grinchScore
+      ? {
+          ...source.grinchScore,
+          ruleBlocks: safeTopN(source.grinchScore.ruleBlocks, 5),
+          reasons: safeTopN(source.grinchScore.reasons, 5),
+          missingEvidence: safeTopN(source.grinchScore.missingEvidence, 5)
+        }
+      : undefined,
+    grinchComparison: source.grinchComparison,
     comparisonResult: compactComparison(source.comparisonResult),
     resultCategory: source.resultCategory ?? "rejected",
     promotionEligible: Boolean(source.promotionEligible),
@@ -657,11 +671,13 @@ const evaluateCandidate = (
     });
     const metrics = summarizeValidationMetrics(validationReport);
     const comparisonResult = compareProposalToBaseline(baselineMetrics, metrics);
+    const grinchScore = backtestResult.summary.grinchSummary?.latestScore;
     const scoreBreakdown = scoreCandidateConfig({
       baselineMetrics,
       metrics,
       validation: validationReport,
       quality: researchQualityReview,
+      grinchScore,
       scoringCriteria: defaultAutoResearchScoringCriteria
     });
 
@@ -672,12 +688,14 @@ const evaluateCandidate = (
       config: candidate.config,
       ictScoringWeights: candidate.ictScoringWeights,
       changedParameters: candidate.changedParameters,
+      candidateFamily: candidate.candidateFamily,
       backtestResult,
       validationReport,
       researchQualityReview,
       readinessEstimate,
       metrics,
       scoreBreakdown,
+      grinchScore,
       comparisonResult,
       resultCategory: "rejected",
       promotionEligible: false,
@@ -861,11 +879,65 @@ const tradeQualitySummaryFor = ({
         ...safeArray(candidates)
           .filter((candidate) => safeArray(candidate.changedParameters).includes("allowLong") || safeArray(candidate.changedParameters).includes("allowShort"))
           .map((candidate) => candidate.label),
+        ...safeArray(candidates)
+          .filter((candidate) => candidate.candidateFamily?.startsWith("grinch_"))
+          .map((candidate) => `Grinch filter tested: ${candidate.label}`),
         bestCandidate ? `Best quality candidate: ${bestCandidate.label}` : undefined,
         changed.length ? `Changed parameters tested: ${[...new Set(changed)].join(", ")}` : undefined
       ].filter((item): item is string => Boolean(item)),
       6
     )
+  };
+};
+
+const candidateScoreSummaryFor = (candidate?: AutoResearchCandidateResult): AutoResearchCycle["candidateScores"][number] | undefined =>
+  candidate
+    ? {
+        candidateId: candidate.candidateId,
+        label: candidate.label,
+        totalScore: candidate.scoreBreakdown.totalScore,
+        resultCategory: candidate.resultCategory,
+        rejectionReasons: safeTopN(candidate.rejectionReasons, 3),
+        candidateFamily: candidate.candidateFamily,
+        grinchModelScore: candidate.scoreBreakdown.grinchModelScore
+      }
+    : undefined;
+
+const buildGrinchComparison = (
+  baselineBacktest: ReturnType<typeof runBacktest>,
+  candidateResults: AutoResearchCandidateResult[]
+): AutoResearchGrinchComparison | undefined => {
+  const grinchCandidates = safeArray(candidateResults).filter((candidate) => candidate.candidateFamily?.startsWith("grinch_"));
+  if (!baselineBacktest.summary.grinchSummary && !grinchCandidates.length) {
+    return undefined;
+  }
+  const findFamily = (...families: NonNullable<AutoResearchCandidateResult["candidateFamily"]>[]) =>
+    grinchCandidates
+      .filter((candidate) => candidate.candidateFamily && families.includes(candidate.candidateFamily))
+      .sort((a, b) => b.scoreBreakdown.totalScore - a.scoreBreakdown.totalScore)[0];
+  const baselineScore = baselineBacktest.summary.grinchSummary?.averageGrinchModelScore;
+  return {
+    baseline: {
+      score: baselineScore,
+      activeProfile: baselineBacktest.summary.grinchSummary?.activeProfile,
+      falsePositiveRisk: baselineBacktest.summary.grinchSummary?.averageFalsePositiveRisk
+    },
+    grinchFiltered: candidateScoreSummaryFor(findFamily(
+      "grinch_require_opening_price_alignment",
+      "grinch_require_pd_array_hierarchy_alignment",
+      "grinch_require_time_price_alignment",
+      "grinch_penalize_missing_smt",
+      "grinch_allow_smt_unavailable_but_discount_confidence"
+    )),
+    grinchStrict: candidateScoreSummaryFor(findFamily("grinch_model_strict")),
+    grinchBalanced: candidateScoreSummaryFor(findFamily("grinch_model_balanced")),
+    notes: [
+      baselineScore !== undefined ? `Baseline Grinch score ${baselineScore}/100.` : "Baseline Grinch score unavailable.",
+      grinchCandidates.length
+        ? `Compared ${grinchCandidates.length} Grinch candidate family result(s) against the ICT baseline.`
+        : "No Grinch candidate families were evaluated in this cycle.",
+      "Grinch score is supporting evidence only; readiness still requires trade count, average R, drawdown, walk-forward, evidence, and maturity."
+    ]
   };
 };
 
@@ -1623,8 +1695,11 @@ export async function runAutoResearchCycle(options: AutoResearchRunOptions): Pro
       label: candidate.label,
       totalScore: candidate.scoreBreakdown.totalScore,
       resultCategory: candidate.resultCategory,
-      rejectionReasons: candidate.rejectionReasons
+      rejectionReasons: candidate.rejectionReasons,
+      candidateFamily: candidate.candidateFamily,
+      grinchModelScore: candidate.scoreBreakdown.grinchModelScore
     }));
+    const grinchComparison = buildGrinchComparison(baselineBacktest, candidateResults);
     const failedGates = diagnoseFailedGates(bestCandidate ?? closestCandidates[0], baselineMetrics);
     const scenarioSelectionReasoning = selectScenarioFamilyFromBlockers(failedGates, {
       consecutiveCount: Math.max(1, adaptivePasses.filter((pass) => pass.improvementOverPriorPass === false).length + 1),
@@ -1771,6 +1846,7 @@ export async function runAutoResearchCycle(options: AutoResearchRunOptions): Pro
       tradeQualityCandidateConfigs,
       tradeQualityBestCandidate,
       tradeQualitySummary,
+      grinchComparison,
       recoveryAttempted,
       recoveryCandidates,
       recoveryResult,

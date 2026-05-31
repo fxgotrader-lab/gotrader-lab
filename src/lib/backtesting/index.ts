@@ -4,6 +4,7 @@ export type {
   BacktestAgentWeights,
   BacktestConfig,
   BacktestDecisionPoint,
+  BacktestGrinchSummary,
   BacktestResult,
   BacktestSessionFilter,
   BacktestSkipReasonSummary,

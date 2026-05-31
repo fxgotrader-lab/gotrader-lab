@@ -43,6 +43,7 @@ export type GrinchSmtDivergenceType =
   | "lower_low_nonconfirmation"
   | "none";
 export type GrinchSmtSupportState = boolean | "unclear";
+export type GrinchActiveProfile = "model_1" | "reversal" | "consolidation" | "none";
 
 export type GrinchPdArrayType =
   | "sunday_open"
@@ -326,4 +327,25 @@ export interface GrinchPhase4SmtModelOutput extends GrinchSmtIntermarketResult {
   activeProfile: "model_1" | "reversal" | "consolidation" | "none";
   activeProfileState: string;
   safetyNotice: "Research-only SMT confirmation. No standalone signal, no broker execution, no order placement, no readiness override.";
+}
+
+export interface GrinchStrategyScore {
+  generatedAt: string;
+  grinchModelScore: number;
+  activeProfile: GrinchActiveProfile;
+  htfBiasAlignment: number;
+  pdArrayHierarchyAlignment: number;
+  openingPriceAlignment: number;
+  timingAlignment: number;
+  entryConfirmationScore: number;
+  smtConfirmationScore: number;
+  falsePositiveRisk: number;
+  profileValidity: number;
+  profileState: string;
+  smtState: GrinchSmtState;
+  ruleBlocks: string[];
+  primaryRuleBlock?: string;
+  reasons: string[];
+  missingEvidence: string[];
+  safetyNotice: "Research-only Grinch score. Supporting evidence only; no broker execution, order placement, or readiness override.";
 }
