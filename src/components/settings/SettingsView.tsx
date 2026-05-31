@@ -23,6 +23,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { defaultBrokerRiskControls, routeBrokerForSymbol } from "@/lib/brokers";
+import { mt5ExecutionAdapterPlan } from "@/lib/brokers/mt5";
+import { tradovateExecutionAdapterPlan } from "@/lib/brokers/tradovate";
 import {
   AUTO_RESEARCH_UPDATED_EVENT,
   latestAutoResearchCycle,
@@ -42,6 +45,7 @@ import { openClawHermesAdvisorySpec } from "@/lib/integrations/openclawHermesSpe
 import { openClawMemoryHookSpec } from "@/lib/integrations/openclawMemoryHooks";
 import { paperclipAgentOperationsPolicy } from "@/lib/integrations/paperclipAuthorityPolicy";
 import { paperDemoExecutionSpec } from "@/lib/integrations/paperDemoExecutionSpec";
+import { tradingViewMcpAdapterPlan } from "@/lib/integrations/tradingview";
 import {
   getLLMReadinessImpact,
   latestLLMAdvisoryRun,
@@ -130,6 +134,9 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
     timeframe: state.tradeTheses[0]?.timeframe ?? "5m",
     mode: "mock"
   });
+  const brokerRouteExamples = ["MNQ", "EUR/USD", "XAU/USD", "US30", "BTC/USD", "UNKNOWN"].map((symbol) =>
+    routeBrokerForSymbol({ accountMode: "research", symbol })
+  );
   const latestAutoResearch = latestAutoResearchCycle(autoResearchState);
   const communicationSummary = getCommunicationSummary(loadCommunicationMessages());
   const runbookCompleted = countCompletedRunbookItems(simulationRunbook);
@@ -422,6 +429,55 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
             >
               Open market data context
             </Link>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Lock className="h-4 w-4 text-amber-200" aria-hidden="true" />
+              <CardTitle>Multi-Broker Architecture</CardTitle>
+            </div>
+            <CardDescription>TradingView analysis, Tradovate futures routing, and MT5 forex/CFD routing are planned and locked.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {[
+              ["TradingView MCP", tradingViewMcpAdapterPlan.status],
+              ["TradingView role", tradingViewMcpAdapterPlan.role],
+              ["Tradovate", tradovateExecutionAdapterPlan.status],
+              ["MT5", mt5ExecutionAdapterPlan.status],
+              ["Current mode", "research"],
+              ["Broker execution", "disabled"],
+              ["Live trading", "disabled"],
+              ["Readiness override", "none"]
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+                <span className="text-muted-foreground">{label}</span>
+                <Badge variant={value === "disabled" || value === "none" ? "danger" : value === "research" ? "warning" : "secondary"}>
+                  {formatBridgeValue(value)}
+                </Badge>
+              </div>
+            ))}
+            <div className="rounded-md border border-cyan-300/20 bg-cyan-300/10 p-3 text-cyan-100">
+              TradingView is chart evidence only. GoTrader remains the evaluator, risk manager, broker router, and journal source of truth.
+            </div>
+            <div className="grid gap-2 md:grid-cols-2">
+              {brokerRouteExamples.map((route) => (
+                <div key={route.routeId} className="rounded-md border border-border bg-background/45 p-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs text-foreground">{route.symbol}</span>
+                    <Badge variant={route.broker === "none" ? "danger" : "warning"}>{route.broker}</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{route.reason}</p>
+                </div>
+              ))}
+            </div>
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              Risk controls are required before any future adapter can produce dry-run, paper, or live intents. Current max risk and max trades are locked at zero.
+              <span className="mt-1 block font-mono text-xs">
+                maxDailyLoss {defaultBrokerRiskControls.maxDailyLoss}; maxTrades {defaultBrokerRiskControls.maxTradesPerDay}; maxRisk {defaultBrokerRiskControls.maxRiskPerTrade}
+              </span>
+            </div>
           </CardContent>
         </Card>
 

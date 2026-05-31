@@ -25,6 +25,9 @@ import {
 import { createPlannedHermesNotificationState } from "@/lib/integrations/hermesNotificationHooks";
 import { createPlannedOpenClawMemoryHookState } from "@/lib/integrations/openclawMemoryHooks";
 import { paperclipAgentOperationsPolicy } from "@/lib/integrations/paperclipAuthorityPolicy";
+import { tradingViewMcpAdapterPlan } from "@/lib/integrations/tradingview";
+import { mt5ExecutionAdapterPlan } from "@/lib/brokers/mt5";
+import { tradovateExecutionAdapterPlan } from "@/lib/brokers/tradovate";
 import { buildVwapOverlay, createTradingChartData } from "@/lib/charting";
 import { RESEARCH_CYCLE_UPDATED_EVENT } from "@/lib/researchCycle";
 import {
@@ -410,6 +413,22 @@ export function MissionControlShell({ state }: { state: LabState }) {
                   <li key={use.id}>{use.label}</li>
                 ))}
               </ul>
+            </div>
+          </div>
+        </div>
+        <div className="mt-3 rounded-lg border border-white/10 bg-slate-950/55 p-3 text-sm text-slate-200">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="font-semibold">Future multi-broker gates</p>
+              <p className="mt-1 text-slate-400">
+                TradingView MCP is planned for chart evidence only. Tradovate and MT5 remain locked execution adapters.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="secondary">TradingView {tradingViewMcpAdapterPlan.status.replace(/_/g, " ")}</Badge>
+              <Badge variant="warning">Tradovate {tradovateExecutionAdapterPlan.status.replace(/_/g, " ")}</Badge>
+              <Badge variant="warning">MT5 {mt5ExecutionAdapterPlan.status.replace(/_/g, " ")}</Badge>
+              <Badge variant="danger">execution disabled</Badge>
             </div>
           </div>
         </div>
