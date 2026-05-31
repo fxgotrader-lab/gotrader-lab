@@ -14,6 +14,7 @@ import {
   loadActiveTradingViewMcpChartFeed,
   resolveTradingViewMcpRuntimeState,
   resolveTradingViewMcpStatus,
+  TRADINGVIEW_MCP_AUTO_REFRESH_STORAGE_KEY,
   TRADINGVIEW_MCP_EVIDENCE_STORAGE_KEY,
   TRADINGVIEW_MCP_CHART_FEED_STORAGE_KEY,
   TRADINGVIEW_MCP_SETTINGS_STORAGE_KEY,
@@ -191,6 +192,7 @@ const tradingViewMcpStateFor = (chartFeed: ReturnType<typeof loadActiveTradingVi
     chartFeedStorageBackend: runtime.chartFeedStorageBackend,
     chartFeedCandlesPersisted: runtime.chartFeedCandlesPersisted,
     chartFeedId: runtime.chartFeedId,
+    autoRefresh: runtime.autoRefresh,
     tradingViewMcpCandleStatus: chartFeed?.connectionStatus ?? "not_active",
     researchEligibility: runtime.researchEligibility,
     eligibilityReasons: runtime.eligibilityReasons,
@@ -767,6 +769,7 @@ export async function resolveResearchRuntimeSnapshot(
     `live feed: ${marketData.liveMarketDataStatus.liveFeedSourceLabel} / ${marketData.liveMarketDataStatus.connectionStatus}`,
     `TradingView MCP bridge: ${tradingViewMcp.bridgeStatus} / evidence ${tradingViewMcp.evidenceAvailable ? "available" : "not fetched"}`,
     `TradingView MCP chart feed: ${tradingViewMcp.chartFeedAvailable ? `${tradingViewMcp.chartFeedCandleCount} candles` : "not active"} / ${tradingViewMcp.chartFeedMatchState}`,
+    `TradingView MCP auto-refresh: ${tradingViewMcp.autoRefresh.status} / interval ${tradingViewMcp.autoRefresh.refreshIntervalSeconds}s / count ${tradingViewMcp.autoRefresh.refreshCount}`,
     `TradingView MCP research eligibility: ${tradingViewMcp.researchEligibility} / symbol ${tradingViewMcp.symbolMatch ? "match" : "not matched"} / timeframe ${tradingViewMcp.timeframeMatch ? "match" : "not matched"}`,
     `imported data status: ${marketData.importedDataStatus}`,
     `active import id: ${marketData.activeImportId ?? "none"}`,
@@ -1080,6 +1083,7 @@ export async function resolveResearchRuntimeSnapshot(
         TRADINGVIEW_MCP_SETTINGS_STORAGE_KEY,
         TRADINGVIEW_MCP_STATUS_STORAGE_KEY,
         TRADINGVIEW_MCP_EVIDENCE_STORAGE_KEY,
+        TRADINGVIEW_MCP_AUTO_REFRESH_STORAGE_KEY,
         TRADINGVIEW_MCP_CHART_FEED_STORAGE_KEY,
         CANDLE_WINDOW_SETTINGS_UPDATED_EVENT
       ]

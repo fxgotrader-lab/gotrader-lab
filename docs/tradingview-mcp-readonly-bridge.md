@@ -76,6 +76,49 @@ This feed may be selected as a chart source in Market Data or Settings. It is la
 If the upstream CLI only returns a summary on a given machine or chart state, `/candles` returns an empty candle array
 with `connected_no_candles` and a `missingEvidence` explanation. GoTrader keeps using imported/mock/replay data.
 
+## Command Center Auto-Refresh
+
+Dashboard / Command Center can start a local auto-refresh loop for TradingView MCP chart data. The loop is read-only.
+It checks the wrapper, fetches quote/candle data, stores candles in IndexedDB, and updates the active visual chart
+source without requiring repeated Market Data clicks.
+
+Supported intervals:
+
+- 5 seconds, default
+- 10 seconds
+- 15 seconds
+
+Supported candle limits:
+
+- 100
+- 240, default
+- 400
+- 1000
+
+The loop state tracks:
+
+- status: `idle`, `starting`, `running`, `paused`, `failed`, or `stopped`
+- last refresh time
+- next refresh time / countdown
+- refresh count
+- consecutive failures
+- latest price
+- latest candle timestamp
+- candle count and storage backend
+
+On full reload, the selected interval and candle limit are remembered, but the interval itself is not restarted
+automatically. The user must start auto-refresh again from Command Center.
+
+Failure behavior:
+
+- If the wrapper is disconnected, GoTrader keeps the last visible candles and shows a reconnect message.
+- If a candle fetch returns zero candles, GoTrader keeps the previous chart feed visible.
+- After 3 consecutive failures, auto-refresh pauses and asks the user to restart the local wrapper.
+- When the browser tab is hidden, the loop pauses refresh work and resumes on a later visible interval.
+
+The Research Flow Tape receives compact auto-refresh events. Repeated success events are collapsed in the UI, and the
+IndexedDB-backed communication audit remains best-effort so logging cannot block data activation.
+
 ## Research-Source Eligibility Gate
 
 TradingView MCP candles are always treated as read-only chart data first. They may be displayed visually when the bridge

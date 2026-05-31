@@ -8,7 +8,8 @@ import type {
   TradingViewMcpChartFeedStatus,
   TradingViewMcpFeedUsageMode,
   TradingViewMcpResearchEligibilityState,
-  TradingViewMcpRuntimeState
+  TradingViewMcpRuntimeState,
+  TradingViewMcpAutoRefreshState
 } from "@/lib/integrations/tradingview";
 import type {
   CandleDataSourceMode,
@@ -284,6 +285,7 @@ export interface RuntimeTradingViewMcpState {
   chartFeedStorageBackend?: string;
   chartFeedCandlesPersisted: boolean;
   chartFeedId?: string;
+  autoRefresh: TradingViewMcpAutoRefreshState;
   tradingViewMcpCandleStatus: TradingViewMcpChartFeedStatus | "not_active";
   researchEligibility: TradingViewMcpResearchEligibilityState | "ineligible_disconnected" | "not_active";
   eligibilityReasons: string[];

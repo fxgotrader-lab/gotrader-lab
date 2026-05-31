@@ -7,6 +7,7 @@ import { TradingChart } from "@/components/charts/TradingChart";
 import { WhyNotReadyCard } from "@/components/common/WhyNotReadyCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import {
   AUTONOMOUS_RESEARCH_UPDATED_EVENT,
   discardAutonomousResearchCheckpoint,
@@ -32,15 +33,24 @@ import {
   fetchTradingViewMcpCandles,
   fetchTradingViewMcpQuote,
   hydrateActiveTradingViewMcpChartFeed,
+  loadTradingViewMcpAutoRefreshState,
   loadActiveTradingViewMcpChartFeed,
   loadTradingViewMcpSettings,
+  refreshTradingViewMcpChartDataNow,
   saveTradingViewMcpSettings,
+  saveTradingViewMcpAutoRefreshSettings,
+  startTradingViewMcpAutoRefresh,
+  stopTradingViewMcpAutoRefresh,
   storeActiveTradingViewMcpChartFeed,
+  tradingViewMcpAutoRefreshCandleLimitOptions,
+  tradingViewMcpAutoRefreshIntervalOptions,
+  TRADINGVIEW_MCP_AUTO_REFRESH_UPDATED_EVENT,
   TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT,
   TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
   TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT,
   tradingViewMcpAdapterPlan,
-  type ActiveTradingViewMcpChartFeed
+  type ActiveTradingViewMcpChartFeed,
+  type TradingViewMcpAutoRefreshState
 } from "@/lib/integrations/tradingview";
 import { mt5ExecutionAdapterPlan } from "@/lib/brokers/mt5";
 import { tradovateExecutionAdapterPlan } from "@/lib/brokers/tradovate";
@@ -80,6 +90,22 @@ const pct = (value?: number) =>
 
 const formatToken = (value?: string) => (value ?? "idle").replace(/_/g, " ");
 const formatBool = (value?: boolean) => (typeof value === "boolean" ? (value ? "yes" : "no") : "unknown");
+const tradingViewAutoRefreshIntervalOptions = tradingViewMcpAutoRefreshIntervalOptions.map((value) => ({
+  label: `${value}s`,
+  value: String(value)
+}));
+const tradingViewAutoRefreshCandleOptions = tradingViewMcpAutoRefreshCandleLimitOptions.map((value) => ({
+  label: `${value.toLocaleString()} candles`,
+  value: String(value)
+}));
+
+const formatCountdown = (timestamp?: string, nowMs = Date.now()) => {
+  if (!timestamp) {
+    return "n/a";
+  }
+  const seconds = Math.max(0, Math.ceil((new Date(timestamp).getTime() - nowMs) / 1000));
+  return `${seconds}s`;
+};
 
 type CommandCenterDataEvent = {
   detail: string;
@@ -123,6 +149,17 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const [advancedFullResearchMode, setAdvancedFullResearchMode] = useState(false);
   const [tradingViewBusy, setTradingViewBusy] = useState(false);
   const [tradingViewOperationMessage, setTradingViewOperationMessage] = useState("TradingView MCP chart feed not active.");
+  const [tradingViewAutoRefresh, setTradingViewAutoRefresh] = useState<TradingViewMcpAutoRefreshState>(() =>
+    loadTradingViewMcpAutoRefreshState()
+  );
+  const [autoRefreshBusy, setAutoRefreshBusy] = useState(false);
+  const [autoRefreshIntervalSeconds, setAutoRefreshIntervalSeconds] = useState(() =>
+    String(loadTradingViewMcpAutoRefreshState().refreshIntervalSeconds)
+  );
+  const [autoRefreshCandleLimit, setAutoRefreshCandleLimit] = useState(() =>
+    String(loadTradingViewMcpAutoRefreshState().candleLimit)
+  );
+  const [autoRefreshClock, setAutoRefreshClock] = useState(() => Date.now());
   const [dataConnectionEvents, setDataConnectionEvents] = useState<CommandCenterDataEvent[]>([]);
   const latestRun = liveRun ?? latestAutonomousResearchRun(autonomyState);
   const currentIteration = latestRun?.iterations.find((iteration) => iteration.iteration === latestRun.currentIteration);
@@ -145,19 +182,23 @@ export function MissionControlShell({ state }: { state: LabState }) {
     severity: MissionFeedItem["severity"],
     sourceFingerprint?: string
   ) => {
+    const nextEvent = {
+      detail,
+      id: uid("command_data_event"),
+      severity,
+      sourceFingerprint,
+      timestamp: new Date().toISOString(),
+      title
+    };
     setDataConnectionEvents((events) =>
       safeTopN(
-        [
-          {
-            detail,
-            id: uid("command_data_event"),
-            severity,
-            sourceFingerprint,
-            timestamp: new Date().toISOString(),
-            title
-          },
-          ...events
-        ],
+        events[0]?.title === nextEvent.title &&
+        (nextEvent.title.includes("auto-refresh") ||
+          nextEvent.title.includes("TradingView quote") ||
+          nextEvent.title.includes("TradingView candles") ||
+          nextEvent.title.includes("TradingView chart source refreshed"))
+          ? [{ ...nextEvent, id: events[0].id }, ...events.slice(1)]
+          : [nextEvent, ...events],
         16
       )
     );
@@ -321,6 +362,75 @@ export function MissionControlShell({ state }: { state: LabState }) {
     );
   };
 
+  const persistAutoRefreshSettings = (intervalSeconds = autoRefreshIntervalSeconds, candleLimit = autoRefreshCandleLimit) => {
+    const saved = saveTradingViewMcpAutoRefreshSettings({
+      refreshIntervalSeconds: Number(intervalSeconds),
+      candleLimit: Number(candleLimit)
+    });
+    setTradingViewAutoRefresh(saved);
+    return saved;
+  };
+
+  const startTradingViewAutoRefresh = async () => {
+    setAutoRefreshBusy(true);
+    setTradingViewOperationMessage(`Starting TradingView MCP auto-refresh for ${commandCenterSymbol} ${commandCenterTimeframe}...`);
+    addDataConnectionEvent(
+      "TradingView auto-refresh starting",
+      `Interval ${autoRefreshIntervalSeconds}s, limit ${Number(autoRefreshCandleLimit).toLocaleString()} candles.`,
+      "running",
+      `${commandCenterSymbol} ${commandCenterTimeframe}`
+    );
+    try {
+      const state = await startTradingViewMcpAutoRefresh({
+        symbol: commandCenterSymbol,
+        timeframe: commandCenterTimeframe,
+        refreshIntervalSeconds: Number(autoRefreshIntervalSeconds),
+        candleLimit: Number(autoRefreshCandleLimit),
+        usageMode: runtimeSnapshot?.tradingViewMcp.usageMode === "research_source" ? "research_source" : "chart_only"
+      });
+      setTradingViewAutoRefresh(state);
+      await resolveAndStoreRuntime().catch(() => undefined);
+      setTradingViewOperationMessage(
+        state.status === "running"
+          ? `TradingView MCP auto-refresh running every ${state.refreshIntervalSeconds}s. Latest candle ${state.lastCandleTimestamp ?? "pending"}.`
+          : state.lastError ?? "TradingView MCP auto-refresh did not start."
+      );
+    } finally {
+      setAutoRefreshBusy(false);
+    }
+  };
+
+  const stopTradingViewAutoRefresh = () => {
+    const state = stopTradingViewMcpAutoRefresh();
+    setTradingViewAutoRefresh(state);
+    setTradingViewOperationMessage("TradingView MCP auto-refresh stopped. Existing chart candles remain visible.");
+    addDataConnectionEvent("TradingView auto-refresh stopped", "Manual stop. Existing read-only chart candles remain visible.", "info");
+  };
+
+  const refreshTradingViewNow = async () => {
+    setAutoRefreshBusy(true);
+    setTradingViewOperationMessage(`Refreshing TradingView MCP candles now for ${commandCenterSymbol} ${commandCenterTimeframe}...`);
+    try {
+      const state = await refreshTradingViewMcpChartDataNow({
+        symbol: commandCenterSymbol,
+        timeframe: commandCenterTimeframe,
+        refreshIntervalSeconds: Number(autoRefreshIntervalSeconds),
+        candleLimit: Number(autoRefreshCandleLimit),
+        usageMode: runtimeSnapshot?.tradingViewMcp.usageMode === "research_source" ? "research_source" : "chart_only",
+        activateLoop: tradingViewAutoRefresh.enabled
+      });
+      setTradingViewAutoRefresh(state);
+      await resolveAndStoreRuntime().catch(() => undefined);
+      setTradingViewOperationMessage(
+        state.lastError
+          ? `TradingView MCP refresh warning: ${state.lastError}`
+          : `TradingView MCP refreshed ${state.lastCandleCount.toLocaleString()} candles. Latest price ${state.lastPrice ?? "n/a"}.`
+      );
+    } finally {
+      setAutoRefreshBusy(false);
+    }
+  };
+
   useEffect(() => {
     refresh();
     window.addEventListener(AUTONOMOUS_RESEARCH_UPDATED_EVENT, refresh);
@@ -331,6 +441,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
     window.addEventListener(WALK_FORWARD_UPDATED_EVENT, refresh);
     window.addEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
     window.addEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
+    window.addEventListener(TRADINGVIEW_MCP_AUTO_REFRESH_UPDATED_EVENT, refresh);
     window.addEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refresh);
     window.addEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refresh);
     window.addEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refresh);
@@ -344,12 +455,38 @@ export function MissionControlShell({ state }: { state: LabState }) {
       window.removeEventListener(WALK_FORWARD_UPDATED_EVENT, refresh);
       window.removeEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
+      window.removeEventListener(TRADINGVIEW_MCP_AUTO_REFRESH_UPDATED_EVENT, refresh);
       window.removeEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refresh);
       window.removeEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refresh);
       window.removeEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
   }, [state]);
+
+  useEffect(() => {
+    const handleAutoRefreshUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<{ state?: TradingViewMcpAutoRefreshState; event?: TradingViewMcpAutoRefreshState["lastEvent"] }>).detail;
+      const nextState = detail?.state ?? loadTradingViewMcpAutoRefreshState();
+      setTradingViewAutoRefresh(nextState);
+      setAutoRefreshIntervalSeconds(String(nextState.refreshIntervalSeconds));
+      setAutoRefreshCandleLimit(String(nextState.candleLimit));
+      if (detail?.event) {
+        addDataConnectionEvent(
+          detail.event.title,
+          detail.event.detail,
+          detail.event.severity === "failed" ? "failed" : detail.event.severity,
+          detail.event.sourceFingerprint
+        );
+      }
+    };
+    window.addEventListener(TRADINGVIEW_MCP_AUTO_REFRESH_UPDATED_EVENT, handleAutoRefreshUpdate);
+    return () => window.removeEventListener(TRADINGVIEW_MCP_AUTO_REFRESH_UPDATED_EVENT, handleAutoRefreshUpdate);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setAutoRefreshClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const startLoop = async () => {
     const controller = new AbortController();
@@ -398,6 +535,9 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const keyMetrics = buildKeyMetrics(runtimeSnapshot, latestRun);
   const simulatedAccount = runtimeSnapshot?.performance.simulatedAccountSummary;
   const warnings = selectRuntimeWarnings(runtimeSnapshot);
+  const autoRefreshRunning = tradingViewAutoRefresh.status === "running" && tradingViewAutoRefresh.enabled;
+  const autoRefreshPaused = tradingViewAutoRefresh.status === "paused" || tradingViewAutoRefresh.status === "failed";
+  const autoRefreshCountdown = formatCountdown(tradingViewAutoRefresh.nextRefreshAt, autoRefreshClock);
 
   return (
     <div className="space-y-5">
@@ -523,6 +663,100 @@ export function MissionControlShell({ state }: { state: LabState }) {
             <Activity className="h-4 w-4" aria-hidden="true" />
             {busy ? "Loop running" : "Start Autonomous Research Loop"}
           </Button>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-cyan-300/15 bg-black/20 p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-50">Auto-refresh TradingView chart data</p>
+              <p className="mt-1 max-w-3xl text-xs text-slate-400">
+                Polls the local read-only wrapper for quote and candles, stores candles in IndexedDB, and refreshes
+                the chart source. This is not broker truth and cannot execute orders.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={autoRefreshRunning ? "success" : autoRefreshPaused ? "warning" : "secondary"}>
+                {formatToken(tradingViewAutoRefresh.status)}
+              </Badge>
+              <Badge variant="danger">Execution none</Badge>
+            </div>
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <label className="space-y-1 text-xs text-slate-300">
+              Interval
+              <Select
+                value={autoRefreshIntervalSeconds}
+                options={tradingViewAutoRefreshIntervalOptions}
+                onChange={(event) => {
+                  setAutoRefreshIntervalSeconds(event.target.value);
+                  persistAutoRefreshSettings(event.target.value, autoRefreshCandleLimit);
+                }}
+              />
+            </label>
+            <label className="space-y-1 text-xs text-slate-300">
+              Candle limit
+              <Select
+                value={autoRefreshCandleLimit}
+                options={tradingViewAutoRefreshCandleOptions}
+                onChange={(event) => {
+                  setAutoRefreshCandleLimit(event.target.value);
+                  persistAutoRefreshSettings(autoRefreshIntervalSeconds, event.target.value);
+                }}
+              />
+            </label>
+            <CommandStatusTile
+              label="Last refresh"
+              value={tradingViewAutoRefresh.lastRefreshAt ? formatDateTime(tradingViewAutoRefresh.lastRefreshAt) : "none"}
+              detail={`${tradingViewAutoRefresh.refreshCount.toLocaleString()} completed`}
+              tone={tradingViewAutoRefresh.refreshCount ? "good" : "neutral"}
+            />
+            <CommandStatusTile
+              label="Next refresh"
+              value={autoRefreshRunning ? autoRefreshCountdown : "stopped"}
+              detail={tradingViewAutoRefresh.nextRefreshAt ? formatDateTime(tradingViewAutoRefresh.nextRefreshAt) : undefined}
+              tone={autoRefreshRunning ? "good" : "neutral"}
+            />
+            <CommandStatusTile
+              label="Latest price"
+              value={tradingViewAutoRefresh.lastPrice !== undefined ? String(tradingViewAutoRefresh.lastPrice) : "n/a"}
+              detail={tradingViewAutoRefresh.lastSymbol}
+              tone={tradingViewAutoRefresh.lastPrice !== undefined ? "good" : "neutral"}
+            />
+            <CommandStatusTile
+              label="Latest candle"
+              value={tradingViewAutoRefresh.lastCandleTimestamp ? formatDateTime(tradingViewAutoRefresh.lastCandleTimestamp) : "n/a"}
+              detail={`${tradingViewAutoRefresh.lastCandleCount.toLocaleString()} candles`}
+              tone={tradingViewAutoRefresh.lastCandleCount ? "good" : "neutral"}
+            />
+            <CommandStatusTile
+              label="Failures"
+              value={String(tradingViewAutoRefresh.consecutiveFailures)}
+              detail={tradingViewAutoRefresh.lastError}
+              tone={tradingViewAutoRefresh.consecutiveFailures ? "warn" : "good"}
+            />
+            <CommandStatusTile
+              label="Storage"
+              value={tradingViewAutoRefresh.lastStorageBackend ?? runtimeSnapshot?.tradingViewMcp.chartFeedStorageBackend ?? "none"}
+              detail={tradingViewAutoRefresh.lastFeedId ?? runtimeSnapshot?.tradingViewMcp.chartFeedId}
+              tone={tradingViewAutoRefresh.lastStorageBackend === "indexeddb" ? "good" : "neutral"}
+            />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => void startTradingViewAutoRefresh()} disabled={autoRefreshBusy || autoRefreshRunning}>
+              {autoRefreshBusy && !autoRefreshRunning ? "Starting..." : "Start Auto-refresh"}
+            </Button>
+            <Button variant="outline" onClick={() => void stopTradingViewAutoRefresh()} disabled={!autoRefreshRunning && tradingViewAutoRefresh.status !== "failed" && tradingViewAutoRefresh.status !== "paused"}>
+              Stop Auto-refresh
+            </Button>
+            <Button variant="outline" onClick={() => void refreshTradingViewNow()} disabled={autoRefreshBusy}>
+              {autoRefreshBusy ? "Refreshing..." : "Refresh Now"}
+            </Button>
+          </div>
+          {tradingViewAutoRefresh.lastError ? (
+            <div className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-xs text-amber-100">
+              {tradingViewAutoRefresh.lastError}
+            </div>
+          ) : null}
         </div>
 
         <div

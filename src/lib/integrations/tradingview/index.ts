@@ -11,3 +11,4 @@ export * from "@/lib/integrations/tradingview/tradingViewEvidenceService";
 export * from "@/lib/integrations/tradingview/tradingViewCandleFeedTypes";
 export * from "@/lib/integrations/tradingview/tradingViewCandleNormalizer";
 export * from "@/lib/integrations/tradingview/tradingViewMcpFeedClient";
+export * from "@/lib/integrations/tradingview/tradingViewMcpAutoRefresh";

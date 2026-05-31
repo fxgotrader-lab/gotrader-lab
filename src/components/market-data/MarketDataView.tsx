@@ -44,10 +44,12 @@ import {
   fetchTradingViewMcpQuote,
   hydrateActiveTradingViewMcpChartFeed,
   loadActiveTradingViewMcpChartFeed,
+  loadTradingViewMcpAutoRefreshState,
   loadTradingViewMcpSettings,
   resolveTradingViewMcpRuntimeState,
   saveTradingViewMcpSettings,
   storeActiveTradingViewMcpChartFeed,
+  TRADINGVIEW_MCP_AUTO_REFRESH_UPDATED_EVENT,
   TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT,
   TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
   TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT,
@@ -132,6 +134,7 @@ export function MarketDataView() {
   const [tradingViewQuote, setTradingViewQuote] = useState<TradingViewMcpQuoteResponse | undefined>();
   const [tradingViewCandles, setTradingViewCandles] = useState<TradingViewMcpCandlesResponse | undefined>();
   const [tradingViewRuntime, setTradingViewRuntime] = useState(() => resolveTradingViewMcpRuntimeState());
+  const [tradingViewAutoRefresh, setTradingViewAutoRefresh] = useState(() => loadTradingViewMcpAutoRefreshState());
   const [tradingViewFeedMessage, setTradingViewFeedMessage] = useState<string>();
   const [tradingViewConnecting, setTradingViewConnecting] = useState(false);
   const [tradingViewCandleLimit, setTradingViewCandleLimit] = useState("240");
@@ -237,6 +240,7 @@ export function MarketDataView() {
     const refreshTradingViewFeed = () => {
       setTradingViewFeed(loadActiveTradingViewMcpChartFeed());
       setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
+      setTradingViewAutoRefresh(loadTradingViewMcpAutoRefreshState());
       void hydrateActiveTradingViewMcpChartFeed()
         .then((feed) => {
           setTradingViewFeed(feed);
@@ -246,11 +250,13 @@ export function MarketDataView() {
     };
     refreshTradingViewFeed();
     window.addEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refreshTradingViewFeed);
+    window.addEventListener(TRADINGVIEW_MCP_AUTO_REFRESH_UPDATED_EVENT, refreshTradingViewFeed);
     window.addEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refreshTradingViewFeed);
     window.addEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refreshTradingViewFeed);
     window.addEventListener("storage", refreshTradingViewFeed);
     return () => {
       window.removeEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refreshTradingViewFeed);
+      window.removeEventListener(TRADINGVIEW_MCP_AUTO_REFRESH_UPDATED_EVENT, refreshTradingViewFeed);
       window.removeEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refreshTradingViewFeed);
       window.removeEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refreshTradingViewFeed);
       window.removeEventListener("storage", refreshTradingViewFeed);
@@ -535,6 +541,12 @@ export function MarketDataView() {
             <StatusTile label="Research source" value={displaySource.activeResearchSourceLabel} />
             <StatusTile label="Display candles" value={displaySource.activeChartDisplayCandleSource.length.toLocaleString()} />
             <StatusTile label="Research candles" value={displaySource.activeResearchCandleSource.length.toLocaleString()} />
+            <StatusTile label="MCP auto-refresh" value={formatToken(tradingViewAutoRefresh.status)} />
+            <StatusTile label="Auto interval" value={`${tradingViewAutoRefresh.refreshIntervalSeconds}s`} />
+            <StatusTile label="Auto limit" value={`${tradingViewAutoRefresh.candleLimit.toLocaleString()} candles`} />
+            <StatusTile label="Auto last refresh" value={formatDate(tradingViewAutoRefresh.lastRefreshAt)} />
+            <StatusTile label="Auto latest price" value={String(tradingViewAutoRefresh.lastPrice ?? "n/a")} />
+            <StatusTile label="Auto failures" value={String(tradingViewAutoRefresh.consecutiveFailures)} />
           </div>
           {displaySource.chartDisplayWarning ? (
             <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
@@ -700,6 +712,10 @@ export function MarketDataView() {
             <StatusTile label="Feed stored" value={tradingViewFeed?.candlesPersisted ? "yes" : tradingViewFeed ? "session-only" : "no"} />
             <StatusTile label="Storage backend" value={tradingViewFeed?.storageBackend ?? tradingViewRuntime.chartFeedStorageBackend ?? "none"} />
             <StatusTile label="Last feed id" value={tradingViewFeed?.feedId ?? tradingViewRuntime.chartFeedId ?? "none"} />
+            <StatusTile label="Auto-refresh status" value={formatToken(tradingViewAutoRefresh.status)} />
+            <StatusTile label="Auto-refresh interval" value={`${tradingViewAutoRefresh.refreshIntervalSeconds}s`} />
+            <StatusTile label="Auto-refresh count" value={String(tradingViewAutoRefresh.refreshCount)} />
+            <StatusTile label="Auto latest candle" value={formatDate(tradingViewAutoRefresh.lastCandleTimestamp)} />
           </div>
           <div
             className={`rounded-md border p-3 text-sm ${

@@ -4,6 +4,10 @@ import {
 } from "@/lib/integrations/tradingview/tradingViewEvidenceService";
 import { loadTradingViewMcpSettings } from "@/lib/integrations/tradingview/tradingViewMcpSettings";
 import { loadActiveTradingViewMcpChartFeed } from "@/lib/integrations/tradingview/tradingViewMcpFeedClient";
+import {
+  loadTradingViewMcpAutoRefreshState,
+  type TradingViewMcpAutoRefreshState
+} from "@/lib/integrations/tradingview/tradingViewMcpAutoRefresh";
 import type {
   TradingViewMcpChartFeedStatus,
   TradingViewMcpFeedUsageMode,
@@ -52,6 +56,7 @@ export interface TradingViewMcpRuntimeState {
   timeframeMatch: boolean;
   activeForChart: boolean;
   activeForResearch: boolean;
+  autoRefresh: TradingViewMcpAutoRefreshState;
   authority: {
     executionAuthority: "none";
     brokerAuthority: "none";
@@ -127,6 +132,7 @@ export const resolveTradingViewMcpRuntimeState = (providedChartFeed = loadActive
   const settings = loadTradingViewMcpSettings();
   const statusCheck = loadTradingViewMcpBridgeStatus();
   const latestEvidence = loadLatestTradingViewEvidence();
+  const autoRefresh = loadTradingViewMcpAutoRefreshState();
   const chartFeed = providedChartFeed;
   const chartFeedCandleCount = chartFeed?.candleCount ?? 0;
   const chartFeedConnected = Boolean(
@@ -185,6 +191,7 @@ export const resolveTradingViewMcpRuntimeState = (providedChartFeed = loadActive
     timeframeMatch: Boolean(eligibility?.timeframeMatch),
     activeForChart: Boolean(chartFeed?.activeForChart),
     activeForResearch: Boolean(chartFeed?.activeForResearch),
+    autoRefresh,
     authority
   };
 };
