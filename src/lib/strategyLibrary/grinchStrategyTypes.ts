@@ -34,6 +34,15 @@ export type GrinchTwelveAmConsolidationRelationship =
   | "unclear";
 export type GrinchLiquidityRaidState = "buySideRaided" | "sellSideRaided" | "none" | "both" | "unclear";
 export type GrinchExpectedExpansionDirection = "bullish" | "bearish" | "neutral" | "unclear";
+export type GrinchSmtState = "bullish_confirmation" | "bearish_confirmation" | "conflict" | "none" | "unavailable";
+export type GrinchSmtPrimaryPair = "NQ_ES" | "ES_YM" | "NQ_YM" | "unavailable";
+export type GrinchSmtInstrument = "NQ" | "ES" | "YM" | "unknown";
+export type GrinchSmtLiquidityTaken = "buyside" | "sellside" | "none" | "unclear";
+export type GrinchSmtDivergenceType =
+  | "higher_high_nonconfirmation"
+  | "lower_low_nonconfirmation"
+  | "none";
+export type GrinchSmtSupportState = boolean | "unclear";
 
 export type GrinchPdArrayType =
   | "sunday_open"
@@ -201,6 +210,21 @@ export interface GrinchConsolidationProfileResult {
   missingEvidence: string[];
 }
 
+export interface GrinchSmtIntermarketResult {
+  smtState: GrinchSmtState;
+  primaryPair: GrinchSmtPrimaryPair;
+  leaderInstrument: GrinchSmtInstrument;
+  nonConfirmingInstrument: GrinchSmtInstrument;
+  liquidityTaken: GrinchSmtLiquidityTaken;
+  divergenceType: GrinchSmtDivergenceType;
+  supportsBias: GrinchSmtSupportState;
+  supportsActiveProfile: GrinchSmtSupportState;
+  confidenceAdjustment: number;
+  conflictWarning?: string;
+  reasons: string[];
+  missingEvidence: string[];
+}
+
 export interface GrinchTargetHierarchy {
   target1: string;
   target2: string;
@@ -282,4 +306,24 @@ export interface GrinchPhase3ConsolidationModelOutput extends GrinchConsolidatio
   twelveAmOpenState: GrinchOpeningPriceReference;
   activePdArray?: string;
   safetyNotice: "Research-only consolidation profile. No broker execution, no order placement, no readiness override.";
+}
+
+export interface GrinchPhase4SmtContextInput extends GrinchPhase1ContextInput {
+  phase1?: GrinchPhase1ModelOutput;
+  reversal?: GrinchPhase2ReversalModelOutput;
+  consolidation?: GrinchPhase3ConsolidationModelOutput;
+  correlatedCandles?: Partial<Record<Exclude<GrinchSmtInstrument, "unknown">, Candle[]>>;
+}
+
+export interface GrinchPhase4SmtModelOutput extends GrinchSmtIntermarketResult {
+  modelId: "grinch_phase_4_smt_intermarket_confirmation";
+  generatedAt: string;
+  symbol?: FuturesSymbol;
+  timeframe?: Timeframe;
+  phase1ModelId: GrinchPhase1ModelOutput["modelId"];
+  reversalModelId?: GrinchPhase2ReversalModelOutput["modelId"];
+  consolidationModelId?: GrinchPhase3ConsolidationModelOutput["modelId"];
+  activeProfile: "model_1" | "reversal" | "consolidation" | "none";
+  activeProfileState: string;
+  safetyNotice: "Research-only SMT confirmation. No standalone signal, no broker execution, no order placement, no readiness override.";
 }

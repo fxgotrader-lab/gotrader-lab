@@ -39,9 +39,11 @@ import {
   analyzeGrinchPhase1,
   analyzeGrinchPhase2Reversal,
   analyzeGrinchPhase3Consolidation,
+  analyzeGrinchPhase4Smt,
   summarizeGrinchConsolidationProfile,
   summarizeGrinchPhase1,
-  summarizeGrinchReversalProfile
+  summarizeGrinchReversalProfile,
+  summarizeGrinchSmtIntermarket
 } from "@/lib/strategyLibrary";
 import {
   countCompletedRunbookItems,
@@ -478,6 +480,31 @@ export async function resolveResearchRuntimeSnapshot(
         }
       })
     : undefined;
+  const grinchPhase4SmtSummary = source.candles.length && grinchPhase1Summary
+    ? analyzeGrinchPhase4Smt({
+        candles: source.candles,
+        phase1: grinchPhase1Summary,
+        reversal: grinchPhase2ReversalSummary,
+        consolidation: grinchPhase3ConsolidationSummary,
+        options: {
+          symbol: marketData.symbol,
+          timeframe: marketData.timeframe,
+          currentTimestamp: source.candles[source.candles.length - 1]?.timestamp
+        }
+      })
+    : undefined;
+  const smtSummary = grinchPhase4SmtSummary
+    ? {
+        smtState: grinchPhase4SmtSummary.smtState,
+        primaryPair: grinchPhase4SmtSummary.primaryPair,
+        divergenceType: grinchPhase4SmtSummary.divergenceType,
+        supportsBias: grinchPhase4SmtSummary.supportsBias,
+        supportsActiveProfile: grinchPhase4SmtSummary.supportsActiveProfile,
+        confidenceAdjustment: grinchPhase4SmtSummary.confidenceAdjustment,
+        conflictWarning: grinchPhase4SmtSummary.conflictWarning,
+        detail: summarizeGrinchSmtIntermarket(grinchPhase4SmtSummary)
+      }
+    : undefined;
   const activeGrinchProfileSummary = grinchPhase3ConsolidationSummary?.consolidationProfileState === "valid"
     ? {
         profile: "consolidation" as const,
@@ -537,7 +564,8 @@ export async function resolveResearchRuntimeSnapshot(
     validationId: latestCycle?.validationSummary?.validationId ?? validation?.id,
     researchQualityId: latestCycle?.researchQualitySummary?.reviewId ?? researchQuality?.id,
     readinessState: readinessSnapshot.state,
-    proposalId: latestProposal?.proposalId
+    proposalId: latestProposal?.proposalId,
+    smtState: grinchPhase4SmtSummary?.smtState
   });
   const researchMaturitySummary = calculateResearchMaturity({
     activeCalibrationId: activeConfig.activeCalibrationId,
@@ -581,6 +609,7 @@ export async function resolveResearchRuntimeSnapshot(
     `Grinch Phase 1: ${summarizeGrinchPhase1(grinchPhase1Summary)}`,
     `Grinch Reversal Profile: ${summarizeGrinchReversalProfile(grinchPhase2ReversalSummary)}`,
     `Grinch Consolidation Profile: ${summarizeGrinchConsolidationProfile(grinchPhase3ConsolidationSummary)}`,
+    `Grinch SMT: ${summarizeGrinchSmtIntermarket(grinchPhase4SmtSummary)}`,
     `Active Grinch Profile: ${activeGrinchProfileSummary.detail}`,
     `readiness: ${readinessSnapshot.state}`
   ];
@@ -761,6 +790,8 @@ export async function resolveResearchRuntimeSnapshot(
       grinchPhase1Summary,
       grinchPhase2ReversalSummary,
       grinchPhase3ConsolidationSummary,
+      grinchPhase4SmtSummary,
+      smtSummary,
       activeGrinchProfileSummary,
       latestRun: latestCycle
     },

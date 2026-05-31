@@ -22,5 +22,6 @@ export { detectModelOnePowerThree } from "@/lib/ict/modelOnePowerThree";
 export { findSundayOpenState, findTwelveAmOpenState } from "@/lib/ict/openingPriceEquilibrium";
 export { buildPdArrayHierarchy } from "@/lib/ict/pdArrayHierarchy";
 export { detectReversalProfile } from "@/lib/ict/reversalProfile";
+export { detectSmtIntermarketDivergence, normalizeSmtInstrument } from "@/lib/ict/smtIntermarketDivergence";
 export { tagSession, tagSessions } from "@/lib/ict/sessionTagger";
 export { classifyTimePriceAlignment } from "@/lib/ict/timePriceAlignment";

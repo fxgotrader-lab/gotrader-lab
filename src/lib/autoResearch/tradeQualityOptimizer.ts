@@ -268,6 +268,22 @@ export function generateTradeQualityCandidateConfigs(
       },
       ["confluenceThreshold", "confidenceThreshold", "agentWeights"]
     );
+    add(
+      "Grinch SMT confirmation gate",
+      "False positives were elevated, so this tests whether SMT confirmation supports strong profiles, missing SMT gets penalized, and SMT conflict blocks weak setups.",
+      {
+        minimumConfluenceThreshold: round(clamp01(Math.max(0.54, baseline.minimumConfluenceThreshold + 0.1)), 2),
+        minimumConfidenceThreshold: round(clamp01(Math.max(0.52, baseline.minimumConfidenceThreshold + 0.08)), 2),
+        agentWeights: {
+          ...baseline.agentWeights,
+          "grinch-smt-intermarket-agent": round(Math.min(1.5, (baseline.agentWeights["grinch-smt-intermarket-agent"] ?? 0.04) + 0.08), 3),
+          "intermarket-confirmation-agent": round(Math.min(1.5, (baseline.agentWeights["intermarket-confirmation-agent"] ?? 0.08) + 0.04), 3),
+          "grinch-consolidation-profile-agent": round(Math.min(1.5, (baseline.agentWeights["grinch-consolidation-profile-agent"] ?? 0.06) + 0.02), 3),
+          "grinch-reversal-profile-agent": round(Math.min(1.5, (baseline.agentWeights["grinch-reversal-profile-agent"] ?? 0.06) + 0.02), 3)
+        }
+      },
+      ["confluenceThreshold", "confidenceThreshold", "agentWeights"]
+    );
   }
 
   if (reasonCodes.has("sample_size_too_low")) {

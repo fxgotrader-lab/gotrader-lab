@@ -86,4 +86,5 @@ export interface EvidenceLedgerInput {
   researchQualityId?: string;
   readinessState?: string;
   proposalId?: string;
+  smtState?: "bullish_confirmation" | "bearish_confirmation" | "conflict" | "none" | "unavailable";
 }

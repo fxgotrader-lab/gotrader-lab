@@ -149,14 +149,27 @@ export function buildEvidenceLedger(input: EvidenceLedgerInput): EvidenceLedgerS
     }),
     entry({
       category: "intermarket context",
-      label: "ES/NQ, YM/ES, bonds, crude, gold",
-      sourceType: "planned",
-      completeness: 0.08,
-      freshness: 0.08,
-      reliability: 0.1,
-      coverage: 0.08,
-      notes: "Intermarket adapter interfaces exist, but no real provider is active.",
-      limitations: ["Intermarket confirmation is not real evidence yet."]
+      label: input.smtState ? `SMT / intermarket divergence (${input.smtState})` : "ES/NQ, YM/ES, bonds, crude, gold",
+      sourceType:
+        input.smtState === "unavailable"
+          ? "unavailable"
+          : input.smtState && input.smtState !== "none"
+            ? derived
+            : "planned",
+      completeness: input.smtState === "unavailable" ? 0.04 : input.smtState && input.smtState !== "none" ? 0.42 : 0.08,
+      freshness: input.smtState === "unavailable" ? 0.04 : input.smtState && input.smtState !== "none" ? 0.38 : 0.08,
+      reliability: input.smtState === "unavailable" ? 0.04 : input.smtState && input.smtState !== "none" ? 0.44 : 0.1,
+      coverage: input.smtState === "unavailable" ? 0.04 : input.smtState && input.smtState !== "none" ? resultCoverage : 0.08,
+      notes:
+        input.smtState === "unavailable"
+          ? "SMT is unavailable because correlated NQ/ES/YM candle evidence is missing."
+          : input.smtState && input.smtState !== "none"
+            ? "SMT is derived from correlated candle windows and must be treated as confirmation only."
+            : "Intermarket adapter interfaces exist, but no real provider is active.",
+      limitations:
+        input.smtState === "unavailable"
+          ? ["SMT unavailable - correlated instruments missing.", "Unavailable SMT must not be treated as confirmation."]
+          : ["Intermarket confirmation is a confidence filter only and cannot create standalone bias or execution authority."]
     }),
     entry({
       category: "COT / positioning",

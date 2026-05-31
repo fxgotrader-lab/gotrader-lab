@@ -1,5 +1,10 @@
 import type { InternalAgentDefinition, InternalAgentRunContext } from "@/lib/agents/agentTypes";
-import { analyzeGrinchPhase1, analyzeGrinchPhase2Reversal, analyzeGrinchPhase3Consolidation } from "@/lib/strategyLibrary";
+import {
+  analyzeGrinchPhase1,
+  analyzeGrinchPhase2Reversal,
+  analyzeGrinchPhase3Consolidation,
+  analyzeGrinchPhase4Smt
+} from "@/lib/strategyLibrary";
 import type { MarketBias, MarketRegime } from "@/lib/types";
 import { clamp } from "@/lib/utils";
 
@@ -59,6 +64,45 @@ const grinchConsolidationFor = (context: InternalAgentRunContext) => {
     fairValueGaps: context.ictContext.fairValueGaps,
     liquiditySweeps: context.ictContext.liquiditySweeps,
     phase1,
+    options: {
+      symbol: context.marketContext.symbol,
+      timeframe: context.marketContext.timeframe,
+      currentTimestamp: context.marketContext.priceVolume.ohlcv.candles[context.marketContext.priceVolume.ohlcv.candles.length - 1]?.timestamp
+    }
+  });
+};
+
+const grinchSmtFor = (context: InternalAgentRunContext) => {
+  const phase1 = grinchPhase1For(context);
+  const reversal = analyzeGrinchPhase2Reversal({
+    candles: context.marketContext.priceVolume.ohlcv.candles,
+    fairValueGaps: context.ictContext.fairValueGaps,
+    liquiditySweeps: context.ictContext.liquiditySweeps,
+    phase1,
+    options: {
+      symbol: context.marketContext.symbol,
+      timeframe: context.marketContext.timeframe,
+      currentTimestamp: context.marketContext.priceVolume.ohlcv.candles[context.marketContext.priceVolume.ohlcv.candles.length - 1]?.timestamp
+    }
+  });
+  const consolidation = analyzeGrinchPhase3Consolidation({
+    candles: context.marketContext.priceVolume.ohlcv.candles,
+    fairValueGaps: context.ictContext.fairValueGaps,
+    liquiditySweeps: context.ictContext.liquiditySweeps,
+    phase1,
+    options: {
+      symbol: context.marketContext.symbol,
+      timeframe: context.marketContext.timeframe,
+      currentTimestamp: context.marketContext.priceVolume.ohlcv.candles[context.marketContext.priceVolume.ohlcv.candles.length - 1]?.timestamp
+    }
+  });
+  return analyzeGrinchPhase4Smt({
+    candles: context.marketContext.priceVolume.ohlcv.candles,
+    fairValueGaps: context.ictContext.fairValueGaps,
+    liquiditySweeps: context.ictContext.liquiditySweeps,
+    phase1,
+    reversal,
+    consolidation,
     options: {
       symbol: context.marketContext.symbol,
       timeframe: context.marketContext.timeframe,
@@ -349,6 +393,51 @@ export const researchAgentRegistry: InternalAgentDefinition[] = [
             ? "Treat consolidation profile as research-only; expansion still needs lower-timeframe confirmation."
             : "Do not use Consolidation Profile until 12AM range, raid, and displacement evidence align with HTF bias.",
         ictTags: ["session timing", "premium/discount", "displacement"]
+      };
+    }
+  },
+  {
+    agentId: "grinch-smt-intermarket-agent",
+    name: "SMT / Intermarket Divergence Agent",
+    layer: "strategy",
+    weight: 0.04,
+    run(context) {
+      const smt = grinchSmtFor(context);
+      const bias: MarketBias =
+        smt.smtState === "bullish_confirmation"
+          ? "bullish"
+          : smt.smtState === "bearish_confirmation"
+            ? "bearish"
+            : "neutral";
+      const warningFactors = [
+        ...smt.missingEvidence.slice(0, 4),
+        ...(smt.conflictWarning ? [smt.conflictWarning] : []),
+        ...(smt.smtState === "none" ? ["Missing SMT confirmation does not invalidate the setup, but it should not be counted as confirmation."] : [])
+      ];
+      return {
+        agentId: "grinch-smt-intermarket-agent",
+        name: "SMT / Intermarket Divergence Agent",
+        layer: "strategy",
+        bias,
+        confidence: clamp(
+          0.32 +
+            (smt.smtState === "bullish_confirmation" || smt.smtState === "bearish_confirmation" ? 0.2 : 0) +
+            (smt.smtState === "conflict" ? -0.08 : 0) +
+            smt.confidenceAdjustment * 0.4,
+          0.24,
+          0.78
+        ),
+        weight: 0.04,
+        reasoning: `SMT is ${smt.smtState}; pair ${smt.primaryPair}; divergence ${smt.divergenceType}; active profile ${smt.activeProfile}.`,
+        supportingFactors: smt.reasons.slice(0, 4),
+        warningFactors,
+        recommendation:
+          smt.smtState === "unavailable"
+            ? "Treat SMT as missing evidence until correlated ES/YM candles are available."
+            : smt.smtState === "conflict"
+              ? "Lower confidence or block weak setups when SMT conflicts with the active Grinch profile."
+              : "Use SMT only as confirmation after HTF bias, PD reaction, 12AM/Sunday context, and the 15m profile already align.",
+        ictTags: ["higher-timeframe bias", "liquidity sweep", "session timing"]
       };
     }
   },

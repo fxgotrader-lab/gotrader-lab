@@ -31,7 +31,12 @@ import {
   loadPreparedCandleSource
 } from "@/lib/marketData";
 import { mockCandles } from "@/lib/mockData/mockCandles";
-import { analyzeGrinchPhase1, analyzeGrinchPhase2Reversal, analyzeGrinchPhase3Consolidation } from "@/lib/strategyLibrary";
+import {
+  analyzeGrinchPhase1,
+  analyzeGrinchPhase2Reversal,
+  analyzeGrinchPhase3Consolidation,
+  analyzeGrinchPhase4Smt
+} from "@/lib/strategyLibrary";
 import type { Candle, MarketStructureEvent, SessionContext } from "@/lib/types";
 
 const formatTime = (timestamp: string) => timestamp.slice(11, 16);
@@ -125,7 +130,22 @@ export function ICTLab() {
         currentTimestamp: latestAnalysisCandle?.timestamp
       }
     });
-    return { bos, gaps, grinchConsolidationProfile, grinchPhase1, grinchReversalProfile, mss, sessions, structureEvents, sweeps, swings, zone };
+    const grinchSmtProfile = analyzeGrinchPhase4Smt({
+      candles: activeCandles,
+      fairValueGaps: gaps,
+      liquiditySweeps: sweeps,
+      structureEvents,
+      swings,
+      phase1: grinchPhase1,
+      reversal: grinchReversalProfile,
+      consolidation: grinchConsolidationProfile,
+      options: {
+        symbol: latestAnalysisCandle?.symbol,
+        timeframe: latestAnalysisCandle?.timeframe,
+        currentTimestamp: latestAnalysisCandle?.timestamp
+      }
+    });
+    return { bos, gaps, grinchConsolidationProfile, grinchPhase1, grinchReversalProfile, grinchSmtProfile, mss, sessions, structureEvents, sweeps, swings, zone };
   }, [activeCandles]);
 
   const latestCandle = activeCandles[activeCandles.length - 1];
@@ -352,6 +372,74 @@ export function ICTLab() {
               <p className="font-medium">Consolidation profile missing evidence</p>
               <ul className="mt-2 space-y-1">
                 {analysis.grinchConsolidationProfile.missingEvidence.slice(0, 5).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card className="border-fuchsia-400/20 bg-fuchsia-400/5">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Grinch ICT Phase 4 / SMT Intermarket Confirmation</CardTitle>
+              <CardDescription>
+                Confirms or conflicts with the active Grinch profile by comparing NQ, ES, and YM liquidity raids. It cannot create standalone trade signals.
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge
+                variant={
+                  analysis.grinchSmtProfile.smtState === "bullish_confirmation" || analysis.grinchSmtProfile.smtState === "bearish_confirmation"
+                    ? "success"
+                    : analysis.grinchSmtProfile.smtState === "conflict"
+                      ? "danger"
+                      : analysis.grinchSmtProfile.smtState === "unavailable"
+                        ? "warning"
+                        : "muted"
+                }
+              >
+                SMT {analysis.grinchSmtProfile.smtState.replace(/_/g, " ")}
+              </Badge>
+              <Badge variant="secondary">{analysis.grinchSmtProfile.primaryPair}</Badge>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <StatusTile
+              label="Divergence"
+              value={analysis.grinchSmtProfile.divergenceType.replace(/_/g, " ")}
+              detail={`Liquidity taken: ${analysis.grinchSmtProfile.liquidityTaken}`}
+            />
+            <StatusTile
+              label="Leader / non-confirming"
+              value={`${analysis.grinchSmtProfile.leaderInstrument} / ${analysis.grinchSmtProfile.nonConfirmingInstrument}`}
+              detail={`Pair: ${analysis.grinchSmtProfile.primaryPair}`}
+            />
+            <StatusTile
+              label="Supports bias"
+              value={String(analysis.grinchSmtProfile.supportsBias)}
+              detail={`Supports profile: ${String(analysis.grinchSmtProfile.supportsActiveProfile)}`}
+            />
+            <StatusTile
+              label="Confidence adjustment"
+              value={String(analysis.grinchSmtProfile.confidenceAdjustment)}
+              detail={`Active profile: ${analysis.grinchSmtProfile.activeProfile.replace(/_/g, " ")}`}
+            />
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <InfoBox title="Confirmation rule" body="SMT can support or weaken an existing HTF/profile thesis, but it cannot create bias or an entry by itself." />
+            <InfoBox title="Profile reason" body={analysis.grinchSmtProfile.reasons[0] ?? "No SMT confirmation is available yet."} />
+            <InfoBox title="Conflict warning" body={analysis.grinchSmtProfile.conflictWarning ?? "No SMT conflict warning."} />
+          </div>
+          {analysis.grinchSmtProfile.missingEvidence.length ? (
+            <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+              <p className="font-medium">SMT missing evidence</p>
+              <ul className="mt-2 space-y-1">
+                {analysis.grinchSmtProfile.missingEvidence.slice(0, 5).map((item) => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>

@@ -109,6 +109,21 @@ export interface LLMGrinchConsolidationProfileSummary {
   missingEvidence: string[];
 }
 
+export interface LLMGrinchSmtSummary {
+  smtState: string;
+  primaryPair: string;
+  leaderInstrument: string;
+  nonConfirmingInstrument: string;
+  liquidityTaken: string;
+  divergenceType: string;
+  supportsBias: boolean | "unclear";
+  supportsActiveProfile: boolean | "unclear";
+  confidenceAdjustment: number;
+  conflictWarning?: string;
+  reasons: string[];
+  missingEvidence: string[];
+}
+
 export interface LLMBaselineDebateSummary {
   agentId: string;
   agentName: string;
@@ -195,6 +210,7 @@ export interface LLMResearchContextPacket {
   grinchPhase1Summary?: LLMGrinchPhase1Summary;
   grinchReversalProfileSummary?: LLMGrinchReversalProfileSummary;
   grinchConsolidationProfileSummary?: LLMGrinchConsolidationProfileSummary;
+  grinchSmtSummary?: LLMGrinchSmtSummary;
   marketContextSummary?: LLMMarketContextSummary;
   evidenceQualitySummary?: LLMEvidenceQualitySummary;
   deterministicICTFacts: string[];

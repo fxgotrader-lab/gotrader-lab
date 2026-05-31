@@ -298,6 +298,12 @@ export function MissionControlShell({ state }: { state: LabState }) {
               runtimeSnapshot?.latestResearchCycle.activeGrinchProfileSummary
                 ? `${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.profile.replace(/_/g, " ")} / ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.state} / ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.entryIntent}`
                 : "not available"
+            ],
+            [
+              "SMT confirmation",
+              runtimeSnapshot?.latestResearchCycle.smtSummary
+                ? `${runtimeSnapshot.latestResearchCycle.smtSummary.smtState.replace(/_/g, " ")} / ${runtimeSnapshot.latestResearchCycle.smtSummary.primaryPair} / supports profile ${String(runtimeSnapshot.latestResearchCycle.smtSummary.supportsActiveProfile)}`
+                : "not available"
             ]
           ].map(([label, value]) => (
             <div key={label} className="rounded-lg border border-white/10 bg-slate-950/55 p-3">
@@ -719,7 +725,10 @@ function buildKeyMetrics(snapshot?: ResearchRuntimeSnapshot, run?: AutonomousRes
     {
       label: "Evidence",
       value: `${snapshot?.evidence.evidenceQualityScore ?? 0}/100`,
-      detail: snapshot?.evidence.weakestEvidenceCategories[0]?.replace(/_/g, " ") ?? "ledger pending"
+      detail:
+        snapshot?.latestResearchCycle.smtSummary?.smtState === "unavailable"
+          ? "SMT unavailable: correlated instruments missing"
+          : snapshot?.evidence.weakestEvidenceCategories[0]?.replace(/_/g, " ") ?? "ledger pending"
     },
     {
       label: "Handoff gate",

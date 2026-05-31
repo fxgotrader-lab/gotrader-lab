@@ -16,7 +16,7 @@ import { buildMarketContext, summarizeMarketContext } from "@/lib/marketData";
 import type { MarketContext } from "@/lib/marketData";
 import type { ResearchQualityReview } from "@/lib/researchQuality";
 import type { SimulationRunbookState } from "@/lib/simulationRunbook";
-import { analyzeGrinchPhase1, analyzeGrinchPhase2Reversal, analyzeGrinchPhase3Consolidation } from "@/lib/strategyLibrary";
+import { analyzeGrinchPhase1, analyzeGrinchPhase2Reversal, analyzeGrinchPhase3Consolidation, analyzeGrinchPhase4Smt } from "@/lib/strategyLibrary";
 import { countCompletedRunbookItems, simulationRunbookChecklist } from "@/lib/simulationRunbook";
 import type { DebateSession, LabState, TradeThesis } from "@/lib/types";
 import { safeArray, uid } from "@/lib/utils";
@@ -95,6 +95,19 @@ export function buildLLMResearchContextPacket({
         }
       })
     : undefined;
+  const grinchSmt = sourceMarketContext?.priceVolume.ohlcv.candles.length && grinchPhase1
+    ? analyzeGrinchPhase4Smt({
+        candles: sourceMarketContext.priceVolume.ohlcv.candles,
+        phase1: grinchPhase1,
+        reversal: grinchReversalProfile,
+        consolidation: grinchConsolidationProfile,
+        options: {
+          symbol: thesis?.symbol,
+          timeframe: thesis?.timeframe,
+          currentTimestamp: sourceMarketContext.priceVolume.ohlcv.candles[sourceMarketContext.priceVolume.ohlcv.candles.length - 1]?.timestamp
+        }
+      })
+    : undefined;
   const compactEvidenceSummary = evidenceQualitySummary
     ? compactEvidenceQualitySummary(evidenceQualitySummary)
     : compactEvidenceQualitySummary(buildEvidenceLedger({
@@ -105,7 +118,8 @@ export function buildLLMResearchContextPacket({
         researchWindow: 0,
         validationId: validation?.id,
         researchQualityId: quality?.id,
-        readinessState: readiness?.state
+        readinessState: readiness?.state,
+        smtState: grinchSmt?.smtState
       }));
   const validationScenarios = safeArray(validation?.scenarios);
   const qualityWeaknesses = safeArray(quality?.topWeaknesses);
@@ -196,6 +210,22 @@ export function buildLLMResearchContextPacket({
           missingEvidence: grinchConsolidationProfile.missingEvidence.slice(0, 6)
         }
       : undefined,
+    grinchSmtSummary: grinchSmt
+      ? {
+          smtState: grinchSmt.smtState,
+          primaryPair: grinchSmt.primaryPair,
+          leaderInstrument: grinchSmt.leaderInstrument,
+          nonConfirmingInstrument: grinchSmt.nonConfirmingInstrument,
+          liquidityTaken: grinchSmt.liquidityTaken,
+          divergenceType: grinchSmt.divergenceType,
+          supportsBias: grinchSmt.supportsBias,
+          supportsActiveProfile: grinchSmt.supportsActiveProfile,
+          confidenceAdjustment: grinchSmt.confidenceAdjustment,
+          conflictWarning: grinchSmt.conflictWarning,
+          reasons: grinchSmt.reasons.slice(0, 6),
+          missingEvidence: grinchSmt.missingEvidence.slice(0, 6)
+        }
+      : undefined,
     marketContextSummary: marketContext,
     evidenceQualitySummary: compactEvidenceSummary,
     deterministicICTFacts: [
@@ -210,6 +240,7 @@ export function buildLLMResearchContextPacket({
       `Grinch Phase 1: ${grinchPhase1 ? `${grinchPhase1.htfBias}/${grinchPhase1.modelOneState}/${grinchPhase1.timingGrade}` : "missing"}`,
       `Grinch Reversal Profile: ${grinchReversalProfile ? `${grinchReversalProfile.reversalProfileState}/${grinchReversalProfile.nyReversalWindow}/${grinchReversalProfile.entryIntent}` : "missing"}`,
       `Grinch Consolidation Profile: ${grinchConsolidationProfile ? `${grinchConsolidationProfile.consolidationProfileState}/${grinchConsolidationProfile.liquidityRaidState}/${grinchConsolidationProfile.entryIntent}` : "missing"}`,
+      `Grinch SMT: ${grinchSmt ? `${grinchSmt.smtState}/${grinchSmt.primaryPair}/${grinchSmt.divergenceType}` : "missing"}`,
       `Evidence quality score: ${compactEvidenceSummary.overallScore}/100`,
       `Evidence quality labels: ${compactEvidenceSummary.entries
         .map((item) => `${item.category}=${item.sourceType}`)

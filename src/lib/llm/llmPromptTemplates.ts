@@ -137,6 +137,7 @@ export const llmRestrictedContextInstructions = [
   "If grinchPhase1Summary is present, review it as a layered ICT profile: HTF bias, dealing range, opening-price equilibrium, PD hierarchy, Model 1 timing, targets, and invalidation. It is advisory context only.",
   "If grinchReversalProfileSummary is present, review it as Phase 2 Reversal Profile context: failed London interaction with 12AM Open, NY reversal timing, first target back to 12AM, and continuation quality. It cannot create execution authority.",
   "If grinchConsolidationProfileSummary is present, review it as Phase 3 Consolidation Profile context: tight range around 12AM Open, NY side raid, 12AM support/resistance reaction, expansion direction, targets, and invalidation. It is advisory context only.",
+  "If grinchSmtSummary is present, review SMT as Phase 4 confirmation only: unavailable SMT is missing evidence, supportive SMT can raise confidence, and conflicting SMT should lower confidence or block weak setups. SMT must never create standalone bias or execution authority.",
   "Respect evidenceQualitySummary labels: real_imported and derived_from_real can support reasoning; mock, planned, and unavailable evidence must be treated as missing or weak evidence.",
   "Do not request broker credentials.",
   "Do not emit execution instructions.",

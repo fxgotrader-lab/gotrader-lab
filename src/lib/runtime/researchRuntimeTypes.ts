@@ -6,7 +6,12 @@ import type { CandleDataSourceMode, CandleWindowSettings, PreparedCandleSource, 
 import type { CanonicalPerformanceMetrics } from "@/lib/performance/canonicalMetrics";
 import type { SimulatedAccount } from "@/lib/performance/simulatedAccount";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
-import type { GrinchPhase1ModelOutput, GrinchPhase2ReversalModelOutput, GrinchPhase3ConsolidationModelOutput } from "@/lib/strategyLibrary";
+import type {
+  GrinchPhase1ModelOutput,
+  GrinchPhase2ReversalModelOutput,
+  GrinchPhase3ConsolidationModelOutput,
+  GrinchPhase4SmtModelOutput
+} from "@/lib/strategyLibrary";
 import type {
   ResearchCycleBacktestSummary,
   ResearchCycleQualitySummary,
@@ -104,6 +109,17 @@ export interface RuntimeResearchCycleState {
   grinchPhase1Summary?: GrinchPhase1ModelOutput;
   grinchPhase2ReversalSummary?: GrinchPhase2ReversalModelOutput;
   grinchPhase3ConsolidationSummary?: GrinchPhase3ConsolidationModelOutput;
+  grinchPhase4SmtSummary?: GrinchPhase4SmtModelOutput;
+  smtSummary?: {
+    smtState: GrinchPhase4SmtModelOutput["smtState"];
+    primaryPair: GrinchPhase4SmtModelOutput["primaryPair"];
+    divergenceType: GrinchPhase4SmtModelOutput["divergenceType"];
+    supportsBias: GrinchPhase4SmtModelOutput["supportsBias"];
+    supportsActiveProfile: GrinchPhase4SmtModelOutput["supportsActiveProfile"];
+    confidenceAdjustment: number;
+    conflictWarning?: string;
+    detail: string;
+  };
   activeGrinchProfileSummary?: {
     profile: "model_1" | "reversal" | "consolidation" | "none";
     state: string;

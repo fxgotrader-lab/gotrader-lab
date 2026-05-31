@@ -578,6 +578,25 @@ const agentSeeds: AgentSeed[] = [
     tags: ["strategy", "ict", "grinch", "consolidation profile"]
   },
   {
+    id: "strategy-grinch-smt-intermarket",
+    name: "SMT / Intermarket Divergence Agent",
+    layer: "strategy",
+    domain: "Grinch Phase 4 SMT confirmation",
+    description: "Compares NQ, ES, and YM liquidity raids for SMT confirmation or conflict after bias and profile logic are established.",
+    active: true,
+    weight: 0.04,
+    prompt: `${promptGuardrail} Treat SMT as confirmation only. If correlated ES/YM candles are missing, mark SMT unavailable and do not fabricate intermarket evidence.`,
+    confidence: 0.48,
+    historySeed: [0.4, 0.42, 0.44, 0.46, 0.47, 0.48],
+    hitRate: 0.5,
+    wins: 9,
+    losses: 9,
+    drawdown: 0.09,
+    sharpeLike: 0.58,
+    confidenceCalibration: 0.62,
+    tags: ["strategy", "ict", "grinch", "smt", "intermarket"]
+  },
+  {
     id: "strategy-grinch-time-price",
     name: "Time-Price Alignment Agent",
     layer: "strategy",
