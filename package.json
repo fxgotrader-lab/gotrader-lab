@@ -8,7 +8,10 @@
     "llm:bridge": "node scripts/llm-local-bridge-server.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "smoke:routes": "node scripts/smoke-routes.mjs",
+    "smoke:http": "node scripts/smoke-routes.mjs",
+    "smoke:browser": "node scripts/run-playwright-smoke.mjs",
+    "smoke:routes": "npm run smoke:browser",
+    "test:smoke": "npm run smoke:browser",
     "import:local-mnq-history": "node scripts/import-local-mnq-history.mjs",
     "test:twelvedata": "node scripts/test-twelve-data.mjs",
     "test:agent-bridge-contracts": "node scripts/test-agent-bridge-contracts.mjs",
@@ -30,6 +33,7 @@
     "tailwind-merge": "^2.6.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/node": "^22.10.2",
     "@types/react": "^19.2.6",
     "@types/react-dom": "^19.2.3",

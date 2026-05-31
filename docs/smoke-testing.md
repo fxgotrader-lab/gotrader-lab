@@ -1,18 +1,35 @@
-# Route Smoke Testing
+# Browser Smoke Testing
 
-GoTrader AI Lab includes a lightweight route smoke test for quick regression checks after UI, routing, charting, or runtime snapshot changes.
+GoTrader AI Lab now uses Playwright for real browser smoke testing. The suite verifies route rendering, client-side navigation, chart surfaces, Command Center safety locks, and critical no-execution UI guarantees.
 
-## Command
+## Commands
+
+Build first, then run the browser smoke suite:
 
 ```bash
 npm run build
 npm run smoke:routes
 ```
 
-The smoke command starts a tiny local static server from `dist` unless `SMOKE_BASE_URL` is provided.
+Equivalent commands:
 
 ```bash
-SMOKE_BASE_URL=http://127.0.0.1:5181 npm run smoke:routes
+npm run smoke:browser
+npm run test:smoke
+```
+
+The older dependency-free HTTP checker remains available for quick static route checks:
+
+```bash
+npm run smoke:http
+```
+
+## Playwright Browser Install
+
+The project uses `@playwright/test` and Chromium. If Chromium is missing on a new machine, run:
+
+```bash
+npx playwright install chromium
 ```
 
 ## Routes Covered
@@ -44,59 +61,63 @@ Advanced routes:
 - `/research-maturity`
 - `/simulation-runbook`
 
-## Modes
+Chart routes:
 
-### HTTP Fallback Mode
+- `/dashboard`
+- `/ict-lab`
+- `/replay`
+- `/backtest-lab`
+- `/market-data`
 
-The current repository does not include Playwright. Without Playwright, `npm run smoke:routes` performs a dependency-free built-app route check:
+## Browser Checks
 
-- each route returns HTTP 200 from the built static app
-- each route serves the React root
-- no Vite transform or error-overlay text appears in the HTML
+The Playwright suite checks:
 
-Browser-only checks are reported as skipped in this mode:
-
-- console error inspection
-- chart canvas rendering
-- client-side navigation
-- dashboard safety text visibility
-- interactive execution-control scan
-
-### Playwright Mode
-
-If the `playwright` package is added later, the same script automatically upgrades to a rendered browser smoke test. In that mode it checks:
-
-- route loads without Vite overlay
-- no obvious console/page errors
-- main content renders
-- Dashboard shows broker execution disabled
-- chart routes render a canvas or chart fallback
-- nav clicks move between primary routes without refresh
-- Advanced Lab can expand and navigate to ICT Lab
-- visible controls do not expose broker/live/order execution actions
-
-If Playwright is installed but Chromium is missing, the script falls back to HTTP mode and prints a warning.
+- page loads without a Vite overlay
+- no uncaught page errors
+- no severe console errors
+- main content is visible
+- primary sidebar navigation works without full document refresh
+- dashboard shows broker execution disabled and safety language
+- Command Center progress panel is visible
+- Go-Trader and Tradovate gates remain locked
+- chart routes render a canvas or safe fallback
+- replay still renders after navigation from another chart route
+- Settings shows the multi-broker architecture status
+- no visible order/live/broker execution controls are exposed
 
 ## Environment
 
-Optional environment variables:
+Optional variables:
 
-- `SMOKE_BASE_URL`: use an already-running app instead of starting the built-app static server.
-- `SMOKE_PORT`: preferred local static-server port.
-- `SMOKE_ROUTE_TIMEOUT_MS`: per-route timeout, default `15000`.
+- `PLAYWRIGHT_BASE_URL`: use an already-running app instead of starting `vite preview`.
+- `PLAYWRIGHT_PORT`: preview port, default `4173`.
+
+The tests run against the built app in `dist`, served by `scripts/playwright-static-server.mjs` through the wrapper `scripts/run-playwright-smoke.mjs`, so `npm run build` should run first. The wrapper starts a free local port, sets `PLAYWRIGHT_BASE_URL`, runs Playwright, and shuts the static server down after the suite.
 
 ## Safety Expectation
 
-Smoke testing is read-only. It must not enable broker execution, live trading, Tradovate, TopStep, websocket feeds, readiness override, or order execution.
+Smoke testing is read-only. It must not require:
 
-## When To Run
+- OpenAI API keys
+- LLM bridge
+- imported MNQ data
+- Tradovate
+- MT5
+- broker credentials
+- websocket feeds
 
-Run this after changes to:
+It must not enable:
 
-- `src/App.tsx`
-- `src/components/AppShell.tsx`
-- Dashboard mission-control components
-- charting components
-- runtime snapshot selectors
-- route-level pages
-- safety banners or readiness displays
+- broker execution
+- live trading
+- order placement
+- go-trader handoff
+- readiness override
+
+## Reports
+
+Playwright HTML and trace artifacts are ignored by git:
+
+- `playwright-report/`
+- `test-results/`

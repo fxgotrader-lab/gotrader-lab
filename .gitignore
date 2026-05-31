@@ -5,6 +5,9 @@ dist
 .DS_Store
 logs
 coverage
+debug.log
+playwright-report
+test-results
 exports/*.json
 !exports/.gitkeep
 advisory/requests/*.json
