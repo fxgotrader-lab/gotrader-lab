@@ -290,9 +290,19 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
     setTradingViewStatus(resolveTradingViewMcpStatus());
   };
 
+  const enableTradingViewBridgeForManualCheck = () => {
+    if (tradingViewSettings.enabled) {
+      return tradingViewSettings;
+    }
+    const next = saveTradingViewMcpSettings({ ...tradingViewSettings, enabled: true });
+    setTradingViewSettings(next);
+    return next;
+  };
+
   const checkTradingViewBridge = async () => {
     setTradingViewStatusMessage("Checking TradingView MCP bridge...");
-    const status = await checkAndStoreTradingViewMcpStatus(tradingViewSettings);
+    const settings = enableTradingViewBridgeForManualCheck();
+    const status = await checkAndStoreTradingViewMcpStatus(settings);
     setTradingViewStatus(resolveTradingViewMcpStatus());
     setTradingViewStatusMessage(status.message);
   };
@@ -301,7 +311,8 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
     const symbol = state.tradeTheses[0]?.symbol ?? "MNQ";
     const timeframe = state.tradeTheses[0]?.timeframe ?? "5m";
     setTradingViewStatusMessage(`Requesting TradingView chart evidence for ${symbol} ${timeframe}...`);
-    const result = await fetchAndStoreTradingViewEvidence({ settings: tradingViewSettings, symbol, timeframe });
+    const settings = enableTradingViewBridgeForManualCheck();
+    const result = await fetchAndStoreTradingViewEvidence({ settings, symbol, timeframe });
     setTradingViewStatus(resolveTradingViewMcpStatus());
     setTradingViewStatusMessage(result.evidence ? `Stored chart evidence ${result.evidence.evidenceId}.` : result.status.message);
   };
