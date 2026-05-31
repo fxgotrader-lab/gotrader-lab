@@ -38,6 +38,8 @@ http://127.0.0.1:7331
 
 The URL is stored as non-secret local UI settings. No API keys or broker credentials are stored by this bridge configuration.
 
+The upstream TradingView MCP project is MCP/CLI/CDP based, not this HTTP API directly. GoTrader provides an optional local wrapper script. See `docs/tradingview-mcp-local-setup.md`.
+
 The bridge expects a local read-only HTTP wrapper around the TradingView MCP server. The app probes:
 
 - `GET /health`
@@ -154,3 +156,10 @@ npm.cmd run test:tradingview-mcp
 ```
 
 If no local bridge is running, the command reports disconnected but exits successfully. This is expected for development machines without TradingView MCP active.
+
+Start the optional wrapper:
+
+```powershell
+$env:TRADINGVIEW_MCP_REPO_DIR="C:\Users\andre\tradingview-mcp"
+npm.cmd run tradingview:mcp-bridge
+```
