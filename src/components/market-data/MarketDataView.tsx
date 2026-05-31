@@ -487,8 +487,8 @@ export function MarketDataView() {
           <p className="text-sm uppercase text-primary">Market data architecture</p>
           <h2 className="mt-1 text-3xl font-semibold tracking-normal">Market Data Context</h2>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Planning layer for future market data APIs plus local historical file imports. Excel/CSV candles are used
-            only as simulation research inputs, never as live feeds or broker execution instructions.
+            Advanced data inspection and import management. Most users should operate from Command Center for
+            TradingView MCP connection, chart activation, research eligibility, and autonomous research startup.
           </p>
         </div>
         <Badge variant={activeSource.mode === "imported" ? "success" : "warning"}>
@@ -497,6 +497,14 @@ export function MarketDataView() {
       </div>
 
       <SafetyLockBanner message="Market data adapters are research inputs only. No broker execution or live trading." />
+
+      <div className="rounded-xl border border-cyan-300/25 bg-cyan-300/10 p-4 text-sm text-cyan-100">
+        <p className="font-semibold">Command Center is the primary operating surface.</p>
+        <p className="mt-1 text-cyan-100/80">
+          Use Dashboard / Command Center to connect TradingView MCP, activate the chart feed, check research-source eligibility,
+          and start autonomous research. This page is for advanced source inspection, local imports, and troubleshooting.
+        </p>
+      </div>
 
       <Card>
         <CardHeader>

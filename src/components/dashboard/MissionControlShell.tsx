@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ExternalLink, Lock, ShieldCheck } from "lucide-react";
+import { Activity, ExternalLink, Lock, RadioTower, ShieldCheck, Zap } from "lucide-react";
 
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { TradingChart } from "@/components/charts/TradingChart";
@@ -27,11 +27,20 @@ import { createPlannedHermesNotificationState } from "@/lib/integrations/hermesN
 import { createPlannedOpenClawMemoryHookState } from "@/lib/integrations/openclawMemoryHooks";
 import { paperclipAgentOperationsPolicy } from "@/lib/integrations/paperclipAuthorityPolicy";
 import {
+  checkAndStoreTradingViewMcpStatus,
+  createActiveTradingViewMcpChartFeed,
+  fetchAndStoreTradingViewMcpChartFeed,
+  fetchTradingViewMcpCandles,
+  fetchTradingViewMcpQuote,
   loadActiveTradingViewMcpChartFeed,
+  loadTradingViewMcpSettings,
+  saveActiveTradingViewMcpChartFeed,
+  saveTradingViewMcpSettings,
   TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT,
   TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
   TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT,
-  tradingViewMcpAdapterPlan
+  tradingViewMcpAdapterPlan,
+  type ActiveTradingViewMcpChartFeed
 } from "@/lib/integrations/tradingview";
 import { mt5ExecutionAdapterPlan } from "@/lib/brokers/mt5";
 import { tradovateExecutionAdapterPlan } from "@/lib/brokers/tradovate";
@@ -70,6 +79,16 @@ const pct = (value?: number) =>
   typeof value === "number" && Number.isFinite(value) ? `${(value * 100).toFixed(0)}%` : "n/a";
 
 const formatToken = (value?: string) => (value ?? "idle").replace(/_/g, " ");
+const formatBool = (value?: boolean) => (typeof value === "boolean" ? (value ? "yes" : "no") : "unknown");
+
+type CommandCenterDataEvent = {
+  detail: string;
+  id: string;
+  severity: MissionFeedItem["severity"];
+  sourceFingerprint?: string;
+  timestamp: string;
+  title: string;
+};
 
 const buildCommandCenterChartData = (snapshot?: ResearchRuntimeSnapshot) => {
   const tradingViewFeed = loadActiveTradingViewMcpChartFeed();
@@ -102,6 +121,9 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const [noImprovementStop, setNoImprovementStop] = useState("2");
   const [autoApplyPolicyEnabled, setAutoApplyPolicyEnabled] = useState(false);
   const [advancedFullResearchMode, setAdvancedFullResearchMode] = useState(false);
+  const [tradingViewBusy, setTradingViewBusy] = useState(false);
+  const [tradingViewOperationMessage, setTradingViewOperationMessage] = useState("TradingView MCP chart feed not active.");
+  const [dataConnectionEvents, setDataConnectionEvents] = useState<CommandCenterDataEvent[]>([]);
   const latestRun = liveRun ?? latestAutonomousResearchRun(autonomyState);
   const currentIteration = latestRun?.iterations.find((iteration) => iteration.iteration === latestRun.currentIteration);
   const recoveryRun = !busy && autonomyState.activeRun?.status === "running" ? autonomyState.activeRun : undefined;
@@ -109,6 +131,193 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const refresh = () => {
     setAutonomyState(loadAutonomousResearchState());
     void resolveResearchRuntimeSnapshot({ labState: state }).then(setRuntimeSnapshot).catch(() => undefined);
+  };
+
+  const resolveAndStoreRuntime = async () => {
+    const snapshot = await resolveResearchRuntimeSnapshot({ labState: state });
+    setRuntimeSnapshot(snapshot);
+    return snapshot;
+  };
+
+  const addDataConnectionEvent = (
+    title: string,
+    detail: string,
+    severity: MissionFeedItem["severity"],
+    sourceFingerprint?: string
+  ) => {
+    setDataConnectionEvents((events) =>
+      safeTopN(
+        [
+          {
+            detail,
+            id: uid("command_data_event"),
+            severity,
+            sourceFingerprint,
+            timestamp: new Date().toISOString(),
+            title
+          },
+          ...events
+        ],
+        16
+      )
+    );
+  };
+
+  const commandCenterSymbol = runtimeSnapshot?.marketData.symbol ?? "MNQ";
+  const commandCenterTimeframe = runtimeSnapshot?.marketData.timeframe ?? "5m";
+
+  const connectTradingViewChart = async ({ usageMode = "chart_only" }: { usageMode?: "chart_only" | "research_source" } = {}) => {
+    setTradingViewBusy(true);
+    setTradingViewOperationMessage(`Checking TradingView MCP bridge for ${commandCenterSymbol} ${commandCenterTimeframe}...`);
+    addDataConnectionEvent(
+      "TradingView MCP status check",
+      `Checking local read-only bridge for ${commandCenterSymbol} ${commandCenterTimeframe}.`,
+      "running"
+    );
+    try {
+      const settings = saveTradingViewMcpSettings({ ...loadTradingViewMcpSettings(), enabled: true });
+      const status = await checkAndStoreTradingViewMcpStatus(settings);
+      await resolveAndStoreRuntime().catch(() => undefined);
+
+      if (status.connectionStatus !== "connected_analysis_only") {
+        const message = "Wrapper not running. Start npm.cmd run tradingview:mcp-bridge, then try again.";
+        setTradingViewOperationMessage(message);
+        addDataConnectionEvent("TradingView MCP failed", message, "failed", status.message);
+        return;
+      }
+
+      addDataConnectionEvent(
+        "TradingView MCP connected",
+        `Desktop CDP ${formatBool(status.tradingViewDesktopCdpConnected)}; chart ${status.chartSymbol ?? "unknown"} ${status.chartResolution ?? "unknown"}.`,
+        "success",
+        status.chartSymbol
+      );
+
+      setTradingViewOperationMessage(`Fetching TradingView MCP quote for ${commandCenterSymbol} ${commandCenterTimeframe}...`);
+      addDataConnectionEvent("Quote fetch started", "Requesting read-only TradingView quote.", "running");
+      const quote = await fetchTradingViewMcpQuote({ symbol: commandCenterSymbol, timeframe: commandCenterTimeframe }, settings);
+      addDataConnectionEvent(
+        quote.latestPrice ? "Quote fetched" : "Quote unavailable",
+        quote.latestPrice ? `Latest TradingView MCP price ${quote.latestPrice}.` : quote.missingEvidence.join(" ") || "No quote returned.",
+        quote.latestPrice ? "success" : "warning",
+        quote.timestamp
+      );
+
+      setTradingViewOperationMessage(`Fetching TradingView MCP candles for ${commandCenterSymbol} ${commandCenterTimeframe}...`);
+      addDataConnectionEvent("Candle fetch started", "Requesting 240 read-only candles for chart display.", "running");
+      const candles = await fetchTradingViewMcpCandles({ symbol: commandCenterSymbol, timeframe: commandCenterTimeframe, limit: 240 }, settings);
+      if (!candles.candleCount) {
+        const message =
+          candles.missingEvidence.join(" ") ||
+          "TradingView MCP wrapper connected, but no candle series was returned. Check the TradingView Desktop chart.";
+        setTradingViewOperationMessage(message);
+        addDataConnectionEvent("Candles unavailable", message, "failed");
+        await resolveAndStoreRuntime().catch(() => undefined);
+        return;
+      }
+
+      const feed = saveActiveTradingViewMcpChartFeed(
+        createActiveTradingViewMcpChartFeed({
+          candlesResponse: candles,
+          gotraderSymbol: commandCenterSymbol,
+          gotraderTimeframe: commandCenterTimeframe,
+          usageMode
+        })
+      );
+      await resolveAndStoreRuntime().catch(() => undefined);
+      setTradingViewOperationMessage(
+        [
+          `TradingView MCP chart source active with ${feed.candleCount.toLocaleString()} read-only candles.`,
+          feed.activeForResearch
+            ? "Ready for guarded research source use."
+            : `Research remains guarded: ${feed.researchEligibility.reasons.join(" ")}`
+        ].join(" ")
+      );
+      addDataConnectionEvent(
+        "Candles fetched",
+        `${feed.candleCount.toLocaleString()} candles from ${feed.firstTimestamp ?? "n/a"} to ${feed.lastTimestamp ?? "n/a"}.`,
+        "success",
+        feed.providerSymbol
+      );
+      addDataConnectionEvent(
+        usageMode === "research_source" && feed.activeForResearch ? "Research source switched" : "Chart source switched",
+        usageMode === "research_source" && feed.activeForResearch
+          ? "TradingView MCP is now the guarded research source. Execution remains disabled."
+          : "TradingView MCP is active for visual chart display. Research source remains guarded unless eligibility passes.",
+        usageMode === "research_source" && !feed.activeForResearch ? "warning" : "success",
+        feed.matchState
+      );
+      if (!feed.activeForResearch) {
+        addDataConnectionEvent(
+          "Research eligibility blocked",
+          feed.researchEligibility.reasons.join(" "),
+          "warning",
+          feed.researchEligibility.state
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "TradingView MCP connection failed.";
+      setTradingViewOperationMessage(message);
+      addDataConnectionEvent("TradingView MCP failed", message, "failed");
+    } finally {
+      setTradingViewBusy(false);
+    }
+  };
+
+  const useExistingTradingViewForResearch = async () => {
+    const feed = loadActiveTradingViewMcpChartFeed();
+    if (!feed?.candleCount) {
+      await connectTradingViewChart({ usageMode: "research_source" });
+      return;
+    }
+    const researchFeed: ActiveTradingViewMcpChartFeed = saveActiveTradingViewMcpChartFeed(
+      createActiveTradingViewMcpChartFeed({
+        candlesResponse: {
+          provider: "tradingview_mcp",
+          symbol: feed.providerSymbol,
+          requestedSymbol: feed.requestedSymbol,
+          chartSymbol: feed.chartSymbol,
+          chartResolution: feed.chartResolution,
+          timeframe: feed.timeframe,
+          requestedTimeframe: feed.requestedTimeframe,
+          candles: feed.candles,
+          candleCount: feed.candleCount,
+          firstTimestamp: feed.firstTimestamp,
+          lastTimestamp: feed.lastTimestamp,
+          sourceCommand: feed.sourceCommand,
+          connectionStatus: feed.connectionStatus,
+          warnings: feed.warnings,
+          missingEvidence: feed.missingEvidence,
+          mode: "read_only_chart_data",
+          executionAuthority: "none",
+          brokerAuthority: "none",
+          readinessOverrideAuthority: "none"
+        },
+        gotraderSymbol: commandCenterSymbol,
+        gotraderTimeframe: commandCenterTimeframe,
+        usageMode: "research_source"
+      })
+    );
+    await resolveAndStoreRuntime().catch(() => undefined);
+    if (researchFeed.activeForResearch) {
+      setTradingViewOperationMessage("TradingView MCP is now the guarded research source. Execution remains disabled.");
+      addDataConnectionEvent(
+        "Research source switched",
+        "TradingView MCP candles passed the research-source gate. Broker execution remains disabled.",
+        "success",
+        researchFeed.matchState
+      );
+      return;
+    }
+    setTradingViewOperationMessage(
+      `TradingView MCP remains visual-only: ${researchFeed.researchEligibility.reasons.join(" ")}`
+    );
+    addDataConnectionEvent(
+      "Research eligibility failed",
+      researchFeed.researchEligibility.reasons.join(" "),
+      "warning",
+      researchFeed.researchEligibility.state
+    );
   };
 
   useEffect(() => {
@@ -183,7 +392,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
     [busy, currentIteration?.startedAt, latestRun, runtimeSnapshot]
   );
   const actionItems = useMemo(() => buildActionItems(runtimeSnapshot, latestRun), [runtimeSnapshot, latestRun]);
-  const feedItems = useMemo(() => buildFeedItems(latestRun), [latestRun]);
+  const feedItems = useMemo(() => buildFeedItems(runtimeSnapshot, latestRun, dataConnectionEvents), [dataConnectionEvents, latestRun, runtimeSnapshot]);
   const commandCenterChart = useMemo(() => buildCommandCenterChartData(runtimeSnapshot), [runtimeSnapshot]);
   const keyMetrics = buildKeyMetrics(runtimeSnapshot, latestRun);
   const simulatedAccount = runtimeSnapshot?.performance.simulatedAccountSummary;
@@ -217,6 +426,116 @@ export function MissionControlShell({ state }: { state: LabState }) {
         loopStatus={latestRun?.status}
         snapshot={runtimeSnapshot}
       />
+
+      <section className="rounded-xl border border-cyan-300/20 bg-slate-950/85 p-4 shadow-[0_0_55px_rgba(8,145,178,0.10)]">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="max-w-3xl">
+            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">
+              <RadioTower className="h-4 w-4" aria-hidden="true" />
+              Data Connection
+            </p>
+            <h3 className="mt-2 text-xl font-semibold text-slate-50">TradingView MCP chart control</h3>
+            <p className="mt-1 text-sm text-slate-400">
+              Connect the local read-only bridge, activate chart candles, confirm research eligibility, then start autonomous research from this Command Center.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="danger">Execution disabled</Badge>
+            <Badge variant="secondary">TradingView is not broker truth</Badge>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <CommandStatusTile
+            label="TradingView MCP"
+            value={runtimeSnapshot?.tradingViewMcp.bridgeStatus.replace(/_/g, " ") ?? "checking"}
+            tone={runtimeSnapshot?.tradingViewMcp.bridgeStatus === "connected_analysis_only" ? "good" : "warn"}
+          />
+          <CommandStatusTile
+            label="TradingView Desktop CDP"
+            value={formatBool(runtimeSnapshot?.tradingViewMcp.runtime.tradingViewDesktopCdpConnected)}
+            tone={runtimeSnapshot?.tradingViewMcp.runtime.tradingViewDesktopCdpConnected ? "good" : "neutral"}
+          />
+          <CommandStatusTile
+            label="Chart feed"
+            value={runtimeSnapshot?.tradingViewMcp.chartFeedAvailable ? "active" : "inactive"}
+            detail={`${runtimeSnapshot?.tradingViewMcp.chartFeedCandleCount.toLocaleString() ?? "0"} candles`}
+            tone={runtimeSnapshot?.tradingViewMcp.chartFeedAvailable ? "good" : "warn"}
+          />
+          <CommandStatusTile
+            label="Research eligibility"
+            value={runtimeSnapshot?.tradingViewMcp.researchEligibility.replace(/_/g, " ") ?? "not checked"}
+            tone={runtimeSnapshot?.tradingViewMcp.researchEligibility === "eligible_for_research_cycle" ? "good" : "warn"}
+          />
+          <CommandStatusTile
+            label="Symbol"
+            value={runtimeSnapshot?.tradingViewMcp.chartFeedSymbol ?? commandCenterSymbol}
+            detail={runtimeSnapshot?.tradingViewMcp.symbolMatch ? "matched" : "match pending"}
+          />
+          <CommandStatusTile
+            label="Timeframe"
+            value={runtimeSnapshot?.tradingViewMcp.chartFeedTimeframe ?? commandCenterTimeframe}
+            detail={runtimeSnapshot?.tradingViewMcp.timeframeMatch ? "matched" : "guarded"}
+          />
+          <CommandStatusTile
+            label="Chart source"
+            value={runtimeSnapshot?.marketData.activeChartDisplaySourceLabel ?? "loading"}
+            tone={runtimeSnapshot?.marketData.chartDisplayUsesTradingViewMcp ? "good" : "neutral"}
+          />
+          <CommandStatusTile
+            label="Research source"
+            value={runtimeSnapshot?.marketData.activeResearchSourceLabel ?? "loading"}
+            tone={runtimeSnapshot?.marketData.researchUsesTradingViewMcp ? "good" : "neutral"}
+          />
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button onClick={() => void connectTradingViewChart()} disabled={tradingViewBusy}>
+            <Zap className="h-4 w-4" aria-hidden="true" />
+            {tradingViewBusy ? "Connecting..." : "Connect + Activate TradingView Chart"}
+          </Button>
+          <Button variant="secondary" onClick={() => void connectTradingViewChart()} disabled={tradingViewBusy}>
+            Refresh TradingView candles
+          </Button>
+          <Button variant="outline" onClick={() => void connectTradingViewChart()} disabled={tradingViewBusy}>
+            Use TradingView for chart
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => void useExistingTradingViewForResearch()}
+            disabled={tradingViewBusy || runtimeSnapshot?.tradingViewMcp.researchEligibility !== "eligible_for_research_cycle"}
+            title={
+              runtimeSnapshot?.tradingViewMcp.researchEligibility === "eligible_for_research_cycle"
+                ? "TradingView MCP candles passed the research-source gate."
+                : runtimeSnapshot?.tradingViewMcp.eligibilityReasons[0] ?? "TradingView MCP is not eligible for research yet."
+            }
+          >
+            Use TradingView for research
+          </Button>
+          <Button variant="secondary" onClick={() => void startLoop()} disabled={busy}>
+            <Activity className="h-4 w-4" aria-hidden="true" />
+            {busy ? "Loop running" : "Start Autonomous Research Loop"}
+          </Button>
+        </div>
+
+        <div
+          className={`mt-4 rounded-lg border p-3 text-sm ${
+            tradingViewOperationMessage.toLowerCase().includes("failed") ||
+            tradingViewOperationMessage.toLowerCase().includes("not running") ||
+            tradingViewOperationMessage.toLowerCase().includes("unavailable")
+              ? "border-rose-300/25 bg-rose-300/10 text-rose-100"
+              : runtimeSnapshot?.tradingViewMcp.chartFeedAvailable
+                ? "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
+                : "border-cyan-300/20 bg-cyan-300/10 text-cyan-100"
+          }`}
+        >
+          <p className="font-semibold">{tradingViewBusy ? "Working..." : "Command Center feedback"}</p>
+          <p className="mt-1">{tradingViewOperationMessage}</p>
+          {runtimeSnapshot?.tradingViewMcp.eligibilityReasons.length ? (
+            <p className="mt-1 text-xs opacity-80">Gate: {runtimeSnapshot.tradingViewMcp.eligibilityReasons[0]}</p>
+          ) : null}
+        </div>
+      </section>
 
       <WhyNotReadyCard context="command_center" snapshot={runtimeSnapshot} />
 
@@ -273,7 +592,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
               </p>
               {!runtimeSnapshot.tradingViewMcp.chartFeedAvailable ? (
                 <p className="mt-1 text-xs font-semibold opacity-90">
-                  TradingView MCP chart feed not active. Open Market Data and click Connect TradingView MCP.
+                  TradingView MCP chart feed not active. Use the Data Connection panel above to connect and activate it.
                 </p>
               ) : null}
               {runtimeSnapshot.tradingViewMcp.chartFeedAvailable && !runtimeSnapshot.tradingViewMcp.activeForResearch ? (
@@ -284,7 +603,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
             </div>
             <Link to="/market-data">
               <Button variant="secondary" className="w-full md:w-auto">
-                {runtimeSnapshot.marketData.isImportedDataActive ? "Manage market data" : "Reactivate or re-import"}
+                {runtimeSnapshot.marketData.isImportedDataActive ? "Advanced market data details" : "Advanced re-import tools"}
               </Button>
             </Link>
           </div>
@@ -765,7 +1084,108 @@ function buildActionItems(snapshot?: ResearchRuntimeSnapshot, run?: AutonomousRe
   return safeTopN(items, 6);
 }
 
-function buildFeedItems(run?: AutonomousResearchRun): MissionFeedItem[] {
+function buildFeedItems(
+  snapshot?: ResearchRuntimeSnapshot,
+  run?: AutonomousResearchRun,
+  dataConnectionEvents: CommandCenterDataEvent[] = []
+): MissionFeedItem[] {
+  const now = snapshot?.generatedAt ?? new Date().toISOString();
+  const runtimeItems: MissionFeedItem[] = snapshot
+    ? [
+        {
+          id: "runtime-tv-status",
+          title: `TradingView MCP ${snapshot.tradingViewMcp.bridgeStatus.replace(/_/g, " ")}`,
+          detail: snapshot.tradingViewMcp.chartFeedAvailable
+            ? `${snapshot.tradingViewMcp.chartFeedCandleCount.toLocaleString()} read-only candles available for chart display.`
+            : "TradingView MCP chart feed is not active.",
+          timestamp: snapshot.generatedAt,
+          severity: snapshot.tradingViewMcp.bridgeStatus === "connected_analysis_only" ? "success" : "warning",
+          sourceFingerprint: snapshot.tradingViewMcp.chartFeedSymbol ?? snapshot.tradingViewMcp.bridgeUrl
+        },
+        {
+          id: "runtime-chart-source",
+          title: "Chart source status",
+          detail: `${snapshot.marketData.activeChartDisplaySourceLabel}. Research source: ${snapshot.marketData.activeResearchSourceLabel}.`,
+          timestamp: snapshot.generatedAt,
+          severity: snapshot.marketData.chartDisplayUsesTradingViewMcp ? "success" : "info",
+          sourceFingerprint: snapshot.marketData.chartDisplayDataFingerprint.slice(0, 96)
+        },
+        {
+          id: "runtime-research-eligibility",
+          title:
+            snapshot.tradingViewMcp.researchEligibility === "eligible_for_research_cycle"
+              ? "Research eligibility passed"
+              : "Research eligibility guarded",
+          detail: snapshot.tradingViewMcp.eligibilityReasons[0] ?? "TradingView MCP source gate is pending.",
+          timestamp: snapshot.generatedAt,
+          severity: snapshot.tradingViewMcp.researchEligibility === "eligible_for_research_cycle" ? "success" : "warning",
+          sourceFingerprint: snapshot.tradingViewMcp.researchEligibility
+        },
+        {
+          id: "runtime-cycle-status",
+          title: "AI research cycle status",
+          detail: snapshot.latestResearchCycle.latestCycleId
+            ? `${formatToken(snapshot.latestResearchCycle.latestCycleStatus)}: ${snapshot.latestResearchCycle.latestCycleId}`
+            : "No AI research cycle has completed in the current runtime.",
+          timestamp: snapshot.latestResearchCycle.latestRun?.completedAt ?? snapshot.latestResearchCycle.latestRun?.startedAt ?? snapshot.generatedAt,
+          severity: snapshot.latestResearchCycle.latestCycleId ? "success" : "info",
+          sourceFingerprint: snapshot.latestResearchCycle.activeGrinchProfileSummary
+            ? `Grinch ${snapshot.latestResearchCycle.activeGrinchProfileSummary.profile} / ${snapshot.latestResearchCycle.activeGrinchProfileSummary.setupQuality ?? "research"}`
+            : undefined
+        },
+        {
+          id: "runtime-backtest",
+          title: "Backtest status",
+          detail: snapshot.latestResearchCycle.latestBacktestSummary
+            ? `${snapshot.latestResearchCycle.latestBacktestSummary.totalTrades} trades; win rate ${pct(snapshot.latestResearchCycle.latestBacktestSummary.winRate)}.`
+            : "Backtest output pending.",
+          timestamp: snapshot.latestResearchCycle.latestRun?.completedAt ?? snapshot.generatedAt,
+          severity: snapshot.latestResearchCycle.latestBacktestSummary ? "success" : "info"
+        },
+        {
+          id: "runtime-walk-forward",
+          title: `Walk-forward ${formatToken(snapshot.walkForward.verdict)}`,
+          detail: snapshot.walkForward.recommendedNextAction ?? "Walk-forward validation pending.",
+          timestamp: snapshot.walkForward.latestTimestamp ?? snapshot.generatedAt,
+          severity:
+            snapshot.walkForward.verdict === "fail"
+              ? "failed"
+              : snapshot.walkForward.verdict === "insufficient_evidence"
+                ? "warning"
+                : snapshot.walkForward.verdict
+                  ? "success"
+                  : "info",
+          sourceFingerprint: `${snapshot.walkForward.outOfSampleWindowsPassed}/${snapshot.walkForward.windowsTested} OOS windows`
+        },
+        {
+          id: "runtime-readiness",
+          title: `Readiness ${snapshot.readiness.readinessState.replace(/_/g, " ")}`,
+          detail: snapshot.readiness.actualBlockers[0] ?? "No readiness blocker in the current snapshot.",
+          timestamp: snapshot.generatedAt,
+          severity: snapshot.readiness.readinessState === "Research Ready" || snapshot.readiness.readinessState === "Paper-Demo Candidate" ? "success" : "warning"
+        },
+        {
+          id: "runtime-proposal",
+          title: snapshot.proposal.latestProposalIsCurrent ? "Proposal created" : "Proposal blocked or historical",
+          detail: snapshot.proposal.latestProposalIsCurrent
+            ? `Current proposal ${snapshot.proposal.latestProposalId}.`
+            : snapshot.proposal.latestProposalIsHistorical
+              ? "Historical proposal is available but not a primary action."
+              : "No current proposal from latest cycle.",
+          timestamp: snapshot.proposal.latestProposal?.timestamp ?? snapshot.generatedAt,
+          severity: snapshot.proposal.latestProposalIsCurrent ? "action_required" : "info",
+          href: snapshot.proposal.latestProposal?.proposalId ? `/self-improvement?proposalId=${snapshot.proposal.latestProposal.proposalId}` : undefined
+        },
+        {
+          id: "runtime-broker-lock",
+          title: "Broker execution locked",
+          detail: "Tradovate, MT5, go-trader handoff, live trading, and readiness overrides remain disabled.",
+          timestamp: now,
+          severity: "locked",
+          sourceFingerprint: "executionAuthority=none"
+        }
+      ]
+    : [];
   const communicationItems: MissionFeedItem[] = safeTopN(
     loadCommunicationMessages().filter((message) => {
       if (message.category !== "self_improvement_proposal_alert") {
@@ -787,12 +1207,14 @@ function buildFeedItems(run?: AutonomousResearchRun): MissionFeedItem[] {
     title: event.title,
     detail: event.detail,
     timestamp: event.timestamp,
-    severity:
+      severity:
       event.stage === "failed"
         ? "critical"
         : event.stage === "canceled" || event.stage === "paused"
           ? "warning"
-          : "info",
+          : event.stage === "completed"
+            ? "success"
+            : "running",
     href: "/autonomous-research"
   }));
   const loopItems: MissionFeedItem[] = safeArray(run?.iterations).flatMap((iteration) => [
@@ -814,11 +1236,15 @@ function buildFeedItems(run?: AutonomousResearchRun): MissionFeedItem[] {
     }
   ]);
 
-  return safeTopN([...progressItems, ...loopItems, ...communicationItems].sort((a, b) => {
+  const dataItems: MissionFeedItem[] = dataConnectionEvents.map((event) => ({
+    ...event
+  }));
+
+  return safeTopN([...dataItems, ...progressItems, ...loopItems, ...communicationItems, ...runtimeItems].sort((a, b) => {
     const left = a.timestamp ? new Date(a.timestamp).getTime() : 0;
     const right = b.timestamp ? new Date(b.timestamp).getTime() : 0;
     return right - left;
-  }), 10);
+  }), 18);
 }
 
 function buildKeyMetrics(snapshot?: ResearchRuntimeSnapshot, run?: AutonomousResearchRun) {
@@ -877,4 +1303,30 @@ function buildKeyMetrics(snapshot?: ResearchRuntimeSnapshot, run?: AutonomousRes
       detail: account ? `${pct(account.winRate)} win rate / ${account.totalTrades} trades` : "Run cycle first"
     }
   ];
+}
+
+function CommandStatusTile({
+  detail,
+  label,
+  tone = "neutral",
+  value
+}: {
+  detail?: string;
+  label: string;
+  tone?: "good" | "warn" | "neutral";
+  value: string;
+}) {
+  const toneClass =
+    tone === "good"
+      ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-100"
+      : tone === "warn"
+        ? "border-amber-300/20 bg-amber-300/10 text-amber-100"
+        : "border-white/10 bg-white/[0.035] text-slate-100";
+  return (
+    <div className={`rounded-lg border p-3 ${toneClass}`}>
+      <div className="text-[0.65rem] uppercase tracking-[0.16em] opacity-70">{label}</div>
+      <div className="mt-1 truncate font-mono text-sm">{value}</div>
+      {detail ? <div className="mt-1 truncate text-xs opacity-75">{detail}</div> : null}
+    </div>
+  );
 }
