@@ -271,6 +271,11 @@ export function MissionControlShell({ state }: { state: LabState }) {
                 {runtimeSnapshot.tradingViewMcp.chartFeedMatchState.replace(/_/g, " ")}; eligibility{" "}
                 {runtimeSnapshot.tradingViewMcp.researchEligibility.replace(/_/g, " ")}.
               </p>
+              {!runtimeSnapshot.tradingViewMcp.chartFeedAvailable ? (
+                <p className="mt-1 text-xs font-semibold opacity-90">
+                  TradingView MCP chart feed not active. Open Market Data and click Connect TradingView MCP.
+                </p>
+              ) : null}
               {runtimeSnapshot.tradingViewMcp.chartFeedAvailable && !runtimeSnapshot.tradingViewMcp.activeForResearch ? (
                 <p className="mt-1 text-xs font-semibold opacity-90">
                   TradingView MCP candles are visual-only and not used for research.

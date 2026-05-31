@@ -24,6 +24,10 @@ export interface TradingViewMcpRuntimeState {
   bridgeUrl: string;
   bridgeStatus: TradingViewMcpRuntimeBridgeStatus;
   bridgeStatusCheck: TradingViewMcpStatusCheck;
+  wrapperRunning: boolean;
+  tradingViewDesktopCdpConnected?: boolean;
+  bridgeChartSymbol?: string;
+  bridgeChartResolution?: string;
   evidenceAvailable: boolean;
   latestEvidence?: TradingViewEvidence;
   latestEvidenceTimestamp?: string;
@@ -150,6 +154,10 @@ export const resolveTradingViewMcpRuntimeState = (): TradingViewMcpRuntimeState 
     bridgeUrl: settings.bridgeUrl,
     bridgeStatus,
     bridgeStatusCheck,
+    wrapperRunning: Boolean(bridgeStatusCheck.wrapperRunning || bridgeStatus === "connected_analysis_only"),
+    tradingViewDesktopCdpConnected: bridgeStatusCheck.tradingViewDesktopCdpConnected,
+    bridgeChartSymbol: bridgeStatusCheck.chartSymbol,
+    bridgeChartResolution: bridgeStatusCheck.chartResolution,
     evidenceAvailable,
     latestEvidence,
     latestEvidenceTimestamp: latestEvidence?.timestamp,

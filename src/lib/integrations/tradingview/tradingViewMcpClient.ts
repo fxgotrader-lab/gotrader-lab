@@ -26,6 +26,8 @@ const disconnectedStatus = (
   connectionStatus: "disconnected",
   analysisAvailable: false,
   evidenceAvailable: false,
+  wrapperRunning: false,
+  tradingViewDesktopCdpConnected: false,
   message,
   warnings,
   ...authority
@@ -59,12 +61,20 @@ const statusFromPayload = (
 ): TradingViewMcpStatusCheck => {
   const rawStatus = String(payload.status ?? payload.connectionStatus ?? payload.state ?? "connected").toLowerCase();
   const connected = ["ok", "ready", "connected", "running", "healthy"].some((token) => rawStatus.includes(token));
+  const upstream = payload.upstream && typeof payload.upstream === "object" ? payload.upstream as Record<string, unknown> : undefined;
+  const upstreamPayload =
+    upstream?.payload && typeof upstream.payload === "object" ? upstream.payload as Record<string, unknown> : undefined;
+  const tradingViewDesktopCdpConnected = Boolean(upstreamPayload?.cdp_connected);
   return {
     checkedAt: now(),
     bridgeUrl: settings.bridgeUrl,
     connectionStatus: connected ? "connected_analysis_only" : "disconnected",
     analysisAvailable: connected,
     evidenceAvailable: connected,
+    wrapperRunning: true,
+    tradingViewDesktopCdpConnected,
+    chartSymbol: typeof upstreamPayload?.chart_symbol === "string" ? upstreamPayload.chart_symbol : undefined,
+    chartResolution: typeof upstreamPayload?.chart_resolution === "string" ? upstreamPayload.chart_resolution : undefined,
     message: String(payload.message ?? `TradingView MCP bridge responded at ${endpoint}.`),
     warnings: connected
       ? ["TradingView MCP is chart evidence only. It does not provide broker truth or execution authority."]

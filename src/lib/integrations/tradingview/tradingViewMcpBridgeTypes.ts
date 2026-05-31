@@ -20,6 +20,10 @@ export interface TradingViewMcpStatusCheck {
   connectionStatus: TradingViewMcpConnectionStatus;
   analysisAvailable: boolean;
   evidenceAvailable: boolean;
+  wrapperRunning?: boolean;
+  tradingViewDesktopCdpConnected?: boolean;
+  chartSymbol?: string;
+  chartResolution?: string;
   message: string;
   warnings: string[];
   executionAuthority: "none";

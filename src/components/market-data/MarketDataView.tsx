@@ -36,6 +36,7 @@ import {
 } from "@/lib/marketData";
 import { buildVwapOverlay, createTradingChartData } from "@/lib/charting";
 import {
+  checkAndStoreTradingViewMcpStatus,
   clearActiveTradingViewMcpChartFeed,
   createActiveTradingViewMcpChartFeed,
   fetchAndStoreTradingViewMcpChartFeed,
@@ -44,6 +45,8 @@ import {
   loadActiveTradingViewMcpChartFeed,
   loadTradingViewMcpSettings,
   resolveTradingViewMcpRuntimeState,
+  saveActiveTradingViewMcpChartFeed,
+  saveTradingViewMcpSettings,
   TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT,
   TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
   TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT,
@@ -125,6 +128,7 @@ export function MarketDataView() {
   const [tradingViewCandles, setTradingViewCandles] = useState<TradingViewMcpCandlesResponse | undefined>();
   const [tradingViewRuntime, setTradingViewRuntime] = useState(() => resolveTradingViewMcpRuntimeState());
   const [tradingViewFeedMessage, setTradingViewFeedMessage] = useState<string>();
+  const [tradingViewConnecting, setTradingViewConnecting] = useState(false);
   const [chartVerification, setChartVerification] = useState<ChartSourceVerification>();
   const contextSymbol = activeSource.metadata?.symbol ?? symbol;
   const contextTimeframe = activeSource.mode === "imported" ? activeSource.appliedSettings.targetTimeframe : timeframe;
@@ -328,6 +332,60 @@ export function MarketDataView() {
     );
   };
 
+  const connectTradingViewMcp = async () => {
+    setTradingViewConnecting(true);
+    setTradingViewFeedMessage(`Connecting TradingView MCP for ${symbol} ${timeframe}...`);
+    try {
+      const settings = saveTradingViewMcpSettings({ ...loadTradingViewMcpSettings(), enabled: true });
+      const status = await checkAndStoreTradingViewMcpStatus(settings);
+      setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
+      if (status.connectionStatus !== "connected_analysis_only") {
+        setTradingViewFeedMessage(
+          "Wrapper not running. Start npm.cmd run tradingview:mcp-bridge, then click Connect TradingView MCP again."
+        );
+        return;
+      }
+
+      const [quote, candles] = await Promise.all([
+        fetchTradingViewMcpQuote({ symbol, timeframe }, settings),
+        fetchTradingViewMcpCandles({ symbol, timeframe, limit: 500 }, settings)
+      ]);
+      setTradingViewQuote(quote);
+      setTradingViewCandles(candles);
+
+      if (!candles.candleCount) {
+        setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
+        setTradingViewFeedMessage(
+          candles.missingEvidence.join(" ") ||
+            "TradingView MCP wrapper is connected, but no candles were returned. Check the TradingView Desktop chart symbol/timeframe."
+        );
+        return;
+      }
+
+      const feed = saveActiveTradingViewMcpChartFeed(
+        createActiveTradingViewMcpChartFeed({
+          candlesResponse: candles,
+          gotraderSymbol: symbol,
+          gotraderTimeframe: timeframe,
+          usageMode: "chart_only"
+        })
+      );
+      setTradingViewFeed(feed);
+      setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
+      setTradingViewFeedMessage(
+        [
+          `TradingView MCP chart source active with ${feed.candleCount.toLocaleString()} read-only candles.`,
+          quote.latestPrice ? `Latest quote ${quote.latestPrice}.` : undefined,
+          feed.activeForResearch
+            ? "Research-source gate is eligible."
+            : `Research remains guarded: ${feed.researchEligibility.reasons.join(" ")}`
+        ].filter(Boolean).join(" ")
+      );
+    } finally {
+      setTradingViewConnecting(false);
+    }
+  };
+
   const fetchTradingViewCandlesForChart = async () => {
     setTradingViewFeedMessage(`Fetching TradingView MCP candles for ${symbol} ${timeframe}...`);
     const settings = loadTradingViewMcpSettings();
@@ -500,6 +558,24 @@ export function MarketDataView() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
+          {!displaySource.chartDisplayUsesTradingViewMcp && tradingViewRuntime.chartFeedCandleCount === 0 ? (
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              TradingView MCP is not active because no candles are loaded. Click Connect TradingView MCP.
+            </div>
+          ) : null}
+          <div className="rounded-lg border border-sky-300/25 bg-sky-300/10 p-4 text-sky-100">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="font-semibold">One-click chart activation</p>
+                <p className="mt-1 text-xs text-sky-100/80">
+                  Checks the local bridge, fetches a quote and candles, then activates TradingView MCP as the visual chart source when candles are available.
+                </p>
+              </div>
+              <Button variant="secondary" onClick={() => void connectTradingViewMcp()} disabled={tradingViewConnecting}>
+                {tradingViewConnecting ? "Connecting..." : "Connect TradingView MCP"}
+              </Button>
+            </div>
+          </div>
           <div className="grid gap-3 md:grid-cols-6">
             <div className="space-y-2">
               <Label htmlFor="tradingview-feed-symbol">Symbol</Label>
@@ -543,6 +619,19 @@ export function MarketDataView() {
             </Button>
           </div>
           <div className="grid gap-3 md:grid-cols-4">
+            <StatusTile label="Wrapper running" value={tradingViewRuntime.wrapperRunning ? "yes" : "no"} />
+            <StatusTile
+              label="Desktop CDP"
+              value={
+                typeof tradingViewRuntime.tradingViewDesktopCdpConnected === "boolean"
+                  ? tradingViewRuntime.tradingViewDesktopCdpConnected ? "yes" : "no"
+                  : "unknown"
+              }
+            />
+            <StatusTile label="Evidence available" value={tradingViewRuntime.evidenceAvailable ? "yes" : "no"} />
+            <StatusTile label="Candles loaded" value={tradingViewRuntime.chartFeedCandleCount > 0 ? "yes" : "no"} />
+            <StatusTile label="Chart source active" value={displaySource.chartDisplayUsesTradingViewMcp ? "yes" : "no"} />
+            <StatusTile label="Research eligible" value={tradingViewResearchSourceEligible ? "yes" : "no"} />
             <StatusTile label="Bridge" value={tradingViewRuntime.bridgeStatus.replace(/_/g, " ")} />
             <StatusTile label="Quote latest" value={String(tradingViewQuote?.latestPrice ?? tradingViewFeed?.latestClose ?? "none")} />
             <StatusTile label="Candle status" value={(tradingViewCandles?.connectionStatus ?? tradingViewFeed?.connectionStatus ?? "not loaded").replace(/_/g, " ")} />
