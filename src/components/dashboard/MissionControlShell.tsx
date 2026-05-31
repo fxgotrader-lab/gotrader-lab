@@ -25,7 +25,11 @@ import {
 import { createPlannedHermesNotificationState } from "@/lib/integrations/hermesNotificationHooks";
 import { createPlannedOpenClawMemoryHookState } from "@/lib/integrations/openclawMemoryHooks";
 import { paperclipAgentOperationsPolicy } from "@/lib/integrations/paperclipAuthorityPolicy";
-import { tradingViewMcpAdapterPlan } from "@/lib/integrations/tradingview";
+import {
+  TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
+  TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT,
+  tradingViewMcpAdapterPlan
+} from "@/lib/integrations/tradingview";
 import { mt5ExecutionAdapterPlan } from "@/lib/brokers/mt5";
 import { tradovateExecutionAdapterPlan } from "@/lib/brokers/tradovate";
 import { buildVwapOverlay, createTradingChartData } from "@/lib/charting";
@@ -113,6 +117,8 @@ export function MissionControlShell({ state }: { state: LabState }) {
     window.addEventListener(WALK_FORWARD_UPDATED_EVENT, refresh);
     window.addEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
     window.addEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
+    window.addEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refresh);
+    window.addEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
       window.removeEventListener(AUTONOMOUS_RESEARCH_UPDATED_EVENT, refresh);
@@ -123,6 +129,8 @@ export function MissionControlShell({ state }: { state: LabState }) {
       window.removeEventListener(WALK_FORWARD_UPDATED_EVENT, refresh);
       window.removeEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
+      window.removeEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refresh);
+      window.removeEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
   }, [state]);
@@ -233,6 +241,10 @@ export function MissionControlShell({ state }: { state: LabState }) {
               <p className="mt-1 text-xs opacity-80">
                 Stored imports: {runtimeSnapshot.marketData.importedDatasetCount}; active import: {runtimeSnapshot.marketData.activeImportId ?? "none"}.
               </p>
+              <p className="mt-1 text-xs opacity-80">
+                TradingView MCP evidence: {runtimeSnapshot.tradingViewMcp.evidenceAvailable ? "connected" : "disconnected"}; latest{" "}
+                {runtimeSnapshot.tradingViewMcp.latestEvidenceTimestamp ?? "none"}; bias {runtimeSnapshot.tradingViewMcp.chartBias}; authority analysis only.
+              </p>
             </div>
             <Link to="/market-data">
               <Button variant="secondary" className="w-full md:w-auto">
@@ -325,6 +337,12 @@ export function MissionControlShell({ state }: { state: LabState }) {
             ["Data source", runtimeSnapshot?.marketData.sourceLabel ?? "loading"],
             ["Active config", runtimeSnapshot?.activeConfig.configMergeStatusLabel ?? "loading"],
             ["Latest cycle", runtimeSnapshot?.latestResearchCycle.latestCycleId ?? "none"],
+            [
+              "TradingView evidence",
+              runtimeSnapshot?.tradingViewMcp
+                ? `${runtimeSnapshot.tradingViewMcp.status.bridgeStatus.connectionStatus.replace(/_/g, " ")} / evidence ${runtimeSnapshot.tradingViewMcp.evidenceAvailable ? "yes" : "no"} / bias ${runtimeSnapshot.tradingViewMcp.chartBias} / confidence ${runtimeSnapshot.tradingViewMcp.confidence.toFixed(2)}`
+                : "not checked"
+            ],
             [
               "Proposal context",
               runtimeSnapshot?.proposal.latestProposalIsCurrent
@@ -427,11 +445,13 @@ export function MissionControlShell({ state }: { state: LabState }) {
             <div>
               <p className="font-semibold">Future multi-broker gates</p>
               <p className="mt-1 text-slate-400">
-                TradingView MCP is planned for chart evidence only. Tradovate and MT5 remain locked execution adapters.
+                TradingView MCP is read-only chart evidence when connected. Tradovate and MT5 remain locked execution adapters.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Badge variant="secondary">TradingView {tradingViewMcpAdapterPlan.status.replace(/_/g, " ")}</Badge>
+              <Badge variant={runtimeSnapshot?.tradingViewMcp.evidenceAvailable ? "success" : "secondary"}>
+                TradingView {runtimeSnapshot?.tradingViewMcp.status.bridgeStatus.connectionStatus.replace(/_/g, " ") ?? tradingViewMcpAdapterPlan.status.replace(/_/g, " ")}
+              </Badge>
               <Badge variant="warning">Tradovate {tradovateExecutionAdapterPlan.status.replace(/_/g, " ")}</Badge>
               <Badge variant="warning">MT5 {mt5ExecutionAdapterPlan.status.replace(/_/g, " ")}</Badge>
               <Badge variant="danger">execution disabled</Badge>

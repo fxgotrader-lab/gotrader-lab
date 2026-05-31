@@ -3,6 +3,10 @@ import type { EvidenceCategory, EvidenceLedgerSummary } from "@/lib/evidence";
 import type { LLMAdvisoryRun, LLMProviderStatus } from "@/lib/llm";
 import type { ResearchMaturitySummary } from "@/lib/maturity";
 import type {
+  TradingViewMcpStatus,
+  TradingViewEvidence
+} from "@/lib/integrations/tradingview";
+import type {
   CandleDataSourceMode,
   CandleWindowSettings,
   ImportedCandleActivationStatus,
@@ -239,6 +243,17 @@ export interface RuntimeWalkForwardState {
   warnings: string[];
 }
 
+export interface RuntimeTradingViewMcpState {
+  status: TradingViewMcpStatus;
+  evidenceAvailable: boolean;
+  latestEvidence?: TradingViewEvidence;
+  latestEvidenceTimestamp?: string;
+  chartBias: TradingViewEvidence["chartBias"] | "unavailable";
+  confidence: number;
+  authorityLabel: "analysis_only";
+  warnings: string[];
+}
+
 export interface RuntimeDiagnosticsState {
   sourceTrace: string[];
   staleStateWarnings: string[];
@@ -259,6 +274,7 @@ export interface ResearchRuntimeSnapshot {
   evidence: RuntimeEvidenceState;
   maturity: RuntimeMaturityState;
   walkForward: RuntimeWalkForwardState;
+  tradingViewMcp: RuntimeTradingViewMcpState;
   fingerprints: RuntimeFingerprintState;
   metricProvenance: RuntimeMetricProvenanceState;
   diagnostics: RuntimeDiagnosticsState;

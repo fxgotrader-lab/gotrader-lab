@@ -32,6 +32,7 @@ import {
   type PreparedCandleSource
 } from "@/lib/marketData";
 import { buildVwapOverlay, createTradingChartData } from "@/lib/charting";
+import { resolveTradingViewMcpStatus } from "@/lib/integrations/tradingview";
 import type { FuturesSymbol, Timeframe } from "@/lib/types";
 
 const symbolOptions = ["ES", "NQ", "MES", "MNQ"].map((value) => ({ label: value, value }));
@@ -119,6 +120,7 @@ export function MarketDataView() {
   const importedDatasetsNeedActivation = imports.length > 0 && activeSource.mode !== "imported";
   const liveMarketDataStatus = useMemo(() => resolveLiveMarketDataStatus(activeSource), [activeSource]);
   const liveDataModeLabel = liveMarketDataStatus.dataMode.replace(/_/g, " ");
+  const tradingViewMcpStatus = useMemo(() => resolveTradingViewMcpStatus(), []);
 
   const refreshImports = async () => {
     const settings = loadCandleWindowSettings();
@@ -280,8 +282,12 @@ export function MarketDataView() {
             <div className="rounded-md border border-border bg-background/45 p-3">
               <p className="font-medium text-foreground">TradingView MCP</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Analysis-only/planned. It is not broker truth and does not provide a connected live chart feed here.
+                {tradingViewMcpStatus.evidenceAvailable ? "Read-only chart evidence available." : "Analysis/evidence source is disconnected."} It is not
+                market-data truth, not a broker feed, and not an execution source.
               </p>
+              <Badge variant={tradingViewMcpStatus.evidenceAvailable ? "success" : "warning"} className="mt-2">
+                evidence {tradingViewMcpStatus.evidenceAvailable ? "available" : "not connected"}
+              </Badge>
             </div>
             <div className="rounded-md border border-border bg-background/45 p-3">
               <p className="font-medium text-foreground">MT5</p>

@@ -14,6 +14,7 @@ import { missingRequiredLLMAgents, validateLLMResponse } from "@/lib/llm/validat
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
 import { buildMarketContext, summarizeMarketContext } from "@/lib/marketData";
 import type { MarketContext } from "@/lib/marketData";
+import { loadLatestTradingViewEvidence, loadTradingViewMcpBridgeStatus } from "@/lib/integrations/tradingview";
 import type { ResearchQualityReview } from "@/lib/researchQuality";
 import type { SimulationRunbookState } from "@/lib/simulationRunbook";
 import { analyzeGrinchPhase1, analyzeGrinchPhase2Reversal, analyzeGrinchPhase3Consolidation, analyzeGrinchPhase4Smt } from "@/lib/strategyLibrary";
@@ -63,6 +64,8 @@ export function buildLLMResearchContextPacket({
   const marketContext = sourceMarketContext
     ? summarizeMarketContext(sourceMarketContext)
     : undefined;
+  const tradingViewEvidence = loadLatestTradingViewEvidence();
+  const tradingViewStatus = loadTradingViewMcpBridgeStatus();
   const grinchPhase1 = sourceMarketContext?.priceVolume.ohlcv.candles.length
     ? analyzeGrinchPhase1({
         candles: sourceMarketContext.priceVolume.ohlcv.candles,
@@ -227,6 +230,25 @@ export function buildLLMResearchContextPacket({
         }
       : undefined,
     marketContextSummary: marketContext,
+    tradingViewEvidenceSummary: {
+      evidenceAvailable: Boolean(tradingViewEvidence),
+      connectionStatus: tradingViewStatus.connectionStatus,
+      symbol: tradingViewEvidence?.symbol,
+      timeframe: tradingViewEvidence?.timeframe,
+      chartBias: tradingViewEvidence?.chartBias ?? "unavailable",
+      confidence: tradingViewEvidence?.confidence ?? 0,
+      technicalSummary: tradingViewEvidence?.technicalSummary,
+      warnings: [
+        ...(tradingViewEvidence?.warnings ?? []),
+        "TradingView MCP chart evidence is supporting context only and cannot override GoTrader analysis."
+      ].slice(0, 8),
+      missingEvidence: tradingViewEvidence?.missingEvidence ?? ["TradingView MCP evidence is unavailable."],
+      authority: {
+        executionAuthority: "none",
+        brokerAuthority: "none",
+        readinessOverrideAuthority: "none"
+      }
+    },
     evidenceQualitySummary: compactEvidenceSummary,
     deterministicICTFacts: [
       `Confluence score: ${ictContext?.confluenceScore ?? "missing"}`,
@@ -237,6 +259,7 @@ export function buildLLMResearchContextPacket({
       `Fair value gaps: ${safeArray(ictContext?.fairValueGaps).length}`,
       `Market context mode: ${marketContext?.mode ?? "missing"}`,
       `Market context missing modules: ${marketContext?.missingModules.join(", ") ?? "missing"}`,
+      `TradingView chart evidence: ${tradingViewEvidence ? `${tradingViewEvidence.chartBias}/${tradingViewEvidence.confidence}` : `missing/${tradingViewStatus.connectionStatus}`}`,
       `Grinch Phase 1: ${grinchPhase1 ? `${grinchPhase1.htfBias}/${grinchPhase1.modelOneState}/${grinchPhase1.timingGrade}` : "missing"}`,
       `Grinch Reversal Profile: ${grinchReversalProfile ? `${grinchReversalProfile.reversalProfileState}/${grinchReversalProfile.nyReversalWindow}/${grinchReversalProfile.entryIntent}` : "missing"}`,
       `Grinch Consolidation Profile: ${grinchConsolidationProfile ? `${grinchConsolidationProfile.consolidationProfileState}/${grinchConsolidationProfile.liquidityRaidState}/${grinchConsolidationProfile.entryIntent}` : "missing"}`,

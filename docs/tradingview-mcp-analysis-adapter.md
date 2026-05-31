@@ -6,7 +6,9 @@ TradingView MCP is a chart-analysis and technical-confirmation source only. It c
 
 It cannot place orders, approve risk, approve readiness, send handoffs, or act as broker truth.
 
-It is not connected as a live chart-data feed in the current app. TradingView MCP remains planned/disconnected unless a local read-only bridge is explicitly configured and reports connected status.
+It is not connected as a live chart-data feed in the current app. TradingView MCP remains disconnected unless a local read-only bridge is explicitly configured and reports connected status.
+
+See `docs/tradingview-mcp-readonly-bridge.md` for the local evidence bridge contract and UI flow.
 
 ## Source Repo Findings
 

@@ -25,6 +25,11 @@ const normalizeBias = (bias?: RawTradingViewMcpEvidence["bias"]): { bias: Tradin
   return { bias: bias ?? "unknown" };
 };
 
+const normalizePrice = (value?: number | string) => {
+  const numeric = typeof value === "string" ? Number(value) : value;
+  return typeof numeric === "number" && Number.isFinite(numeric) ? numeric : undefined;
+};
+
 const authorityWarnings = (raw: RawTradingViewMcpEvidence): string[] => {
   const warnings: string[] = [];
   if (raw.executionAuthority && raw.executionAuthority !== "none") {
@@ -47,16 +52,25 @@ export const normalizeTradingViewEvidence = (
   fallback: { symbol: string; timeframe: string }
 ): TradingViewEvidence => {
   const normalizedBias = normalizeBias(raw.bias);
+  const normalizedChartBias = normalizeBias(raw.chartBias ?? raw.bias);
   const warnings = [
     ...(raw.warnings ?? []),
     ...authorityWarnings(raw),
-    ...(normalizedBias.warning ? [normalizedBias.warning] : [])
+    ...(normalizedBias.warning ? [normalizedBias.warning] : []),
+    ...(normalizedChartBias.warning && normalizedChartBias.warning !== normalizedBias.warning ? [normalizedChartBias.warning] : [])
   ];
   return {
     evidenceId: createId("tradingview_evidence"),
+    provider: "tradingview_mcp",
+    connectionStatus: "connected_analysis_only",
     symbol: raw.symbol ?? fallback.symbol,
     timeframe: raw.timeframe ?? fallback.timeframe,
     chartUrl: raw.chartUrl,
+    chartSource: raw.chartSource ?? "local_tradingview_mcp",
+    visibleRange: raw.visibleRange,
+    latestPrice: normalizePrice(raw.latestPrice),
+    ohlcvSummary: raw.ohlcvSummary,
+    screenshotReference: raw.screenshotReference,
     source: "tradingview_mcp",
     technicalSummary: raw.technicalSummary ?? "TradingView MCP evidence pending. Adapter is analysis-only.",
     detectedLevels: raw.levels?.slice(0, 20) ?? [],
@@ -65,13 +79,19 @@ export const normalizeTradingViewEvidence = (
     indicators: raw.indicators?.slice(0, 20) ?? [],
     patterns: raw.patterns?.slice(0, 10) ?? [],
     bias: normalizedBias.bias,
+    chartBias: normalizedChartBias.bias,
     confidence: clampConfidence(raw.confidence),
     warnings,
     missingEvidence: raw.missingEvidence ?? ["TradingView MCP is not connected in Phase 1."],
     timestamp: new Date().toISOString(),
     executionAuthority: "none",
     brokerAuthority: "none",
-    readinessOverrideAuthority: "none"
+    readinessOverrideAuthority: "none",
+    authority: {
+      executionAuthority: "none",
+      brokerAuthority: "none",
+      readinessOverrideAuthority: "none"
+    }
   };
 };
 
@@ -81,8 +101,8 @@ export const createUnavailableTradingViewEvidence = ({
 }: {
   symbol: string;
   timeframe: string;
-}): TradingViewEvidence =>
-  normalizeTradingViewEvidence(
+}): TradingViewEvidence => ({
+  ...normalizeTradingViewEvidence(
     {
       symbol,
       timeframe,
@@ -94,4 +114,6 @@ export const createUnavailableTradingViewEvidence = ({
       missingEvidence: ["TradingView Desktop MCP connection not configured."]
     },
     { symbol, timeframe }
-  );
+  ),
+  connectionStatus: "disconnected"
+});

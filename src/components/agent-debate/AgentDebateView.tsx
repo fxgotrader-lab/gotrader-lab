@@ -10,6 +10,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { evidenceSourceLabel, evidenceSourceVariant } from "@/lib/evidence";
 import {
+  TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
+  TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT
+} from "@/lib/integrations/tradingview";
+import {
   AGENT_DEBATE_UPDATED_EVENT,
   clearAgentDebateHistory,
   latestAgentDebateSession,
@@ -85,10 +89,14 @@ export function AgentDebateView() {
     };
     window.addEventListener(LAB_STORAGE_UPDATED_EVENT, refresh);
     window.addEventListener(AGENT_DEBATE_UPDATED_EVENT, refresh);
+    window.addEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refresh);
+    window.addEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
       window.removeEventListener(LAB_STORAGE_UPDATED_EVENT, refresh);
       window.removeEventListener(AGENT_DEBATE_UPDATED_EVENT, refresh);
+      window.removeEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refresh);
+      window.removeEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
   }, []);
@@ -143,13 +151,27 @@ export function AgentDebateView() {
       <SafetyLockBanner message="Agent debate is research-only. It cannot execute trades, approve trades, or override readiness gates." />
 
       <Card className="border-cyan-400/20 bg-cyan-400/5">
-        <CardContent className="flex flex-col gap-3 p-4 text-sm text-cyan-50 md:flex-row md:items-center md:justify-between">
-          <div>
-            Debate arguments are labeled with the current evidence class so mock/planned evidence is not treated as real confirmation.
+        <CardContent className="space-y-3 p-4 text-sm text-cyan-50">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              Debate arguments are labeled with the current evidence class so mock/planned evidence is not treated as real confirmation.
+            </div>
+            <Badge variant={evidenceSourceVariant(debateEvidenceSource)}>
+              ICT facts: {evidenceSourceLabel(debateEvidenceSource)}
+            </Badge>
           </div>
-          <Badge variant={evidenceSourceVariant(debateEvidenceSource)}>
-            ICT facts: {evidenceSourceLabel(debateEvidenceSource)}
-          </Badge>
+          <div className="rounded-md border border-cyan-300/20 bg-cyan-300/10 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>TradingView chart evidence</span>
+              <Badge variant={runtimeSnapshot?.tradingViewMcp.evidenceAvailable ? "success" : "warning"}>
+                {runtimeSnapshot?.tradingViewMcp.evidenceAvailable ? "available" : "not connected"}
+              </Badge>
+            </div>
+            <p className="mt-1 text-xs text-cyan-50/75">
+              {runtimeSnapshot?.tradingViewMcp.latestEvidence?.technicalSummary ??
+                "No TradingView MCP evidence is available. Debate may use GoTrader deterministic evidence only."}
+            </p>
+          </div>
         </CardContent>
       </Card>
 

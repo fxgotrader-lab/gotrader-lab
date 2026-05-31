@@ -18,7 +18,8 @@
     "test:fmp-market-context": "node scripts/test-fmp-market-context.mjs",
     "test:strategy-risk-context": "node scripts/test-strategy-risk-context.mjs",
     "test:local-journal": "node scripts/test-local-journal.mjs",
-    "test:multi-broker-contracts": "node scripts/test-multi-broker-contracts.mjs"
+    "test:multi-broker-contracts": "node scripts/test-multi-broker-contracts.mjs",
+    "test:tradingview-mcp": "node scripts/test-tradingview-mcp-connection.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.1.1",

@@ -10,6 +10,12 @@ import {
   requiredLLMAgents
 } from "@/lib/llm";
 import {
+  resolveTradingViewMcpStatus,
+  TRADINGVIEW_MCP_EVIDENCE_STORAGE_KEY,
+  TRADINGVIEW_MCP_SETTINGS_STORAGE_KEY,
+  TRADINGVIEW_MCP_STATUS_STORAGE_KEY
+} from "@/lib/integrations/tradingview";
+import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
   getActiveImportedCandleSetId,
   getImportedDataPreset,
@@ -67,7 +73,8 @@ import type {
   ResearchRuntimeSnapshot,
   ResolveResearchRuntimeSnapshotOptions,
   RuntimeDataPreset,
-  RuntimeMarketDataState
+  RuntimeMarketDataState,
+  RuntimeTradingViewMcpState
 } from "@/lib/runtime/researchRuntimeTypes";
 
 const LAB_STATE_STORAGE_KEY = "gotrader-ai-lab-state";
@@ -133,6 +140,24 @@ const marketStateFor = (
     fallbackToMock,
     liveMarketDataStatus,
     preparedSource: source
+  };
+};
+
+const tradingViewMcpStateFor = (): RuntimeTradingViewMcpState => {
+  const status = resolveTradingViewMcpStatus();
+  const latestEvidence = status.latestEvidence;
+  return {
+    status,
+    evidenceAvailable: status.evidenceAvailable,
+    latestEvidence,
+    latestEvidenceTimestamp: status.latestEvidenceTimestamp,
+    chartBias: latestEvidence?.chartBias ?? "unavailable",
+    confidence: latestEvidence?.confidence ?? 0,
+    authorityLabel: "analysis_only",
+    warnings: [
+      ...status.bridgeStatus.warnings,
+      ...(latestEvidence?.warnings ?? [])
+    ].slice(0, 8)
   };
 };
 
@@ -682,9 +707,11 @@ export async function resolveResearchRuntimeSnapshot(
       };
     })
   });
+  const tradingViewMcp = tradingViewMcpStateFor();
   const sourceTrace = [
     `market data: ${marketData.sourceLabel}`,
     `live feed: ${marketData.liveMarketDataStatus.liveFeedSourceLabel} / ${marketData.liveMarketDataStatus.connectionStatus}`,
+    `TradingView MCP evidence: ${tradingViewMcp.evidenceAvailable ? "available" : "not available"} / ${tradingViewMcp.status.bridgeStatus.connectionStatus}`,
     `imported data status: ${marketData.importedDataStatus}`,
     `active import id: ${marketData.activeImportId ?? "none"}`,
     `stored imports: ${marketData.importedDatasetCount}`,
@@ -961,6 +988,7 @@ export async function resolveResearchRuntimeSnapshot(
         latestWalkForward?.stability?.recommendedNextAction ?? "Run walk-forward validation on imported data before trusting a calibration.",
       warnings: walkForwardWarnings
     },
+    tradingViewMcp,
     fingerprints: {
       activeBaseline: activeBaselineFingerprint,
       latestCycle: latestCycleFingerprint,
@@ -992,6 +1020,9 @@ export async function resolveResearchRuntimeSnapshot(
         WALK_FORWARD_STORAGE_KEY,
         INDEXED_DB_NAME,
         LIVE_MARKET_DATA_STATUS_VERSION,
+        TRADINGVIEW_MCP_SETTINGS_STORAGE_KEY,
+        TRADINGVIEW_MCP_STATUS_STORAGE_KEY,
+        TRADINGVIEW_MCP_EVIDENCE_STORAGE_KEY,
         CANDLE_WINDOW_SETTINGS_UPDATED_EVENT
       ]
     }

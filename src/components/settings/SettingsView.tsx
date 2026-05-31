@@ -10,6 +10,7 @@ import {
   KeyRound,
   Lock,
   MessageSquareText,
+  RadioTower,
   ShieldAlert,
   ShieldCheck,
   SlidersHorizontal,
@@ -45,7 +46,16 @@ import { openClawHermesAdvisorySpec } from "@/lib/integrations/openclawHermesSpe
 import { openClawMemoryHookSpec } from "@/lib/integrations/openclawMemoryHooks";
 import { paperclipAgentOperationsPolicy } from "@/lib/integrations/paperclipAuthorityPolicy";
 import { paperDemoExecutionSpec } from "@/lib/integrations/paperDemoExecutionSpec";
-import { resolveTradingViewMcpStatus, tradingViewMcpAdapterPlan } from "@/lib/integrations/tradingview";
+import {
+  checkAndStoreTradingViewMcpStatus,
+  fetchAndStoreTradingViewEvidence,
+  loadTradingViewMcpSettings,
+  resolveTradingViewMcpStatus,
+  saveTradingViewMcpSettings,
+  TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
+  TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT,
+  tradingViewMcpAdapterPlan
+} from "@/lib/integrations/tradingview";
 import {
   getLLMReadinessImpact,
   latestLLMAdvisoryRun,
@@ -117,6 +127,9 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const [activeBacktestResolution, setActiveBacktestResolution] = useState(() => resolveActiveBacktestConfig());
   const [llmResearchState, setLlmResearchState] = useState(() => loadLLMResearchState());
   const [autoResearchState, setAutoResearchState] = useState(() => loadAutoResearchState());
+  const [tradingViewSettings, setTradingViewSettings] = useState(() => loadTradingViewMcpSettings());
+  const [tradingViewStatus, setTradingViewStatus] = useState(() => resolveTradingViewMcpStatus());
+  const [tradingViewStatusMessage, setTradingViewStatusMessage] = useState("");
   const latestHandoffExport = state.handoffExports?.[0];
   const latestAdvisoryPacket = state.advisoryPackets?.[0];
   const latestAdvisoryResponse = state.advisoryResponses?.[0];
@@ -137,7 +150,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const brokerRouteExamples = ["MNQ", "EUR/USD", "XAU/USD", "US30", "BTC/USD", "UNKNOWN"].map((symbol) =>
     routeBrokerForSymbol({ accountMode: "research", symbol })
   );
-  const tradingViewMcpStatus = resolveTradingViewMcpStatus();
+  const tradingViewMcpStatus = tradingViewStatus;
   const mt5MarketDataAdapter = createMt5MarketDataAdapter();
   const latestAutoResearch = latestAutoResearchCycle(autoResearchState);
   const communicationSummary = getCommunicationSummary(loadCommunicationMessages());
@@ -228,6 +241,21 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
     };
   }, []);
 
+  useEffect(() => {
+    const refreshTradingView = () => {
+      setTradingViewSettings(loadTradingViewMcpSettings());
+      setTradingViewStatus(resolveTradingViewMcpStatus());
+    };
+    window.addEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refreshTradingView);
+    window.addEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refreshTradingView);
+    window.addEventListener("storage", refreshTradingView);
+    return () => {
+      window.removeEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refreshTradingView);
+      window.removeEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refreshTradingView);
+      window.removeEventListener("storage", refreshTradingView);
+    };
+  }, []);
+
   const reset = () => {
     const approved = window.confirm("Reset local GoTrader AI Lab mock data and prompt history?");
     if (approved) {
@@ -248,6 +276,34 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const resetWeights = () => {
     const next = resetICTScoringWeights();
     setIctWeights(next);
+  };
+
+  const saveTradingViewBridgeUrl = (bridgeUrl: string) => {
+    const next = saveTradingViewMcpSettings({ ...tradingViewSettings, bridgeUrl });
+    setTradingViewSettings(next);
+    setTradingViewStatus(resolveTradingViewMcpStatus());
+  };
+
+  const toggleTradingViewBridge = (enabled: boolean) => {
+    const next = saveTradingViewMcpSettings({ ...tradingViewSettings, enabled });
+    setTradingViewSettings(next);
+    setTradingViewStatus(resolveTradingViewMcpStatus());
+  };
+
+  const checkTradingViewBridge = async () => {
+    setTradingViewStatusMessage("Checking TradingView MCP bridge...");
+    const status = await checkAndStoreTradingViewMcpStatus(tradingViewSettings);
+    setTradingViewStatus(resolveTradingViewMcpStatus());
+    setTradingViewStatusMessage(status.message);
+  };
+
+  const fetchTradingViewEvidence = async () => {
+    const symbol = state.tradeTheses[0]?.symbol ?? "MNQ";
+    const timeframe = state.tradeTheses[0]?.timeframe ?? "5m";
+    setTradingViewStatusMessage(`Requesting TradingView chart evidence for ${symbol} ${timeframe}...`);
+    const result = await fetchAndStoreTradingViewEvidence({ settings: tradingViewSettings, symbol, timeframe });
+    setTradingViewStatus(resolveTradingViewMcpStatus());
+    setTradingViewStatusMessage(result.evidence ? `Stored chart evidence ${result.evidence.evidenceId}.` : result.status.message);
   };
 
   return (
@@ -431,6 +487,66 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
             >
               Open market data context
             </Link>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <RadioTower className="h-4 w-4 text-cyan-300" aria-hidden="true" />
+              <CardTitle>TradingView MCP Evidence Bridge</CardTitle>
+            </div>
+            <CardDescription>Local read-only chart analysis bridge. Evidence only, not broker truth.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="space-y-2">
+              <Label htmlFor="tradingview-mcp-url">Local bridge URL</Label>
+              <Input
+                id="tradingview-mcp-url"
+                value={tradingViewSettings.bridgeUrl}
+                onChange={(event) => saveTradingViewBridgeUrl(event.target.value)}
+                placeholder="http://127.0.0.1:7331"
+              />
+            </div>
+            <label className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+              <span className="text-muted-foreground">Enable local status checks</span>
+              <input
+                type="checkbox"
+                checked={tradingViewSettings.enabled}
+                onChange={(event) => toggleTradingViewBridge(event.target.checked)}
+              />
+            </label>
+            {[
+              ["Status", tradingViewMcpStatus.bridgeStatus.connectionStatus],
+              ["Evidence available", tradingViewMcpStatus.evidenceAvailable ? "yes" : "no"],
+              ["Latest timestamp", tradingViewMcpStatus.latestEvidenceTimestamp ?? "none"],
+              ["Chart bias", tradingViewMcpStatus.latestEvidence?.chartBias ?? "unavailable"],
+              ["Authority", "analysis only"]
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
+                <span className="text-muted-foreground">{label}</span>
+                <Badge variant={value === "yes" || value === "connected_analysis_only" ? "success" : value === "analysis only" ? "secondary" : "warning"}>
+                  {formatBridgeValue(value)}
+                </Badge>
+              </div>
+            ))}
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Button variant="secondary" onClick={() => void checkTradingViewBridge()}>
+                Check status
+              </Button>
+              <Button variant="outline" onClick={() => void fetchTradingViewEvidence()}>
+                Fetch chart evidence
+              </Button>
+            </div>
+            {tradingViewStatusMessage ? (
+              <div className="rounded-md border border-cyan-300/20 bg-cyan-300/10 p-3 text-cyan-100">
+                {tradingViewStatusMessage}
+              </div>
+            ) : null}
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              TradingView evidence is supporting technical context only. It cannot execute trades, approve risk,
+              approve readiness, or mark charts as a broker live feed.
+            </div>
           </CardContent>
         </Card>
 

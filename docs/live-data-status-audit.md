@@ -10,7 +10,9 @@ Lightweight Charts renders whatever candle source GoTrader gives it. It does not
 - mock candles
 - replay candles
 
-The new live-data status layer makes that explicit in Runtime Snapshot, Dashboard/Mission Control, Market Data, Settings, and chart labels. A LIVE badge should only appear when a read-only feed reports `liveFeedAvailable = true`, `connectionStatus = connected`, and `dataMode = live_feed`.
+The live-data status layer makes that explicit in Runtime Snapshot, Dashboard/Mission Control, Market Data, Settings, and chart labels. A LIVE badge should only appear when a read-only feed reports `liveFeedAvailable = true`, `connectionStatus = connected`, and `dataMode = live_feed`.
+
+TradingView MCP read-only evidence can now be connected separately through the local evidence bridge. That evidence does not change the chart source to live feed.
 
 ## Diagnostic Answers
 

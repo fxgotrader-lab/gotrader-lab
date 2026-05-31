@@ -181,6 +181,23 @@ export interface LLMMarketContextSummary {
   safetyNotice: string;
 }
 
+export interface LLMTradingViewEvidenceSummary {
+  evidenceAvailable: boolean;
+  connectionStatus: string;
+  symbol?: string;
+  timeframe?: string;
+  chartBias: string;
+  confidence: number;
+  technicalSummary?: string;
+  warnings: string[];
+  missingEvidence: string[];
+  authority: {
+    executionAuthority: "none";
+    brokerAuthority: "none";
+    readinessOverrideAuthority: "none";
+  };
+}
+
 export interface LLMEvidenceQualitySummary {
   overallScore: number;
   realEvidenceCoverage: number;
@@ -212,6 +229,7 @@ export interface LLMResearchContextPacket {
   grinchConsolidationProfileSummary?: LLMGrinchConsolidationProfileSummary;
   grinchSmtSummary?: LLMGrinchSmtSummary;
   marketContextSummary?: LLMMarketContextSummary;
+  tradingViewEvidenceSummary?: LLMTradingViewEvidenceSummary;
   evidenceQualitySummary?: LLMEvidenceQualitySummary;
   deterministicICTFacts: string[];
   internalBaselineAgentDebate: LLMBaselineDebateSummary[];

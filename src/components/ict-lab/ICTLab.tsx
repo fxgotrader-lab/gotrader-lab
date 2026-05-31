@@ -30,6 +30,11 @@ import {
   MARKET_DATA_IMPORT_UPDATED_EVENT,
   loadPreparedCandleSource
 } from "@/lib/marketData";
+import {
+  resolveTradingViewMcpStatus,
+  TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
+  TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT
+} from "@/lib/integrations/tradingview";
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import {
   analyzeGrinchPhase1,
@@ -79,6 +84,7 @@ const useActiveResearchCandles = () => {
 
 export function ICTLab() {
   const preparedSource = useActiveResearchCandles();
+  const [tradingViewStatus, setTradingViewStatus] = useState(() => resolveTradingViewMcpStatus());
   const activeCandles = preparedSource?.candles.length ? preparedSource.candles : mockCandles;
   const sourceType = preparedSource?.mode === "imported" ? "imported" : "mock";
   const sourceLabel = preparedSource?.mode === "imported" ? preparedSource.label : "Mock research candles";
@@ -174,6 +180,18 @@ export function ICTLab() {
     counts[session.session] = (counts[session.session] ?? 0) + 1;
     return counts;
   }, {});
+
+  useEffect(() => {
+    const refreshTradingViewStatus = () => setTradingViewStatus(resolveTradingViewMcpStatus());
+    window.addEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refreshTradingViewStatus);
+    window.addEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refreshTradingViewStatus);
+    window.addEventListener("storage", refreshTradingViewStatus);
+    return () => {
+      window.removeEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refreshTradingViewStatus);
+      window.removeEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refreshTradingViewStatus);
+      window.removeEventListener("storage", refreshTradingViewStatus);
+    };
+  }, []);
 
   const chartData = useMemo(() => {
     const base = createTradingChartData({
@@ -276,6 +294,32 @@ export function ICTLab() {
         <MetricCard label="Sweeps" value={String(analysis.sweeps.length)} detail={latestSweep?.direction ?? "none"} icon={<Target className="h-4 w-4" />} />
         <MetricCard label="Open FVGs" value={String(unmitigatedGaps.length)} detail={`${analysis.zone.currentZone} now`} icon={<Activity className="h-4 w-4" />} />
       </div>
+
+      <Card className="border-cyan-300/20 bg-cyan-300/5">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>TradingView Chart Evidence</CardTitle>
+              <CardDescription>
+                Optional local MCP evidence. It supports ICT review but never overrides deterministic GoTrader analysis.
+              </CardDescription>
+            </div>
+            <Badge variant={tradingViewStatus.evidenceAvailable ? "success" : "warning"}>
+              {tradingViewStatus.evidenceAvailable ? "evidence available" : "disconnected"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="grid gap-3 text-sm md:grid-cols-4">
+          <StatusTile label="Connection" value={tradingViewStatus.bridgeStatus.connectionStatus.replace(/_/g, " ")} />
+          <StatusTile label="Chart bias" value={tradingViewStatus.latestEvidence?.chartBias ?? "unavailable"} />
+          <StatusTile label="Confidence" value={String(tradingViewStatus.latestEvidence?.confidence ?? 0)} />
+          <StatusTile label="Authority" value="analysis only" />
+          <div className="rounded-lg border border-cyan-300/20 bg-background/45 p-3 text-cyan-100 md:col-span-4">
+            {tradingViewStatus.latestEvidence?.technicalSummary ??
+              "TradingView MCP evidence is not connected. ICT Lab is using GoTrader candles and deterministic structure analysis only."}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="border-emerald-300/20 bg-emerald-300/5">
         <CardHeader>

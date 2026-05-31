@@ -1,5 +1,28 @@
-export type TradingViewMcpConnectionStatus = "planned_not_connected" | "connected_analysis_only" | "error";
-export type TradingViewBias = "bullish" | "bearish" | "neutral" | "mixed" | "unknown";
+export type TradingViewMcpConnectionStatus = "planned_not_connected" | "connected_analysis_only" | "disconnected" | "error";
+export type TradingViewBias = "bullish" | "bearish" | "neutral" | "mixed" | "unclear" | "unknown";
+
+export interface TradingViewVisibleRange {
+  from?: string;
+  to?: string;
+  barCount?: number;
+}
+
+export interface TradingViewOhlcvSummary {
+  candleCount?: number;
+  firstTimestamp?: string;
+  lastTimestamp?: string;
+  latestOpen?: number;
+  latestHigh?: number;
+  latestLow?: number;
+  latestClose?: number;
+  latestVolume?: number;
+}
+
+export interface TradingViewAuthorityState {
+  executionAuthority: "none";
+  brokerAuthority: "none";
+  readinessOverrideAuthority: "none";
+}
 
 export interface TradingViewDetectedLevel {
   levelId: string;
@@ -25,9 +48,16 @@ export interface TradingViewPatternSnapshot {
 
 export interface TradingViewEvidence {
   evidenceId: string;
+  provider: "tradingview_mcp";
+  connectionStatus: TradingViewMcpConnectionStatus;
   symbol: string;
   timeframe: string;
   chartUrl?: string;
+  chartSource?: string;
+  visibleRange?: TradingViewVisibleRange;
+  latestPrice?: number;
+  ohlcvSummary?: TradingViewOhlcvSummary;
+  screenshotReference?: string;
   source: "tradingview_mcp";
   technicalSummary: string;
   detectedLevels: TradingViewDetectedLevel[];
@@ -36,6 +66,7 @@ export interface TradingViewEvidence {
   indicators: TradingViewIndicatorSnapshot[];
   patterns: TradingViewPatternSnapshot[];
   bias: TradingViewBias;
+  chartBias: TradingViewBias;
   confidence: number;
   warnings: string[];
   missingEvidence: string[];
@@ -43,12 +74,18 @@ export interface TradingViewEvidence {
   executionAuthority: "none";
   brokerAuthority: "none";
   readinessOverrideAuthority: "none";
+  authority: TradingViewAuthorityState;
 }
 
 export interface RawTradingViewMcpEvidence {
   symbol?: string;
   timeframe?: string;
   chartUrl?: string;
+  chartSource?: string;
+  visibleRange?: TradingViewVisibleRange;
+  latestPrice?: number | string;
+  ohlcvSummary?: TradingViewOhlcvSummary;
+  screenshotReference?: string;
   technicalSummary?: string;
   levels?: TradingViewDetectedLevel[];
   supportResistance?: TradingViewDetectedLevel[];
@@ -56,6 +93,7 @@ export interface RawTradingViewMcpEvidence {
   patterns?: TradingViewPatternSnapshot[];
   trendState?: TradingViewEvidence["trendState"];
   bias?: TradingViewBias | "buy" | "sell";
+  chartBias?: TradingViewBias | "buy" | "sell";
   confidence?: number;
   warnings?: string[];
   missingEvidence?: string[];

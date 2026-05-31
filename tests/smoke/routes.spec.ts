@@ -142,7 +142,8 @@ test.describe("GoTrader browser route smoke", () => {
   test("multi-broker architecture status is visible and locked", async ({ page }) => {
     await gotoRoute(page, "/settings");
     await expect(page.getByText("Multi-Broker Architecture")).toBeVisible();
-    await expect(page.getByText("TradingView MCP")).toBeVisible();
+    await expect(page.getByText("TradingView MCP", { exact: true })).toBeVisible();
+    await expect(page.getByText("TradingView MCP Evidence Bridge")).toBeVisible();
     await expect(page.getByText(/chart evidence only|analysis/i).first()).toBeVisible();
     await expect(page.getByText("Tradovate").first()).toBeVisible();
     await expect(page.getByText("MT5").first()).toBeVisible();
