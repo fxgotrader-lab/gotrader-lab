@@ -21,6 +21,7 @@ import {
   loadCandleWindowSettings,
   loadPreparedCandleSource,
   MARKET_DATA_IMPORT_UPDATED_EVENT,
+  resolveLiveMarketDataStatus,
   saveImportedCandleSet,
   setActiveImportedCandleSet,
   safeWindowSizeOptions,
@@ -116,6 +117,8 @@ export function MarketDataView() {
   const latestImport = imports[0];
   const activeImportIsStale = Boolean(activeImportId && !imports.some((item) => item.importId === activeImportId));
   const importedDatasetsNeedActivation = imports.length > 0 && activeSource.mode !== "imported";
+  const liveMarketDataStatus = useMemo(() => resolveLiveMarketDataStatus(activeSource), [activeSource]);
+  const liveDataModeLabel = liveMarketDataStatus.dataMode.replace(/_/g, " ");
 
   const refreshImports = async () => {
     const settings = loadCandleWindowSettings();
@@ -249,6 +252,52 @@ export function MarketDataView() {
       </div>
 
       <SafetyLockBanner message="Market data adapters are research inputs only. No broker execution or live trading." />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <RadioTower className="h-4 w-4 text-cyan-300" aria-hidden="true" />
+            Live Data Adapter Status
+          </CardTitle>
+          <CardDescription>
+            Read-only feed status for chart data. TradingView MCP is analysis-only and MT5 remains locked unless a
+            separate read-only bridge is explicitly connected.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div className="grid gap-3 md:grid-cols-4">
+            <StatusTile label="Current chart source" value={liveDataModeLabel} />
+            <StatusTile label="Live feed" value={liveMarketDataStatus.liveFeedAvailable ? "connected" : "not connected"} />
+            <StatusTile label="Provider" value={liveMarketDataStatus.provider} />
+            <StatusTile label="Connection" value={liveMarketDataStatus.connectionStatus} />
+          </div>
+          {!liveMarketDataStatus.liveFeedAvailable ? (
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              Live feed not connected. Charts are using imported/mock/replay data.
+            </div>
+          ) : null}
+          <div className="grid gap-2 md:grid-cols-3">
+            <div className="rounded-md border border-border bg-background/45 p-3">
+              <p className="font-medium text-foreground">TradingView MCP</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Analysis-only/planned. It is not broker truth and does not provide a connected live chart feed here.
+              </p>
+            </div>
+            <div className="rounded-md border border-border bg-background/45 p-3">
+              <p className="font-medium text-foreground">MT5</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Broker adapter locked. Read-only candles/quotes are not connected in this app state.
+              </p>
+            </div>
+            <div className="rounded-md border border-border bg-background/45 p-3">
+              <p className="font-medium text-foreground">Execution</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Disabled. No order placement, readiness override, or broker authority is available.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className={activeSource.mode === "imported" ? "border-emerald-300/25 bg-emerald-300/10" : ""}>
         <CardHeader>
@@ -475,7 +524,11 @@ export function MarketDataView() {
               <div>
                 <p className="font-semibold">Prepared Candle Preview</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Shared Lightweight Charts preview of the current research window. This is historical or mock data, not a live feed.
+                  Shared Lightweight Charts preview of the current research window. Current chart source:{" "}
+                  {liveDataModeLabel}.{" "}
+                  {liveMarketDataStatus.liveFeedAvailable
+                    ? liveMarketDataStatus.liveFeedSourceLabel
+                    : "Live feed not connected."}
                 </p>
               </div>
               <Badge variant={activeSource.mode === "imported" ? "success" : "warning"}>

@@ -6,6 +6,7 @@ import type {
   CandleDataSourceMode,
   CandleWindowSettings,
   ImportedCandleActivationStatus,
+  LiveMarketDataStatus,
   PreparedCandleSource,
   WalkForwardDataPreset
 } from "@/lib/marketData";
@@ -95,6 +96,7 @@ export interface RuntimeMarketDataState {
   importedDataMissing: boolean;
   activeImportIdStale: boolean;
   fallbackToMock: boolean;
+  liveMarketDataStatus: LiveMarketDataStatus;
   preparedSource: PreparedCandleSource;
 }
 

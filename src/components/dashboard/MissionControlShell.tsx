@@ -225,6 +225,12 @@ export function MissionControlShell({ state }: { state: LabState }) {
                   : `Not valid for imported MNQ comparison. ${runtimeSnapshot.marketData.importedDataMessage}`}
               </p>
               <p className="mt-1 text-xs opacity-80">
+                Current chart source: {runtimeSnapshot.marketData.liveMarketDataStatus.dataMode.replace(/_/g, " ")}.{" "}
+                {runtimeSnapshot.marketData.liveMarketDataStatus.liveFeedAvailable
+                  ? runtimeSnapshot.marketData.liveMarketDataStatus.liveFeedSourceLabel
+                  : "Live feed not connected. Charts are using imported/mock/replay data."}
+              </p>
+              <p className="mt-1 text-xs opacity-80">
                 Stored imports: {runtimeSnapshot.marketData.importedDatasetCount}; active import: {runtimeSnapshot.marketData.activeImportId ?? "none"}.
               </p>
             </div>

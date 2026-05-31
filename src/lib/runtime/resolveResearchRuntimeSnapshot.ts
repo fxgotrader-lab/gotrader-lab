@@ -13,8 +13,10 @@ import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
   getActiveImportedCandleSetId,
   getImportedDataPreset,
+  LIVE_MARKET_DATA_STATUS_VERSION,
   loadCandleWindowSettings,
   loadPreparedCandleSource,
+  resolveLiveMarketDataStatus,
   resolveImportedCandleActivationState,
   type ImportedCandleActivationState,
   type PreparedCandleSource
@@ -108,6 +110,7 @@ const marketStateFor = (
   const symbol = metadata?.symbol ?? source.candles[0]?.symbol ?? fallbackSymbol ?? "NQ";
   const timeframe = source.appliedSettings.targetTimeframe ?? metadata?.timeframe ?? source.candles[0]?.timeframe ?? fallbackTimeframe ?? "5m";
   const fallbackToMock = source.mode === "mock";
+  const liveMarketDataStatus = resolveLiveMarketDataStatus(source);
 
   return {
     activeDataSource: source.mode,
@@ -128,6 +131,7 @@ const marketStateFor = (
     importedDataMissing: importActivation.status === "imported_missing" || importActivation.status === "mock_fallback",
     activeImportIdStale: importActivation.status === "active_import_missing_stale",
     fallbackToMock,
+    liveMarketDataStatus,
     preparedSource: source
   };
 };
@@ -680,6 +684,7 @@ export async function resolveResearchRuntimeSnapshot(
   });
   const sourceTrace = [
     `market data: ${marketData.sourceLabel}`,
+    `live feed: ${marketData.liveMarketDataStatus.liveFeedSourceLabel} / ${marketData.liveMarketDataStatus.connectionStatus}`,
     `imported data status: ${marketData.importedDataStatus}`,
     `active import id: ${marketData.activeImportId ?? "none"}`,
     `stored imports: ${marketData.importedDatasetCount}`,
@@ -986,6 +991,7 @@ export async function resolveResearchRuntimeSnapshot(
         ACTIVE_IMPORT_STORAGE_KEY,
         WALK_FORWARD_STORAGE_KEY,
         INDEXED_DB_NAME,
+        LIVE_MARKET_DATA_STATUS_VERSION,
         CANDLE_WINDOW_SETTINGS_UPDATED_EVENT
       ]
     }

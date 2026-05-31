@@ -6,6 +6,8 @@ TradingView MCP is a chart-analysis and technical-confirmation source only. It c
 
 It cannot place orders, approve risk, approve readiness, send handoffs, or act as broker truth.
 
+It is not connected as a live chart-data feed in the current app. TradingView MCP remains planned/disconnected unless a local read-only bridge is explicitly configured and reports connected status.
+
 ## Source Repo Findings
 
 The inspected TradingView MCP repo exposes local TradingView Desktop automation through MCP and CLI tools. It supports chart navigation, quotes, OHLCV summaries, indicator values, Pine tooling, drawing, alerts, replay, screenshots, and local streaming from the chart.
@@ -66,3 +68,5 @@ Journal entries must not include:
 A future live adapter may call TradingView MCP through a local bridge. That adapter should return only normalized `TradingViewEvidence`, not raw MCP payloads.
 
 TradingView chart data remains supporting evidence. GoTrader market data, broker quotes, and broker account state remain separate sources.
+
+UI must not show a LIVE badge from TradingView MCP unless a read-only adapter reports `liveFeedAvailable = true`, `connectionStatus = connected`, and `dataMode = live_feed`.

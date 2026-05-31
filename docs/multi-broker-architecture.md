@@ -4,6 +4,8 @@
 
 Phase 1 adds contracts and safety policies for a future multi-broker GoTrader architecture. It does not connect brokers, place orders, create live credentials, or enable paper/live execution.
 
+It also does not create a live chart-data feed. Lightweight Charts renders GoTrader candle sources, and the current app sources are imported historical, mock, or replay candles unless a separate read-only feed reports connected status.
+
 The intended responsibility split is:
 
 - TradingView MCP is the eyes: chart analysis, levels, indicators, replay context, screenshots, and technical confirmation.
@@ -30,6 +32,7 @@ Added:
 - Research-mode execution intent/result blockers.
 - Broker journal event contract for blocked intents and future provenance.
 - Settings and Command Center planned/locked status indicators.
+- Live market-data status fields that explicitly show TradingView MCP and MT5 are not connected live feeds in this phase.
 
 ## Routing Rules
 
@@ -87,6 +90,8 @@ Risk Manager is mandatory. Execution adapters must never bypass it.
 - Tradovate credentials
 - MT5 credentials
 - broker quote/account checks
+- MT5 read-only quote/candle bridge
+- TradingView MCP live chart feed bridge
 - order placement
 - dry-run execution
 - paper trading

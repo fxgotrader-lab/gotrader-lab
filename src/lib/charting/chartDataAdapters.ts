@@ -5,7 +5,7 @@ import { candlesToChartData } from "@/lib/charting/seriesAdapters";
 
 const sourceFlags = (sourceType: ChartDataSourceType) => ({
   isImported: sourceType === "imported",
-  isLive: sourceType === "live_placeholder",
+  isLive: sourceType === "live_feed",
   isMock: sourceType === "mock",
   isReplay: sourceType === "replay"
 });

@@ -24,7 +24,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { defaultBrokerRiskControls, routeBrokerForSymbol } from "@/lib/brokers";
-import { mt5ExecutionAdapterPlan } from "@/lib/brokers/mt5";
+import { createMt5MarketDataAdapter, mt5ExecutionAdapterPlan } from "@/lib/brokers/mt5";
 import { tradovateExecutionAdapterPlan } from "@/lib/brokers/tradovate";
 import {
   AUTO_RESEARCH_UPDATED_EVENT,
@@ -45,7 +45,7 @@ import { openClawHermesAdvisorySpec } from "@/lib/integrations/openclawHermesSpe
 import { openClawMemoryHookSpec } from "@/lib/integrations/openclawMemoryHooks";
 import { paperclipAgentOperationsPolicy } from "@/lib/integrations/paperclipAuthorityPolicy";
 import { paperDemoExecutionSpec } from "@/lib/integrations/paperDemoExecutionSpec";
-import { tradingViewMcpAdapterPlan } from "@/lib/integrations/tradingview";
+import { resolveTradingViewMcpStatus, tradingViewMcpAdapterPlan } from "@/lib/integrations/tradingview";
 import {
   getLLMReadinessImpact,
   latestLLMAdvisoryRun,
@@ -137,6 +137,8 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const brokerRouteExamples = ["MNQ", "EUR/USD", "XAU/USD", "US30", "BTC/USD", "UNKNOWN"].map((symbol) =>
     routeBrokerForSymbol({ accountMode: "research", symbol })
   );
+  const tradingViewMcpStatus = resolveTradingViewMcpStatus();
+  const mt5MarketDataAdapter = createMt5MarketDataAdapter();
   const latestAutoResearch = latestAutoResearchCycle(autoResearchState);
   const communicationSummary = getCommunicationSummary(loadCommunicationMessages());
   const runbookCompleted = countCompletedRunbookItems(simulationRunbook);
@@ -444,8 +446,10 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
             {[
               ["TradingView MCP", tradingViewMcpAdapterPlan.status],
               ["TradingView role", tradingViewMcpAdapterPlan.role],
+              ["TradingView live feed", tradingViewMcpStatus.liveFeedAvailable ? "connected" : "not connected"],
               ["Tradovate", tradovateExecutionAdapterPlan.status],
               ["MT5", mt5ExecutionAdapterPlan.status],
+              ["MT5 read-only data", mt5MarketDataAdapter.status.connectionStatus],
               ["Current mode", "research"],
               ["Broker execution", "disabled"],
               ["Live trading", "disabled"],
@@ -460,6 +464,13 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
             ))}
             <div className="rounded-md border border-cyan-300/20 bg-cyan-300/10 p-3 text-cyan-100">
               TradingView is chart evidence only. GoTrader remains the evaluator, risk manager, broker router, and journal source of truth.
+            </div>
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              Live feed not connected. Charts are using imported/mock/replay data until a read-only market-data
+              bridge is explicitly configured.
+              <span className="mt-1 block text-xs text-amber-100/80">
+                Chart analysis adapter: planned only. MT5: broker adapter locked; read-only data disconnected. Execution authority: none.
+              </span>
             </div>
             <div className="grid gap-2 md:grid-cols-2">
               {brokerRouteExamples.map((route) => (

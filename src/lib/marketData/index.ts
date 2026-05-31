@@ -48,6 +48,14 @@ export {
 } from "@/lib/marketData/historicalCandleImport";
 export { createMockMarketContext, mockMarketContext } from "@/lib/marketData/mockMarketContext";
 export { marketDataProviderRoadmap as marketDataRoadmap, plannedMarketDataAgents as plannedMarketAgents } from "@/lib/marketData/marketDataRoadmap";
+export {
+  createDisconnectedLiveMarketDataStatus,
+  createReadOnlyAdapterStatus,
+  isLiveFeedConnected,
+  LIVE_MARKET_DATA_STATUS_VERSION,
+  liveStatusLabel
+} from "@/lib/marketData/liveMarketDataStatus";
+export { currentChartSourceLabel, resolveLiveMarketDataStatus } from "@/lib/marketData/marketDataSourceResolver";
 export type {
   CandleWindowSettings,
   ImportedDataPreset,
@@ -89,3 +97,10 @@ export type {
   PriceVolumeContext,
   VolumeProfileContext
 } from "@/lib/marketData/marketDataTypes";
+export type {
+  LiveMarketDataConnectionStatus,
+  LiveMarketDataMode,
+  LiveMarketDataProvider,
+  LiveMarketDataStatus,
+  ReadOnlyMarketDataAdapterStatus
+} from "@/lib/marketData/liveMarketDataTypes";

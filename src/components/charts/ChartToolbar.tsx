@@ -39,7 +39,7 @@ export function ChartToolbar({
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className={`rounded-full border px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.16em] ${sourceBadgeClass(source)}`}>
-            {source.isLive ? "LIVE" : source.isImported ? "IMPORTED" : source.isReplay ? "REPLAY" : "MOCK"}
+            {source.isLive ? "LIVE" : source.isImported ? "IMPORTED" : source.isReplay ? "REPLAY" : source.sourceType === "live_placeholder" ? "LIVE NOT CONNECTED" : "MOCK"}
           </span>
           {source.sourceType === "live_placeholder" ? (
             <span className="rounded-full border border-purple-300/30 bg-purple-300/10 px-2 py-0.5 text-[0.65rem] uppercase tracking-[0.16em] text-purple-100">

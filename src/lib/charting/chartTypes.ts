@@ -2,7 +2,7 @@ import type { Time } from "lightweight-charts";
 
 import type { Candle, FuturesSymbol, MarketBias, Timeframe } from "@/lib/types";
 
-export type ChartDataSourceType = "mock" | "imported" | "replay" | "live_placeholder";
+export type ChartDataSourceType = "mock" | "imported" | "replay" | "live_feed" | "live_placeholder";
 
 export type ChartMarkerType = "MSS" | "BOS" | "sweep" | "entry" | "invalidation" | "target" | "current";
 
