@@ -261,7 +261,8 @@ export function MissionControlShell({ state }: { state: LabState }) {
                 Stored imports: {runtimeSnapshot.marketData.importedDatasetCount}; active import: {runtimeSnapshot.marketData.activeImportId ?? "none"}.
               </p>
               <p className="mt-1 text-xs opacity-80">
-                TradingView MCP evidence: {runtimeSnapshot.tradingViewMcp.evidenceAvailable ? "connected" : "disconnected"}; latest{" "}
+                TradingView MCP: {runtimeSnapshot.tradingViewMcp.bridgeStatus.replace(/_/g, " ")}; evidence{" "}
+                {runtimeSnapshot.tradingViewMcp.evidenceAvailable ? "available" : "not fetched"}; latest{" "}
                 {runtimeSnapshot.tradingViewMcp.latestEvidenceTimestamp ?? "none"}; bias {runtimeSnapshot.tradingViewMcp.chartBias}; authority analysis only.
               </p>
               <p className="mt-1 text-xs opacity-80">
@@ -370,7 +371,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
             [
               "TradingView evidence",
               runtimeSnapshot?.tradingViewMcp
-                ? `${runtimeSnapshot.tradingViewMcp.status.bridgeStatus.connectionStatus.replace(/_/g, " ")} / evidence ${runtimeSnapshot.tradingViewMcp.evidenceAvailable ? "yes" : "no"} / bias ${runtimeSnapshot.tradingViewMcp.chartBias} / confidence ${runtimeSnapshot.tradingViewMcp.confidence.toFixed(2)}`
+                ? `${runtimeSnapshot.tradingViewMcp.bridgeStatus.replace(/_/g, " ")} / evidence ${runtimeSnapshot.tradingViewMcp.evidenceAvailable ? "yes" : "no"} / bias ${runtimeSnapshot.tradingViewMcp.chartBias} / confidence ${runtimeSnapshot.tradingViewMcp.confidence.toFixed(2)}`
                 : "not checked"
             ],
             [
@@ -485,8 +486,8 @@ export function MissionControlShell({ state }: { state: LabState }) {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Badge variant={runtimeSnapshot?.tradingViewMcp.evidenceAvailable ? "success" : "secondary"}>
-                TradingView {runtimeSnapshot?.tradingViewMcp.status.bridgeStatus.connectionStatus.replace(/_/g, " ") ?? tradingViewMcpAdapterPlan.status.replace(/_/g, " ")}
+              <Badge variant={runtimeSnapshot?.tradingViewMcp.bridgeStatus === "connected_analysis_only" ? "success" : "secondary"}>
+                TradingView {runtimeSnapshot?.tradingViewMcp.bridgeStatus.replace(/_/g, " ") ?? tradingViewMcpAdapterPlan.status.replace(/_/g, " ")}
               </Badge>
               <Badge variant={runtimeSnapshot?.tradingViewMcp.chartFeedAvailable ? "success" : "secondary"}>
                 TV chart feed {runtimeSnapshot?.tradingViewMcp.chartFeedAvailable ? "active" : "not active"}

@@ -43,8 +43,10 @@ import {
   fetchTradingViewMcpQuote,
   loadActiveTradingViewMcpChartFeed,
   loadTradingViewMcpSettings,
-  resolveTradingViewMcpStatus,
+  resolveTradingViewMcpRuntimeState,
   TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT,
+  TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
+  TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT,
   type ActiveTradingViewMcpChartFeed,
   type TradingViewMcpCandlesResponse,
   type TradingViewMcpQuoteResponse
@@ -121,6 +123,7 @@ export function MarketDataView() {
   );
   const [tradingViewQuote, setTradingViewQuote] = useState<TradingViewMcpQuoteResponse | undefined>();
   const [tradingViewCandles, setTradingViewCandles] = useState<TradingViewMcpCandlesResponse | undefined>();
+  const [tradingViewRuntime, setTradingViewRuntime] = useState(() => resolveTradingViewMcpRuntimeState());
   const [tradingViewFeedMessage, setTradingViewFeedMessage] = useState<string>();
   const [chartVerification, setChartVerification] = useState<ChartSourceVerification>();
   const contextSymbol = activeSource.metadata?.symbol ?? symbol;
@@ -164,7 +167,6 @@ export function MarketDataView() {
   const activeImportIsStale = Boolean(activeImportId && !imports.some((item) => item.importId === activeImportId));
   const importedDatasetsNeedActivation = imports.length > 0 && activeSource.mode !== "imported";
   const liveMarketDataStatus = useMemo(() => resolveLiveMarketDataStatus(activeSource, tradingViewFeed), [activeSource, tradingViewFeed]);
-  const tradingViewMcpStatus = useMemo(() => resolveTradingViewMcpStatus(), []);
   const tradingViewCandidateFeed = useMemo(
     () =>
       tradingViewCandles
@@ -218,11 +220,18 @@ export function MarketDataView() {
   }, []);
 
   useEffect(() => {
-    const refreshTradingViewFeed = () => setTradingViewFeed(loadActiveTradingViewMcpChartFeed());
+    const refreshTradingViewFeed = () => {
+      setTradingViewFeed(loadActiveTradingViewMcpChartFeed());
+      setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
+    };
     window.addEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refreshTradingViewFeed);
+    window.addEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refreshTradingViewFeed);
+    window.addEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refreshTradingViewFeed);
     window.addEventListener("storage", refreshTradingViewFeed);
     return () => {
       window.removeEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refreshTradingViewFeed);
+      window.removeEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refreshTradingViewFeed);
+      window.removeEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refreshTradingViewFeed);
       window.removeEventListener("storage", refreshTradingViewFeed);
     };
   }, []);
@@ -311,6 +320,7 @@ export function MarketDataView() {
     const settings = loadTradingViewMcpSettings();
     const quote = await fetchTradingViewMcpQuote({ symbol, timeframe }, { ...settings, enabled: true });
     setTradingViewQuote(quote);
+    setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
     setTradingViewFeedMessage(
       quote.latestPrice
         ? `TradingView MCP quote loaded. Latest price ${quote.latestPrice}.`
@@ -323,6 +333,7 @@ export function MarketDataView() {
     const settings = loadTradingViewMcpSettings();
     const candles = await fetchTradingViewMcpCandles({ symbol, timeframe, limit: 500 }, { ...settings, enabled: true });
     setTradingViewCandles(candles);
+    setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
     const candidate = createActiveTradingViewMcpChartFeed({
       candlesResponse: candles,
       gotraderSymbol: symbol,
@@ -353,6 +364,7 @@ export function MarketDataView() {
       usageMode
     });
     setTradingViewFeed(feed);
+    setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
     setTradingViewFeedMessage(
       feed.candleCount
         ? usageMode === "research_source" && !feed.activeForResearch
@@ -365,6 +377,7 @@ export function MarketDataView() {
   const clearTradingViewChartSource = () => {
     clearActiveTradingViewMcpChartFeed();
     setTradingViewFeed(undefined);
+    setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
     setTradingViewFeedMessage("TradingView MCP chart source cleared. Falling back to imported/mock candles.");
   };
 
@@ -444,12 +457,16 @@ export function MarketDataView() {
             <div className="rounded-md border border-border bg-background/45 p-3">
               <p className="font-medium text-foreground">TradingView MCP</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {tradingViewMcpStatus.evidenceAvailable ? "Read-only chart evidence available." : "Analysis/evidence source is disconnected."}{" "}
+                {tradingViewRuntime.bridgeStatus === "connected_analysis_only"
+                  ? tradingViewRuntime.evidenceAvailable
+                    ? "Read-only chart evidence available."
+                    : "Bridge/feed connected; chart evidence has not been fetched yet."
+                  : "Analysis/evidence source is disconnected."}{" "}
                 {tradingViewFeed?.activeForChart ? "Read-only chart candles are active for visual display." : "Chart candles are not active."} It is not
                 market-data truth, not a broker feed, and not an execution source.
               </p>
-              <Badge variant={tradingViewMcpStatus.evidenceAvailable ? "success" : "warning"} className="mt-2">
-                evidence {tradingViewMcpStatus.evidenceAvailable ? "available" : "not connected"}
+              <Badge variant={tradingViewRuntime.bridgeStatus === "connected_analysis_only" ? "success" : "warning"} className="mt-2">
+                bridge {formatToken(tradingViewRuntime.bridgeStatus)}
               </Badge>
               <Badge variant={tradingViewFeed?.activeForChart ? "success" : "secondary"} className="mt-2 ml-2">
                 chart feed {tradingViewFeed?.activeForChart ? "active" : "inactive"}
@@ -526,7 +543,7 @@ export function MarketDataView() {
             </Button>
           </div>
           <div className="grid gap-3 md:grid-cols-4">
-            <StatusTile label="Bridge" value={tradingViewMcpStatus.bridgeStatus.connectionStatus.replace(/_/g, " ")} />
+            <StatusTile label="Bridge" value={tradingViewRuntime.bridgeStatus.replace(/_/g, " ")} />
             <StatusTile label="Quote latest" value={String(tradingViewQuote?.latestPrice ?? tradingViewFeed?.latestClose ?? "none")} />
             <StatusTile label="Candle status" value={(tradingViewCandles?.connectionStatus ?? tradingViewFeed?.connectionStatus ?? "not loaded").replace(/_/g, " ")} />
             <StatusTile label="Candle count" value={String(tradingViewCandles?.candleCount ?? tradingViewFeed?.candleCount ?? 0)} />
@@ -1005,6 +1022,27 @@ export function MarketDataView() {
         title="Future provider roadmap"
         description="Open for planned provider categories and first safe integration steps."
       >
+        <div className="mb-4 rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-3 text-xs text-cyan-100">
+          <p className="font-semibold">Canonical TradingView MCP runtime state</p>
+          <div className="mt-3 grid gap-2 md:grid-cols-3">
+            <StatusTile label="Bridge status" value={tradingViewRuntime.bridgeStatus.replace(/_/g, " ")} />
+            <StatusTile label="Evidence" value={tradingViewRuntime.evidenceAvailable ? "available" : "not fetched"} />
+            <StatusTile label="Chart feed" value={tradingViewRuntime.chartFeedStatus.replace(/_/g, " ")} />
+            <StatusTile label="Usage mode" value={formatToken(tradingViewRuntime.usageMode)} />
+            <StatusTile label="Feed candles" value={tradingViewRuntime.chartFeedCandleCount.toLocaleString()} />
+            <StatusTile label="Feed range" value={`${formatDate(tradingViewRuntime.chartFeedFirstTimestamp)} -> ${formatDate(tradingViewRuntime.chartFeedLastTimestamp)}`} />
+            <StatusTile label="Chart source key" value={displaySource.chartDisplaySourceKey.slice(0, 72)} />
+            <StatusTile label="Research source key" value={displaySource.researchSourceKey.slice(0, 72)} />
+            <StatusTile label="TradingView key" value={displaySource.tradingViewMcpIdentity.dataFingerprint.slice(0, 72)} />
+          </div>
+          {tradingViewRuntime.sourceWarnings.length ? (
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-cyan-100/80">
+              {tradingViewRuntime.sourceWarnings.slice(0, 5).map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
         <div className="grid gap-3 md:grid-cols-2">
           {context.providerRoadmap.map((entry) => (
             <div key={entry.category} className="rounded-lg border border-border bg-background/45 p-3">

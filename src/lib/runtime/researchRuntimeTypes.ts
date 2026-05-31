@@ -7,7 +7,8 @@ import type {
   TradingViewEvidence,
   TradingViewMcpChartFeedStatus,
   TradingViewMcpFeedUsageMode,
-  TradingViewMcpResearchEligibilityState
+  TradingViewMcpResearchEligibilityState,
+  TradingViewMcpRuntimeState
 } from "@/lib/integrations/tradingview";
 import type {
   CandleDataSourceMode,
@@ -263,23 +264,31 @@ export interface RuntimeWalkForwardState {
 }
 
 export interface RuntimeTradingViewMcpState {
+  runtime: TradingViewMcpRuntimeState;
   status: TradingViewMcpStatus;
+  bridgeUrl: string;
+  bridgeStatus: TradingViewMcpRuntimeState["bridgeStatus"];
   evidenceAvailable: boolean;
   latestEvidence?: TradingViewEvidence;
   latestEvidenceTimestamp?: string;
+  chartFeedStatus: TradingViewMcpRuntimeState["chartFeedStatus"];
   chartFeedAvailable: boolean;
   chartFeedCandleCount: number;
+  chartFeedFirstTimestamp?: string;
   chartFeedSourceLabel: string;
   chartFeedMatchState: string;
   chartFeedLastTimestamp?: string;
+  chartFeedSymbol?: string;
+  chartFeedTimeframe?: string;
+  chartFeedLatestPrice?: number;
   tradingViewMcpCandleStatus: TradingViewMcpChartFeedStatus | "not_active";
-  researchEligibility: TradingViewMcpResearchEligibilityState | "not_active";
+  researchEligibility: TradingViewMcpResearchEligibilityState | "ineligible_disconnected" | "not_active";
   eligibilityReasons: string[];
   candleCount: number;
   symbolMatch: boolean;
   timeframeMatch: boolean;
   activeForResearch: boolean;
-  usageMode: TradingViewMcpFeedUsageMode | "not_active";
+  usageMode: TradingViewMcpFeedUsageMode | "none" | "not_active";
   chartBias: TradingViewEvidence["chartBias"] | "unavailable";
   confidence: number;
   authorityLabel: "analysis_only";

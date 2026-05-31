@@ -158,6 +158,11 @@ export function ReplayView() {
         Simulation only. No broker connection. No real trades.
       </div>
 
+      <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-3 text-sm text-cyan-100">
+        Replay source: replay/mock historical candles. TradingView MCP chart candles are not used for Replay unless a
+        future explicit conversion creates a replay source; this page keeps replay state separate from visual chart feeds.
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <MetricCard label="Replay candle" value={`${frame.currentIndex + 1} / ${backtest.candles.length}`} detail={formatTime(frame.currentCandle?.timestamp)} />
         <MetricCard label="Decision points" value={String(backtest.decisions.length)} detail={`Every ${backtest.config.decisionInterval} candles`} />

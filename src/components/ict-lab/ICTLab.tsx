@@ -34,7 +34,7 @@ import {
 } from "@/lib/marketData";
 import {
   loadActiveTradingViewMcpChartFeed,
-  resolveTradingViewMcpStatus,
+  resolveTradingViewMcpRuntimeState,
   TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT,
   TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
   TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT
@@ -88,7 +88,7 @@ const useActiveResearchCandles = () => {
 
 export function ICTLab() {
   const preparedSource = useActiveResearchCandles();
-  const [tradingViewStatus, setTradingViewStatus] = useState(() => resolveTradingViewMcpStatus());
+  const [tradingViewRuntime, setTradingViewRuntime] = useState(() => resolveTradingViewMcpRuntimeState());
   const [tradingViewFeed, setTradingViewFeed] = useState(() => loadActiveTradingViewMcpChartFeed());
   const fallbackPreparedSource = useMemo(
     () => ({
@@ -215,7 +215,7 @@ export function ICTLab() {
 
   useEffect(() => {
     const refreshTradingViewStatus = () => {
-      setTradingViewStatus(resolveTradingViewMcpStatus());
+      setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
       setTradingViewFeed(loadActiveTradingViewMcpChartFeed());
     };
     window.addEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refreshTradingViewStatus);
@@ -364,22 +364,22 @@ export function ICTLab() {
                 Optional local MCP evidence. It supports ICT review but never overrides deterministic GoTrader analysis.
               </CardDescription>
             </div>
-            <Badge variant={tradingViewStatus.evidenceAvailable ? "success" : "warning"}>
-              {tradingViewStatus.evidenceAvailable ? "evidence available" : "disconnected"}
+            <Badge variant={tradingViewRuntime.bridgeStatus === "connected_analysis_only" ? "success" : "warning"}>
+              {tradingViewRuntime.bridgeStatus === "connected_analysis_only" ? "connected analysis-only" : "disconnected"}
             </Badge>
           </div>
         </CardHeader>
         <CardContent className="grid gap-3 text-sm md:grid-cols-4">
-          <StatusTile label="Connection" value={tradingViewStatus.bridgeStatus.connectionStatus.replace(/_/g, " ")} />
-          <StatusTile label="Chart bias" value={tradingViewStatus.latestEvidence?.chartBias ?? "unavailable"} />
-          <StatusTile label="Confidence" value={String(tradingViewStatus.latestEvidence?.confidence ?? 0)} />
+          <StatusTile label="Connection" value={tradingViewRuntime.bridgeStatus.replace(/_/g, " ")} />
+          <StatusTile label="Chart bias" value={tradingViewRuntime.chartBias} />
+          <StatusTile label="Confidence" value={String(tradingViewRuntime.confidence)} />
           <StatusTile label="Authority" value="analysis only" />
           <div className="rounded-lg border border-cyan-300/20 bg-background/45 p-3 text-cyan-100 md:col-span-4">
             {tradingViewCandles.length
               ? tradingViewResearchEligible
                 ? `TradingView MCP chart feed is active for research analysis with ${tradingViewCandles.length.toLocaleString()} read-only candles. It is still not broker truth.`
                 : `Displaying TradingView MCP candles visually; analysis uses ${displaySource.activeResearchSourceLabel} unless research eligibility passes. ${tradingViewFeed?.researchEligibility.reasons[0] ?? "It is not eligible for ICT analysis."}`
-              : tradingViewStatus.latestEvidence?.technicalSummary ??
+              : tradingViewRuntime.latestEvidence?.technicalSummary ??
                 "TradingView MCP evidence is not connected. ICT Lab is using GoTrader candles and deterministic structure analysis only."}
           </div>
           <div className="rounded-lg border border-cyan-300/20 bg-background/45 p-3 text-xs text-cyan-100/80 md:col-span-4">

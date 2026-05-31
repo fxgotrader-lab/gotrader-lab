@@ -53,7 +53,7 @@ import {
   fetchTradingViewMcpCandles,
   loadActiveTradingViewMcpChartFeed,
   loadTradingViewMcpSettings,
-  resolveTradingViewMcpStatus,
+  resolveTradingViewMcpRuntimeState,
   saveTradingViewMcpSettings,
   TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT,
   TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
@@ -132,7 +132,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const [llmResearchState, setLlmResearchState] = useState(() => loadLLMResearchState());
   const [autoResearchState, setAutoResearchState] = useState(() => loadAutoResearchState());
   const [tradingViewSettings, setTradingViewSettings] = useState(() => loadTradingViewMcpSettings());
-  const [tradingViewStatus, setTradingViewStatus] = useState(() => resolveTradingViewMcpStatus());
+  const [tradingViewRuntime, setTradingViewRuntime] = useState(() => resolveTradingViewMcpRuntimeState());
   const [tradingViewFeed, setTradingViewFeed] = useState(() => loadActiveTradingViewMcpChartFeed());
   const [tradingViewStatusMessage, setTradingViewStatusMessage] = useState("");
   const latestHandoffExport = state.handoffExports?.[0];
@@ -155,7 +155,6 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const brokerRouteExamples = ["MNQ", "EUR/USD", "XAU/USD", "US30", "BTC/USD", "UNKNOWN"].map((symbol) =>
     routeBrokerForSymbol({ accountMode: "research", symbol })
   );
-  const tradingViewMcpStatus = tradingViewStatus;
   const mt5MarketDataAdapter = createMt5MarketDataAdapter();
   const latestAutoResearch = latestAutoResearchCycle(autoResearchState);
   const communicationSummary = getCommunicationSummary(loadCommunicationMessages());
@@ -249,7 +248,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   useEffect(() => {
     const refreshTradingView = () => {
       setTradingViewSettings(loadTradingViewMcpSettings());
-      setTradingViewStatus(resolveTradingViewMcpStatus());
+      setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
       setTradingViewFeed(loadActiveTradingViewMcpChartFeed());
     };
     window.addEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refreshTradingView);
@@ -289,13 +288,13 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const saveTradingViewBridgeUrl = (bridgeUrl: string) => {
     const next = saveTradingViewMcpSettings({ ...tradingViewSettings, bridgeUrl });
     setTradingViewSettings(next);
-    setTradingViewStatus(resolveTradingViewMcpStatus());
+    setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
   };
 
   const toggleTradingViewBridge = (enabled: boolean) => {
     const next = saveTradingViewMcpSettings({ ...tradingViewSettings, enabled });
     setTradingViewSettings(next);
-    setTradingViewStatus(resolveTradingViewMcpStatus());
+    setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
   };
 
   const enableTradingViewBridgeForManualCheck = () => {
@@ -311,7 +310,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
     setTradingViewStatusMessage("Checking TradingView MCP bridge...");
     const settings = enableTradingViewBridgeForManualCheck();
     const status = await checkAndStoreTradingViewMcpStatus(settings);
-    setTradingViewStatus(resolveTradingViewMcpStatus());
+    setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
     setTradingViewStatusMessage(status.message);
   };
 
@@ -321,7 +320,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
     setTradingViewStatusMessage(`Requesting TradingView chart evidence for ${symbol} ${timeframe}...`);
     const settings = enableTradingViewBridgeForManualCheck();
     const result = await fetchAndStoreTradingViewEvidence({ settings, symbol, timeframe });
-    setTradingViewStatus(resolveTradingViewMcpStatus());
+    setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
     setTradingViewStatusMessage(result.evidence ? `Stored chart evidence ${result.evidence.evidenceId}.` : result.status.message);
   };
 
@@ -331,7 +330,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
     setTradingViewStatusMessage(`Requesting TradingView MCP candles for ${symbol} ${timeframe}...`);
     const settings = enableTradingViewBridgeForManualCheck();
     const result = await fetchTradingViewMcpCandles({ symbol, timeframe, limit: 240 }, settings);
-    setTradingViewStatus(resolveTradingViewMcpStatus());
+    setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
     setTradingViewStatusMessage(
       result.candleCount
         ? `TradingView MCP returned ${result.candleCount.toLocaleString()} candles.`
@@ -353,7 +352,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
       settings
     });
     setTradingViewFeed(feed);
-    setTradingViewStatus(resolveTradingViewMcpStatus());
+    setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
     setTradingViewStatusMessage(
       feed.candleCount
         ? `TradingView MCP chart source active with ${feed.candleCount.toLocaleString()} candles. ${feed.matchReason}`
@@ -572,12 +571,12 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
               />
             </label>
             {[
-              ["Status", tradingViewMcpStatus.bridgeStatus.connectionStatus],
-              ["Evidence available", tradingViewMcpStatus.evidenceAvailable ? "yes" : "no"],
-              ["Latest timestamp", tradingViewMcpStatus.latestEvidenceTimestamp ?? "none"],
-              ["Chart bias", tradingViewMcpStatus.latestEvidence?.chartBias ?? "unavailable"],
-              ["Chart feed", tradingViewFeed?.activeForChart ? "active" : "not active"],
-              ["Feed candles", String(tradingViewFeed?.candleCount ?? 0)],
+              ["Status", tradingViewRuntime.bridgeStatus],
+              ["Evidence available", tradingViewRuntime.evidenceAvailable ? "yes" : "no"],
+              ["Latest timestamp", tradingViewRuntime.latestEvidenceTimestamp ?? "none"],
+              ["Chart bias", tradingViewRuntime.chartBias],
+              ["Chart feed", tradingViewRuntime.chartFeedAvailable ? "active" : "not active"],
+              ["Feed candles", String(tradingViewRuntime.chartFeedCandleCount)],
               ["Feed match", tradingViewFeed?.matchState?.replace(/_/g, " ") ?? "unavailable"],
               ["Authority", "analysis only"]
             ].map(([label, value]) => (
@@ -624,10 +623,10 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             {[
-              ["TradingView MCP", tradingViewMcpAdapterPlan.status],
+              ["TradingView MCP", tradingViewRuntime.bridgeStatus === "connected_analysis_only" ? "connected_analysis_only" : tradingViewMcpAdapterPlan.status],
               ["TradingView role", tradingViewMcpAdapterPlan.role],
-              ["TradingView chart feed", tradingViewFeed?.activeForChart ? "active" : "not active"],
-              ["TradingView live feed", tradingViewMcpStatus.liveFeedAvailable ? "connected" : "not connected"],
+              ["TradingView chart feed", tradingViewRuntime.chartFeedAvailable ? "active" : "not active"],
+              ["TradingView live feed", "not connected"],
               ["Tradovate", tradovateExecutionAdapterPlan.status],
               ["MT5", mt5ExecutionAdapterPlan.status],
               ["MT5 read-only data", mt5MarketDataAdapter.status.connectionStatus],
@@ -647,10 +646,12 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
               TradingView is chart evidence only. GoTrader remains the evaluator, risk manager, broker router, and journal source of truth.
             </div>
             <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
-              Live feed not connected. Charts are using imported/mock/replay data until a read-only market-data
-              bridge is explicitly configured.
+              Live feed not connected.{" "}
+              {tradingViewRuntime.chartFeedAvailable
+                ? "TradingView MCP read-only chart candles are available for visual display, but they are not broker truth."
+                : "Charts are using imported/mock/replay data until a read-only market-data bridge is explicitly configured."}
               <span className="mt-1 block text-xs text-amber-100/80">
-                Chart analysis adapter: planned only. MT5: broker adapter locked; read-only data disconnected. Execution authority: none.
+                Chart analysis adapter: {formatBridgeValue(tradingViewRuntime.bridgeStatus)}. MT5: broker adapter locked; read-only data disconnected. Execution authority: none.
               </span>
             </div>
             <div className="grid gap-2 md:grid-cols-2">

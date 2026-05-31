@@ -1,12 +1,7 @@
 import { createReadOnlyAdapterStatus } from "@/lib/marketData";
 import type { ReadOnlyMarketDataAdapterStatus } from "@/lib/marketData";
 import { tradingViewMcpAdapterPlan } from "@/lib/integrations/tradingview/tradingViewAuthorityPolicy";
-import {
-  loadLatestTradingViewEvidence,
-  loadTradingViewMcpBridgeStatus
-} from "@/lib/integrations/tradingview/tradingViewEvidenceService";
-import { loadTradingViewMcpSettings } from "@/lib/integrations/tradingview/tradingViewMcpSettings";
-import { loadActiveTradingViewMcpChartFeed } from "@/lib/integrations/tradingview/tradingViewMcpFeedClient";
+import { resolveTradingViewMcpRuntimeState } from "@/lib/integrations/tradingview/tradingViewMcpRuntimeState";
 import type { TradingViewMcpStatusCheck } from "@/lib/integrations/tradingview/tradingViewMcpBridgeTypes";
 import type { TradingViewEvidence, TradingViewMcpConnectionStatus } from "@/lib/integrations/tradingview/tradingViewMcpTypes";
 
@@ -29,13 +24,15 @@ export interface TradingViewMcpStatus {
 }
 
 export const resolveTradingViewMcpStatus = (): TradingViewMcpStatus => {
-  const settings = loadTradingViewMcpSettings();
-  const bridgeStatus = loadTradingViewMcpBridgeStatus();
-  const latestEvidence = loadLatestTradingViewEvidence();
-  const chartFeed = loadActiveTradingViewMcpChartFeed();
-  const connected = bridgeStatus.connectionStatus === "connected_analysis_only";
+  const runtime = resolveTradingViewMcpRuntimeState();
+  const connected = runtime.bridgeStatus === "connected_analysis_only";
+  const adapterStatus: TradingViewMcpConnectionStatus = connected
+    ? "connected_analysis_only"
+    : runtime.bridgeStatus === "error"
+      ? "error"
+      : tradingViewMcpAdapterPlan.status;
   return {
-    adapterStatus: connected ? "connected_analysis_only" : tradingViewMcpAdapterPlan.status,
+    adapterStatus,
     analysisAvailable: connected,
     liveFeedAvailable: false,
     readOnlyDataStatus: createReadOnlyAdapterStatus({
@@ -44,14 +41,14 @@ export const resolveTradingViewMcpStatus = (): TradingViewMcpStatus => {
         ? "TradingView MCP is connected for read-only chart evidence. It is not a live broker feed."
         : "TradingView MCP is not connected. It is currently a planned chart-analysis adapter, not a live feed."
     }),
-    bridgeUrl: settings.bridgeUrl,
-    bridgeStatus,
-    latestEvidence,
-    latestEvidenceTimestamp: latestEvidence?.timestamp,
-    evidenceAvailable: Boolean(latestEvidence) && connected,
-    chartFeedAvailable: Boolean(chartFeed?.activeForChart && chartFeed.candleCount > 0),
-    chartFeedCandleCount: chartFeed?.candleCount ?? 0,
-    chartFeedStatus: chartFeed?.connectionStatus ?? "not_active",
+    bridgeUrl: runtime.bridgeUrl,
+    bridgeStatus: runtime.bridgeStatusCheck,
+    latestEvidence: runtime.latestEvidence,
+    latestEvidenceTimestamp: runtime.latestEvidenceTimestamp,
+    evidenceAvailable: runtime.evidenceAvailable,
+    chartFeedAvailable: runtime.chartFeedAvailable,
+    chartFeedCandleCount: runtime.chartFeedCandleCount,
+    chartFeedStatus: runtime.chartFeedStatus,
     executionAuthority: "none",
     brokerAuthority: "none",
     readinessOverrideAuthority: "none"
