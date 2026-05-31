@@ -7,3 +7,6 @@ export * from "@/lib/integrations/tradingview/tradingViewMcpStatus";
 export * from "@/lib/integrations/tradingview/tradingViewMcpClient";
 export * from "@/lib/integrations/tradingview/tradingViewMcpSettings";
 export * from "@/lib/integrations/tradingview/tradingViewEvidenceService";
+export * from "@/lib/integrations/tradingview/tradingViewCandleFeedTypes";
+export * from "@/lib/integrations/tradingview/tradingViewCandleNormalizer";
+export * from "@/lib/integrations/tradingview/tradingViewMcpFeedClient";

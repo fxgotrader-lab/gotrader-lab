@@ -49,9 +49,13 @@ import { paperDemoExecutionSpec } from "@/lib/integrations/paperDemoExecutionSpe
 import {
   checkAndStoreTradingViewMcpStatus,
   fetchAndStoreTradingViewEvidence,
+  fetchAndStoreTradingViewMcpChartFeed,
+  fetchTradingViewMcpCandles,
+  loadActiveTradingViewMcpChartFeed,
   loadTradingViewMcpSettings,
   resolveTradingViewMcpStatus,
   saveTradingViewMcpSettings,
+  TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT,
   TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
   TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT,
   tradingViewMcpAdapterPlan
@@ -129,6 +133,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const [autoResearchState, setAutoResearchState] = useState(() => loadAutoResearchState());
   const [tradingViewSettings, setTradingViewSettings] = useState(() => loadTradingViewMcpSettings());
   const [tradingViewStatus, setTradingViewStatus] = useState(() => resolveTradingViewMcpStatus());
+  const [tradingViewFeed, setTradingViewFeed] = useState(() => loadActiveTradingViewMcpChartFeed());
   const [tradingViewStatusMessage, setTradingViewStatusMessage] = useState("");
   const latestHandoffExport = state.handoffExports?.[0];
   const latestAdvisoryPacket = state.advisoryPackets?.[0];
@@ -245,13 +250,16 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
     const refreshTradingView = () => {
       setTradingViewSettings(loadTradingViewMcpSettings());
       setTradingViewStatus(resolveTradingViewMcpStatus());
+      setTradingViewFeed(loadActiveTradingViewMcpChartFeed());
     };
     window.addEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refreshTradingView);
     window.addEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refreshTradingView);
+    window.addEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refreshTradingView);
     window.addEventListener("storage", refreshTradingView);
     return () => {
       window.removeEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refreshTradingView);
       window.removeEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refreshTradingView);
+      window.removeEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refreshTradingView);
       window.removeEventListener("storage", refreshTradingView);
     };
   }, []);
@@ -315,6 +323,42 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
     const result = await fetchAndStoreTradingViewEvidence({ settings, symbol, timeframe });
     setTradingViewStatus(resolveTradingViewMcpStatus());
     setTradingViewStatusMessage(result.evidence ? `Stored chart evidence ${result.evidence.evidenceId}.` : result.status.message);
+  };
+
+  const fetchTradingViewCandles = async () => {
+    const symbol = state.tradeTheses[0]?.symbol ?? "MNQ";
+    const timeframe = state.tradeTheses[0]?.timeframe ?? "5m";
+    setTradingViewStatusMessage(`Requesting TradingView MCP candles for ${symbol} ${timeframe}...`);
+    const settings = enableTradingViewBridgeForManualCheck();
+    const result = await fetchTradingViewMcpCandles({ symbol, timeframe, limit: 240 }, settings);
+    setTradingViewStatus(resolveTradingViewMcpStatus());
+    setTradingViewStatusMessage(
+      result.candleCount
+        ? `TradingView MCP returned ${result.candleCount.toLocaleString()} candles.`
+        : result.missingEvidence.join(" ") || "TradingView MCP connected but candle series unavailable."
+    );
+  };
+
+  const useTradingViewCandlesAsChartSource = async () => {
+    const symbol = state.tradeTheses[0]?.symbol ?? "MNQ";
+    const timeframe = state.tradeTheses[0]?.timeframe ?? "5m";
+    setTradingViewStatusMessage(`Loading TradingView MCP candles into chart source for ${symbol} ${timeframe}...`);
+    const settings = enableTradingViewBridgeForManualCheck();
+    const feed = await fetchAndStoreTradingViewMcpChartFeed({
+      symbol,
+      timeframe,
+      gotraderSymbol: symbol,
+      gotraderTimeframe: timeframe,
+      limit: 240,
+      settings
+    });
+    setTradingViewFeed(feed);
+    setTradingViewStatus(resolveTradingViewMcpStatus());
+    setTradingViewStatusMessage(
+      feed.candleCount
+        ? `TradingView MCP chart source active with ${feed.candleCount.toLocaleString()} candles. ${feed.matchReason}`
+        : feed.missingEvidence.join(" ") || "TradingView MCP did not return a full candle series."
+    );
   };
 
   return (
@@ -532,6 +576,9 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
               ["Evidence available", tradingViewMcpStatus.evidenceAvailable ? "yes" : "no"],
               ["Latest timestamp", tradingViewMcpStatus.latestEvidenceTimestamp ?? "none"],
               ["Chart bias", tradingViewMcpStatus.latestEvidence?.chartBias ?? "unavailable"],
+              ["Chart feed", tradingViewFeed?.activeForChart ? "active" : "not active"],
+              ["Feed candles", String(tradingViewFeed?.candleCount ?? 0)],
+              ["Feed match", tradingViewFeed?.matchState?.replace(/_/g, " ") ?? "unavailable"],
               ["Authority", "analysis only"]
             ].map(([label, value]) => (
               <div key={label} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2">
@@ -547,6 +594,12 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
               </Button>
               <Button variant="outline" onClick={() => void fetchTradingViewEvidence()}>
                 Fetch chart evidence
+              </Button>
+              <Button variant="outline" onClick={() => void fetchTradingViewCandles()}>
+                Fetch candles
+              </Button>
+              <Button variant="secondary" onClick={() => void useTradingViewCandlesAsChartSource()}>
+                Use as chart source
               </Button>
             </div>
             {tradingViewStatusMessage ? (
@@ -573,6 +626,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
             {[
               ["TradingView MCP", tradingViewMcpAdapterPlan.status],
               ["TradingView role", tradingViewMcpAdapterPlan.role],
+              ["TradingView chart feed", tradingViewFeed?.activeForChart ? "active" : "not active"],
               ["TradingView live feed", tradingViewMcpStatus.liveFeedAvailable ? "connected" : "not connected"],
               ["Tradovate", tradovateExecutionAdapterPlan.status],
               ["MT5", mt5ExecutionAdapterPlan.status],

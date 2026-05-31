@@ -12,7 +12,7 @@ const cliPath = process.env.TRADINGVIEW_MCP_CLI
     ? join(repoDir, "src", "cli", "index.js")
     : "";
 const nodeBin = process.env.TRADINGVIEW_MCP_NODE || process.execPath;
-const cliTimeoutMs = Number(process.env.TRADINGVIEW_MCP_CLI_TIMEOUT_MS || 4000);
+const cliTimeoutMs = Number(process.env.TRADINGVIEW_MCP_CLI_TIMEOUT_MS || 8000);
 
 const authority = {
   executionAuthority: "none",
@@ -132,6 +132,80 @@ const compactNumber = (value) => {
 const latestPriceFromQuote = (quote) =>
   compactNumber(quote?.close ?? quote?.last ?? quote?.price ?? quote?.lp ?? quote?.bid ?? quote?.ask);
 
+const normalizeLimit = (value) => {
+  const numeric = Number(value ?? 100);
+  return Number.isFinite(numeric) ? Math.max(1, Math.min(500, Math.floor(numeric))) : 100;
+};
+
+const timestampFromTradingViewTime = (value) => {
+  if (value === undefined || value === null) {
+    return new Date().toISOString();
+  }
+  if (typeof value === "string") {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return timestampFromTradingViewTime(numeric);
+    }
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : new Date().toISOString();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const milliseconds = value > 9_999_999_999 ? value : value * 1000;
+    return new Date(milliseconds).toISOString();
+  }
+  return new Date().toISOString();
+};
+
+const normalizeTradingViewBar = (bar, index, symbol, timeframe) => {
+  const open = compactNumber(bar?.open);
+  const high = compactNumber(bar?.high);
+  const low = compactNumber(bar?.low);
+  const close = compactNumber(bar?.close);
+  const time = compactNumber(bar?.time ?? bar?.timestamp);
+  if (![open, high, low, close, time].every((value) => typeof value === "number")) {
+    return undefined;
+  }
+  const timestamp = timestampFromTradingViewTime(time);
+  return {
+    id: `tradingview_mcp_${symbol}_${timeframe}_${time}_${index}`,
+    time,
+    timestamp,
+    open,
+    high,
+    low,
+    close,
+    volume: compactNumber(bar?.volume) ?? 0,
+    source: "tradingview_mcp",
+    symbol,
+    timeframe
+  };
+};
+
+const normalizeTradingViewCandles = ({ ohlcvResult, symbol, timeframe, limit }) => {
+  const bars = Array.isArray(ohlcvResult.payload?.bars) ? ohlcvResult.payload.bars : [];
+  const candles = bars
+    .map((bar, index) => normalizeTradingViewBar(bar, index, symbol, timeframe))
+    .filter(Boolean)
+    .sort((a, b) => a.time - b.time)
+    .slice(-limit);
+  return candles;
+};
+
+const candleSummary = (candles) => {
+  const first = candles[0];
+  const last = candles[candles.length - 1];
+  return {
+    candleCount: candles.length,
+    firstTimestamp: first?.timestamp,
+    lastTimestamp: last?.timestamp,
+    latestOpen: last?.open,
+    latestHigh: last?.high,
+    latestLow: last?.low,
+    latestClose: last?.close,
+    latestVolume: last?.volume
+  };
+};
+
 const buildEvidence = ({ symbol, timeframe, statusResult, quoteResult, ohlcvResult }) => {
   const quote = quoteResult.payload ?? {};
   const ohlcv = ohlcvResult.payload ?? {};
@@ -179,6 +253,120 @@ const buildEvidence = ({ symbol, timeframe, statusResult, quoteResult, ohlcvResu
     readinessOverrideAuthority: "none"
   };
 };
+
+const buildQuotePayload = ({ symbol, timeframe, statusResult, quoteResult }) => {
+  const quote = quoteResult.payload ?? {};
+  const latestPrice = latestPriceFromQuote(quote);
+  const statusPayload = statusResult.payload ?? {};
+  return {
+    provider: "tradingview_mcp",
+    symbol: String(quote.symbol ?? symbol ?? "unknown"),
+    requestedSymbol: symbol,
+    chartSymbol: statusPayload.chart_symbol,
+    chartResolution: statusPayload.chart_resolution,
+    timeframe,
+    latestPrice,
+    bid: compactNumber(quote.bid),
+    ask: compactNumber(quote.ask),
+    open: compactNumber(quote.open),
+    high: compactNumber(quote.high),
+    low: compactNumber(quote.low),
+    close: compactNumber(quote.close ?? quote.last),
+    volume: compactNumber(quote.volume),
+    timestamp: timestampFromTradingViewTime(quote.time ?? quote.timestamp),
+    connectionStatus: statusResult.ok && quoteResult.ok ? "connected" : statusResult.ok ? "degraded" : "disconnected",
+    sourceCommand: "quote",
+    warnings: [
+      "TradingView MCP quote is read-only chart context, not broker truth.",
+      !quoteResult.ok ? "TradingView MCP quote command failed." : undefined
+    ].filter(Boolean),
+    missingEvidence: latestPrice ? [] : ["Latest price unavailable from TradingView MCP quote command."],
+    mode: "read_only_chart_data",
+    ...authority
+  };
+};
+
+const buildCandlesPayload = ({ symbol, timeframe, limit, statusResult, ohlcvResult }) => {
+  const payloadSymbol = String(ohlcvResult.payload?.symbol ?? symbol ?? "unknown");
+  const payloadTimeframe = String(ohlcvResult.payload?.timeframe ?? ohlcvResult.payload?.interval ?? timeframe ?? "unknown");
+  const statusPayload = statusResult.payload ?? {};
+  const candles = normalizeTradingViewCandles({
+    ohlcvResult,
+    symbol: payloadSymbol,
+    timeframe: payloadTimeframe,
+    limit
+  });
+  const first = candles[0];
+  const last = candles[candles.length - 1];
+  return {
+    provider: "tradingview_mcp",
+    symbol: payloadSymbol,
+    requestedSymbol: symbol,
+    chartSymbol: statusPayload.chart_symbol,
+    chartResolution: statusPayload.chart_resolution,
+    timeframe: payloadTimeframe,
+    requestedTimeframe: timeframe,
+    candles,
+    candleCount: candles.length,
+    firstTimestamp: first?.timestamp,
+    lastTimestamp: last?.timestamp,
+    sourceCommand: `ohlcv --count ${limit}`,
+    connectionStatus: !statusResult.ok
+      ? "disconnected"
+      : candles.length
+        ? "connected_with_candles"
+        : "connected_no_candles",
+    warnings: [
+      "TradingView MCP candles are read-only chart data, not broker truth.",
+      !ohlcvResult.ok ? "TradingView MCP OHLCV command failed." : undefined
+    ].filter(Boolean),
+    missingEvidence: candles.length
+      ? []
+      : ["Full OHLCV candle series unavailable from current CLI command or chart state."],
+    mode: "read_only_chart_data",
+    ...authority
+  };
+};
+
+const buildMarketSnapshotPayload = ({ symbol, timeframe, quote, candles, evidence, statusResult }) => ({
+  snapshotId: `tradingview_mcp_snapshot_${Date.now().toString(36)}`,
+  provider: "tradingview_mcp",
+  symbol: candles.symbol ?? quote.symbol ?? symbol,
+  requestedSymbol: symbol,
+  timeframe: candles.timeframe ?? timeframe,
+  timestamp: new Date().toISOString(),
+  source: "tradingview_mcp_read_only_chart_feed",
+  candles: candles.candles,
+  latestPrice: quote.latestPrice,
+  bid: quote.bid,
+  ask: quote.ask,
+  spread:
+    typeof quote.ask === "number" && typeof quote.bid === "number" && Number.isFinite(quote.ask - quote.bid)
+      ? quote.ask - quote.bid
+      : undefined,
+  session: "unknown",
+  dataQuality: {
+    status: candles.candleCount > 0 ? "usable_chart_feed" : "connected_no_candles",
+    candleCount: candles.candleCount,
+    warnings: [...candles.warnings, ...quote.warnings],
+    missingEvidence: [...candles.missingEvidence, ...quote.missingEvidence]
+  },
+  provenance: {
+    provider: "tradingview_mcp",
+    sourceCommand: candles.sourceCommand,
+    statusPayload: statusResult.ok
+      ? {
+          chartSymbol: statusResult.payload?.chart_symbol,
+          chartResolution: statusResult.payload?.chart_resolution,
+          targetUrl: statusResult.payload?.target_url
+        }
+      : undefined,
+    rawProviderPayloadIncluded: false
+  },
+  evidence,
+  mode: "read_only_chart_data",
+  ...authority
+});
 
 const statusPayload = async () => {
   const statusResult = await runCli(["status"]);
@@ -244,9 +432,70 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (requestUrl.pathname === "/quote") {
+    const symbol = String(requestUrl.searchParams.get("symbol") ?? "unknown");
+    const timeframe = String(requestUrl.searchParams.get("timeframe") ?? "unknown");
+    const [statusResult, quoteResult] = await Promise.all([
+      runCli(["status"]),
+      runCli(["quote"])
+    ]);
+    json(res, 200, buildQuotePayload({ symbol, timeframe, statusResult, quoteResult }));
+    return;
+  }
+
+  if (requestUrl.pathname === "/candles") {
+    const symbol = String(requestUrl.searchParams.get("symbol") ?? "unknown");
+    const timeframe = String(requestUrl.searchParams.get("timeframe") ?? "unknown");
+    const limit = normalizeLimit(requestUrl.searchParams.get("limit"));
+    const [statusResult, ohlcvResult] = await Promise.all([
+      runCli(["status"]),
+      runCli(["ohlcv", "--count", String(limit)])
+    ]);
+    json(res, 200, buildCandlesPayload({ symbol, timeframe, limit, statusResult, ohlcvResult }));
+    return;
+  }
+
+  if (requestUrl.pathname === "/snapshot") {
+    const symbol = String(requestUrl.searchParams.get("symbol") ?? "unknown");
+    const timeframe = String(requestUrl.searchParams.get("timeframe") ?? "unknown");
+    const limit = normalizeLimit(requestUrl.searchParams.get("limit"));
+    const [statusResult, quoteResult, ohlcvResult] = await Promise.all([
+      runCli(["status"]),
+      runCli(["quote"]),
+      runCli(["ohlcv", "--count", String(limit)])
+    ]);
+    const quote = buildQuotePayload({ symbol, timeframe, statusResult, quoteResult });
+    const candles = buildCandlesPayload({ symbol, timeframe, limit, statusResult, ohlcvResult });
+    const ohlcvSummary = candleSummary(candles.candles);
+    const evidence = buildEvidence({
+      symbol,
+      timeframe,
+      statusResult,
+      quoteResult,
+      ohlcvResult: {
+        ...ohlcvResult,
+        payload: {
+          ...ohlcvResult.payload,
+          ...ohlcvSummary
+        }
+      }
+    });
+    const marketSnapshot = buildMarketSnapshotPayload({ symbol, timeframe, quote, candles, evidence, statusResult });
+    json(res, 200, {
+      status: statusResult.ok ? "connected_analysis_only" : "disconnected",
+      quote,
+      candles,
+      evidence,
+      marketSnapshot,
+      mode: "read_only_chart_data",
+      ...authority
+    });
+    return;
+  }
+
   json(res, 404, {
     status: "not_found",
-    message: "Supported routes: GET /health, GET /status, GET /, POST /evidence, GET /evidence?symbol=...&timeframe=...",
+    message: "Supported routes: GET /health, GET /status, GET /, POST /evidence, GET /evidence?symbol=...&timeframe=..., GET /quote, GET /candles, GET /snapshot",
     ...authority
   });
 });

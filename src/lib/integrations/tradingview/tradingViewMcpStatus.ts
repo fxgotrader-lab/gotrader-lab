@@ -6,6 +6,7 @@ import {
   loadTradingViewMcpBridgeStatus
 } from "@/lib/integrations/tradingview/tradingViewEvidenceService";
 import { loadTradingViewMcpSettings } from "@/lib/integrations/tradingview/tradingViewMcpSettings";
+import { loadActiveTradingViewMcpChartFeed } from "@/lib/integrations/tradingview/tradingViewMcpFeedClient";
 import type { TradingViewMcpStatusCheck } from "@/lib/integrations/tradingview/tradingViewMcpBridgeTypes";
 import type { TradingViewEvidence, TradingViewMcpConnectionStatus } from "@/lib/integrations/tradingview/tradingViewMcpTypes";
 
@@ -19,6 +20,9 @@ export interface TradingViewMcpStatus {
   latestEvidence?: TradingViewEvidence;
   latestEvidenceTimestamp?: string;
   evidenceAvailable: boolean;
+  chartFeedAvailable: boolean;
+  chartFeedCandleCount: number;
+  chartFeedStatus: string;
   executionAuthority: "none";
   brokerAuthority: "none";
   readinessOverrideAuthority: "none";
@@ -28,6 +32,7 @@ export const resolveTradingViewMcpStatus = (): TradingViewMcpStatus => {
   const settings = loadTradingViewMcpSettings();
   const bridgeStatus = loadTradingViewMcpBridgeStatus();
   const latestEvidence = loadLatestTradingViewEvidence();
+  const chartFeed = loadActiveTradingViewMcpChartFeed();
   const connected = bridgeStatus.connectionStatus === "connected_analysis_only";
   return {
     adapterStatus: connected ? "connected_analysis_only" : tradingViewMcpAdapterPlan.status,
@@ -44,6 +49,9 @@ export const resolveTradingViewMcpStatus = (): TradingViewMcpStatus => {
     latestEvidence,
     latestEvidenceTimestamp: latestEvidence?.timestamp,
     evidenceAvailable: Boolean(latestEvidence) && connected,
+    chartFeedAvailable: Boolean(chartFeed?.activeForChart && chartFeed.candleCount > 0),
+    chartFeedCandleCount: chartFeed?.candleCount ?? 0,
+    chartFeedStatus: chartFeed?.connectionStatus ?? "not_active",
     executionAuthority: "none",
     brokerAuthority: "none",
     readinessOverrideAuthority: "none"

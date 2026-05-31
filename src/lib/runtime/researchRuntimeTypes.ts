@@ -248,6 +248,11 @@ export interface RuntimeTradingViewMcpState {
   evidenceAvailable: boolean;
   latestEvidence?: TradingViewEvidence;
   latestEvidenceTimestamp?: string;
+  chartFeedAvailable: boolean;
+  chartFeedCandleCount: number;
+  chartFeedSourceLabel: string;
+  chartFeedMatchState: string;
+  chartFeedLastTimestamp?: string;
   chartBias: TradingViewEvidence["chartBias"] | "unavailable";
   confidence: number;
   authorityLabel: "analysis_only";

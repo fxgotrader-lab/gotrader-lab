@@ -8,6 +8,9 @@ const sourceBadgeClass = (source: TradingChartSourceMeta) => {
   if (source.isReplay) {
     return "border-amber-300/40 bg-amber-300/15 text-amber-100";
   }
+  if (source.sourceType === "tradingview_mcp_chart") {
+    return "border-sky-300/40 bg-sky-300/15 text-sky-100";
+  }
   if (source.isMock) {
     return "border-slate-300/30 bg-slate-300/10 text-slate-200";
   }
@@ -33,14 +36,30 @@ export function ChartToolbar({
 }) {
   const visibleOverlayCount = safeArray(lineOverlays).filter((overlay) => overlayVisibility[overlay.id]).length;
   const visibleZoneCount = safeArray(zoneOverlays).filter((zone) => overlayVisibility[zone.id]).length;
+  const sourceBadge = source.isLive
+    ? "LIVE"
+    : source.sourceType === "tradingview_mcp_chart"
+      ? "TRADINGVIEW MCP"
+      : source.isImported
+        ? "IMPORTED"
+        : source.isReplay
+          ? "REPLAY"
+          : source.sourceType === "live_placeholder"
+            ? "LIVE NOT CONNECTED"
+            : "MOCK";
 
   return (
     <div className="flex flex-col gap-3 border-b border-white/10 bg-slate-950/90 px-3 py-3 md:flex-row md:items-start md:justify-between">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className={`rounded-full border px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.16em] ${sourceBadgeClass(source)}`}>
-            {source.isLive ? "LIVE" : source.isImported ? "IMPORTED" : source.isReplay ? "REPLAY" : source.sourceType === "live_placeholder" ? "LIVE NOT CONNECTED" : "MOCK"}
+            {sourceBadge}
           </span>
+          {source.sourceType === "tradingview_mcp_chart" ? (
+            <span className="rounded-full border border-sky-300/30 bg-sky-300/10 px-2 py-0.5 text-[0.65rem] uppercase tracking-[0.16em] text-sky-100">
+              Read-only, not broker truth
+            </span>
+          ) : null}
           {source.sourceType === "live_placeholder" ? (
             <span className="rounded-full border border-purple-300/30 bg-purple-300/10 px-2 py-0.5 text-[0.65rem] uppercase tracking-[0.16em] text-purple-100">
               Future live not connected

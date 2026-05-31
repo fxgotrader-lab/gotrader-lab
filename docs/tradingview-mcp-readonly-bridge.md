@@ -51,7 +51,30 @@ For evidence it attempts:
 - `POST /evidence`
 - `GET /evidence?symbol=...&timeframe=...`
 
+For read-only chart-feed preview it also supports:
+
+- `GET /quote?symbol=...&timeframe=...`
+- `GET /candles?symbol=...&timeframe=...&limit=...`
+- `GET /snapshot?symbol=...&timeframe=...&limit=...`
+
 If no bridge is running, GoTrader shows disconnected status and continues using imported/mock/replay chart sources.
+
+## Read-Only Candle Feed
+
+When the upstream CLI exposes full OHLCV bars through `ohlcv --count`, the GoTrader wrapper normalizes those bars into
+the shared candle contract used by Lightweight Charts:
+
+- timestamp
+- open, high, low, close
+- volume, when available
+- source: `tradingview_mcp`
+- authority fields set to `none`
+
+This feed may be selected as a chart source in Market Data or Settings. It is labeled `TRADINGVIEW MCP` and
+`read-only, not broker truth`. It is not a broker quote, not account truth, and not execution evidence.
+
+If the upstream CLI only returns a summary on a given machine or chart state, `/candles` returns an empty candle array
+with `connected_no_candles` and a `missingEvidence` explanation. GoTrader keeps using imported/mock/replay data.
 
 ## Evidence Contract
 
@@ -88,9 +111,10 @@ The current chart source remains one of:
 - imported historical data
 - mock data
 - replay data
+- TradingView MCP read-only chart feed
 - future true live feed, only when a separate live-feed adapter reports connected status
 
-The UI must not show a LIVE badge just because TradingView MCP evidence is connected.
+The UI must not show a LIVE badge just because TradingView MCP evidence or candles are connected.
 
 ## UI Surfaces
 

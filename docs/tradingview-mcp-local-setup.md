@@ -15,6 +15,9 @@ The upstream `tradesdontlie/tradingview-mcp` project does not expose this HTTP s
 - `GET /`
 - `POST /evidence`
 - `GET /evidence?symbol=...&timeframe=...`
+- `GET /quote?symbol=...&timeframe=...`
+- `GET /candles?symbol=...&timeframe=...&limit=...`
+- `GET /snapshot?symbol=...&timeframe=...&limit=...`
 
 The wrapper is evidence-only. It does not execute trades, connect brokers, place orders, change readiness, or mark chart data as a live broker feed.
 
@@ -161,6 +164,9 @@ Manual checks:
 Invoke-RestMethod http://127.0.0.1:7331/health
 Invoke-RestMethod http://127.0.0.1:7331/status
 Invoke-RestMethod "http://127.0.0.1:7331/evidence?symbol=MNQ&timeframe=5m"
+Invoke-RestMethod "http://127.0.0.1:7331/quote?symbol=MNQ&timeframe=5m"
+Invoke-RestMethod "http://127.0.0.1:7331/candles?symbol=MNQ&timeframe=5m&limit=5"
+Invoke-RestMethod "http://127.0.0.1:7331/snapshot?symbol=MNQ&timeframe=5m&limit=5"
 ```
 
 In the app:
@@ -171,6 +177,7 @@ In the app:
 4. Enable local status checks.
 5. Click `Check status`.
 6. Click `Fetch chart evidence`.
+7. Click `Fetch candles` or `Use as chart source` to render TradingView MCP candles in GoTrader Lightweight Charts.
 
 ## Evidence Shape
 
@@ -186,6 +193,23 @@ The wrapper returns bounded evidence:
 - authority fields set to `none`
 
 It does not return raw unrestricted upstream payloads to the app as broker truth.
+
+## Candle Feed Shape
+
+`GET /candles` returns a normalized read-only payload:
+
+- provider: `tradingview_mcp`
+- symbol/requested symbol and timeframe
+- chart symbol/resolution when upstream status exposes them
+- candles sorted oldest to newest
+- first/last timestamp
+- source command
+- connection status: `connected_with_candles`, `connected_no_candles`, `disconnected`, or `error`
+- warnings and missing evidence
+- authority fields set to `none`
+
+The current upstream CLI can return full bars with `ohlcv --count`. If that changes or a chart has no accessible bars,
+GoTrader does not fake candles; it reports `connected_no_candles` and falls back to imported/mock/replay data.
 
 ## Safety Rules
 

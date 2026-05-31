@@ -31,9 +31,12 @@ import {
   loadPreparedCandleSource
 } from "@/lib/marketData";
 import {
+  loadActiveTradingViewMcpChartFeed,
   resolveTradingViewMcpStatus,
+  TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT,
   TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
-  TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT
+  TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT,
+  tradingViewMcpCandlesToGoTraderCandles
 } from "@/lib/integrations/tradingview";
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import {
@@ -85,9 +88,15 @@ const useActiveResearchCandles = () => {
 export function ICTLab() {
   const preparedSource = useActiveResearchCandles();
   const [tradingViewStatus, setTradingViewStatus] = useState(() => resolveTradingViewMcpStatus());
-  const activeCandles = preparedSource?.candles.length ? preparedSource.candles : mockCandles;
-  const sourceType = preparedSource?.mode === "imported" ? "imported" : "mock";
-  const sourceLabel = preparedSource?.mode === "imported" ? preparedSource.label : "Mock research candles";
+  const [tradingViewFeed, setTradingViewFeed] = useState(() => loadActiveTradingViewMcpChartFeed());
+  const tradingViewCandles = useMemo(() => tradingViewMcpCandlesToGoTraderCandles(tradingViewFeed), [tradingViewFeed]);
+  const activeCandles = tradingViewCandles.length ? tradingViewCandles : preparedSource?.candles.length ? preparedSource.candles : mockCandles;
+  const sourceType = tradingViewCandles.length ? "tradingview_mcp_chart" : preparedSource?.mode === "imported" ? "imported" : "mock";
+  const sourceLabel = tradingViewCandles.length
+    ? "TradingView MCP chart feed - read-only, not broker truth"
+    : preparedSource?.mode === "imported"
+      ? preparedSource.label
+      : "Mock research candles";
 
   const analysis = useMemo(() => {
     const latestAnalysisCandle = activeCandles[activeCandles.length - 1];
@@ -182,11 +191,16 @@ export function ICTLab() {
   }, {});
 
   useEffect(() => {
-    const refreshTradingViewStatus = () => setTradingViewStatus(resolveTradingViewMcpStatus());
+    const refreshTradingViewStatus = () => {
+      setTradingViewStatus(resolveTradingViewMcpStatus());
+      setTradingViewFeed(loadActiveTradingViewMcpChartFeed());
+    };
+    window.addEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refreshTradingViewStatus);
     window.addEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refreshTradingViewStatus);
     window.addEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refreshTradingViewStatus);
     window.addEventListener("storage", refreshTradingViewStatus);
     return () => {
+      window.removeEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refreshTradingViewStatus);
       window.removeEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refreshTradingViewStatus);
       window.removeEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refreshTradingViewStatus);
       window.removeEventListener("storage", refreshTradingViewStatus);
@@ -315,8 +329,10 @@ export function ICTLab() {
           <StatusTile label="Confidence" value={String(tradingViewStatus.latestEvidence?.confidence ?? 0)} />
           <StatusTile label="Authority" value="analysis only" />
           <div className="rounded-lg border border-cyan-300/20 bg-background/45 p-3 text-cyan-100 md:col-span-4">
-            {tradingViewStatus.latestEvidence?.technicalSummary ??
-              "TradingView MCP evidence is not connected. ICT Lab is using GoTrader candles and deterministic structure analysis only."}
+            {tradingViewCandles.length
+              ? `TradingView MCP chart feed is active with ${tradingViewCandles.length.toLocaleString()} read-only candles. ICT analysis treats it as chart data, not broker truth.`
+              : tradingViewStatus.latestEvidence?.technicalSummary ??
+                "TradingView MCP evidence is not connected. ICT Lab is using GoTrader candles and deterministic structure analysis only."}
           </div>
         </CardContent>
       </Card>

@@ -63,7 +63,30 @@ try {
   });
 }
 
+for (const endpoint of [
+  `quote?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}`,
+  `candles?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=5`,
+  `snapshot?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=5`
+]) {
+  const url = `${bridgeUrl}/${endpoint}`;
+  try {
+    checks.push({ endpoint: `GET /${endpoint}`, url, ...(await fetchWithTimeout(url)) });
+  } catch (error) {
+    checks.push({
+      endpoint: `GET /${endpoint}`,
+      url,
+      ok: false,
+      status: "error",
+      payload: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
 const connected = checks.some((check) => check.ok);
+const candlesCheck = checks.find((check) => String(check.endpoint).startsWith("GET /candles"));
+const candlePayload = candlesCheck?.payload && typeof candlesCheck.payload === "object" ? candlesCheck.payload : undefined;
+const quoteCheck = checks.find((check) => String(check.endpoint).startsWith("GET /quote"));
+const quotePayload = quoteCheck?.payload && typeof quoteCheck.payload === "object" ? quoteCheck.payload : undefined;
 
 console.log(
   JSON.stringify(
@@ -72,9 +95,29 @@ console.log(
       symbol,
       timeframe,
       connected,
-      mode: "read_only_analysis",
+      quoteEndpoint: quotePayload
+        ? {
+            connectionStatus: quotePayload.connectionStatus,
+            latestPrice: quotePayload.latestPrice,
+            authority: {
+              executionAuthority: quotePayload.executionAuthority,
+              brokerAuthority: quotePayload.brokerAuthority,
+              readinessOverrideAuthority: quotePayload.readinessOverrideAuthority
+            }
+          }
+        : undefined,
+      candleEndpoint: candlePayload
+        ? {
+            connectionStatus: candlePayload.connectionStatus,
+            candleCount: candlePayload.candleCount,
+            firstTimestamp: candlePayload.firstTimestamp,
+            lastTimestamp: candlePayload.lastTimestamp,
+            missingEvidence: candlePayload.missingEvidence
+          }
+        : undefined,
+      mode: "read_only_chart_data",
       note: connected
-        ? "Bridge responded. Verify evidence remains advisory-only."
+        ? "Bridge responded. Evidence and candle feed remain read-only and advisory."
         : "Bridge did not respond. This is expected unless the local wrapper is running.",
       ...authority,
       checks

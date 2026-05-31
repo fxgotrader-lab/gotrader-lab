@@ -10,8 +10,10 @@ import {
   requiredLLMAgents
 } from "@/lib/llm";
 import {
+  loadActiveTradingViewMcpChartFeed,
   resolveTradingViewMcpStatus,
   TRADINGVIEW_MCP_EVIDENCE_STORAGE_KEY,
+  TRADINGVIEW_MCP_CHART_FEED_STORAGE_KEY,
   TRADINGVIEW_MCP_SETTINGS_STORAGE_KEY,
   TRADINGVIEW_MCP_STATUS_STORAGE_KEY
 } from "@/lib/integrations/tradingview";
@@ -146,11 +148,17 @@ const marketStateFor = (
 const tradingViewMcpStateFor = (): RuntimeTradingViewMcpState => {
   const status = resolveTradingViewMcpStatus();
   const latestEvidence = status.latestEvidence;
+  const chartFeed = loadActiveTradingViewMcpChartFeed();
   return {
     status,
     evidenceAvailable: status.evidenceAvailable,
     latestEvidence,
     latestEvidenceTimestamp: status.latestEvidenceTimestamp,
+    chartFeedAvailable: Boolean(chartFeed?.activeForChart && chartFeed.candleCount > 0),
+    chartFeedCandleCount: chartFeed?.candleCount ?? 0,
+    chartFeedSourceLabel: chartFeed?.sourceLabel ?? "TradingView MCP chart feed not active",
+    chartFeedMatchState: chartFeed?.matchState ?? "unavailable",
+    chartFeedLastTimestamp: chartFeed?.lastTimestamp,
     chartBias: latestEvidence?.chartBias ?? "unavailable",
     confidence: latestEvidence?.confidence ?? 0,
     authorityLabel: "analysis_only",
@@ -712,6 +720,7 @@ export async function resolveResearchRuntimeSnapshot(
     `market data: ${marketData.sourceLabel}`,
     `live feed: ${marketData.liveMarketDataStatus.liveFeedSourceLabel} / ${marketData.liveMarketDataStatus.connectionStatus}`,
     `TradingView MCP evidence: ${tradingViewMcp.evidenceAvailable ? "available" : "not available"} / ${tradingViewMcp.status.bridgeStatus.connectionStatus}`,
+    `TradingView MCP chart feed: ${tradingViewMcp.chartFeedAvailable ? `${tradingViewMcp.chartFeedCandleCount} candles` : "not active"} / ${tradingViewMcp.chartFeedMatchState}`,
     `imported data status: ${marketData.importedDataStatus}`,
     `active import id: ${marketData.activeImportId ?? "none"}`,
     `stored imports: ${marketData.importedDatasetCount}`,
@@ -1023,6 +1032,7 @@ export async function resolveResearchRuntimeSnapshot(
         TRADINGVIEW_MCP_SETTINGS_STORAGE_KEY,
         TRADINGVIEW_MCP_STATUS_STORAGE_KEY,
         TRADINGVIEW_MCP_EVIDENCE_STORAGE_KEY,
+        TRADINGVIEW_MCP_CHART_FEED_STORAGE_KEY,
         CANDLE_WINDOW_SETTINGS_UPDATED_EVENT
       ]
     }

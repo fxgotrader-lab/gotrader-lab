@@ -32,7 +32,20 @@ import {
   type PreparedCandleSource
 } from "@/lib/marketData";
 import { buildVwapOverlay, createTradingChartData } from "@/lib/charting";
-import { resolveTradingViewMcpStatus } from "@/lib/integrations/tradingview";
+import {
+  clearActiveTradingViewMcpChartFeed,
+  fetchAndStoreTradingViewMcpChartFeed,
+  fetchTradingViewMcpCandles,
+  fetchTradingViewMcpQuote,
+  loadActiveTradingViewMcpChartFeed,
+  loadTradingViewMcpSettings,
+  resolveTradingViewMcpStatus,
+  TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT,
+  tradingViewMcpCandlesToGoTraderCandles,
+  type ActiveTradingViewMcpChartFeed,
+  type TradingViewMcpCandlesResponse,
+  type TradingViewMcpQuoteResponse
+} from "@/lib/integrations/tradingview";
 import type { FuturesSymbol, Timeframe } from "@/lib/types";
 
 const symbolOptions = ["ES", "NQ", "MES", "MNQ"].map((value) => ({ label: value, value }));
@@ -81,6 +94,12 @@ export function MarketDataView() {
   const [importMessage, setImportMessage] = useState<string>();
   const [importError, setImportError] = useState<string>();
   const [importing, setImporting] = useState(false);
+  const [tradingViewFeed, setTradingViewFeed] = useState<ActiveTradingViewMcpChartFeed | undefined>(() =>
+    loadActiveTradingViewMcpChartFeed()
+  );
+  const [tradingViewQuote, setTradingViewQuote] = useState<TradingViewMcpQuoteResponse | undefined>();
+  const [tradingViewCandles, setTradingViewCandles] = useState<TradingViewMcpCandlesResponse | undefined>();
+  const [tradingViewFeedMessage, setTradingViewFeedMessage] = useState<string>();
   const contextSymbol = activeSource.metadata?.symbol ?? symbol;
   const contextTimeframe = activeSource.mode === "imported" ? activeSource.appliedSettings.targetTimeframe : timeframe;
   const context = useMemo(
@@ -93,21 +112,26 @@ export function MarketDataView() {
       }),
     [activeSource, contextSymbol, contextTimeframe]
   );
+  const tradingViewChartCandles = useMemo(
+    () => tradingViewMcpCandlesToGoTraderCandles(tradingViewFeed).slice(-240),
+    [tradingViewFeed]
+  );
   const previewChartData = useMemo(() => {
-    const candles = activeSource.candles.slice(-240);
+    const usingTradingView = tradingViewChartCandles.length > 0;
+    const candles = usingTradingView ? tradingViewChartCandles : activeSource.candles.slice(-240);
     const vwap = buildVwapOverlay(candles);
     return {
       ...createTradingChartData({
         candles,
-        sourceLabel: activeSource.label,
-        sourceType: activeSource.mode === "imported" ? "imported" : "mock",
-        symbol: contextSymbol,
-        timeframe: contextTimeframe
+        sourceLabel: usingTradingView ? "TradingView MCP chart feed - read-only, not broker truth" : activeSource.label,
+        sourceType: usingTradingView ? "tradingview_mcp_chart" : activeSource.mode === "imported" ? "imported" : "mock",
+        symbol: usingTradingView ? tradingViewFeed?.providerSymbol ?? contextSymbol : contextSymbol,
+        timeframe: usingTradingView ? tradingViewFeed?.timeframe ?? contextTimeframe : contextTimeframe
       }),
       lineOverlays: vwap ? [vwap] : [],
       stateLabel: "Data preview"
     };
-  }, [activeSource.candles, activeSource.label, activeSource.mode, contextSymbol, contextTimeframe]);
+  }, [activeSource.candles, activeSource.label, activeSource.mode, contextSymbol, contextTimeframe, tradingViewChartCandles, tradingViewFeed]);
   const importOptions = [
     { label: "Mock candles", value: "mock" },
     ...imports.map((item) => ({
@@ -118,7 +142,7 @@ export function MarketDataView() {
   const latestImport = imports[0];
   const activeImportIsStale = Boolean(activeImportId && !imports.some((item) => item.importId === activeImportId));
   const importedDatasetsNeedActivation = imports.length > 0 && activeSource.mode !== "imported";
-  const liveMarketDataStatus = useMemo(() => resolveLiveMarketDataStatus(activeSource), [activeSource]);
+  const liveMarketDataStatus = useMemo(() => resolveLiveMarketDataStatus(activeSource, tradingViewFeed), [activeSource, tradingViewFeed]);
   const liveDataModeLabel = liveMarketDataStatus.dataMode.replace(/_/g, " ");
   const tradingViewMcpStatus = useMemo(() => resolveTradingViewMcpStatus(), []);
 
@@ -155,6 +179,16 @@ export function MarketDataView() {
       window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
       window.removeEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
+    };
+  }, []);
+
+  useEffect(() => {
+    const refreshTradingViewFeed = () => setTradingViewFeed(loadActiveTradingViewMcpChartFeed());
+    window.addEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refreshTradingViewFeed);
+    window.addEventListener("storage", refreshTradingViewFeed);
+    return () => {
+      window.removeEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refreshTradingViewFeed);
+      window.removeEventListener("storage", refreshTradingViewFeed);
     };
   }, []);
 
@@ -237,6 +271,55 @@ export function MarketDataView() {
     await refreshImports();
   };
 
+  const fetchTradingViewQuoteForChart = async () => {
+    setTradingViewFeedMessage(`Fetching TradingView MCP quote for ${symbol} ${timeframe}...`);
+    const settings = loadTradingViewMcpSettings();
+    const quote = await fetchTradingViewMcpQuote({ symbol, timeframe }, { ...settings, enabled: true });
+    setTradingViewQuote(quote);
+    setTradingViewFeedMessage(
+      quote.latestPrice
+        ? `TradingView MCP quote loaded. Latest price ${quote.latestPrice}.`
+        : quote.missingEvidence.join(" ") || "TradingView MCP quote unavailable."
+    );
+  };
+
+  const fetchTradingViewCandlesForChart = async () => {
+    setTradingViewFeedMessage(`Fetching TradingView MCP candles for ${symbol} ${timeframe}...`);
+    const settings = loadTradingViewMcpSettings();
+    const candles = await fetchTradingViewMcpCandles({ symbol, timeframe, limit: 240 }, { ...settings, enabled: true });
+    setTradingViewCandles(candles);
+    setTradingViewFeedMessage(
+      candles.candleCount
+        ? `TradingView MCP returned ${candles.candleCount.toLocaleString()} candles.`
+        : candles.missingEvidence.join(" ") || "TradingView MCP connected but candle series unavailable."
+    );
+  };
+
+  const useTradingViewCandlesAsChartSource = async () => {
+    setTradingViewFeedMessage(`Loading TradingView MCP candles into GoTrader chart for ${symbol} ${timeframe}...`);
+    const settings = loadTradingViewMcpSettings();
+    const feed = await fetchAndStoreTradingViewMcpChartFeed({
+      symbol,
+      timeframe,
+      gotraderSymbol: symbol,
+      gotraderTimeframe: timeframe,
+      limit: 240,
+      settings: { ...settings, enabled: true }
+    });
+    setTradingViewFeed(feed);
+    setTradingViewFeedMessage(
+      feed.candleCount
+        ? `TradingView MCP chart source active with ${feed.candleCount.toLocaleString()} read-only candles. ${feed.matchReason}`
+        : feed.missingEvidence.join(" ") || "TradingView MCP connected but did not return full candle series."
+    );
+  };
+
+  const clearTradingViewChartSource = () => {
+    clearActiveTradingViewMcpChartFeed();
+    setTradingViewFeed(undefined);
+    setTradingViewFeedMessage("TradingView MCP chart source cleared. Falling back to imported/mock candles.");
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
@@ -282,11 +365,15 @@ export function MarketDataView() {
             <div className="rounded-md border border-border bg-background/45 p-3">
               <p className="font-medium text-foreground">TradingView MCP</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {tradingViewMcpStatus.evidenceAvailable ? "Read-only chart evidence available." : "Analysis/evidence source is disconnected."} It is not
+                {tradingViewMcpStatus.evidenceAvailable ? "Read-only chart evidence available." : "Analysis/evidence source is disconnected."}{" "}
+                {tradingViewFeed?.activeForChart ? "Read-only chart candles are active for visual display." : "Chart candles are not active."} It is not
                 market-data truth, not a broker feed, and not an execution source.
               </p>
               <Badge variant={tradingViewMcpStatus.evidenceAvailable ? "success" : "warning"} className="mt-2">
                 evidence {tradingViewMcpStatus.evidenceAvailable ? "available" : "not connected"}
+              </Badge>
+              <Badge variant={tradingViewFeed?.activeForChart ? "success" : "secondary"} className="mt-2 ml-2">
+                chart feed {tradingViewFeed?.activeForChart ? "active" : "inactive"}
               </Badge>
             </div>
             <div className="rounded-md border border-border bg-background/45 p-3">
@@ -301,6 +388,87 @@ export function MarketDataView() {
                 Disabled. No order placement, readiness override, or broker authority is available.
               </p>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <RadioTower className="h-4 w-4 text-sky-300" aria-hidden="true" />
+            TradingView MCP Chart Feed
+          </CardTitle>
+          <CardDescription>
+            Pull read-only candles from the local TradingView MCP wrapper into GoTrader Lightweight Charts. This is not
+            broker truth and has no execution authority.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm">
+          <div className="grid gap-3 md:grid-cols-5">
+            <div className="space-y-2">
+              <Label htmlFor="tradingview-feed-symbol">Symbol</Label>
+              <Select
+                id="tradingview-feed-symbol"
+                value={symbol}
+                options={symbolOptions}
+                onChange={(event) => setSymbol(event.target.value as FuturesSymbol)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tradingview-feed-timeframe">Timeframe</Label>
+              <Select
+                id="tradingview-feed-timeframe"
+                value={timeframe}
+                options={timeframeOptions}
+                onChange={(event) => setTimeframe(event.target.value as Timeframe)}
+              />
+            </div>
+            <Button variant="secondary" onClick={() => void fetchTradingViewQuoteForChart()} className="self-end">
+              Fetch quote
+            </Button>
+            <Button variant="outline" onClick={() => void fetchTradingViewCandlesForChart()} className="self-end">
+              Fetch candles
+            </Button>
+            <Button variant="secondary" onClick={() => void useTradingViewCandlesAsChartSource()} className="self-end">
+              Use as chart source
+            </Button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-4">
+            <StatusTile label="Bridge" value={tradingViewMcpStatus.bridgeStatus.connectionStatus.replace(/_/g, " ")} />
+            <StatusTile label="Quote latest" value={String(tradingViewQuote?.latestPrice ?? tradingViewFeed?.latestClose ?? "none")} />
+            <StatusTile label="Candle status" value={(tradingViewCandles?.connectionStatus ?? tradingViewFeed?.connectionStatus ?? "not loaded").replace(/_/g, " ")} />
+            <StatusTile label="Candle count" value={String(tradingViewCandles?.candleCount ?? tradingViewFeed?.candleCount ?? 0)} />
+            <StatusTile label="First candle" value={formatDate(tradingViewCandles?.firstTimestamp ?? tradingViewFeed?.firstTimestamp)} />
+            <StatusTile label="Last candle" value={formatDate(tradingViewCandles?.lastTimestamp ?? tradingViewFeed?.lastTimestamp)} />
+            <StatusTile label="Match state" value={(tradingViewFeed?.matchState ?? "unavailable").replace(/_/g, " ")} />
+            <StatusTile label="Authority" value="none" />
+          </div>
+          {tradingViewFeedMessage ? (
+            <div className="rounded-md border border-sky-300/25 bg-sky-300/10 p-3 text-sky-100">
+              {tradingViewFeedMessage}
+            </div>
+          ) : null}
+          {tradingViewFeed?.activeForChart ? (
+            <div className="flex flex-col gap-3 rounded-md border border-emerald-300/25 bg-emerald-300/10 p-3 text-emerald-100 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="font-medium">TradingView MCP chart source active</p>
+                <p className="mt-1 text-xs text-emerald-100/80">
+                  {tradingViewFeed.providerSymbol} {tradingViewFeed.timeframe} / {tradingViewFeed.candleCount.toLocaleString()} candles / {tradingViewFeed.matchReason}
+                </p>
+              </div>
+              <Button variant="outline" onClick={clearTradingViewChartSource} className="shrink-0">
+                Clear chart source
+              </Button>
+            </div>
+          ) : (
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              TradingView MCP chart feed is not active. If the bridge connects but returns no full candles, GoTrader
+              keeps using imported/mock/replay candles and shows a clear fallback.
+            </div>
+          )}
+          <div className="rounded-md border border-border bg-background/45 p-3 text-xs text-muted-foreground">
+            Source distinction: TradingView MCP candles are read-only chart data. Broker quotes, fills, positions, and
+            account truth must come from future broker adapters, and execution remains disabled.
           </div>
         </CardContent>
       </Card>
@@ -531,14 +699,16 @@ export function MarketDataView() {
                 <p className="font-semibold">Prepared Candle Preview</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Shared Lightweight Charts preview of the current research window. Current chart source:{" "}
-                  {liveDataModeLabel}.{" "}
-                  {liveMarketDataStatus.liveFeedAvailable
-                    ? liveMarketDataStatus.liveFeedSourceLabel
-                    : "Live feed not connected."}
+                  {tradingViewChartCandles.length ? "TradingView MCP chart feed" : liveDataModeLabel}.{" "}
+                  {tradingViewChartCandles.length
+                    ? "Read-only TradingView MCP data; not broker truth."
+                    : liveMarketDataStatus.liveFeedAvailable
+                      ? liveMarketDataStatus.liveFeedSourceLabel
+                      : "Live feed not connected."}
                 </p>
               </div>
-              <Badge variant={activeSource.mode === "imported" ? "success" : "warning"}>
-                {activeSource.mode === "imported" ? "IMPORTED" : "MOCK"}
+              <Badge variant={tradingViewChartCandles.length ? "secondary" : activeSource.mode === "imported" ? "success" : "warning"}>
+                {tradingViewChartCandles.length ? "TRADINGVIEW MCP" : activeSource.mode === "imported" ? "IMPORTED" : "MOCK"}
               </Badge>
             </div>
             <TradingChart {...previewChartData} heightClassName="h-[280px]" />

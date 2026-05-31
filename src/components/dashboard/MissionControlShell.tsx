@@ -26,8 +26,11 @@ import { createPlannedHermesNotificationState } from "@/lib/integrations/hermesN
 import { createPlannedOpenClawMemoryHookState } from "@/lib/integrations/openclawMemoryHooks";
 import { paperclipAgentOperationsPolicy } from "@/lib/integrations/paperclipAuthorityPolicy";
 import {
+  loadActiveTradingViewMcpChartFeed,
+  TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT,
   TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
   TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT,
+  tradingViewMcpCandlesToGoTraderCandles,
   tradingViewMcpAdapterPlan
 } from "@/lib/integrations/tradingview";
 import { mt5ExecutionAdapterPlan } from "@/lib/brokers/mt5";
@@ -69,19 +72,22 @@ const pct = (value?: number) =>
 const formatToken = (value?: string) => (value ?? "idle").replace(/_/g, " ");
 
 const buildCommandCenterChartData = (snapshot?: ResearchRuntimeSnapshot) => {
-  const candles = snapshot?.marketData.preparedSource.candles.slice(-160) ?? [];
+  const tradingViewFeed = loadActiveTradingViewMcpChartFeed();
+  const tradingViewCandles = tradingViewMcpCandlesToGoTraderCandles(tradingViewFeed).slice(-160);
+  const candles = tradingViewCandles.length ? tradingViewCandles : snapshot?.marketData.preparedSource.candles.slice(-160) ?? [];
   if (!snapshot || !candles.length) {
     return undefined;
   }
-  const sourceType = snapshot.marketData.isImportedDataActive ? "imported" : "mock";
+  const usingTradingView = tradingViewCandles.length > 0;
+  const sourceType = usingTradingView ? "tradingview_mcp_chart" : snapshot.marketData.isImportedDataActive ? "imported" : "mock";
   const vwap = buildVwapOverlay(candles);
   return {
     ...createTradingChartData({
       candles,
-      sourceLabel: snapshot.marketData.sourceLabel,
+      sourceLabel: usingTradingView ? "TradingView MCP chart feed - read-only, not broker truth" : snapshot.marketData.sourceLabel,
       sourceType,
-      symbol: snapshot.marketData.symbol,
-      timeframe: snapshot.marketData.timeframe
+      symbol: usingTradingView ? tradingViewFeed?.providerSymbol ?? snapshot.marketData.symbol : snapshot.marketData.symbol,
+      timeframe: usingTradingView ? tradingViewFeed?.timeframe ?? snapshot.marketData.timeframe : snapshot.marketData.timeframe
     }),
     lineOverlays: vwap ? [vwap] : [],
     stateLabel: `${formatToken(snapshot.latestResearchCycle.latestCycleStatus)} / broker disabled`
@@ -117,6 +123,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
     window.addEventListener(WALK_FORWARD_UPDATED_EVENT, refresh);
     window.addEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
     window.addEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
+    window.addEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refresh);
     window.addEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refresh);
     window.addEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
@@ -129,6 +136,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
       window.removeEventListener(WALK_FORWARD_UPDATED_EVENT, refresh);
       window.removeEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
+      window.removeEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refresh);
       window.removeEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refresh);
       window.removeEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
@@ -245,6 +253,11 @@ export function MissionControlShell({ state }: { state: LabState }) {
                 TradingView MCP evidence: {runtimeSnapshot.tradingViewMcp.evidenceAvailable ? "connected" : "disconnected"}; latest{" "}
                 {runtimeSnapshot.tradingViewMcp.latestEvidenceTimestamp ?? "none"}; bias {runtimeSnapshot.tradingViewMcp.chartBias}; authority analysis only.
               </p>
+              <p className="mt-1 text-xs opacity-80">
+                TradingView MCP chart feed: {runtimeSnapshot.tradingViewMcp.chartFeedAvailable ? "active" : "not active"};{" "}
+                {runtimeSnapshot.tradingViewMcp.chartFeedCandleCount.toLocaleString()} candles; match{" "}
+                {runtimeSnapshot.tradingViewMcp.chartFeedMatchState.replace(/_/g, " ")}.
+              </p>
             </div>
             <Link to="/market-data">
               <Button variant="secondary" className="w-full md:w-auto">
@@ -341,6 +354,12 @@ export function MissionControlShell({ state }: { state: LabState }) {
               "TradingView evidence",
               runtimeSnapshot?.tradingViewMcp
                 ? `${runtimeSnapshot.tradingViewMcp.status.bridgeStatus.connectionStatus.replace(/_/g, " ")} / evidence ${runtimeSnapshot.tradingViewMcp.evidenceAvailable ? "yes" : "no"} / bias ${runtimeSnapshot.tradingViewMcp.chartBias} / confidence ${runtimeSnapshot.tradingViewMcp.confidence.toFixed(2)}`
+                : "not checked"
+            ],
+            [
+              "TradingView chart feed",
+              runtimeSnapshot?.tradingViewMcp
+                ? `${runtimeSnapshot.tradingViewMcp.chartFeedAvailable ? "active" : "not active"} / ${runtimeSnapshot.tradingViewMcp.chartFeedCandleCount} candles / ${runtimeSnapshot.tradingViewMcp.chartFeedMatchState.replace(/_/g, " ")}`
                 : "not checked"
             ],
             [
@@ -451,6 +470,9 @@ export function MissionControlShell({ state }: { state: LabState }) {
             <div className="flex flex-wrap gap-2">
               <Badge variant={runtimeSnapshot?.tradingViewMcp.evidenceAvailable ? "success" : "secondary"}>
                 TradingView {runtimeSnapshot?.tradingViewMcp.status.bridgeStatus.connectionStatus.replace(/_/g, " ") ?? tradingViewMcpAdapterPlan.status.replace(/_/g, " ")}
+              </Badge>
+              <Badge variant={runtimeSnapshot?.tradingViewMcp.chartFeedAvailable ? "success" : "secondary"}>
+                TV chart feed {runtimeSnapshot?.tradingViewMcp.chartFeedAvailable ? "active" : "not active"}
               </Badge>
               <Badge variant="warning">Tradovate {tradovateExecutionAdapterPlan.status.replace(/_/g, " ")}</Badge>
               <Badge variant="warning">MT5 {mt5ExecutionAdapterPlan.status.replace(/_/g, " ")}</Badge>
