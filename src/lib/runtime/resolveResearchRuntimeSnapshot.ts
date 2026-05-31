@@ -35,6 +35,7 @@ import {
   resolveActiveBacktestConfig,
   SELF_IMPROVEMENT_STORAGE_KEY
 } from "@/lib/selfImprovement";
+import { analyzeGrinchPhase1, summarizeGrinchPhase1 } from "@/lib/strategyLibrary";
 import {
   countCompletedRunbookItems,
   loadSimulationRunbookState,
@@ -438,6 +439,16 @@ export async function resolveResearchRuntimeSnapshot(
     warnings: ["Prepared candle source could not be loaded; runtime snapshot used an empty mock fallback."]
   };
   const marketData = marketStateFor(source, latestCycle?.backtestSummary?.config.symbol, latestCycle?.researchTimeframe);
+  const grinchPhase1Summary = source.candles.length
+    ? analyzeGrinchPhase1({
+        candles: source.candles,
+        options: {
+          symbol: marketData.symbol,
+          timeframe: marketData.timeframe,
+          currentTimestamp: source.candles[source.candles.length - 1]?.timestamp
+        }
+      })
+    : undefined;
   const readinessSnapshot = evaluateReadinessGate({
     validation,
     quality: researchQuality,
@@ -507,6 +518,7 @@ export async function resolveResearchRuntimeSnapshot(
     `latest walk-forward: ${latestWalkForward?.runId ?? "none"}`,
     `latest proposal: ${latestProposal?.proposalId ?? "none"}`,
     `latest LLM run: ${latestLLMRun?.runId ?? "none"}`,
+    `Grinch Phase 1: ${summarizeGrinchPhase1(grinchPhase1Summary)}`,
     `readiness: ${readinessSnapshot.state}`
   ];
   const staleStateWarnings = [
@@ -683,6 +695,7 @@ export async function resolveResearchRuntimeSnapshot(
       latestValidationSummary: latestCycle?.validationSummary,
       latestResearchQualitySummary: latestCycle?.researchQualitySummary,
       latestReadinessSummary: latestCycle?.readinessSnapshot,
+      grinchPhase1Summary,
       latestRun: latestCycle
     },
     llm: {

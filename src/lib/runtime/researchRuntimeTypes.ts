@@ -6,6 +6,7 @@ import type { CandleDataSourceMode, CandleWindowSettings, PreparedCandleSource, 
 import type { CanonicalPerformanceMetrics } from "@/lib/performance/canonicalMetrics";
 import type { SimulatedAccount } from "@/lib/performance/simulatedAccount";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
+import type { GrinchPhase1ModelOutput } from "@/lib/strategyLibrary";
 import type {
   ResearchCycleBacktestSummary,
   ResearchCycleQualitySummary,
@@ -100,6 +101,7 @@ export interface RuntimeResearchCycleState {
   latestValidationSummary?: ResearchCycleValidationSummary;
   latestResearchQualitySummary?: ResearchCycleQualitySummary;
   latestReadinessSummary?: ReadinessGateSnapshot;
+  grinchPhase1Summary?: GrinchPhase1ModelOutput;
   latestRun?: ResearchCycleRun;
 }
 

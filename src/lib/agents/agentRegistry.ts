@@ -1,4 +1,5 @@
 import type { InternalAgentDefinition, InternalAgentRunContext } from "@/lib/agents/agentTypes";
+import { analyzeGrinchPhase1 } from "@/lib/strategyLibrary";
 import type { MarketBias, MarketRegime } from "@/lib/types";
 import { clamp } from "@/lib/utils";
 
@@ -23,6 +24,20 @@ const regimeBias: Record<MarketRegime, MarketBias> = {
 };
 
 const contextTags = ["session timing", "higher-timeframe bias", "premium/discount"] as const;
+
+const grinchPhase1For = ({ ictContext, marketContext }: InternalAgentRunContext) =>
+  analyzeGrinchPhase1({
+    candles: marketContext.priceVolume.ohlcv.candles,
+    fairValueGaps: ictContext.fairValueGaps,
+    liquiditySweeps: ictContext.liquiditySweeps,
+    options: {
+      symbol: marketContext.symbol,
+      timeframe: marketContext.timeframe,
+      currentTimestamp: marketContext.priceVolume.ohlcv.candles[marketContext.priceVolume.ohlcv.candles.length - 1]?.timestamp
+    }
+  });
+
+const grinchBiasToMarketBias = (bias: string): MarketBias => (bias === "bullish" || bias === "bearish" ? bias : "neutral");
 
 export const researchAgentRegistry: InternalAgentDefinition[] = [
   {
@@ -88,6 +103,209 @@ export const researchAgentRegistry: InternalAgentDefinition[] = [
         warningFactors,
         recommendation: bias === "neutral" ? "Keep CIO thesis neutral unless structure breaks cleanly." : `Use ${bias} structure as the primary directional anchor.`,
         ictTags: ["market structure shift", "higher-timeframe bias", "displacement"]
+      };
+    }
+  },
+  {
+    agentId: "grinch-htf-bias-agent",
+    name: "Higher-Timeframe Bias Agent",
+    layer: "strategy",
+    weight: 0.08,
+    run(context) {
+      const phase1 = grinchPhase1For(context);
+      const bias = grinchBiasToMarketBias(phase1.htfBias);
+      return {
+        agentId: "grinch-htf-bias-agent",
+        name: "Higher-Timeframe Bias Agent",
+        layer: "strategy",
+        bias,
+        confidence: clamp(0.38 + phase1.confidenceAdjustment * 0.34, 0.3, 0.82),
+        weight: 0.08,
+        reasoning: `Grinch Phase 1 reads ${phase1.htfBias} with draw on ${phase1.htfDrawOnLiquidity}.`,
+        supportingFactors: phase1.reasons.slice(0, 3),
+        warningFactors: phase1.htfBias === "unclear" ? ["Higher-timeframe draw is unclear; do not force a thesis."] : [],
+        recommendation: bias === "neutral" ? "Keep CIO neutral until HTF draw and range logic align." : `Use ${bias} HTF bias only after lower-timeframe confirmation.`,
+        ictTags: ["higher-timeframe bias", "premium/discount", "liquidity sweep"]
+      };
+    }
+  },
+  {
+    agentId: "grinch-pd-array-hierarchy-agent",
+    name: "PD Array Hierarchy Agent",
+    layer: "strategy",
+    weight: 0.06,
+    run(context) {
+      const phase1 = grinchPhase1For(context);
+      const active = phase1.activePdArrays[0];
+      const bias = grinchBiasToMarketBias(active?.direction ?? phase1.htfBias);
+      return {
+        agentId: "grinch-pd-array-hierarchy-agent",
+        name: "PD Array Hierarchy Agent",
+        layer: "strategy",
+        bias,
+        confidence: clamp(0.34 + (active ? active.strength * 0.32 : 0) + phase1.entryConfirmation.confirmationScore * 0.16, 0.28, 0.8),
+        weight: 0.06,
+        reasoning: active ? `${active.label} ranks ${active.hierarchyRank} and is ${active.respected ? "respected" : active.active ? "active" : "nearby"}.` : "No active PD array is confirmed.",
+        supportingFactors: phase1.activePdArrays.slice(0, 3).map((array) => `${array.label}: ${array.reason}`),
+        warningFactors: active ? [] : ["No high-quality PD array is active; lower-timeframe entries are incomplete."],
+        recommendation: active ? `Prioritize ${active.label} before lower hierarchy arrays.` : "Wait for opening-price or imbalance reference to become active.",
+        ictTags: ["premium/discount", "fair value gap", "higher-timeframe bias"]
+      };
+    }
+  },
+  {
+    agentId: "grinch-opening-price-equilibrium-agent",
+    name: "Opening Price Equilibrium Agent",
+    layer: "strategy",
+    weight: 0.06,
+    run(context) {
+      const phase1 = grinchPhase1For(context);
+      const bias: MarketBias =
+        phase1.twelveAmOpenState.currentRelation === "below" && phase1.htfBias === "bullish"
+          ? "bullish"
+          : phase1.twelveAmOpenState.currentRelation === "above" && phase1.htfBias === "bearish"
+            ? "bearish"
+            : "neutral";
+      return {
+        agentId: "grinch-opening-price-equilibrium-agent",
+        name: "Opening Price Equilibrium Agent",
+        layer: "strategy",
+        bias,
+        confidence: clamp(0.3 + phase1.twelveAmOpenState.sensitivityScore * 0.25 + phase1.sundayOpenState.sensitivityScore * 0.18, 0.28, 0.78),
+        weight: 0.06,
+        reasoning: `Sunday Open is ${phase1.sundayOpenState.currentRelation}; 12AM Open is ${phase1.twelveAmOpenState.currentRelation}.`,
+        supportingFactors: [phase1.sundayOpenState.expectation, phase1.twelveAmOpenState.expectation],
+        warningFactors: [...phase1.sundayOpenState.missingEvidence, ...phase1.twelveAmOpenState.missingEvidence],
+        recommendation: "Treat Sunday Open and 12AM Open as strongest 1H-and-lower PD arrays, not standalone trade signals.",
+        ictTags: ["session timing", "premium/discount", "higher-timeframe bias"]
+      };
+    }
+  },
+  {
+    agentId: "grinch-dealing-range-agent",
+    name: "Dealing Range Agent",
+    layer: "strategy",
+    weight: 0.06,
+    run(context) {
+      const phase1 = grinchPhase1For(context);
+      const bias =
+        phase1.dealingRange.rangeDirection === "bullish_range" && phase1.dealingRange.premiumDiscountState === "discount"
+          ? "bullish"
+          : phase1.dealingRange.rangeDirection === "bearish_range" && phase1.dealingRange.premiumDiscountState === "premium"
+            ? "bearish"
+            : "neutral";
+      return {
+        agentId: "grinch-dealing-range-agent",
+        name: "Dealing Range Agent",
+        layer: "strategy",
+        bias,
+        confidence: clamp(0.36 + (bias === "neutral" ? 0 : 0.22), 0.3, 0.78),
+        weight: 0.06,
+        reasoning: `${phase1.dealingRange.reasoning} Current price is in ${phase1.dealingRange.premiumDiscountState}.`,
+        supportingFactors: [
+          `Range high ${phase1.dealingRange.rangeHigh}`,
+          `Equilibrium ${phase1.dealingRange.equilibrium}`,
+          `Range low ${phase1.dealingRange.rangeLow}`
+        ],
+        warningFactors: phase1.dealingRange.premiumDiscountState === "outside_range" ? ["Price is outside the active dealing range."] : [],
+        recommendation: "Bias starts with the current dealing range; continuation needs PD array respect after retracement.",
+        ictTags: ["premium/discount", "higher-timeframe bias"]
+      };
+    }
+  },
+  {
+    agentId: "grinch-market-cycle-agent",
+    name: "Market Cycle Agent",
+    layer: "strategy",
+    weight: 0.05,
+    run(context) {
+      const phase1 = grinchPhase1For(context);
+      const bias: MarketBias =
+        phase1.marketCycle === "expansion" ? grinchBiasToMarketBias(phase1.htfBias) : phase1.marketCycle === "reversal" ? "neutral" : "neutral";
+      return {
+        agentId: "grinch-market-cycle-agent",
+        name: "Market Cycle Agent",
+        layer: "strategy",
+        bias,
+        confidence: phase1.marketCycle === "unclear" ? 0.32 : 0.58,
+        weight: 0.05,
+        reasoning: `Cycle classified as ${phase1.marketCycle}; profile timing is ${phase1.timingGrade}.`,
+        supportingFactors: phase1.reasons.filter((reason) => reason.toLowerCase().includes("range") || reason.toLowerCase().includes("cycle")).slice(0, 3),
+        warningFactors: phase1.marketCycle === "reversal" ? ["Continuation weakens when range violation implies reversal risk."] : [],
+        recommendation: "Use cycle state to decide whether the model is accumulation, delivery, retracement, or reversal-prone.",
+        ictTags: ["displacement", "premium/discount", "session timing"]
+      };
+    }
+  },
+  {
+    agentId: "grinch-model-one-power-three-agent",
+    name: "Model 1 / Power 3 OTE Agent",
+    layer: "strategy",
+    weight: 0.07,
+    run(context) {
+      const phase1 = grinchPhase1For(context);
+      const bias = phase1.modelOneState === "valid" ? grinchBiasToMarketBias(phase1.htfBias) : "neutral";
+      return {
+        agentId: "grinch-model-one-power-three-agent",
+        name: "Model 1 / Power 3 OTE Agent",
+        layer: "strategy",
+        bias,
+        confidence: clamp(0.3 + (phase1.modelOneState === "valid" ? 0.36 : phase1.modelOneState === "weak" ? 0.16 : 0), 0.28, 0.82),
+        weight: 0.07,
+        reasoning: `Model 1 is ${phase1.modelOneState}; trade intent is ${phase1.tradeIntent}.`,
+        supportingFactors: phase1.reasons.slice(0, 4),
+        warningFactors: phase1.missingEvidence.slice(0, 4),
+        recommendation:
+          phase1.modelOneState === "valid"
+            ? "Treat Model 1 as a research profile only; 5m/1m confirmation is still required."
+            : "Do not use Model 1 until London/12AM/displacement/NY retracement evidence is complete.",
+        ictTags: ["session timing", "displacement", "fair value gap"]
+      };
+    }
+  },
+  {
+    agentId: "grinch-time-price-alignment-agent",
+    name: "Time-Price Alignment Agent",
+    layer: "strategy",
+    weight: 0.04,
+    run(context) {
+      const phase1 = grinchPhase1For(context);
+      const bias = phase1.timingGrade === "ideal" || phase1.timingGrade === "acceptable" ? grinchBiasToMarketBias(phase1.htfBias) : "neutral";
+      return {
+        agentId: "grinch-time-price-alignment-agent",
+        name: "Time-Price Alignment Agent",
+        layer: "strategy",
+        bias,
+        confidence: phase1.timingGrade === "ideal" ? 0.74 : phase1.timingGrade === "acceptable" ? 0.62 : phase1.timingGrade === "late" ? 0.38 : 0.3,
+        weight: 0.04,
+        reasoning: `Timing grade is ${phase1.timingGrade}.`,
+        supportingFactors: phase1.reasons.filter((reason) => reason.toLowerCase().includes("timing") || reason.toLowerCase().includes("window")).slice(0, 3),
+        warningFactors: phase1.timingGrade === "late" || phase1.timingGrade === "expired" ? ["Timing is late/expired; probability is reduced."] : [],
+        recommendation: "On-time profiles get higher confidence; early profiles wait and expired profiles stay no-trade.",
+        ictTags: ["session timing", "kill-zone tagging"]
+      };
+    }
+  },
+  {
+    agentId: "grinch-entry-confirmation-agent",
+    name: "Entry Confirmation Agent",
+    layer: "strategy",
+    weight: 0.05,
+    run(context) {
+      const phase1 = grinchPhase1For(context);
+      const bias = phase1.entryConfirmation.confirmationScore >= 0.7 ? grinchBiasToMarketBias(phase1.htfBias) : "neutral";
+      return {
+        agentId: "grinch-entry-confirmation-agent",
+        name: "Entry Confirmation Agent",
+        layer: "strategy",
+        bias,
+        confidence: clamp(0.28 + phase1.entryConfirmation.confirmationScore * 0.5, 0.28, 0.82),
+        weight: 0.05,
+        reasoning: `Entry confirmation score is ${Math.round(phase1.entryConfirmation.confirmationScore * 100)}%.`,
+        supportingFactors: phase1.entryConfirmation.reasons.slice(0, 4),
+        warningFactors: phase1.entryConfirmation.missingEvidence.slice(0, 4),
+        recommendation: "15m identifies the profile; 5m/1m must confirm PD respect, displacement, MSS/BOS, and fresh FVG before any research entry.",
+        ictTags: ["fair value gap", "market structure shift", "displacement", "session timing"]
       };
     }
   },

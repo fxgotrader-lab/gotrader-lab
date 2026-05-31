@@ -16,6 +16,7 @@ import { buildMarketContext, summarizeMarketContext } from "@/lib/marketData";
 import type { MarketContext } from "@/lib/marketData";
 import type { ResearchQualityReview } from "@/lib/researchQuality";
 import type { SimulationRunbookState } from "@/lib/simulationRunbook";
+import { analyzeGrinchPhase1 } from "@/lib/strategyLibrary";
 import { countCompletedRunbookItems, simulationRunbookChecklist } from "@/lib/simulationRunbook";
 import type { DebateSession, LabState, TradeThesis } from "@/lib/types";
 import { safeArray, uid } from "@/lib/utils";
@@ -58,8 +59,19 @@ export function buildLLMResearchContextPacket({
   const thesis = safeArray(state.tradeTheses)[0];
   const debate = latestDebateFor(state, thesis);
   const ictContext = thesis?.ictContext;
-  const marketContext = thesis
-    ? summarizeMarketContext(suppliedMarketContext ?? buildMarketContext({ symbol: thesis.symbol, timeframe: thesis.timeframe, mode: "mock" }))
+  const sourceMarketContext = thesis ? suppliedMarketContext ?? buildMarketContext({ symbol: thesis.symbol, timeframe: thesis.timeframe, mode: "mock" }) : undefined;
+  const marketContext = sourceMarketContext
+    ? summarizeMarketContext(sourceMarketContext)
+    : undefined;
+  const grinchPhase1 = sourceMarketContext?.priceVolume.ohlcv.candles.length
+    ? analyzeGrinchPhase1({
+        candles: sourceMarketContext.priceVolume.ohlcv.candles,
+        options: {
+          symbol: thesis?.symbol,
+          timeframe: thesis?.timeframe,
+          currentTimestamp: sourceMarketContext.priceVolume.ohlcv.candles[sourceMarketContext.priceVolume.ohlcv.candles.length - 1]?.timestamp
+        }
+      })
     : undefined;
   const compactEvidenceSummary = evidenceQualitySummary
     ? compactEvidenceQualitySummary(evidenceQualitySummary)
@@ -107,6 +119,28 @@ export function buildLLMResearchContextPacket({
           fairValueGapCount: safeArray(ictContext.fairValueGaps).length
         }
       : undefined,
+    grinchPhase1Summary: grinchPhase1
+      ? {
+          htfBias: grinchPhase1.htfBias,
+          htfDrawOnLiquidity: grinchPhase1.htfDrawOnLiquidity,
+          dealingRange: {
+            rangeHigh: grinchPhase1.dealingRange.rangeHigh,
+            rangeLow: grinchPhase1.dealingRange.rangeLow,
+            equilibrium: grinchPhase1.dealingRange.equilibrium,
+            premiumDiscountState: grinchPhase1.dealingRange.premiumDiscountState
+          },
+          activePdArray: grinchPhase1.activePdArrays[0]?.label,
+          sundayOpenState: grinchPhase1.sundayOpenState.currentRelation,
+          twelveAmOpenState: grinchPhase1.twelveAmOpenState.currentRelation,
+          marketCycle: grinchPhase1.marketCycle,
+          modelOneState: grinchPhase1.modelOneState,
+          timingGrade: grinchPhase1.timingGrade,
+          tradeIntent: grinchPhase1.tradeIntent,
+          targetHierarchy: grinchPhase1.targetHierarchy,
+          invalidationSummary: grinchPhase1.invalidation.primaryInvalidation,
+          missingEvidence: grinchPhase1.missingEvidence.slice(0, 8)
+        }
+      : undefined,
     marketContextSummary: marketContext,
     evidenceQualitySummary: compactEvidenceSummary,
     deterministicICTFacts: [
@@ -118,6 +152,7 @@ export function buildLLMResearchContextPacket({
       `Fair value gaps: ${safeArray(ictContext?.fairValueGaps).length}`,
       `Market context mode: ${marketContext?.mode ?? "missing"}`,
       `Market context missing modules: ${marketContext?.missingModules.join(", ") ?? "missing"}`,
+      `Grinch Phase 1: ${grinchPhase1 ? `${grinchPhase1.htfBias}/${grinchPhase1.modelOneState}/${grinchPhase1.timingGrade}` : "missing"}`,
       `Evidence quality score: ${compactEvidenceSummary.overallScore}/100`,
       `Evidence quality labels: ${compactEvidenceSummary.entries
         .map((item) => `${item.category}=${item.sourceType}`)

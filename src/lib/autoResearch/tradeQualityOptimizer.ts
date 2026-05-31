@@ -197,6 +197,49 @@ export function generateTradeQualityCandidateConfigs(
     );
   }
 
+  if (reasonCodes.has("false_positive_cluster")) {
+    add(
+      "Grinch Phase 1 HTF alignment gate",
+      "False positives were elevated, so require stronger higher-timeframe bias and PD hierarchy agreement before accepting a research thesis.",
+      {
+        minimumConfluenceThreshold: round(clamp01(Math.max(0.5, baseline.minimumConfluenceThreshold + 0.08)), 2),
+        agentWeights: {
+          ...baseline.agentWeights,
+          "grinch-htf-bias-agent": round(Math.min(1.5, baseline.agentWeights["grinch-htf-bias-agent"] + 0.05), 3),
+          "grinch-pd-array-hierarchy-agent": round(Math.min(1.5, baseline.agentWeights["grinch-pd-array-hierarchy-agent"] + 0.05), 3)
+        }
+      },
+      ["confluenceThreshold", "agentWeights"]
+    );
+    add(
+      "Grinch opening-price alignment gate",
+      "False positives can come from ignoring Sunday Open and 12AM Open; this emphasizes opening-price equilibrium and time-price alignment.",
+      {
+        minimumConfidenceThreshold: round(clamp01(Math.max(0.5, baseline.minimumConfidenceThreshold + 0.06)), 2),
+        agentWeights: {
+          ...baseline.agentWeights,
+          "grinch-opening-price-equilibrium-agent": round(Math.min(1.5, baseline.agentWeights["grinch-opening-price-equilibrium-agent"] + 0.05), 3),
+          "grinch-time-price-alignment-agent": round(Math.min(1.5, baseline.agentWeights["grinch-time-price-alignment-agent"] + 0.04), 3)
+        }
+      },
+      ["confidenceThreshold", "agentWeights"]
+    );
+    add(
+      "Grinch Model 1 confirmation gate",
+      "False positives were elevated, so this requires cleaner Model 1 classification and entry-confirmation evidence.",
+      {
+        minimumConfluenceThreshold: round(clamp01(Math.max(0.52, baseline.minimumConfluenceThreshold + 0.1)), 2),
+        minimumConfidenceThreshold: round(clamp01(Math.max(0.52, baseline.minimumConfidenceThreshold + 0.08)), 2),
+        agentWeights: {
+          ...baseline.agentWeights,
+          "grinch-model-one-power-three-agent": round(Math.min(1.5, baseline.agentWeights["grinch-model-one-power-three-agent"] + 0.06), 3),
+          "grinch-entry-confirmation-agent": round(Math.min(1.5, baseline.agentWeights["grinch-entry-confirmation-agent"] + 0.06), 3)
+        }
+      },
+      ["confluenceThreshold", "confidenceThreshold", "agentWeights"]
+    );
+  }
+
   if (reasonCodes.has("sample_size_too_low")) {
     add(
       "Sample size all-session retest",

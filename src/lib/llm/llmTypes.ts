@@ -43,6 +43,31 @@ export interface LLMICTContextSummary {
   fairValueGapCount?: number;
 }
 
+export interface LLMGrinchPhase1Summary {
+  htfBias: string;
+  htfDrawOnLiquidity: string;
+  dealingRange: {
+    rangeHigh: number;
+    rangeLow: number;
+    equilibrium: number;
+    premiumDiscountState: string;
+  };
+  activePdArray?: string;
+  sundayOpenState: string;
+  twelveAmOpenState: string;
+  marketCycle: string;
+  modelOneState: string;
+  timingGrade: string;
+  tradeIntent: string;
+  targetHierarchy: {
+    target1: string;
+    target2: string;
+    target3: string;
+  };
+  invalidationSummary: string;
+  missingEvidence: string[];
+}
+
 export interface LLMBaselineDebateSummary {
   agentId: string;
   agentName: string;
@@ -126,6 +151,7 @@ export interface LLMResearchContextPacket {
   symbol?: FuturesSymbol;
   timeframe?: Timeframe;
   ictContextSummary?: LLMICTContextSummary;
+  grinchPhase1Summary?: LLMGrinchPhase1Summary;
   marketContextSummary?: LLMMarketContextSummary;
   evidenceQualitySummary?: LLMEvidenceQualitySummary;
   deterministicICTFacts: string[];

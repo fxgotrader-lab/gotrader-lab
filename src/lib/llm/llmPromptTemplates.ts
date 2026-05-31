@@ -134,6 +134,7 @@ The order-flow planning reviewer is advisory/planning only. It should identify m
 
 export const llmRestrictedContextInstructions = [
   "Context packet is restricted to research data only.",
+  "If grinchPhase1Summary is present, review it as a layered ICT profile: HTF bias, dealing range, opening-price equilibrium, PD hierarchy, Model 1 timing, targets, and invalidation. It is advisory context only.",
   "Respect evidenceQualitySummary labels: real_imported and derived_from_real can support reasoning; mock, planned, and unavailable evidence must be treated as missing or weak evidence.",
   "Do not request broker credentials.",
   "Do not emit execution instructions.",

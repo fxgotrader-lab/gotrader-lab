@@ -13,6 +13,7 @@ import {
   buildSwingLevelOverlays,
   buildVwapOverlay,
   createTradingChartData,
+  horizontalOverlay,
   type TradingChartLineOverlay
 } from "@/lib/charting";
 import {
@@ -30,6 +31,7 @@ import {
   loadPreparedCandleSource
 } from "@/lib/marketData";
 import { mockCandles } from "@/lib/mockData/mockCandles";
+import { analyzeGrinchPhase1 } from "@/lib/strategyLibrary";
 import type { Candle, MarketStructureEvent, SessionContext } from "@/lib/types";
 
 const formatTime = (timestamp: string) => timestamp.slice(11, 16);
@@ -76,6 +78,7 @@ export function ICTLab() {
   const sourceLabel = preparedSource?.mode === "imported" ? preparedSource.label : "Mock research candles";
 
   const analysis = useMemo(() => {
+    const latestAnalysisCandle = activeCandles[activeCandles.length - 1];
     const swings = detectSwings(activeCandles, 2);
     const mss = detectMSS(activeCandles, swings);
     const bos = detectBOS(activeCandles, swings);
@@ -84,7 +87,19 @@ export function ICTLab() {
     const zone = detectPremiumDiscount(activeCandles, swings);
     const sessions = tagSessions(activeCandles);
     const structureEvents = [...mss, ...bos].sort((a, b) => a.index - b.index);
-    return { bos, gaps, mss, sessions, structureEvents, sweeps, swings, zone };
+    const grinchPhase1 = analyzeGrinchPhase1({
+      candles: activeCandles,
+      fairValueGaps: gaps,
+      liquiditySweeps: sweeps,
+      structureEvents,
+      swings,
+      options: {
+        symbol: latestAnalysisCandle?.symbol,
+        timeframe: latestAnalysisCandle?.timeframe,
+        currentTimestamp: latestAnalysisCandle?.timestamp
+      }
+    });
+    return { bos, gaps, grinchPhase1, mss, sessions, structureEvents, sweeps, swings, zone };
   }, [activeCandles]);
 
   const latestCandle = activeCandles[activeCandles.length - 1];
@@ -107,6 +122,28 @@ export function ICTLab() {
     });
     const overlays = [
       buildVwapOverlay(activeCandles),
+      horizontalOverlay(activeCandles, analysis.grinchPhase1.sundayOpenState.price, "grinch-sunday-open", "Sunday Open", "#a78bfa", "liquidity_level", {
+        lineWidth: 2
+      }),
+      horizontalOverlay(activeCandles, analysis.grinchPhase1.twelveAmOpenState.price, "grinch-12am-open", "12AM Open", "#38bdf8", "liquidity_level", {
+        lineWidth: 2
+      }),
+      horizontalOverlay(activeCandles, analysis.grinchPhase1.dealingRange.rangeHigh, "grinch-range-high", "Grinch range high", "#f59e0b", "liquidity_level", {
+        visibleByDefault: false
+      }),
+      horizontalOverlay(activeCandles, analysis.grinchPhase1.dealingRange.equilibrium, "grinch-equilibrium", "Grinch equilibrium", "#facc15", "liquidity_level"),
+      horizontalOverlay(activeCandles, analysis.grinchPhase1.dealingRange.rangeLow, "grinch-range-low", "Grinch range low", "#14b8a6", "liquidity_level", {
+        visibleByDefault: false
+      }),
+      horizontalOverlay(
+        activeCandles,
+        analysis.grinchPhase1.activePdArrays[0]?.midpoint,
+        "grinch-active-pd-array",
+        analysis.grinchPhase1.activePdArrays[0]?.label ?? "Active PD array",
+        "#f472b6",
+        "liquidity_level",
+        { visibleByDefault: Boolean(analysis.grinchPhase1.activePdArrays[0]) }
+      ),
       ...buildPremiumDiscountOverlays(activeCandles, analysis.zone),
       ...buildSwingLevelOverlays(activeCandles, analysis.swings, 6)
     ].filter((overlay): overlay is TradingChartLineOverlay => Boolean(overlay));
@@ -149,6 +186,58 @@ export function ICTLab() {
         <MetricCard label="Sweeps" value={String(analysis.sweeps.length)} detail={latestSweep?.direction ?? "none"} icon={<Target className="h-4 w-4" />} />
         <MetricCard label="Open FVGs" value={String(unmitigatedGaps.length)} detail={`${analysis.zone.currentZone} now`} icon={<Activity className="h-4 w-4" />} />
       </div>
+
+      <Card className="border-cyan-400/20 bg-cyan-400/5">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Grinch ICT Phase 1 / Model 1</CardTitle>
+              <CardDescription>
+                Higher-timeframe bias, opening-price equilibrium, dealing range, PD hierarchy, cycle, timing, and Power 3 OTE profile.
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={analysis.grinchPhase1.modelOneState === "valid" ? "success" : analysis.grinchPhase1.modelOneState === "weak" ? "warning" : "muted"}>
+                Model 1 {analysis.grinchPhase1.modelOneState.replace(/_/g, " ")}
+              </Badge>
+              <Badge variant={analysis.grinchPhase1.tradeIntent === "no_trade" ? "muted" : "warning"}>
+                {analysis.grinchPhase1.tradeIntent.replace(/_/g, " ")}
+              </Badge>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <StatusTile label="HTF bias" value={analysis.grinchPhase1.htfBias} detail={`Draw: ${analysis.grinchPhase1.htfDrawOnLiquidity}`} />
+            <StatusTile
+              label="Dealing range"
+              value={analysis.grinchPhase1.dealingRange.premiumDiscountState}
+              detail={`${analysis.grinchPhase1.dealingRange.rangeLow} / ${analysis.grinchPhase1.dealingRange.equilibrium} / ${analysis.grinchPhase1.dealingRange.rangeHigh}`}
+            />
+            <StatusTile label="Market cycle" value={analysis.grinchPhase1.marketCycle} detail={`Timing: ${analysis.grinchPhase1.timingGrade}`} />
+            <StatusTile
+              label="PD hierarchy"
+              value={analysis.grinchPhase1.activePdArrays[0]?.label ?? "none active"}
+              detail={`${analysis.grinchPhase1.activePdArrays.length} active / ${analysis.grinchPhase1.rankedPdArrays.length} ranked`}
+            />
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <InfoBox title="Target hierarchy" body={`${analysis.grinchPhase1.targetHierarchy.target1} → ${analysis.grinchPhase1.targetHierarchy.target2} → ${analysis.grinchPhase1.targetHierarchy.target3}`} />
+            <InfoBox title="Invalidation" body={analysis.grinchPhase1.invalidation.primaryInvalidation} />
+            <InfoBox title="Opening prices" body={`Sunday: ${analysis.grinchPhase1.sundayOpenState.currentRelation}; 12AM: ${analysis.grinchPhase1.twelveAmOpenState.currentRelation}`} />
+          </div>
+          {analysis.grinchPhase1.missingEvidence.length ? (
+            <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+              <p className="font-medium">Missing evidence</p>
+              <ul className="mt-2 space-y-1">
+                {analysis.grinchPhase1.missingEvidence.slice(0, 5).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -295,6 +384,25 @@ export function ICTLab() {
         <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
         Research-only ICT context. No broker connection, live feed, websocket, order routing, or execution logic is present.
       </div>
+    </div>
+  );
+}
+
+function StatusTile({ detail, label, value }: { detail?: string; label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/45 p-3">
+      <p className="text-xs uppercase text-muted-foreground">{label}</p>
+      <p className="mt-1 break-words font-mono text-sm text-foreground">{value}</p>
+      {detail ? <p className="mt-1 text-xs text-muted-foreground">{detail}</p> : null}
+    </div>
+  );
+}
+
+function InfoBox({ body, title }: { body: string; title: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/45 p-3">
+      <p className="text-xs uppercase text-muted-foreground">{title}</p>
+      <p className="mt-2 text-sm text-muted-foreground">{body}</p>
     </div>
   );
 }

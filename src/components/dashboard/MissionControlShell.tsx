@@ -292,6 +292,12 @@ export function MissionControlShell({ state }: { state: LabState }) {
                 : runtimeSnapshot?.proposal.latestProposalIsHistorical
                   ? `historical: ${runtimeSnapshot.proposal.latestProposalId}`
                   : "no current proposal"
+            ],
+            [
+              "Grinch Phase 1",
+              runtimeSnapshot?.latestResearchCycle.grinchPhase1Summary
+                ? `${runtimeSnapshot.latestResearchCycle.grinchPhase1Summary.htfBias} / ${runtimeSnapshot.latestResearchCycle.grinchPhase1Summary.modelOneState} / ${runtimeSnapshot.latestResearchCycle.grinchPhase1Summary.timingGrade}`
+                : "not available"
             ]
           ].map(([label, value]) => (
             <div key={label} className="rounded-lg border border-white/10 bg-slate-950/55 p-3">

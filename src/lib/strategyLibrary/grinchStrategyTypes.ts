@@ -1,0 +1,190 @@
+import type {
+  Candle,
+  FairValueGap,
+  FuturesSymbol,
+  LiquiditySweep,
+  MarketBias,
+  MarketStructureEvent,
+  SwingPoint,
+  Timeframe
+} from "@/lib/types";
+
+export type GrinchHtfBias = "bullish" | "bearish" | "neutral" | "unclear";
+export type GrinchDrawOnLiquidity = "buyside" | "sellside" | "internal_range" | "external_range" | "unclear";
+export type GrinchPremiumDiscountState = "premium" | "discount" | "equilibrium" | "outside_range" | "unclear";
+export type GrinchMarketCycle = "consolidation" | "expansion" | "retracement" | "reversal" | "unclear";
+export type GrinchModelOneState = "valid" | "weak" | "invalid" | "not_present";
+export type GrinchTradeIntent = "retracement_entry" | "continuation_entry" | "reversal_entry" | "no_trade";
+export type GrinchTimingGrade = "ideal" | "acceptable" | "early" | "late" | "expired";
+export type GrinchRangeDirection = "bullish_range" | "bearish_range" | "balanced_range" | "unclear";
+
+export type GrinchPdArrayType =
+  | "sunday_open"
+  | "twelve_am_open"
+  | "balanced_price_range"
+  | "volume_imbalance"
+  | "fair_value_gap"
+  | "breaker_mitigation_block"
+  | "order_block";
+
+export interface GrinchPhase1AnalysisOptions {
+  symbol?: FuturesSymbol;
+  timeframe?: Timeframe;
+  referenceTimestamp?: string;
+  lookbackCandles?: number;
+  currentTimestamp?: string;
+}
+
+export interface GrinchOpeningPriceReference {
+  type: "sunday_open" | "twelve_am_open";
+  label: string;
+  price?: number;
+  timestamp?: string;
+  currentRelation: "above" | "below" | "at" | "unknown";
+  touchedAfterOpen: boolean;
+  reclaimed: boolean;
+  sensitivityScore: number;
+  expectation: string;
+  missingEvidence: string[];
+}
+
+export interface GrinchDealingRange {
+  rangeHigh: number;
+  rangeLow: number;
+  equilibrium: number;
+  premium: [number, number];
+  discount: [number, number];
+  premiumDiscountState: GrinchPremiumDiscountState;
+  currentPrice: number;
+  rangeDirection: GrinchRangeDirection;
+  anchorLow?: SwingPoint;
+  anchorHigh?: SwingPoint;
+  reasoning: string;
+}
+
+export interface GrinchPdArray {
+  id: string;
+  type: GrinchPdArrayType;
+  label: string;
+  hierarchyRank: number;
+  direction: MarketBias | "neutral";
+  startPrice: number;
+  endPrice: number;
+  midpoint: number;
+  timestamp?: string;
+  source: "opening_price" | "calculated_ict" | "derived_from_structure";
+  respected: boolean;
+  violated: boolean;
+  active: boolean;
+  strength: number;
+  reason: string;
+}
+
+export interface GrinchPdArrayHierarchyResult {
+  activePdArrays: GrinchPdArray[];
+  rankedPdArrays: GrinchPdArray[];
+  strongestActive?: GrinchPdArray;
+  missingEvidence: string[];
+}
+
+export interface GrinchHtfBiasResult {
+  htfBias: GrinchHtfBias;
+  htfDrawOnLiquidity: GrinchDrawOnLiquidity;
+  liquidityObjective: string;
+  confidence: number;
+  reasons: string[];
+  missingEvidence: string[];
+}
+
+export interface GrinchMarketCycleResult {
+  marketCycle: GrinchMarketCycle;
+  confidence: number;
+  reasons: string[];
+}
+
+export interface GrinchTimePriceAlignment {
+  timingGrade: GrinchTimingGrade;
+  currentWindow:
+    | "london_observation"
+    | "ny_setup"
+    | "ny_confirmation"
+    | "delayed_profile"
+    | "outside_model_window"
+    | "unknown";
+  isLondonObservationWindow: boolean;
+  isNySetupWindow: boolean;
+  isNyConfirmationWindow: boolean;
+  reason: string;
+}
+
+export interface GrinchModelOnePowerThreeResult {
+  modelOneState: GrinchModelOneState;
+  tradeIntent: GrinchTradeIntent;
+  londonRelationToTwelveAm: "above" | "below" | "around" | "missing";
+  accumulationIdentified: boolean;
+  displacementIdentified: boolean;
+  accumulationExtreme?: number;
+  displacementExtreme?: number;
+  abRange?: GrinchDealingRange;
+  reasons: string[];
+  missingEvidence: string[];
+}
+
+export interface GrinchEntryConfirmationResult {
+  pdArrayRespect: boolean;
+  meanThresholdRespect: boolean;
+  displacementAway: boolean;
+  mssOrBos: boolean;
+  newFvgAfterDisplacement: boolean;
+  timeWindowAlignment: boolean;
+  confirmationScore: number;
+  reasons: string[];
+  missingEvidence: string[];
+}
+
+export interface GrinchTargetHierarchy {
+  target1: string;
+  target2: string;
+  target3: string;
+}
+
+export interface GrinchInvalidationPlan {
+  primaryInvalidation: string;
+  secondaryInvalidation: string;
+  timeInvalidation: string;
+  narrativeInvalidation: string;
+}
+
+export interface GrinchPhase1ModelOutput {
+  modelId: "grinch_phase_1_model_1";
+  generatedAt: string;
+  symbol?: FuturesSymbol;
+  timeframe?: Timeframe;
+  htfBias: GrinchHtfBias;
+  htfDrawOnLiquidity: GrinchDrawOnLiquidity;
+  dealingRange: GrinchDealingRange;
+  activePdArrays: GrinchPdArray[];
+  rankedPdArrays: GrinchPdArray[];
+  sundayOpenState: GrinchOpeningPriceReference;
+  twelveAmOpenState: GrinchOpeningPriceReference;
+  marketCycle: GrinchMarketCycle;
+  modelOneState: GrinchModelOneState;
+  tradeIntent: GrinchTradeIntent;
+  timingGrade: GrinchTimingGrade;
+  targetHierarchy: GrinchTargetHierarchy;
+  invalidation: GrinchInvalidationPlan;
+  entryConfirmation: GrinchEntryConfirmationResult;
+  confidenceAdjustment: number;
+  reasons: string[];
+  missingEvidence: string[];
+  safetyNotice: "Research-only ICT profile. No broker execution, no order placement, no readiness override.";
+}
+
+export interface GrinchPhase1ContextInput {
+  candles: Candle[];
+  swings?: SwingPoint[];
+  fairValueGaps?: FairValueGap[];
+  liquiditySweeps?: LiquiditySweep[];
+  structureEvents?: MarketStructureEvent[];
+  options?: GrinchPhase1AnalysisOptions;
+}
