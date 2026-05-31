@@ -382,6 +382,11 @@ export function ICTLab() {
               : tradingViewStatus.latestEvidence?.technicalSummary ??
                 "TradingView MCP evidence is not connected. ICT Lab is using GoTrader candles and deterministic structure analysis only."}
           </div>
+          <div className="rounded-lg border border-cyan-300/20 bg-background/45 p-3 text-xs text-cyan-100/80 md:col-span-4">
+            Chart input: {displaySource.chartDisplayIdentity.sourceLabel} / {displaySource.chartDisplayIdentity.candleCount.toLocaleString()} candles / first{" "}
+            {displaySource.chartDisplayIdentity.firstTimestamp ?? "n/a"} close {displaySource.chartDisplayIdentity.firstClose ?? "n/a"} / last{" "}
+            {displaySource.chartDisplayIdentity.lastTimestamp ?? "n/a"} close {displaySource.chartDisplayIdentity.lastClose ?? "n/a"}.
+          </div>
         </CardContent>
       </Card>
 
@@ -733,7 +738,7 @@ export function ICTLab() {
           </div>
         </CardHeader>
         <CardContent>
-          <TradingChart {...chartData} heightClassName="h-[460px]" />
+          <TradingChart key={chartData.source.sourceKey} {...chartData} heightClassName="h-[460px]" />
         </CardContent>
       </Card>
 

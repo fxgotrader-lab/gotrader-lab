@@ -60,6 +60,7 @@ export function TradingChart({
     () => safeArray(candles).slice().sort((a, b) => Number(a.time) - Number(b.time)),
     [candles]
   );
+  const sourceKey = source.sourceKey ?? source.dataFingerprint ?? `${source.sourceType}|${source.sourceLabel}|${source.candleCount}|${source.lastTimestamp ?? "none"}`;
 
   useEffect(() => {
     setOverlayVisibility((current) => {
@@ -87,6 +88,7 @@ export function TradingChart({
 
     try {
       setChartError(undefined);
+      container.replaceChildren();
       chart = createChart(container, {
         ...missionChartOptions,
         height: Math.max(220, container.clientHeight),
@@ -95,6 +97,7 @@ export function TradingChart({
       chartRef.current = chart;
 
       const candleSeries = chart.addSeries(CandlestickSeries, missionCandlestickOptions);
+      candleSeries.setData([]);
       candleSeries.setData(
         sortedCandles.map((candle: TradingChartCandle) => ({
           close: candle.close,
@@ -185,7 +188,7 @@ export function TradingChart({
       chartRef.current = null;
       return undefined;
     }
-  }, [lineOverlays, markers, overlayVisibility, sortedCandles, zoneOverlays]);
+  }, [lineOverlays, markers, overlayVisibility, sortedCandles, sourceKey, zoneOverlays]);
 
   const onToggleOverlay = (id: string) => {
     setOverlayVisibility((current) => ({
@@ -233,7 +236,17 @@ export function TradingChart({
   }
 
   return (
-    <div className={`overflow-hidden rounded-xl border border-white/10 bg-slate-950/90 shadow-[0_0_45px_rgba(8,145,178,0.08)] ${className ?? ""}`}>
+    <div
+      className={`overflow-hidden rounded-xl border border-white/10 bg-slate-950/90 shadow-[0_0_45px_rgba(8,145,178,0.08)] ${className ?? ""}`}
+      data-chart-candle-count={source.candleCount}
+      data-chart-first-close={source.firstClose ?? ""}
+      data-chart-first-timestamp={source.firstTimestamp ?? ""}
+      data-chart-last-close={source.lastClose ?? ""}
+      data-chart-last-timestamp={source.lastTimestamp ?? ""}
+      data-chart-source-key={sourceKey}
+      data-chart-source-label={source.sourceLabel}
+      data-chart-source-type={source.sourceType}
+    >
       <ChartToolbar
         lineOverlays={lineOverlays}
         onToggleOverlay={onToggleOverlay}
@@ -243,7 +256,7 @@ export function TradingChart({
         zoneOverlays={zoneOverlays}
       />
       <div className={`relative ${heightClassName}`}>
-        <div className="absolute inset-0" ref={containerRef} />
+        <div className="absolute inset-0" key={sourceKey} ref={containerRef} />
         <ChartOverlays
           lineOverlays={lineOverlays}
           markers={markers}

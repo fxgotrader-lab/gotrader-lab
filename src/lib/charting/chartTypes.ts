@@ -76,7 +76,12 @@ export interface TradingChartSourceMeta {
   symbol: FuturesSymbol | string;
   timeframe: Timeframe | string;
   candleCount: number;
+  dataFingerprint?: string;
+  firstClose?: number;
+  firstTimestamp?: string;
+  lastClose?: number;
   lastTimestamp?: string;
+  sourceKey?: string;
   isLive: boolean;
   isMock: boolean;
   isImported: boolean;

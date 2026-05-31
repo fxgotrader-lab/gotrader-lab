@@ -4,7 +4,7 @@ import { uid } from "@/lib/utils";
 
 export type HistoricalImportFormat = "csv" | "xlsx" | "json";
 export type HistoricalImportStatus = "valid" | "valid_with_warnings" | "invalid";
-export type CandleDataSourceMode = "mock" | "imported";
+export type CandleDataSourceMode = "mock" | "imported" | "tradingview_mcp_chart";
 
 export interface HistoricalCandleValidationWarning {
   code: string;

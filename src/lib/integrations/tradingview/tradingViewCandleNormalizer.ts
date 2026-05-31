@@ -297,7 +297,7 @@ export const createActiveTradingViewMcpChartFeed = ({
     requestedSymbol: candlesResponse.requestedSymbol,
     providerSymbol: candlesResponse.symbol,
     chartSymbol: candlesResponse.chartSymbol,
-    timeframe: gotraderTimeframe ?? candlesResponse.requestedTimeframe,
+    timeframe: candlesResponse.timeframe ?? candlesResponse.requestedTimeframe ?? gotraderTimeframe,
     requestedTimeframe: candlesResponse.requestedTimeframe,
     chartResolution: candlesResponse.chartResolution,
     candles,

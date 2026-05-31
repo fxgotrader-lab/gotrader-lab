@@ -10,6 +10,25 @@ const sourceFlags = (sourceType: ChartDataSourceType) => ({
   isReplay: sourceType === "replay"
 });
 
+const compactNumber = (value?: number) =>
+  typeof value === "number" && Number.isFinite(value) ? Number(value.toFixed(5)) : undefined;
+
+export const fingerprintCandles = (candles: Candle[], sourceType: ChartDataSourceType, sourceLabel: string) => {
+  const first = candles[0];
+  const last = candles[candles.length - 1];
+  const firstClose = compactNumber(first?.close);
+  const lastClose = compactNumber(last?.close);
+  return [
+    sourceType,
+    sourceLabel,
+    candles.length,
+    first?.timestamp ?? "no-first",
+    firstClose ?? "no-first-close",
+    last?.timestamp ?? "no-last",
+    lastClose ?? "no-last-close"
+  ].join("|");
+};
+
 export const createChartSourceMeta = ({
   candles,
   sourceLabel,
@@ -23,11 +42,18 @@ export const createChartSourceMeta = ({
   symbol?: FuturesSymbol | string;
   timeframe?: Timeframe | string;
 }): TradingChartSourceMeta => {
+  const first = candles[0];
   const latest = candles[candles.length - 1];
+  const dataFingerprint = fingerprintCandles(candles, sourceType, sourceLabel);
   return {
     candleCount: candles.length,
+    dataFingerprint,
+    firstClose: compactNumber(first?.close),
+    firstTimestamp: first?.timestamp,
+    lastClose: compactNumber(latest?.close),
     lastTimestamp: latest?.timestamp,
     sourceLabel,
+    sourceKey: dataFingerprint,
     sourceType,
     symbol: symbol ?? latest?.symbol ?? "NQ",
     timeframe: timeframe ?? latest?.timeframe ?? "5m",

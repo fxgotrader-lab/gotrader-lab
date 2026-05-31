@@ -56,12 +56,17 @@ export {
   liveStatusLabel
 } from "@/lib/marketData/liveMarketDataStatus";
 export {
+  createCandleSourceIdentity,
   currentChartSourceLabel,
+  resolveActiveChartDisplayCandleSource,
+  resolveActiveResearchCandleSource,
   resolveChartDisplayCandleSource,
   resolveLiveMarketDataStatus
 } from "@/lib/marketData/marketDataSourceResolver";
 export type {
+  CandleSourceIdentity,
   ChartDisplaySourceMode,
+  ResolvedActiveCandleSource,
   ResolvedChartDisplaySource
 } from "@/lib/marketData/marketDataSourceResolver";
 export type {

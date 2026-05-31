@@ -247,6 +247,13 @@ export function MissionControlShell({ state }: { state: LabState }) {
                     ? "Live feed not connected. Chart display uses TradingView MCP read-only candles."
                     : "Live feed not connected. Charts are using imported/mock/replay data."}
               </p>
+              <p className="mt-1 text-xs opacity-80">
+                Chart candles: {runtimeSnapshot.marketData.chartDisplayCandleCount.toLocaleString()} / first{" "}
+                {runtimeSnapshot.marketData.chartDisplayFirstTimestamp ?? "n/a"} close{" "}
+                {runtimeSnapshot.marketData.chartDisplayFirstClose ?? "n/a"} / last{" "}
+                {runtimeSnapshot.marketData.chartDisplayLastTimestamp ?? "n/a"} close{" "}
+                {runtimeSnapshot.marketData.chartDisplayLastClose ?? "n/a"}.
+              </p>
               {runtimeSnapshot.marketData.chartDisplayWarning ? (
                 <p className="mt-1 text-xs font-semibold opacity-90">{runtimeSnapshot.marketData.chartDisplayWarning}</p>
               ) : null}
@@ -305,7 +312,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
 
       {commandCenterChart ? (
         <section className="rounded-xl border border-cyan-300/15 bg-slate-950/70 p-3">
-          <TradingChart {...commandCenterChart} heightClassName="h-[260px]" />
+          <TradingChart key={commandCenterChart.source.sourceKey} {...commandCenterChart} heightClassName="h-[260px]" />
         </section>
       ) : null}
 

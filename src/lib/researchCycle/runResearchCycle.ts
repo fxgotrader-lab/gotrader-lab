@@ -42,9 +42,11 @@ import {
   getImportedDataPreset,
   loadCandleWindowSettings,
   loadPreparedCandleSource,
+  resolveActiveResearchCandleSource,
   resolveImportedCandleActivationState,
   type PreparedCandleSource
 } from "@/lib/marketData";
+import { loadActiveTradingViewMcpChartFeed } from "@/lib/integrations/tradingview";
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import { buildCanonicalPerformanceMetricsFromRun } from "@/lib/performance/canonicalMetrics";
 import { evaluateReadinessGate } from "@/lib/readiness";
@@ -477,10 +479,13 @@ export async function runResearchCycle({
     warnings: []
   }));
   const importedPreset = activeCandleSource.mode === "imported" ? getImportedDataPreset(activeCandleSource.appliedSettings) : "mock";
+  const tradingViewChartFeed = loadActiveTradingViewMcpChartFeed();
+  const activeResearchCandleSource = resolveActiveResearchCandleSource(activeCandleSource, tradingViewChartFeed);
   const importedExpectedButMissing =
+    !activeResearchCandleSource.usesTradingViewMcp &&
     activeCandleSource.mode !== "imported" &&
     ((importActivation?.importedDatasetCount ?? 0) > 0 || importActivation?.status === "active_import_missing_stale");
-  const importedGuardedMode = activeCandleSource.mode === "imported" && !advancedFullResearchMode;
+  const importedGuardedMode = activeCandleSource.mode === "imported" && !activeResearchCandleSource.usesTradingViewMcp && !advancedFullResearchMode;
   const effectiveSearchMode = searchMode;
   const effectiveMaxCandidateCount = importedGuardedMode
     ? Math.min(maxCandidateCount, DASHBOARD_IMPORTED_CANDIDATE_LIMIT)
@@ -508,15 +513,22 @@ export async function runResearchCycle({
           : undefined
       ].filter(Boolean) as string[]
     : [];
-  const researchCandles = activeCandleSource.candles.length ? activeCandleSource.candles : mockCandles;
-  const dataSourceLabel = activeCandleSource.mode === "imported" ? activeCandleSource.label : "Mock candles";
-  const activeConfig = activeCandleSource.metadata
+  const researchCandles = activeResearchCandleSource.candles.length ? activeResearchCandleSource.candles : mockCandles;
+  const dataSourceLabel = activeResearchCandleSource.sourceLabel;
+  const latestResearchCandle = researchCandles[researchCandles.length - 1];
+  const activeConfig = activeResearchCandleSource.usesTradingViewMcp && latestResearchCandle
     ? sanitizeBacktestConfig({
         ...baseActiveConfig,
-        symbol: activeCandleSource.metadata.symbol,
-        timeframe: activeCandleSource.appliedSettings.targetTimeframe
+        symbol: latestResearchCandle.symbol,
+        timeframe: latestResearchCandle.timeframe
       })
-    : baseActiveConfig;
+    : activeCandleSource.metadata
+      ? sanitizeBacktestConfig({
+          ...baseActiveConfig,
+          symbol: activeCandleSource.metadata.symbol,
+          timeframe: activeCandleSource.appliedSettings.targetTimeframe
+        })
+      : baseActiveConfig;
   const run: ResearchCycleRun = {
     cycleId,
     startedAt: now(),
@@ -535,11 +547,11 @@ export async function runResearchCycle({
     savedConfluenceThreshold: activeResearchConfig.savedConfluenceThreshold,
     finalBacktestConfluenceThreshold: activeResearchConfig.finalBacktestConfluenceThreshold,
     activeConfluenceThreshold: activeConfig.minimumConfluenceThreshold,
-    dataSourceMode: activeCandleSource.mode,
+    dataSourceMode: activeResearchCandleSource.sourceMode,
     dataSourceLabel,
-    rawCandleCount: activeCandleSource.rawCandleCount,
-    researchWindowCandles: activeCandleSource.researchWindowCandles,
-    processedCandleCount: activeCandleSource.processedCandleCount,
+    rawCandleCount: activeResearchCandleSource.usesTradingViewMcp ? activeResearchCandleSource.identity.candleCount : activeCandleSource.rawCandleCount,
+    researchWindowCandles: activeResearchCandleSource.identity.candleCount,
+    processedCandleCount: activeResearchCandleSource.identity.candleCount,
     researchTimeframe: activeConfig.timeframe,
     performanceMode: activeCandleSource.performanceMode,
     researchPreset,
@@ -550,6 +562,11 @@ export async function runResearchCycle({
     candleWindowSettings: activeCandleSource.appliedSettings,
     candleWindowWarnings: [
       ...activeCandleSource.warnings,
+      ...(activeResearchCandleSource.usesTradingViewMcp
+        ? [
+            `Research source is TradingView MCP read-only chart candles. First ${activeResearchCandleSource.identity.firstTimestamp ?? "n/a"} / ${activeResearchCandleSource.identity.firstClose ?? "n/a"}; last ${activeResearchCandleSource.identity.lastTimestamp ?? "n/a"} / ${activeResearchCandleSource.identity.lastClose ?? "n/a"}. Not broker truth.`
+          ]
+        : []),
       ...hardLimitWarnings,
       ...(activeCandleSource.mode === "mock"
         ? [`Current data source is Mock. Not valid for imported MNQ comparison. ${importActivation?.message ?? ""}`.trim()]

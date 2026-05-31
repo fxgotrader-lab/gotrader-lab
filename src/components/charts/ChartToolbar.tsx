@@ -18,6 +18,7 @@ const sourceBadgeClass = (source: TradingChartSourceMeta) => {
 };
 
 const formatTimestamp = (timestamp?: string) => timestamp ? new Date(timestamp).toLocaleString() : "n/a";
+const formatClose = (value?: number) => typeof value === "number" && Number.isFinite(value) ? value.toLocaleString() : "n/a";
 
 export function ChartToolbar({
   lineOverlays,
@@ -75,7 +76,8 @@ export function ChartToolbar({
           ) : null}
         </div>
         <p className="mt-1 truncate text-xs text-slate-500">
-          {source.sourceLabel} | {source.candleCount.toLocaleString()} candles | last {formatTimestamp(source.lastTimestamp)}
+          {source.sourceLabel} | {source.candleCount.toLocaleString()} candles | first {formatTimestamp(source.firstTimestamp)} /{" "}
+          {formatClose(source.firstClose)} | last {formatTimestamp(source.lastTimestamp)} / {formatClose(source.lastClose)}
         </p>
       </div>
       <div className="flex flex-wrap justify-start gap-2 md:max-w-[48rem] md:justify-end">

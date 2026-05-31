@@ -92,8 +92,16 @@ export interface RuntimeMarketDataState {
   researchUsesTradingViewMcp: boolean;
   chartDisplayWarning?: string;
   chartDisplayCandleCount: number;
+  chartDisplayDataFingerprint: string;
+  chartDisplayFirstClose?: number;
   chartDisplayFirstTimestamp?: string;
+  chartDisplayLastClose?: number;
   chartDisplayLastTimestamp?: string;
+  chartDisplaySourceKey: string;
+  importedDataFingerprint: string;
+  researchDataFingerprint: string;
+  researchSourceKey: string;
+  tradingViewMcpDataFingerprint: string;
   activeImportId?: string;
   sourceLabel: string;
   symbol: FuturesSymbol;

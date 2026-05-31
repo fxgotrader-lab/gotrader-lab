@@ -21,6 +21,7 @@ import {
   loadCandleWindowSettings,
   loadPreparedCandleSource,
   MARKET_DATA_IMPORT_UPDATED_EVENT,
+  createCandleSourceIdentity,
   resolveChartDisplayCandleSource,
   resolveLiveMarketDataStatus,
   saveImportedCandleSet,
@@ -28,6 +29,7 @@ import {
   safeWindowSizeOptions,
   saveCandleWindowSettings,
   type CandleWindowSettings,
+  type CandleSourceIdentity,
   type ImportedCandleMetadata,
   type NormalizedHistoricalCandleArtifact,
   type PreparedCandleSource
@@ -47,7 +49,7 @@ import {
   type TradingViewMcpCandlesResponse,
   type TradingViewMcpQuoteResponse
 } from "@/lib/integrations/tradingview";
-import type { FuturesSymbol, Timeframe } from "@/lib/types";
+import type { Candle, FuturesSymbol, Timeframe } from "@/lib/types";
 
 const symbolOptions = ["ES", "NQ", "MES", "MNQ"].map((value) => ({ label: value, value }));
 const timeframeOptions = ["1m", "5m", "15m", "1h"].map((value) => ({ label: value, value }));
@@ -86,6 +88,24 @@ const localNormalizedMnqArtifactUrl = "/local-imports/MNQ_06-26_OHLCV.normalized
 const localDevImportAvailable =
   typeof window !== "undefined" && ["127.0.0.1", "localhost"].includes(window.location.hostname);
 
+interface ChartSourceVerification {
+  actualChartInput: CandleSourceIdentity;
+  equalsImportedSource: boolean;
+  equalsTradingViewMcpSource: boolean;
+  expectedChartDisplay: CandleSourceIdentity;
+  importedSource: CandleSourceIdentity;
+  tradingViewMcpSource: CandleSourceIdentity;
+  verifiedAt: string;
+}
+
+const sameCandleSeries = (left: CandleSourceIdentity, right: CandleSourceIdentity) =>
+  left.candleCount > 0 &&
+  left.candleCount === right.candleCount &&
+  left.firstTimestamp === right.firstTimestamp &&
+  left.lastTimestamp === right.lastTimestamp &&
+  left.firstClose === right.firstClose &&
+  left.lastClose === right.lastClose;
+
 export function MarketDataView() {
   const [symbol, setSymbol] = useState<FuturesSymbol>("NQ");
   const [timeframe, setTimeframe] = useState<Timeframe>("5m");
@@ -102,6 +122,7 @@ export function MarketDataView() {
   const [tradingViewQuote, setTradingViewQuote] = useState<TradingViewMcpQuoteResponse | undefined>();
   const [tradingViewCandles, setTradingViewCandles] = useState<TradingViewMcpCandlesResponse | undefined>();
   const [tradingViewFeedMessage, setTradingViewFeedMessage] = useState<string>();
+  const [chartVerification, setChartVerification] = useState<ChartSourceVerification>();
   const contextSymbol = activeSource.metadata?.symbol ?? symbol;
   const contextTimeframe = activeSource.mode === "imported" ? activeSource.appliedSettings.targetTimeframe : timeframe;
   const context = useMemo(
@@ -143,7 +164,6 @@ export function MarketDataView() {
   const activeImportIsStale = Boolean(activeImportId && !imports.some((item) => item.importId === activeImportId));
   const importedDatasetsNeedActivation = imports.length > 0 && activeSource.mode !== "imported";
   const liveMarketDataStatus = useMemo(() => resolveLiveMarketDataStatus(activeSource, tradingViewFeed), [activeSource, tradingViewFeed]);
-  const liveDataModeLabel = liveMarketDataStatus.dataMode.replace(/_/g, " ");
   const tradingViewMcpStatus = useMemo(() => resolveTradingViewMcpStatus(), []);
   const tradingViewCandidateFeed = useMemo(
     () =>
@@ -348,6 +368,26 @@ export function MarketDataView() {
     setTradingViewFeedMessage("TradingView MCP chart source cleared. Falling back to imported/mock candles.");
   };
 
+  const verifyChartSource = () => {
+    const actualCandles = previewChartData.candles
+      .map((candle) => candle.sourceCandle)
+      .filter((candle): candle is Candle => Boolean(candle));
+    const actualChartInput = createCandleSourceIdentity(
+      actualCandles,
+      displaySource.activeChartDisplaySourceMode,
+      displaySource.activeChartDisplaySourceLabel
+    );
+    setChartVerification({
+      actualChartInput,
+      equalsImportedSource: sameCandleSeries(actualChartInput, displaySource.importedIdentity),
+      equalsTradingViewMcpSource: sameCandleSeries(actualChartInput, displaySource.tradingViewMcpIdentity),
+      expectedChartDisplay: displaySource.chartDisplayIdentity,
+      importedSource: displaySource.importedIdentity,
+      tradingViewMcpSource: displaySource.tradingViewMcpIdentity,
+      verifiedAt: new Date().toISOString()
+    });
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
@@ -379,7 +419,7 @@ export function MarketDataView() {
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <div className="grid gap-3 md:grid-cols-4">
-            <StatusTile label="Current chart source" value={liveDataModeLabel} />
+            <StatusTile label="Current chart source" value={displaySource.activeChartDisplaySourceMode.replace(/_/g, " ")} />
             <StatusTile label="Live feed" value={liveMarketDataStatus.liveFeedAvailable ? "connected" : "not connected"} />
             <StatusTile label="Provider" value={liveMarketDataStatus.provider} />
             <StatusTile label="Connection" value={liveMarketDataStatus.connectionStatus} />
@@ -395,7 +435,9 @@ export function MarketDataView() {
           ) : null}
           {!liveMarketDataStatus.liveFeedAvailable ? (
             <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
-              Live feed not connected. Charts are using imported/mock/replay data.
+              {displaySource.chartDisplayUsesTradingViewMcp
+                ? "Live feed not connected. Charts are using TradingView MCP read-only chart candles for visual display only."
+                : "Live feed not connected. Charts are using imported/mock/replay data."}
             </div>
           ) : null}
           <div className="grid gap-2 md:grid-cols-3">
@@ -799,7 +841,39 @@ export function MarketDataView() {
                 ) : null}
               </div>
             </div>
-            <TradingChart {...previewChartData} heightClassName="h-[280px]" />
+            <div className="mb-3 grid gap-2 text-xs md:grid-cols-4">
+              <StatusTile label="Chart first" value={`${formatDate(displaySource.chartDisplayIdentity.firstTimestamp)} / ${displaySource.chartDisplayIdentity.firstClose ?? "n/a"}`} />
+              <StatusTile label="Chart last" value={`${formatDate(displaySource.chartDisplayIdentity.lastTimestamp)} / ${displaySource.chartDisplayIdentity.lastClose ?? "n/a"}`} />
+              <StatusTile label="TradingView MCP candles" value={`${displaySource.tradingViewMcpIdentity.candleCount.toLocaleString()} / ${formatDate(displaySource.tradingViewMcpIdentity.lastTimestamp)}`} />
+              <StatusTile label="Imported/source candles" value={`${displaySource.importedIdentity.candleCount.toLocaleString()} / ${formatDate(displaySource.importedIdentity.lastTimestamp)}`} />
+            </div>
+            <TradingChart key={previewChartData.source.sourceKey} {...previewChartData} heightClassName="h-[280px]" />
+            <div className="mt-3 rounded-md border border-border bg-background/45 p-3 text-xs text-muted-foreground">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="font-medium text-foreground">Chart source verification</p>
+                  <p className="mt-1">
+                    Confirms the exact candle identity passed into the shared TradingChart props.
+                  </p>
+                </div>
+                <Button variant="outline" onClick={verifyChartSource}>
+                  Verify chart source
+                </Button>
+              </div>
+              {chartVerification ? (
+                <div className="mt-3 grid gap-2 md:grid-cols-3">
+                  <StatusTile label="Expected source" value={chartVerification.expectedChartDisplay.sourceLabel} />
+                  <StatusTile label="Actual chart input" value={chartVerification.actualChartInput.sourceLabel} />
+                  <StatusTile label="Verified" value={formatDate(chartVerification.verifiedAt)} />
+                  <StatusTile label="Input candles" value={chartVerification.actualChartInput.candleCount.toLocaleString()} />
+                  <StatusTile label="Input first" value={`${formatDate(chartVerification.actualChartInput.firstTimestamp)} / ${chartVerification.actualChartInput.firstClose ?? "n/a"}`} />
+                  <StatusTile label="Input last" value={`${formatDate(chartVerification.actualChartInput.lastTimestamp)} / ${chartVerification.actualChartInput.lastClose ?? "n/a"}`} />
+                  <StatusTile label="Equals TradingView MCP" value={chartVerification.equalsTradingViewMcpSource ? "yes" : "no"} />
+                  <StatusTile label="Equals imported source" value={chartVerification.equalsImportedSource ? "yes" : "no"} />
+                  <StatusTile label="Source key" value={chartVerification.actualChartInput.dataFingerprint.slice(0, 72)} />
+                </div>
+              ) : null}
+            </div>
           </div>
         </CardContent>
       </Card>
