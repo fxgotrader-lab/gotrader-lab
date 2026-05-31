@@ -11,8 +11,297 @@ const now = new Date();
 const minutesAgo = (minutes: number) => new Date(now.getTime() - minutes * 60_000).toISOString();
 export const COMMUNICATION_AUDIT_STORAGE_KEY = "gotrader_ai_lab_communication_audit";
 export const COMMUNICATION_AUDIT_UPDATED_EVENT = "gotrader-ai-lab-communication-audit-updated";
+const COMMUNICATION_AUDIT_STATUS_KEY = "gotrader_ai_lab_communication_audit_status";
+const DB_NAME = "gotrader-ai-lab-communications";
+const DB_VERSION = 1;
+const AUDIT_STORE = "communication_audit_events";
+const LOCAL_STORAGE_MESSAGE_LIMIT = 40;
+const INDEXED_DB_MESSAGE_LIMIT = 250;
+const MAX_TITLE_LENGTH = 140;
+const MAX_SUMMARY_LENGTH = 360;
+const MAX_BODY_LENGTH = 1200;
+const OVERSIZED_LOCAL_STORAGE_BYTES = 500_000;
+let sessionCommunicationMessages: AgentMessageAuditEntry[] = [];
 
 const isBrowser = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+const hasIndexedDb = () => typeof indexedDB !== "undefined";
+
+export interface CommunicationAuditStorageStatus {
+  backend: "indexeddb" | "compact_localStorage" | "session_fallback";
+  eventCount: number;
+  lastCleanupAt?: string;
+  lastError?: string;
+  localStorageBytes: number;
+}
+
+const truncate = (value: string | undefined, max: number) => {
+  const text = String(value ?? "");
+  return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+};
+
+const compactMessage = (message: AgentMessageAuditEntry): AgentMessageAuditEntry => ({
+  messageId: message.messageId,
+  timestamp: message.timestamp,
+  source: message.source,
+  agentName: truncate(message.agentName, 96),
+  category: message.category,
+  severity: message.severity,
+  title: truncate(message.title, MAX_TITLE_LENGTH),
+  summary: truncate(message.summary, MAX_SUMMARY_LENGTH),
+  body: truncate(message.body, MAX_BODY_LENGTH),
+  relatedThesisId: message.relatedThesisId ? truncate(message.relatedThesisId, 128) : undefined,
+  relatedProposalId: message.relatedProposalId ? truncate(message.relatedProposalId, 128) : undefined,
+  relatedValidationId: message.relatedValidationId ? truncate(message.relatedValidationId, 128) : undefined,
+  relatedReadinessGateId: message.relatedReadinessGateId ? truncate(message.relatedReadinessGateId, 128) : undefined,
+  actionRequired: Boolean(message.actionRequired),
+  requestedAction: message.requestedAction,
+  userResponse: message.userResponse ?? "no_response",
+  resolved: Boolean(message.resolved),
+  safetyNotice: "Research communication only. No execution authority.",
+});
+
+const compactMessages = (messages: AgentMessageAuditEntry[], limit = LOCAL_STORAGE_MESSAGE_LIMIT) =>
+  messages
+    .filter((message) => message?.messageId && message?.timestamp)
+    .map(compactMessage)
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, limit);
+
+const mergeCommunicationMessages = (...messageGroups: AgentMessageAuditEntry[][]) => {
+  const byId = new Map<string, AgentMessageAuditEntry>();
+  messageGroups.flat().forEach((message) => {
+    if (!message?.messageId) {
+      return;
+    }
+    const current = byId.get(message.messageId);
+    if (!current || new Date(message.timestamp).getTime() > new Date(current.timestamp).getTime()) {
+      byId.set(message.messageId, compactMessage(message));
+    }
+  });
+  return [...byId.values()].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
+};
+
+const publishCommunicationEvent = (messages: AgentMessageAuditEntry[]) => {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(COMMUNICATION_AUDIT_UPDATED_EVENT, { detail: messages }));
+  }
+};
+
+const getLocalStorageAuditBytes = () =>
+  isBrowser() ? window.localStorage.getItem(COMMUNICATION_AUDIT_STORAGE_KEY)?.length ?? 0 : 0;
+
+const saveStorageStatus = (status: CommunicationAuditStorageStatus) => {
+  if (!isBrowser()) {
+    return;
+  }
+  try {
+    window.localStorage.setItem(COMMUNICATION_AUDIT_STATUS_KEY, JSON.stringify(status));
+  } catch {
+    // Status persistence is non-essential.
+  }
+};
+
+export function loadCommunicationAuditStorageStatus(): CommunicationAuditStorageStatus {
+  if (!isBrowser()) {
+    return {
+      backend: "session_fallback",
+      eventCount: 0,
+      localStorageBytes: 0,
+    };
+  }
+  const raw = window.localStorage.getItem(COMMUNICATION_AUDIT_STORAGE_KEY) ?? "";
+  const statusRaw = window.localStorage.getItem(COMMUNICATION_AUDIT_STATUS_KEY);
+  try {
+    const parsed = statusRaw ? JSON.parse(statusRaw) as Partial<CommunicationAuditStorageStatus> : {};
+    return {
+      backend: parsed.backend ?? "compact_localStorage",
+      eventCount: parsed.eventCount ?? 0,
+      lastCleanupAt: parsed.lastCleanupAt,
+      lastError: parsed.lastError,
+      localStorageBytes: raw.length,
+    };
+  } catch {
+    return {
+      backend: "compact_localStorage",
+      eventCount: 0,
+      localStorageBytes: raw.length,
+    };
+  }
+}
+
+const openCommunicationDb = () =>
+  new Promise<IDBDatabase>((resolve, reject) => {
+    if (!isBrowser() || !hasIndexedDb()) {
+      reject(new Error("IndexedDB is unavailable for communication audit storage."));
+      return;
+    }
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(AUDIT_STORE)) {
+        db.createObjectStore(AUDIT_STORE, { keyPath: "messageId" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("Unable to open communication audit store."));
+  });
+
+const txDone = (tx: IDBTransaction) =>
+  new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error("Communication audit IndexedDB transaction failed."));
+    tx.onabort = () => reject(tx.error ?? new Error("Communication audit IndexedDB transaction aborted."));
+  });
+
+const idbRequest = <T>(request: IDBRequest<T>) =>
+  new Promise<T>((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("Communication audit IndexedDB request failed."));
+  });
+
+async function persistCommunicationMessagesToIndexedDb(messages: AgentMessageAuditEntry[]) {
+  const compact = compactMessages(messages, INDEXED_DB_MESSAGE_LIMIT);
+  const db = await openCommunicationDb();
+  const tx = db.transaction(AUDIT_STORE, "readwrite");
+  const store = tx.objectStore(AUDIT_STORE);
+  compact.forEach((message) => store.put(message));
+  await txDone(tx);
+  const readTx = db.transaction(AUDIT_STORE, "readonly");
+  const rows = await idbRequest<AgentMessageAuditEntry[]>(readTx.objectStore(AUDIT_STORE).getAll());
+  await txDone(readTx);
+  db.close();
+  const sorted = mergeCommunicationMessages(rows);
+  const keep = sorted.slice(0, INDEXED_DB_MESSAGE_LIMIT);
+  if (sorted.length > INDEXED_DB_MESSAGE_LIMIT) {
+    await trimCommunicationIndexedDb(keep);
+  }
+  return keep;
+}
+
+async function trimCommunicationIndexedDb(keep: AgentMessageAuditEntry[]) {
+  const keepIds = new Set(keep.map((message) => message.messageId));
+  const db = await openCommunicationDb();
+  const tx = db.transaction(AUDIT_STORE, "readwrite");
+  const store = tx.objectStore(AUDIT_STORE);
+  const rows = await idbRequest<AgentMessageAuditEntry[]>(store.getAll());
+  rows.forEach((message) => {
+    if (!keepIds.has(message.messageId)) {
+      store.delete(message.messageId);
+    }
+  });
+  await txDone(tx);
+  db.close();
+}
+
+export async function hydrateCommunicationMessages(): Promise<AgentMessageAuditEntry[]> {
+  if (!isBrowser() || !hasIndexedDb()) {
+    return loadCommunicationMessages();
+  }
+  try {
+    const db = await openCommunicationDb();
+    const tx = db.transaction(AUDIT_STORE, "readonly");
+    const rows = await idbRequest<AgentMessageAuditEntry[]>(tx.objectStore(AUDIT_STORE).getAll());
+    await txDone(tx);
+    db.close();
+    const compactRows = compactMessages(rows, INDEXED_DB_MESSAGE_LIMIT);
+    return mergeCommunicationMessages(compactRows, sessionCommunicationMessages, mockAgentMessages);
+  } catch {
+    return loadCommunicationMessages();
+  }
+}
+
+export async function clearCommunicationAuditLog() {
+  if (isBrowser()) {
+    window.localStorage.removeItem(COMMUNICATION_AUDIT_STORAGE_KEY);
+  }
+  sessionCommunicationMessages = [];
+  let clearError: string | undefined;
+  if (isBrowser() && hasIndexedDb()) {
+    try {
+      const db = await openCommunicationDb();
+      const tx = db.transaction(AUDIT_STORE, "readwrite");
+      tx.objectStore(AUDIT_STORE).clear();
+      await txDone(tx);
+      db.close();
+    } catch (error) {
+      clearError = error instanceof Error ? error.message : "Unable to clear communication IndexedDB audit log.";
+    }
+  }
+  saveStorageStatus({
+    backend: clearError ? "session_fallback" : hasIndexedDb() ? "indexeddb" : "compact_localStorage",
+    eventCount: 0,
+    lastCleanupAt: new Date().toISOString(),
+    lastError: clearError,
+    localStorageBytes: 0,
+  });
+  publishCommunicationEvent([]);
+}
+
+function writeCompactMessagesToLocalStorage(
+  messages: AgentMessageAuditEntry[],
+  {
+    backend = "compact_localStorage",
+    lastCleanupAt,
+    lastError,
+  }: Partial<Pick<CommunicationAuditStorageStatus, "backend" | "lastCleanupAt" | "lastError">> = {}
+) {
+  const compact = compactMessages(messages, LOCAL_STORAGE_MESSAGE_LIMIT);
+  sessionCommunicationMessages = compact;
+  if (!isBrowser()) {
+    publishCommunicationEvent(compact);
+    return compact;
+  }
+
+  const persistCompact = (nextMessages: AgentMessageAuditEntry[]) => {
+    const serialized = JSON.stringify(nextMessages);
+    window.localStorage.setItem(COMMUNICATION_AUDIT_STORAGE_KEY, serialized);
+    saveStorageStatus({
+      backend,
+      eventCount: nextMessages.length,
+      lastCleanupAt,
+      lastError,
+      localStorageBytes: serialized.length,
+    });
+  };
+
+  try {
+    persistCompact(compact);
+    publishCommunicationEvent(compact);
+    return compact;
+  } catch (error) {
+    const firstError = error instanceof Error ? error.message : "Communication audit localStorage write failed.";
+    try {
+      window.localStorage.removeItem(COMMUNICATION_AUDIT_STORAGE_KEY);
+      const emergencyCompact = compact.slice(0, 10);
+      persistCompact(emergencyCompact);
+      sessionCommunicationMessages = emergencyCompact;
+      saveStorageStatus({
+        backend: "compact_localStorage",
+        eventCount: emergencyCompact.length,
+        lastCleanupAt: new Date().toISOString(),
+        lastError: firstError,
+        localStorageBytes: getLocalStorageAuditBytes(),
+      });
+      publishCommunicationEvent(emergencyCompact);
+      return emergencyCompact;
+    } catch (fallbackError) {
+      window.localStorage.removeItem(COMMUNICATION_AUDIT_STORAGE_KEY);
+      const fallbackMessage =
+        fallbackError instanceof Error ? fallbackError.message : "Communication audit session fallback is active.";
+      saveStorageStatus({
+        backend: "session_fallback",
+        eventCount: compact.length,
+        lastCleanupAt: new Date().toISOString(),
+        lastError: `${firstError} ${fallbackMessage}`,
+        localStorageBytes: 0,
+      });
+      publishCommunicationEvent(compact);
+      return compact;
+    }
+  }
+}
 
 export const mockAgentMessages: AgentMessageAuditEntry[] = [
   {
@@ -190,36 +479,89 @@ export const inAppCommunicationSpec: InAppCommunicationSpec = {
 
 export function loadStoredCommunicationMessages(): AgentMessageAuditEntry[] {
   if (!isBrowser()) {
-    return [];
+    return sessionCommunicationMessages;
   }
 
   const raw = window.localStorage.getItem(COMMUNICATION_AUDIT_STORAGE_KEY);
   if (!raw) {
-    return [];
+    return sessionCommunicationMessages;
   }
 
   try {
     const parsed = JSON.parse(raw) as AgentMessageAuditEntry[];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) {
+      window.localStorage.removeItem(COMMUNICATION_AUDIT_STORAGE_KEY);
+      saveStorageStatus({
+        backend: hasIndexedDb() ? "indexeddb" : "compact_localStorage",
+        eventCount: sessionCommunicationMessages.length,
+        lastCleanupAt: new Date().toISOString(),
+        lastError: "Removed malformed communication audit storage.",
+        localStorageBytes: 0,
+      });
+      return sessionCommunicationMessages;
+    }
+    const compact = mergeCommunicationMessages(parsed, sessionCommunicationMessages).slice(0, LOCAL_STORAGE_MESSAGE_LIMIT);
+    if (raw.length > OVERSIZED_LOCAL_STORAGE_BYTES) {
+      writeCompactMessagesToLocalStorage(compact, {
+        lastCleanupAt: new Date().toISOString(),
+        lastError: "Legacy communication audit localStorage payload was compacted.",
+      });
+      if (hasIndexedDb()) {
+        void persistCommunicationMessagesToIndexedDb(parsed).catch((error) => {
+          saveStorageStatus({
+            backend: "compact_localStorage",
+            eventCount: compact.length,
+            lastCleanupAt: new Date().toISOString(),
+            lastError: error instanceof Error ? error.message : "Unable to migrate legacy communication audit payload.",
+            localStorageBytes: getLocalStorageAuditBytes(),
+          });
+        });
+      }
+    }
+    return compact;
   } catch {
-    return [];
+    window.localStorage.removeItem(COMMUNICATION_AUDIT_STORAGE_KEY);
+    saveStorageStatus({
+      backend: hasIndexedDb() ? "indexeddb" : "session_fallback",
+      eventCount: sessionCommunicationMessages.length,
+      lastCleanupAt: new Date().toISOString(),
+      lastError: "Removed unreadable communication audit storage.",
+      localStorageBytes: 0,
+    });
+    return sessionCommunicationMessages;
   }
 }
 
 export function loadCommunicationMessages(): AgentMessageAuditEntry[] {
-  return [...loadStoredCommunicationMessages(), ...mockAgentMessages].sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-  );
+  return mergeCommunicationMessages(loadStoredCommunicationMessages(), mockAgentMessages);
 }
 
 export function saveCommunicationMessages(messages: AgentMessageAuditEntry[]) {
   if (!isBrowser()) {
-    return messages;
+    sessionCommunicationMessages = compactMessages(messages, LOCAL_STORAGE_MESSAGE_LIMIT);
+    return sessionCommunicationMessages;
   }
 
-  window.localStorage.setItem(COMMUNICATION_AUDIT_STORAGE_KEY, JSON.stringify(messages.slice(0, 80)));
-  window.dispatchEvent(new CustomEvent(COMMUNICATION_AUDIT_UPDATED_EVENT, { detail: messages }));
-  return messages;
+  const compact = writeCompactMessagesToLocalStorage(messages);
+  if (hasIndexedDb()) {
+    void persistCommunicationMessagesToIndexedDb(messages)
+      .then((persistedMessages) => {
+        saveStorageStatus({
+          backend: "indexeddb",
+          eventCount: persistedMessages.length,
+          localStorageBytes: getLocalStorageAuditBytes(),
+        });
+      })
+      .catch((error) => {
+        saveStorageStatus({
+          backend: "compact_localStorage",
+          eventCount: compact.length,
+          lastError: error instanceof Error ? error.message : "Communication audit IndexedDB persistence failed.",
+          localStorageBytes: getLocalStorageAuditBytes(),
+        });
+      });
+  }
+  return compact;
 }
 
 export function recordCommunicationMessage(
@@ -235,7 +577,7 @@ export function recordCommunicationMessage(
     safetyNotice: "Research communication only. No execution authority.",
   };
   const stored = loadStoredCommunicationMessages();
-  return saveCommunicationMessages([entry, ...stored.filter((item) => item.messageId !== entry.messageId)]);
+  return saveCommunicationMessages([compactMessage(entry), ...stored.filter((item) => item.messageId !== entry.messageId)]);
 }
 
 export function recordResearchCycleCommunication({

@@ -3,11 +3,13 @@ import {
   Bell,
   Bot,
   CheckCircle2,
+  Database,
   Filter,
   Lock,
   MessageSquareText,
   Send,
   ShieldAlert,
+  Trash2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -18,8 +20,11 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   COMMUNICATION_AUDIT_UPDATED_EVENT,
+  clearCommunicationAuditLog,
   getCommunicationSummary,
+  hydrateCommunicationMessages,
   inAppCommunicationSpec,
+  loadCommunicationAuditStorageStatus,
   loadCommunicationMessages,
 } from "@/lib/communications/communicationSpec";
 import type {
@@ -53,6 +58,8 @@ const requestOptions = inAppCommunicationSpec.supportedUserRequests.map((request
 
 export function AICommunicationsView() {
   const [messages, setMessages] = useState(() => loadCommunicationMessages());
+  const [storageStatus, setStorageStatus] = useState(() => loadCommunicationAuditStorageStatus());
+  const [clearingAudit, setClearingAudit] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [severityFilter, setSeverityFilter] = useState("all");
   const [selectedId, setSelectedId] = useState(() => loadCommunicationMessages()[0]?.messageId ?? "");
@@ -62,9 +69,24 @@ export function AICommunicationsView() {
     const refreshMessages = () => {
       const nextMessages = loadCommunicationMessages();
       setMessages(nextMessages);
-      setSelectedId((current) => current || (nextMessages[0]?.messageId ?? ""));
+      setStorageStatus(loadCommunicationAuditStorageStatus());
+      setSelectedId((current) =>
+        current && nextMessages.some((message) => message.messageId === current)
+          ? current
+          : nextMessages[0]?.messageId ?? ""
+      );
+      void hydrateCommunicationMessages().then((hydratedMessages) => {
+        setMessages(hydratedMessages);
+        setStorageStatus(loadCommunicationAuditStorageStatus());
+        setSelectedId((current) =>
+          current && hydratedMessages.some((message) => message.messageId === current)
+            ? current
+            : hydratedMessages[0]?.messageId ?? ""
+        );
+      });
     };
 
+    refreshMessages();
     window.addEventListener(COMMUNICATION_AUDIT_UPDATED_EVENT, refreshMessages);
     window.addEventListener("storage", refreshMessages);
     return () => {
@@ -87,6 +109,26 @@ export function AICommunicationsView() {
     filteredMessages[0] ??
     messages[0];
   const summary = getCommunicationSummary(messages);
+  const storageBackendLabel = formatToken(storageStatus.backend);
+  const storageStatusTone =
+    storageStatus.backend === "indexeddb"
+      ? "success"
+      : storageStatus.backend === "session_fallback"
+        ? "warning"
+        : "secondary";
+
+  const handleClearAuditLog = async () => {
+    setClearingAudit(true);
+    try {
+      await clearCommunicationAuditLog();
+      const nextMessages = loadCommunicationMessages();
+      setMessages(nextMessages);
+      setStorageStatus(loadCommunicationAuditStorageStatus());
+      setSelectedId(nextMessages[0]?.messageId ?? "");
+    } finally {
+      setClearingAudit(false);
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -112,6 +154,32 @@ export function AICommunicationsView() {
             <span>In-app agent communication is for research and approval workflows only. It cannot execute trades.</span>
           </div>
           <Badge variant="warning">Broker control none</Badge>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/80 bg-background/70">
+        <CardContent className="grid gap-3 p-4 text-sm md:grid-cols-[1fr_auto] md:items-center">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Database className="h-4 w-4 text-primary" aria-hidden="true" />
+              <span className="font-medium">Communication audit storage</span>
+              <Badge variant={storageStatusTone}>{storageBackendLabel}</Badge>
+              <Badge variant="secondary">{storageStatus.eventCount} compact events</Badge>
+            </div>
+            <p className="text-muted-foreground">
+              Full audit history is persisted outside large localStorage payloads. Logging is best-effort and cannot
+              block Command Center actions.
+            </p>
+            <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+              <span>localStorage bytes: {storageStatus.localStorageBytes.toLocaleString()}</span>
+              {storageStatus.lastCleanupAt ? <span>last cleanup: {new Date(storageStatus.lastCleanupAt).toLocaleString()}</span> : null}
+              {storageStatus.lastError ? <span className="text-amber-100">storage note: {storageStatus.lastError}</span> : null}
+            </div>
+          </div>
+          <Button variant="outline" onClick={handleClearAuditLog} disabled={clearingAudit}>
+            <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
+            {clearingAudit ? "Clearing..." : "Clear audit log"}
+          </Button>
         </CardContent>
       </Card>
 
