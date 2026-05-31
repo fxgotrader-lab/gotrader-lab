@@ -15,14 +15,25 @@ export type GrinchPremiumDiscountState = "premium" | "discount" | "equilibrium" 
 export type GrinchMarketCycle = "consolidation" | "expansion" | "retracement" | "reversal" | "unclear";
 export type GrinchModelOneState = "valid" | "weak" | "invalid" | "not_present";
 export type GrinchReversalProfileState = "valid" | "weak" | "invalid" | "not_present";
+export type GrinchConsolidationProfileState = "valid" | "weak" | "invalid" | "not_present";
 export type GrinchTradeIntent = "retracement_entry" | "continuation_entry" | "reversal_entry" | "no_trade";
 export type GrinchReversalEntryIntent = "reversal_entry" | "no_trade" | "wait_for_confirmation";
+export type GrinchConsolidationEntryIntent = "continuation_entry" | "reversal_entry" | "wait_for_confirmation" | "no_trade";
 export type GrinchTimingGrade = "ideal" | "acceptable" | "early" | "late" | "expired";
 export type GrinchRangeDirection = "bullish_range" | "bearish_range" | "balanced_range" | "unclear";
 export type GrinchTwelveAmInteractionState = "interacted" | "failed_to_interact" | "unclear";
 export type GrinchLondonBehavior = "above_12am" | "below_12am" | "around_12am" | "expanded_away" | "unclear";
 export type GrinchNyReversalWindow = "expected" | "active" | "missed" | "expired";
 export type GrinchContinuationBeyond12Am = "supported" | "weak" | "rejected" | "unclear";
+export type GrinchTwelveAmConsolidationRelationship =
+  | "above"
+  | "below"
+  | "around"
+  | "acting_as_support"
+  | "acting_as_resistance"
+  | "unclear";
+export type GrinchLiquidityRaidState = "buySideRaided" | "sellSideRaided" | "none" | "both" | "unclear";
+export type GrinchExpectedExpansionDirection = "bullish" | "bearish" | "neutral" | "unclear";
 
 export type GrinchPdArrayType =
   | "sunday_open"
@@ -167,6 +178,29 @@ export interface GrinchReversalProfileResult {
   missingEvidence: string[];
 }
 
+export interface GrinchConsolidationRange {
+  rangeHigh?: number;
+  rangeLow?: number;
+  rangeMidpoint?: number;
+  rangeWidth?: number;
+  isTight: boolean;
+}
+
+export interface GrinchConsolidationProfileResult {
+  consolidationProfileState: GrinchConsolidationProfileState;
+  consolidationRange: GrinchConsolidationRange;
+  twelveAmRelationship: GrinchTwelveAmConsolidationRelationship;
+  liquidityRaidState: GrinchLiquidityRaidState;
+  expectedExpansionDirection: GrinchExpectedExpansionDirection;
+  entryIntent: GrinchConsolidationEntryIntent;
+  timingGrade: GrinchTimingGrade;
+  targetHierarchy: GrinchTargetHierarchy;
+  invalidation: GrinchInvalidationPlan;
+  confidenceAdjustment: number;
+  reasons: string[];
+  missingEvidence: string[];
+}
+
 export interface GrinchTargetHierarchy {
   target1: string;
   target2: string;
@@ -230,4 +264,22 @@ export interface GrinchPhase2ReversalModelOutput extends GrinchReversalProfileRe
   twelveAmOpenState: GrinchOpeningPriceReference;
   activePdArray?: string;
   safetyNotice: "Research-only reversal profile. No broker execution, no order placement, no readiness override.";
+}
+
+export interface GrinchPhase3ConsolidationContextInput extends GrinchPhase1ContextInput {
+  phase1?: GrinchPhase1ModelOutput;
+}
+
+export interface GrinchPhase3ConsolidationModelOutput extends GrinchConsolidationProfileResult {
+  modelId: "grinch_phase_3_consolidation_profile";
+  generatedAt: string;
+  symbol?: FuturesSymbol;
+  timeframe?: Timeframe;
+  phase1ModelId: GrinchPhase1ModelOutput["modelId"];
+  htfBias: GrinchHtfBias;
+  htfDrawOnLiquidity: GrinchDrawOnLiquidity;
+  marketCycle: GrinchMarketCycle;
+  twelveAmOpenState: GrinchOpeningPriceReference;
+  activePdArray?: string;
+  safetyNotice: "Research-only consolidation profile. No broker execution, no order placement, no readiness override.";
 }

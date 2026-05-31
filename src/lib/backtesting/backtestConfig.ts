@@ -34,6 +34,7 @@ export const defaultBacktestAgentWeights: BacktestAgentWeights = {
   "grinch-market-cycle-agent": 0.05,
   "grinch-model-one-power-three-agent": 0.07,
   "grinch-reversal-profile-agent": 0.06,
+  "grinch-consolidation-profile-agent": 0.06,
   "grinch-time-price-alignment-agent": 0.04,
   "grinch-entry-confirmation-agent": 0.05,
   "session-timing-agent": 0.08,

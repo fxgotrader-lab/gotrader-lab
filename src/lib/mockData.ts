@@ -559,6 +559,25 @@ const agentSeeds: AgentSeed[] = [
     tags: ["strategy", "ict", "grinch", "reversal profile"]
   },
   {
+    id: "strategy-grinch-consolidation-profile",
+    name: "Consolidation Profile Agent",
+    layer: "strategy",
+    domain: "Grinch Phase 3 Consolidation Profile",
+    description: "Detects tight 12AM consolidation into NY, side raids, 12AM support/resistance, and expansion direction.",
+    active: true,
+    weight: 0.05,
+    prompt: `${promptGuardrail} Detect consolidation around 12AM Open, NY side raids, support/resistance reaction, and displacement confirmation. Research-only.`,
+    confidence: 0.55,
+    historySeed: [0.44, 0.47, 0.5, 0.52, 0.54, 0.55],
+    hitRate: 0.5,
+    wins: 10,
+    losses: 10,
+    drawdown: 0.11,
+    sharpeLike: 0.62,
+    confidenceCalibration: 0.64,
+    tags: ["strategy", "ict", "grinch", "consolidation profile"]
+  },
+  {
     id: "strategy-grinch-time-price",
     name: "Time-Price Alignment Agent",
     layer: "strategy",

@@ -1,4 +1,5 @@
 export { buildICTContext } from "@/lib/ict/buildICTContext";
+export { detectConsolidationProfile } from "@/lib/ict/consolidationProfile";
 export {
   defaultICTScoringWeights,
   loadICTScoringWeights,

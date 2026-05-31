@@ -16,7 +16,7 @@ import { buildMarketContext, summarizeMarketContext } from "@/lib/marketData";
 import type { MarketContext } from "@/lib/marketData";
 import type { ResearchQualityReview } from "@/lib/researchQuality";
 import type { SimulationRunbookState } from "@/lib/simulationRunbook";
-import { analyzeGrinchPhase1, analyzeGrinchPhase2Reversal } from "@/lib/strategyLibrary";
+import { analyzeGrinchPhase1, analyzeGrinchPhase2Reversal, analyzeGrinchPhase3Consolidation } from "@/lib/strategyLibrary";
 import { countCompletedRunbookItems, simulationRunbookChecklist } from "@/lib/simulationRunbook";
 import type { DebateSession, LabState, TradeThesis } from "@/lib/types";
 import { safeArray, uid } from "@/lib/utils";
@@ -75,6 +75,17 @@ export function buildLLMResearchContextPacket({
     : undefined;
   const grinchReversalProfile = sourceMarketContext?.priceVolume.ohlcv.candles.length && grinchPhase1
     ? analyzeGrinchPhase2Reversal({
+        candles: sourceMarketContext.priceVolume.ohlcv.candles,
+        phase1: grinchPhase1,
+        options: {
+          symbol: thesis?.symbol,
+          timeframe: thesis?.timeframe,
+          currentTimestamp: sourceMarketContext.priceVolume.ohlcv.candles[sourceMarketContext.priceVolume.ohlcv.candles.length - 1]?.timestamp
+        }
+      })
+    : undefined;
+  const grinchConsolidationProfile = sourceMarketContext?.priceVolume.ohlcv.candles.length && grinchPhase1
+    ? analyzeGrinchPhase3Consolidation({
         candles: sourceMarketContext.priceVolume.ohlcv.candles,
         phase1: grinchPhase1,
         options: {
@@ -169,6 +180,22 @@ export function buildLLMResearchContextPacket({
           missingEvidence: grinchReversalProfile.missingEvidence.slice(0, 6)
         }
       : undefined,
+    grinchConsolidationProfileSummary: grinchConsolidationProfile
+      ? {
+          consolidationProfileState: grinchConsolidationProfile.consolidationProfileState,
+          consolidationRange: grinchConsolidationProfile.consolidationRange,
+          twelveAmRelationship: grinchConsolidationProfile.twelveAmRelationship,
+          liquidityRaidState: grinchConsolidationProfile.liquidityRaidState,
+          expectedExpansionDirection: grinchConsolidationProfile.expectedExpansionDirection,
+          entryIntent: grinchConsolidationProfile.entryIntent,
+          timingGrade: grinchConsolidationProfile.timingGrade,
+          targetHierarchy: grinchConsolidationProfile.targetHierarchy,
+          invalidationSummary: grinchConsolidationProfile.invalidation.primaryInvalidation,
+          confidenceAdjustment: grinchConsolidationProfile.confidenceAdjustment,
+          reasons: grinchConsolidationProfile.reasons.slice(0, 6),
+          missingEvidence: grinchConsolidationProfile.missingEvidence.slice(0, 6)
+        }
+      : undefined,
     marketContextSummary: marketContext,
     evidenceQualitySummary: compactEvidenceSummary,
     deterministicICTFacts: [
@@ -182,6 +209,7 @@ export function buildLLMResearchContextPacket({
       `Market context missing modules: ${marketContext?.missingModules.join(", ") ?? "missing"}`,
       `Grinch Phase 1: ${grinchPhase1 ? `${grinchPhase1.htfBias}/${grinchPhase1.modelOneState}/${grinchPhase1.timingGrade}` : "missing"}`,
       `Grinch Reversal Profile: ${grinchReversalProfile ? `${grinchReversalProfile.reversalProfileState}/${grinchReversalProfile.nyReversalWindow}/${grinchReversalProfile.entryIntent}` : "missing"}`,
+      `Grinch Consolidation Profile: ${grinchConsolidationProfile ? `${grinchConsolidationProfile.consolidationProfileState}/${grinchConsolidationProfile.liquidityRaidState}/${grinchConsolidationProfile.entryIntent}` : "missing"}`,
       `Evidence quality score: ${compactEvidenceSummary.overallScore}/100`,
       `Evidence quality labels: ${compactEvidenceSummary.entries
         .map((item) => `${item.category}=${item.sourceType}`)

@@ -1,5 +1,5 @@
 import type { InternalAgentDefinition, InternalAgentRunContext } from "@/lib/agents/agentTypes";
-import { analyzeGrinchPhase1, analyzeGrinchPhase2Reversal } from "@/lib/strategyLibrary";
+import { analyzeGrinchPhase1, analyzeGrinchPhase2Reversal, analyzeGrinchPhase3Consolidation } from "@/lib/strategyLibrary";
 import type { MarketBias, MarketRegime } from "@/lib/types";
 import { clamp } from "@/lib/utils";
 
@@ -40,6 +40,21 @@ const grinchPhase1For = ({ ictContext, marketContext }: InternalAgentRunContext)
 const grinchReversalFor = (context: InternalAgentRunContext) => {
   const phase1 = grinchPhase1For(context);
   return analyzeGrinchPhase2Reversal({
+    candles: context.marketContext.priceVolume.ohlcv.candles,
+    fairValueGaps: context.ictContext.fairValueGaps,
+    liquiditySweeps: context.ictContext.liquiditySweeps,
+    phase1,
+    options: {
+      symbol: context.marketContext.symbol,
+      timeframe: context.marketContext.timeframe,
+      currentTimestamp: context.marketContext.priceVolume.ohlcv.candles[context.marketContext.priceVolume.ohlcv.candles.length - 1]?.timestamp
+    }
+  });
+};
+
+const grinchConsolidationFor = (context: InternalAgentRunContext) => {
+  const phase1 = grinchPhase1For(context);
+  return analyzeGrinchPhase3Consolidation({
     candles: context.marketContext.priceVolume.ohlcv.candles,
     fairValueGaps: context.ictContext.fairValueGaps,
     liquiditySweeps: context.ictContext.liquiditySweeps,
@@ -301,6 +316,39 @@ export const researchAgentRegistry: InternalAgentDefinition[] = [
             ? "Treat reversal profile as research-only; 5m/1m confirmation is still required before any simulated entry."
             : "Do not use Reversal Profile until London fails to interact with 12AM and NY rotates toward the open.",
         ictTags: ["session timing", "displacement", "higher-timeframe bias"]
+      };
+    }
+  },
+  {
+    agentId: "grinch-consolidation-profile-agent",
+    name: "Consolidation Profile Agent",
+    layer: "strategy",
+    weight: 0.06,
+    run(context) {
+      const consolidation = grinchConsolidationFor(context);
+      const bias =
+        consolidation.consolidationProfileState === "valid"
+          ? grinchBiasToMarketBias(consolidation.expectedExpansionDirection)
+          : "neutral";
+      return {
+        agentId: "grinch-consolidation-profile-agent",
+        name: "Consolidation Profile Agent",
+        layer: "strategy",
+        bias,
+        confidence: clamp(
+          0.28 + (consolidation.consolidationProfileState === "valid" ? 0.36 : consolidation.consolidationProfileState === "weak" ? 0.16 : 0),
+          0.28,
+          0.82
+        ),
+        weight: 0.06,
+        reasoning: `Consolidation Profile is ${consolidation.consolidationProfileState}; raid ${consolidation.liquidityRaidState}; expansion ${consolidation.expectedExpansionDirection}.`,
+        supportingFactors: consolidation.reasons.slice(0, 4),
+        warningFactors: consolidation.missingEvidence.slice(0, 4),
+        recommendation:
+          consolidation.consolidationProfileState === "valid"
+            ? "Treat consolidation profile as research-only; expansion still needs lower-timeframe confirmation."
+            : "Do not use Consolidation Profile until 12AM range, raid, and displacement evidence align with HTF bias.",
+        ictTags: ["session timing", "premium/discount", "displacement"]
       };
     }
   },

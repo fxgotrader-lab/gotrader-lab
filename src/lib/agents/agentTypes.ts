@@ -11,6 +11,7 @@ export type InternalAgentId =
   | "grinch-market-cycle-agent"
   | "grinch-model-one-power-three-agent"
   | "grinch-reversal-profile-agent"
+  | "grinch-consolidation-profile-agent"
   | "grinch-time-price-alignment-agent"
   | "grinch-entry-confirmation-agent"
   | "session-timing-agent"

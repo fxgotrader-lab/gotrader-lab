@@ -295,10 +295,8 @@ export function MissionControlShell({ state }: { state: LabState }) {
             ],
             [
               "Active Grinch profile",
-              runtimeSnapshot?.latestResearchCycle.grinchPhase2ReversalSummary
-                ? `Reversal ${runtimeSnapshot.latestResearchCycle.grinchPhase2ReversalSummary.reversalProfileState} / ${runtimeSnapshot.latestResearchCycle.grinchPhase2ReversalSummary.nyReversalWindow} / ${runtimeSnapshot.latestResearchCycle.grinchPhase2ReversalSummary.entryIntent}`
-                : runtimeSnapshot?.latestResearchCycle.grinchPhase1Summary
-                  ? `Phase 1 ${runtimeSnapshot.latestResearchCycle.grinchPhase1Summary.htfBias} / ${runtimeSnapshot.latestResearchCycle.grinchPhase1Summary.modelOneState} / ${runtimeSnapshot.latestResearchCycle.grinchPhase1Summary.timingGrade}`
+              runtimeSnapshot?.latestResearchCycle.activeGrinchProfileSummary
+                ? `${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.profile.replace(/_/g, " ")} / ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.state} / ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.entryIntent}`
                 : "not available"
             ]
           ].map(([label, value]) => (

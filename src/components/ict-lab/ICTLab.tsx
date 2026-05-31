@@ -31,7 +31,7 @@ import {
   loadPreparedCandleSource
 } from "@/lib/marketData";
 import { mockCandles } from "@/lib/mockData/mockCandles";
-import { analyzeGrinchPhase1, analyzeGrinchPhase2Reversal } from "@/lib/strategyLibrary";
+import { analyzeGrinchPhase1, analyzeGrinchPhase2Reversal, analyzeGrinchPhase3Consolidation } from "@/lib/strategyLibrary";
 import type { Candle, MarketStructureEvent, SessionContext } from "@/lib/types";
 
 const formatTime = (timestamp: string) => timestamp.slice(11, 16);
@@ -112,7 +112,20 @@ export function ICTLab() {
         currentTimestamp: latestAnalysisCandle?.timestamp
       }
     });
-    return { bos, gaps, grinchPhase1, grinchReversalProfile, mss, sessions, structureEvents, sweeps, swings, zone };
+    const grinchConsolidationProfile = analyzeGrinchPhase3Consolidation({
+      candles: activeCandles,
+      fairValueGaps: gaps,
+      liquiditySweeps: sweeps,
+      structureEvents,
+      swings,
+      phase1: grinchPhase1,
+      options: {
+        symbol: latestAnalysisCandle?.symbol,
+        timeframe: latestAnalysisCandle?.timeframe,
+        currentTimestamp: latestAnalysisCandle?.timestamp
+      }
+    });
+    return { bos, gaps, grinchConsolidationProfile, grinchPhase1, grinchReversalProfile, mss, sessions, structureEvents, sweeps, swings, zone };
   }, [activeCandles]);
 
   const latestCandle = activeCandles[activeCandles.length - 1];
@@ -156,6 +169,33 @@ export function ICTLab() {
         "#f472b6",
         "liquidity_level",
         { visibleByDefault: Boolean(analysis.grinchPhase1.activePdArrays[0]) }
+      ),
+      horizontalOverlay(
+        activeCandles,
+        analysis.grinchConsolidationProfile.consolidationRange.rangeHigh,
+        "grinch-consolidation-high",
+        "Consolidation high",
+        "#fb7185",
+        "liquidity_level",
+        { visibleByDefault: analysis.grinchConsolidationProfile.consolidationProfileState === "valid" }
+      ),
+      horizontalOverlay(
+        activeCandles,
+        analysis.grinchConsolidationProfile.consolidationRange.rangeMidpoint,
+        "grinch-consolidation-mid",
+        "Consolidation midpoint",
+        "#c084fc",
+        "liquidity_level",
+        { visibleByDefault: analysis.grinchConsolidationProfile.consolidationProfileState === "valid" }
+      ),
+      horizontalOverlay(
+        activeCandles,
+        analysis.grinchConsolidationProfile.consolidationRange.rangeLow,
+        "grinch-consolidation-low",
+        "Consolidation low",
+        "#34d399",
+        "liquidity_level",
+        { visibleByDefault: analysis.grinchConsolidationProfile.consolidationProfileState === "valid" }
       ),
       ...buildPremiumDiscountOverlays(activeCandles, analysis.zone),
       ...buildSwingLevelOverlays(activeCandles, analysis.swings, 6)
@@ -244,6 +284,74 @@ export function ICTLab() {
               <p className="font-medium">Missing evidence</p>
               <ul className="mt-2 space-y-1">
                 {analysis.grinchPhase1.missingEvidence.slice(0, 5).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card className="border-violet-400/20 bg-violet-400/5">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Grinch ICT Phase 3 / Consolidation Profile</CardTitle>
+              <CardDescription>
+                Tracks tight consolidation around 12AM Open into NY, consolidation-side raids, 12AM support/resistance, and expansion direction.
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge
+                variant={
+                  analysis.grinchConsolidationProfile.consolidationProfileState === "valid"
+                    ? "success"
+                    : analysis.grinchConsolidationProfile.consolidationProfileState === "weak"
+                      ? "warning"
+                      : "muted"
+                }
+              >
+                Consolidation {analysis.grinchConsolidationProfile.consolidationProfileState.replace(/_/g, " ")}
+              </Badge>
+              <Badge variant={analysis.grinchConsolidationProfile.entryIntent === "no_trade" ? "muted" : "warning"}>
+                {analysis.grinchConsolidationProfile.entryIntent.replace(/_/g, " ")}
+              </Badge>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <StatusTile
+              label="Consolidation range"
+              value={analysis.grinchConsolidationProfile.consolidationRange.isTight ? "tight" : "not tight"}
+              detail={`${analysis.grinchConsolidationProfile.consolidationRange.rangeLow ?? "n/a"} / ${analysis.grinchConsolidationProfile.consolidationRange.rangeMidpoint ?? "n/a"} / ${analysis.grinchConsolidationProfile.consolidationRange.rangeHigh ?? "n/a"}`}
+            />
+            <StatusTile
+              label="12AM relationship"
+              value={analysis.grinchConsolidationProfile.twelveAmRelationship.replace(/_/g, " ")}
+              detail={`Timing: ${analysis.grinchConsolidationProfile.timingGrade}`}
+            />
+            <StatusTile
+              label="Liquidity raid"
+              value={analysis.grinchConsolidationProfile.liquidityRaidState.replace(/([A-Z])/g, " $1")}
+              detail={`Expansion: ${analysis.grinchConsolidationProfile.expectedExpansionDirection}`}
+            />
+            <StatusTile
+              label="Target 1"
+              value={analysis.grinchConsolidationProfile.targetHierarchy.target1}
+              detail={`Confidence adj ${analysis.grinchConsolidationProfile.confidenceAdjustment}`}
+            />
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <InfoBox title="Target path" body={`${analysis.grinchConsolidationProfile.targetHierarchy.target1} → ${analysis.grinchConsolidationProfile.targetHierarchy.target2} → ${analysis.grinchConsolidationProfile.targetHierarchy.target3}`} />
+            <InfoBox title="Invalidation" body={analysis.grinchConsolidationProfile.invalidation.primaryInvalidation} />
+            <InfoBox title="Profile reason" body={analysis.grinchConsolidationProfile.reasons[0] ?? "No consolidation profile evidence yet."} />
+          </div>
+          {analysis.grinchConsolidationProfile.missingEvidence.length ? (
+            <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+              <p className="font-medium">Consolidation profile missing evidence</p>
+              <ul className="mt-2 space-y-1">
+                {analysis.grinchConsolidationProfile.missingEvidence.slice(0, 5).map((item) => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>

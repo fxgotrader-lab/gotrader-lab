@@ -35,7 +35,14 @@ import {
   resolveActiveBacktestConfig,
   SELF_IMPROVEMENT_STORAGE_KEY
 } from "@/lib/selfImprovement";
-import { analyzeGrinchPhase1, analyzeGrinchPhase2Reversal, summarizeGrinchPhase1, summarizeGrinchReversalProfile } from "@/lib/strategyLibrary";
+import {
+  analyzeGrinchPhase1,
+  analyzeGrinchPhase2Reversal,
+  analyzeGrinchPhase3Consolidation,
+  summarizeGrinchConsolidationProfile,
+  summarizeGrinchPhase1,
+  summarizeGrinchReversalProfile
+} from "@/lib/strategyLibrary";
 import {
   countCompletedRunbookItems,
   loadSimulationRunbookState,
@@ -460,6 +467,48 @@ export async function resolveResearchRuntimeSnapshot(
         }
       })
     : undefined;
+  const grinchPhase3ConsolidationSummary = source.candles.length && grinchPhase1Summary
+    ? analyzeGrinchPhase3Consolidation({
+        candles: source.candles,
+        phase1: grinchPhase1Summary,
+        options: {
+          symbol: marketData.symbol,
+          timeframe: marketData.timeframe,
+          currentTimestamp: source.candles[source.candles.length - 1]?.timestamp
+        }
+      })
+    : undefined;
+  const activeGrinchProfileSummary = grinchPhase3ConsolidationSummary?.consolidationProfileState === "valid"
+    ? {
+        profile: "consolidation" as const,
+        state: grinchPhase3ConsolidationSummary.consolidationProfileState,
+        entryIntent: grinchPhase3ConsolidationSummary.entryIntent,
+        timingGrade: grinchPhase3ConsolidationSummary.timingGrade,
+        detail: summarizeGrinchConsolidationProfile(grinchPhase3ConsolidationSummary)
+      }
+    : grinchPhase2ReversalSummary?.reversalProfileState === "valid"
+      ? {
+          profile: "reversal" as const,
+          state: grinchPhase2ReversalSummary.reversalProfileState,
+          entryIntent: grinchPhase2ReversalSummary.entryIntent,
+          timingGrade: grinchPhase2ReversalSummary.timingGrade,
+          detail: summarizeGrinchReversalProfile(grinchPhase2ReversalSummary)
+        }
+      : grinchPhase1Summary
+        ? {
+            profile: "model_1" as const,
+            state: grinchPhase1Summary.modelOneState,
+            entryIntent: grinchPhase1Summary.tradeIntent,
+            timingGrade: grinchPhase1Summary.timingGrade,
+            detail: summarizeGrinchPhase1(grinchPhase1Summary)
+          }
+        : {
+            profile: "none" as const,
+            state: "not_available",
+            entryIntent: "no_trade",
+            timingGrade: "unknown",
+            detail: "No Grinch profile available."
+          };
   const readinessSnapshot = evaluateReadinessGate({
     validation,
     quality: researchQuality,
@@ -531,6 +580,8 @@ export async function resolveResearchRuntimeSnapshot(
     `latest LLM run: ${latestLLMRun?.runId ?? "none"}`,
     `Grinch Phase 1: ${summarizeGrinchPhase1(grinchPhase1Summary)}`,
     `Grinch Reversal Profile: ${summarizeGrinchReversalProfile(grinchPhase2ReversalSummary)}`,
+    `Grinch Consolidation Profile: ${summarizeGrinchConsolidationProfile(grinchPhase3ConsolidationSummary)}`,
+    `Active Grinch Profile: ${activeGrinchProfileSummary.detail}`,
     `readiness: ${readinessSnapshot.state}`
   ];
   const staleStateWarnings = [
@@ -709,6 +760,8 @@ export async function resolveResearchRuntimeSnapshot(
       latestReadinessSummary: latestCycle?.readinessSnapshot,
       grinchPhase1Summary,
       grinchPhase2ReversalSummary,
+      grinchPhase3ConsolidationSummary,
+      activeGrinchProfileSummary,
       latestRun: latestCycle
     },
     llm: {
