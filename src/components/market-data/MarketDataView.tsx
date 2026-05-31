@@ -58,6 +58,10 @@ import type { Candle, FuturesSymbol, Timeframe } from "@/lib/types";
 
 const symbolOptions = ["ES", "NQ", "MES", "MNQ"].map((value) => ({ label: value, value }));
 const timeframeOptions = ["1m", "5m", "15m", "1h"].map((value) => ({ label: value, value }));
+const tradingViewCandleLimitOptions = [100, 240, 400, 1000].map((value) => ({
+  label: `${value.toLocaleString()} candles`,
+  value: String(value)
+}));
 const researchTimeframeOptions = ["1m", "5m", "15m"].map((value) => ({ label: value, value }));
 const windowSizeOptions = [
   ...safeWindowSizeOptions.map((value) => ({ label: `${value.toLocaleString()} candles`, value: String(value) })),
@@ -129,6 +133,7 @@ export function MarketDataView() {
   const [tradingViewRuntime, setTradingViewRuntime] = useState(() => resolveTradingViewMcpRuntimeState());
   const [tradingViewFeedMessage, setTradingViewFeedMessage] = useState<string>();
   const [tradingViewConnecting, setTradingViewConnecting] = useState(false);
+  const [tradingViewCandleLimit, setTradingViewCandleLimit] = useState("240");
   const [chartVerification, setChartVerification] = useState<ChartSourceVerification>();
   const contextSymbol = activeSource.metadata?.symbol ?? symbol;
   const contextTimeframe = activeSource.mode === "imported" ? activeSource.appliedSettings.targetTimeframe : timeframe;
@@ -186,6 +191,10 @@ export function MarketDataView() {
   const tradingViewEligibility = tradingViewCandidateFeed?.researchEligibility ?? tradingViewFeed?.researchEligibility;
   const tradingViewEligibilityReasons = tradingViewEligibility?.reasons ?? ["Fetch candles to evaluate research eligibility."];
   const tradingViewResearchSourceEligible = tradingViewEligibility?.state === "eligible_for_research_cycle";
+  const selectedTradingViewCandleLimit = Number(tradingViewCandleLimit);
+  const tradingViewDisplayLimit = Number.isFinite(selectedTradingViewCandleLimit) ? selectedTradingViewCandleLimit : 240;
+  const tradingViewCandlesLoaded = Boolean((tradingViewCandles?.candleCount ?? 0) > 0 || tradingViewRuntime.chartFeedCandleCount > 0);
+  const tradingViewLoadedButChartImported = tradingViewCandlesLoaded && !displaySource.chartDisplayUsesTradingViewMcp;
 
   const refreshImports = async () => {
     const settings = loadCandleWindowSettings();
@@ -321,6 +330,7 @@ export function MarketDataView() {
 
   const fetchTradingViewQuoteForChart = async () => {
     setTradingViewFeedMessage(`Fetching TradingView MCP quote for ${symbol} ${timeframe}...`);
+    setChartVerification(undefined);
     const settings = loadTradingViewMcpSettings();
     const quote = await fetchTradingViewMcpQuote({ symbol, timeframe }, { ...settings, enabled: true });
     setTradingViewQuote(quote);
@@ -335,6 +345,7 @@ export function MarketDataView() {
   const connectTradingViewMcp = async () => {
     setTradingViewConnecting(true);
     setTradingViewFeedMessage(`Connecting TradingView MCP for ${symbol} ${timeframe}...`);
+    setChartVerification(undefined);
     try {
       const settings = saveTradingViewMcpSettings({ ...loadTradingViewMcpSettings(), enabled: true });
       const status = await checkAndStoreTradingViewMcpStatus(settings);
@@ -348,7 +359,7 @@ export function MarketDataView() {
 
       const [quote, candles] = await Promise.all([
         fetchTradingViewMcpQuote({ symbol, timeframe }, settings),
-        fetchTradingViewMcpCandles({ symbol, timeframe, limit: 500 }, settings)
+        fetchTradingViewMcpCandles({ symbol, timeframe, limit: tradingViewDisplayLimit }, settings)
       ]);
       setTradingViewQuote(quote);
       setTradingViewCandles(candles);
@@ -388,19 +399,27 @@ export function MarketDataView() {
 
   const fetchTradingViewCandlesForChart = async () => {
     setTradingViewFeedMessage(`Fetching TradingView MCP candles for ${symbol} ${timeframe}...`);
+    setChartVerification(undefined);
     const settings = loadTradingViewMcpSettings();
-    const candles = await fetchTradingViewMcpCandles({ symbol, timeframe, limit: 500 }, { ...settings, enabled: true });
+    const candles = await fetchTradingViewMcpCandles(
+      { symbol, timeframe, limit: tradingViewDisplayLimit },
+      { ...settings, enabled: true }
+    );
     setTradingViewCandles(candles);
-    setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
     const candidate = createActiveTradingViewMcpChartFeed({
       candlesResponse: candles,
       gotraderSymbol: symbol,
       gotraderTimeframe: timeframe,
-      usageMode: "research_source"
+      usageMode: "chart_only"
     });
+    if (candles.candleCount) {
+      const feed = saveActiveTradingViewMcpChartFeed(candidate);
+      setTradingViewFeed(feed);
+    }
+    setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
     setTradingViewFeedMessage(
       candles.candleCount
-        ? `TradingView MCP returned ${candles.candleCount.toLocaleString()} candles. Eligibility: ${formatToken(candidate.researchEligibility.state)}.`
+        ? `TradingView MCP returned ${candles.candleCount.toLocaleString()} candles and activated chart-only display. Eligibility: ${formatToken(candidate.researchEligibility.state)}.`
         : candles.missingEvidence.join(" ") || "TradingView MCP connected but candle series unavailable."
     );
   };
@@ -411,13 +430,14 @@ export function MarketDataView() {
         ? `Evaluating TradingView MCP candles as a guarded research source for ${symbol} ${timeframe}...`
         : `Loading TradingView MCP candles into GoTrader chart for ${symbol} ${timeframe}...`
     );
+    setChartVerification(undefined);
     const settings = loadTradingViewMcpSettings();
     const feed = await fetchAndStoreTradingViewMcpChartFeed({
       symbol,
       timeframe,
       gotraderSymbol: symbol,
       gotraderTimeframe: timeframe,
-      limit: usageMode === "research_source" ? 500 : 240,
+      limit: usageMode === "research_source" ? Math.max(400, tradingViewDisplayLimit) : tradingViewDisplayLimit,
       settings: { ...settings, enabled: true },
       usageMode
     });
@@ -436,6 +456,7 @@ export function MarketDataView() {
     clearActiveTradingViewMcpChartFeed();
     setTradingViewFeed(undefined);
     setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
+    setChartVerification(undefined);
     setTradingViewFeedMessage("TradingView MCP chart source cleared. Falling back to imported/mock candles.");
   };
 
@@ -560,7 +581,12 @@ export function MarketDataView() {
         <CardContent className="space-y-4 text-sm">
           {!displaySource.chartDisplayUsesTradingViewMcp && tradingViewRuntime.chartFeedCandleCount === 0 ? (
             <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
-              TradingView MCP is not active because no candles are loaded. Click Connect TradingView MCP.
+              TradingView MCP is not active because no candles are loaded. Click Connect and use TradingView MCP chart.
+            </div>
+          ) : null}
+          {tradingViewLoadedButChartImported ? (
+            <div className="rounded-md border border-red-300/25 bg-red-300/10 p-3 text-red-100">
+              MCP candles are loaded but chart display source is still imported.
             </div>
           ) : null}
           <div className="rounded-lg border border-sky-300/25 bg-sky-300/10 p-4 text-sky-100">
@@ -572,11 +598,11 @@ export function MarketDataView() {
                 </p>
               </div>
               <Button variant="secondary" onClick={() => void connectTradingViewMcp()} disabled={tradingViewConnecting}>
-                {tradingViewConnecting ? "Connecting..." : "Connect TradingView MCP"}
+                {tradingViewConnecting ? "Connecting..." : "Connect and use TradingView MCP chart"}
               </Button>
             </div>
           </div>
-          <div className="grid gap-3 md:grid-cols-6">
+          <div className="grid gap-3 md:grid-cols-7">
             <div className="space-y-2">
               <Label htmlFor="tradingview-feed-symbol">Symbol</Label>
               <Select
@@ -593,6 +619,15 @@ export function MarketDataView() {
                 value={timeframe}
                 options={timeframeOptions}
                 onChange={(event) => setTimeframe(event.target.value as Timeframe)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tradingview-feed-limit">Candle limit</Label>
+              <Select
+                id="tradingview-feed-limit"
+                value={tradingViewCandleLimit}
+                options={tradingViewCandleLimitOptions}
+                onChange={(event) => setTradingViewCandleLimit(event.target.value)}
               />
             </div>
             <Button variant="secondary" onClick={() => void fetchTradingViewQuoteForChart()} className="self-end">
@@ -632,6 +667,8 @@ export function MarketDataView() {
             <StatusTile label="Candles loaded" value={tradingViewRuntime.chartFeedCandleCount > 0 ? "yes" : "no"} />
             <StatusTile label="Chart source active" value={displaySource.chartDisplayUsesTradingViewMcp ? "yes" : "no"} />
             <StatusTile label="Research eligible" value={tradingViewResearchSourceEligible ? "yes" : "no"} />
+            <StatusTile label="Active chart display source" value={displaySource.activeChartDisplaySourceMode.replace(/_/g, " ")} />
+            <StatusTile label="Active research source" value={displaySource.activeResearchSourceMode.replace(/_/g, " ")} />
             <StatusTile label="Bridge" value={tradingViewRuntime.bridgeStatus.replace(/_/g, " ")} />
             <StatusTile label="Quote latest" value={String(tradingViewQuote?.latestPrice ?? tradingViewFeed?.latestClose ?? "none")} />
             <StatusTile label="Candle status" value={(tradingViewCandles?.connectionStatus ?? tradingViewFeed?.connectionStatus ?? "not loaded").replace(/_/g, " ")} />

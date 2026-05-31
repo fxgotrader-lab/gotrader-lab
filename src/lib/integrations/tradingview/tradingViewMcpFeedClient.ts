@@ -105,7 +105,7 @@ export async function fetchTradingViewMcpCandles(
       endpoint(settings, "candles", {
         symbol: request.symbol,
         timeframe: request.timeframe,
-        limit: Math.max(1, Math.min(500, request.limit ?? 240))
+        limit: Math.max(1, Math.min(1000, request.limit ?? 240))
       })
     );
   } catch (error) {
@@ -122,7 +122,7 @@ export async function fetchTradingViewMcpSnapshot(
       endpoint(settings, "snapshot", {
         symbol: request.symbol,
         timeframe: request.timeframe,
-        limit: Math.max(1, Math.min(500, request.limit ?? 240))
+        limit: Math.max(1, Math.min(1000, request.limit ?? 240))
       })
     );
   } catch {
