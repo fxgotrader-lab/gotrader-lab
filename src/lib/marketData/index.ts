@@ -55,7 +55,15 @@ export {
   LIVE_MARKET_DATA_STATUS_VERSION,
   liveStatusLabel
 } from "@/lib/marketData/liveMarketDataStatus";
-export { currentChartSourceLabel, resolveLiveMarketDataStatus } from "@/lib/marketData/marketDataSourceResolver";
+export {
+  currentChartSourceLabel,
+  resolveChartDisplayCandleSource,
+  resolveLiveMarketDataStatus
+} from "@/lib/marketData/marketDataSourceResolver";
+export type {
+  ChartDisplaySourceMode,
+  ResolvedChartDisplaySource
+} from "@/lib/marketData/marketDataSourceResolver";
 export type {
   CandleWindowSettings,
   ImportedDataPreset,

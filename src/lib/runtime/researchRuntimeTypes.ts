@@ -86,6 +86,14 @@ export interface RuntimeMetricProvenanceState {
 
 export interface RuntimeMarketDataState {
   activeDataSource: CandleDataSourceMode;
+  activeResearchSourceLabel: string;
+  activeChartDisplaySourceLabel: string;
+  chartDisplayUsesTradingViewMcp: boolean;
+  researchUsesTradingViewMcp: boolean;
+  chartDisplayWarning?: string;
+  chartDisplayCandleCount: number;
+  chartDisplayFirstTimestamp?: string;
+  chartDisplayLastTimestamp?: string;
   activeImportId?: string;
   sourceLabel: string;
   symbol: FuturesSymbol;

@@ -21,6 +21,7 @@ import {
   loadCandleWindowSettings,
   loadPreparedCandleSource,
   MARKET_DATA_IMPORT_UPDATED_EVENT,
+  resolveChartDisplayCandleSource,
   resolveLiveMarketDataStatus,
   saveImportedCandleSet,
   setActiveImportedCandleSet,
@@ -42,7 +43,6 @@ import {
   loadTradingViewMcpSettings,
   resolveTradingViewMcpStatus,
   TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT,
-  tradingViewMcpCandlesToGoTraderCandles,
   type ActiveTradingViewMcpChartFeed,
   type TradingViewMcpCandlesResponse,
   type TradingViewMcpQuoteResponse
@@ -114,26 +114,24 @@ export function MarketDataView() {
       }),
     [activeSource, contextSymbol, contextTimeframe]
   );
-  const tradingViewChartCandles = useMemo(
-    () => tradingViewMcpCandlesToGoTraderCandles(tradingViewFeed).slice(-240),
-    [tradingViewFeed]
-  );
+  const displaySource = useMemo(() => resolveChartDisplayCandleSource(activeSource, tradingViewFeed), [activeSource, tradingViewFeed]);
+  const chartDisplayCandles = displaySource.activeChartDisplayCandleSource.slice(-240);
   const previewChartData = useMemo(() => {
-    const usingTradingView = tradingViewChartCandles.length > 0;
-    const candles = usingTradingView ? tradingViewChartCandles : activeSource.candles.slice(-240);
+    const usingTradingView = displaySource.chartDisplayUsesTradingViewMcp;
+    const candles = chartDisplayCandles;
     const vwap = buildVwapOverlay(candles);
     return {
       ...createTradingChartData({
         candles,
-        sourceLabel: usingTradingView ? "TradingView MCP chart feed - read-only, not broker truth" : activeSource.label,
-        sourceType: usingTradingView ? "tradingview_mcp_chart" : activeSource.mode === "imported" ? "imported" : "mock",
+        sourceLabel: displaySource.activeChartDisplaySourceLabel,
+        sourceType: displaySource.activeChartDisplaySourceMode,
         symbol: usingTradingView ? tradingViewFeed?.providerSymbol ?? contextSymbol : contextSymbol,
         timeframe: usingTradingView ? tradingViewFeed?.timeframe ?? contextTimeframe : contextTimeframe
       }),
       lineOverlays: vwap ? [vwap] : [],
       stateLabel: "Data preview"
     };
-  }, [activeSource.candles, activeSource.label, activeSource.mode, contextSymbol, contextTimeframe, tradingViewChartCandles, tradingViewFeed]);
+  }, [chartDisplayCandles, contextSymbol, contextTimeframe, displaySource, tradingViewFeed]);
   const importOptions = [
     { label: "Mock candles", value: "mock" },
     ...imports.map((item) => ({
@@ -385,7 +383,16 @@ export function MarketDataView() {
             <StatusTile label="Live feed" value={liveMarketDataStatus.liveFeedAvailable ? "connected" : "not connected"} />
             <StatusTile label="Provider" value={liveMarketDataStatus.provider} />
             <StatusTile label="Connection" value={liveMarketDataStatus.connectionStatus} />
+            <StatusTile label="Chart display source" value={displaySource.activeChartDisplaySourceLabel} />
+            <StatusTile label="Research source" value={displaySource.activeResearchSourceLabel} />
+            <StatusTile label="Display candles" value={displaySource.activeChartDisplayCandleSource.length.toLocaleString()} />
+            <StatusTile label="Research candles" value={displaySource.activeResearchCandleSource.length.toLocaleString()} />
           </div>
+          {displaySource.chartDisplayWarning ? (
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              {displaySource.chartDisplayWarning}
+            </div>
+          ) : null}
           {!liveMarketDataStatus.liveFeedAvailable ? (
             <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
               Live feed not connected. Charts are using imported/mock/replay data.
@@ -771,17 +778,26 @@ export function MarketDataView() {
                 <p className="font-semibold">Prepared Candle Preview</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Shared Lightweight Charts preview of the current research window. Current chart source:{" "}
-                  {tradingViewChartCandles.length ? "TradingView MCP chart feed" : liveDataModeLabel}.{" "}
-                  {tradingViewChartCandles.length
+                  {displaySource.activeChartDisplaySourceLabel}.{" "}
+                  {displaySource.chartDisplayUsesTradingViewMcp
                     ? "Read-only TradingView MCP data; not broker truth."
                     : liveMarketDataStatus.liveFeedAvailable
                       ? liveMarketDataStatus.liveFeedSourceLabel
                       : "Live feed not connected."}
+                  {displaySource.chartDisplayWarning ? ` ${displaySource.chartDisplayWarning}` : ""}
                 </p>
               </div>
-              <Badge variant={tradingViewChartCandles.length ? "secondary" : activeSource.mode === "imported" ? "success" : "warning"}>
-                {tradingViewChartCandles.length ? "TRADINGVIEW MCP" : activeSource.mode === "imported" ? "IMPORTED" : "MOCK"}
-              </Badge>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant={displaySource.chartDisplayUsesTradingViewMcp ? "secondary" : activeSource.mode === "imported" ? "success" : "warning"}>
+                  {displaySource.chartDisplayUsesTradingViewMcp ? "TRADINGVIEW MCP" : activeSource.mode === "imported" ? "IMPORTED" : "MOCK"}
+                </Badge>
+                {displaySource.chartDisplayUsesTradingViewMcp ? (
+                  <>
+                    <Badge variant="secondary">READ-ONLY</Badge>
+                    <Badge variant="warning">NOT BROKER TRUTH</Badge>
+                  </>
+                ) : null}
+              </div>
             </div>
             <TradingChart {...previewChartData} heightClassName="h-[280px]" />
           </div>

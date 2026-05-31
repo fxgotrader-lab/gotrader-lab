@@ -24,6 +24,7 @@ import {
   LIVE_MARKET_DATA_STATUS_VERSION,
   loadCandleWindowSettings,
   loadPreparedCandleSource,
+  resolveChartDisplayCandleSource,
   resolveLiveMarketDataStatus,
   resolveImportedCandleActivationState,
   type ImportedCandleActivationState,
@@ -113,16 +114,26 @@ const marketStateFor = (
   source: PreparedCandleSource,
   importActivation: ImportedCandleActivationState,
   fallbackSymbol?: FuturesSymbol,
-  fallbackTimeframe?: Timeframe
+  fallbackTimeframe?: Timeframe,
+  chartFeed?: ReturnType<typeof loadActiveTradingViewMcpChartFeed>
 ): RuntimeMarketDataState => {
   const metadata = source.metadata;
   const symbol = metadata?.symbol ?? source.candles[0]?.symbol ?? fallbackSymbol ?? "NQ";
   const timeframe = source.appliedSettings.targetTimeframe ?? metadata?.timeframe ?? source.candles[0]?.timeframe ?? fallbackTimeframe ?? "5m";
   const fallbackToMock = source.mode === "mock";
-  const liveMarketDataStatus = resolveLiveMarketDataStatus(source);
+  const liveMarketDataStatus = resolveLiveMarketDataStatus(source, chartFeed);
+  const displaySource = resolveChartDisplayCandleSource(source, chartFeed);
 
   return {
     activeDataSource: source.mode,
+    activeResearchSourceLabel: displaySource.activeResearchSourceLabel,
+    activeChartDisplaySourceLabel: displaySource.activeChartDisplaySourceLabel,
+    chartDisplayUsesTradingViewMcp: displaySource.chartDisplayUsesTradingViewMcp,
+    researchUsesTradingViewMcp: displaySource.researchUsesTradingViewMcp,
+    chartDisplayWarning: displaySource.chartDisplayWarning,
+    chartDisplayCandleCount: displaySource.activeChartDisplayCandleSource.length,
+    chartDisplayFirstTimestamp: displaySource.activeChartDisplayCandleSource[0]?.timestamp,
+    chartDisplayLastTimestamp: displaySource.activeChartDisplayCandleSource[displaySource.activeChartDisplayCandleSource.length - 1]?.timestamp,
     activeImportId: importActivation.activeImportId,
     sourceLabel: source.label,
     symbol,
@@ -145,10 +156,9 @@ const marketStateFor = (
   };
 };
 
-const tradingViewMcpStateFor = (): RuntimeTradingViewMcpState => {
+const tradingViewMcpStateFor = (chartFeed: ReturnType<typeof loadActiveTradingViewMcpChartFeed> = loadActiveTradingViewMcpChartFeed()): RuntimeTradingViewMcpState => {
   const status = resolveTradingViewMcpStatus();
   const latestEvidence = status.latestEvidence;
-  const chartFeed = loadActiveTradingViewMcpChartFeed();
   const eligibility = chartFeed?.researchEligibility;
   return {
     status,
@@ -536,7 +546,14 @@ export async function resolveResearchRuntimeSnapshot(
     performanceMode: "safe" as const,
     warnings: ["Prepared candle source could not be loaded; runtime snapshot used an empty mock fallback."]
   };
-  const marketData = marketStateFor(source, importActivation, latestCycle?.backtestSummary?.config.symbol, latestCycle?.researchTimeframe);
+  const tradingViewChartFeed = loadActiveTradingViewMcpChartFeed();
+  const marketData = marketStateFor(
+    source,
+    importActivation,
+    latestCycle?.backtestSummary?.config.symbol,
+    latestCycle?.researchTimeframe,
+    tradingViewChartFeed
+  );
   const grinchPhase1Summary = source.candles.length
     ? analyzeGrinchPhase1({
         candles: source.candles,
@@ -727,9 +744,11 @@ export async function resolveResearchRuntimeSnapshot(
       };
     })
   });
-  const tradingViewMcp = tradingViewMcpStateFor();
+  const tradingViewMcp = tradingViewMcpStateFor(tradingViewChartFeed);
   const sourceTrace = [
     `market data: ${marketData.sourceLabel}`,
+    `chart display source: ${marketData.activeChartDisplaySourceLabel} / ${marketData.chartDisplayCandleCount} candles`,
+    `research source: ${marketData.activeResearchSourceLabel}`,
     `live feed: ${marketData.liveMarketDataStatus.liveFeedSourceLabel} / ${marketData.liveMarketDataStatus.connectionStatus}`,
     `TradingView MCP evidence: ${tradingViewMcp.evidenceAvailable ? "available" : "not available"} / ${tradingViewMcp.status.bridgeStatus.connectionStatus}`,
     `TradingView MCP chart feed: ${tradingViewMcp.chartFeedAvailable ? `${tradingViewMcp.chartFeedCandleCount} candles` : "not active"} / ${tradingViewMcp.chartFeedMatchState}`,
@@ -883,6 +902,7 @@ export async function resolveResearchRuntimeSnapshot(
     ...evidenceLedgerSummary.readinessEvidenceWarnings,
     ...researchMaturitySummary.maturityWarnings,
     ...walkForwardWarnings,
+    marketData.chartDisplayWarning,
     proposalCurrency.isHistorical && proposalCurrency.reason
       ? `Historical proposal available: ${proposalCurrency.reason}`
       : undefined

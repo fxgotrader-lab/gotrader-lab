@@ -20,7 +20,8 @@ import {
 import { COMMUNICATION_AUDIT_UPDATED_EVENT, loadCommunicationMessages } from "@/lib/communications/communicationSpec";
 import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
-  MARKET_DATA_IMPORT_UPDATED_EVENT
+  MARKET_DATA_IMPORT_UPDATED_EVENT,
+  resolveChartDisplayCandleSource
 } from "@/lib/marketData";
 import { createPlannedHermesNotificationState } from "@/lib/integrations/hermesNotificationHooks";
 import { createPlannedOpenClawMemoryHookState } from "@/lib/integrations/openclawMemoryHooks";
@@ -30,7 +31,6 @@ import {
   TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT,
   TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
   TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT,
-  tradingViewMcpCandlesToGoTraderCandles,
   tradingViewMcpAdapterPlan
 } from "@/lib/integrations/tradingview";
 import { mt5ExecutionAdapterPlan } from "@/lib/brokers/mt5";
@@ -73,21 +73,19 @@ const formatToken = (value?: string) => (value ?? "idle").replace(/_/g, " ");
 
 const buildCommandCenterChartData = (snapshot?: ResearchRuntimeSnapshot) => {
   const tradingViewFeed = loadActiveTradingViewMcpChartFeed();
-  const tradingViewCandles = tradingViewMcpCandlesToGoTraderCandles(tradingViewFeed).slice(-160);
-  const candles = tradingViewCandles.length ? tradingViewCandles : snapshot?.marketData.preparedSource.candles.slice(-160) ?? [];
-  if (!snapshot || !candles.length) {
+  const displaySource = snapshot ? resolveChartDisplayCandleSource(snapshot.marketData.preparedSource, tradingViewFeed) : undefined;
+  const candles = displaySource?.activeChartDisplayCandleSource.slice(-160) ?? [];
+  if (!snapshot || !displaySource || !candles.length) {
     return undefined;
   }
-  const usingTradingView = tradingViewCandles.length > 0;
-  const sourceType = usingTradingView ? "tradingview_mcp_chart" : snapshot.marketData.isImportedDataActive ? "imported" : "mock";
   const vwap = buildVwapOverlay(candles);
   return {
     ...createTradingChartData({
       candles,
-      sourceLabel: usingTradingView ? "TradingView MCP chart feed - read-only, not broker truth" : snapshot.marketData.sourceLabel,
-      sourceType,
-      symbol: usingTradingView ? tradingViewFeed?.providerSymbol ?? snapshot.marketData.symbol : snapshot.marketData.symbol,
-      timeframe: usingTradingView ? tradingViewFeed?.timeframe ?? snapshot.marketData.timeframe : snapshot.marketData.timeframe
+      sourceLabel: displaySource.activeChartDisplaySourceLabel,
+      sourceType: displaySource.activeChartDisplaySourceMode,
+      symbol: displaySource.chartDisplayUsesTradingViewMcp ? tradingViewFeed?.providerSymbol ?? snapshot.marketData.symbol : snapshot.marketData.symbol,
+      timeframe: displaySource.chartDisplayUsesTradingViewMcp ? tradingViewFeed?.timeframe ?? snapshot.marketData.timeframe : snapshot.marketData.timeframe
     }),
     lineOverlays: vwap ? [vwap] : [],
     stateLabel: `${formatToken(snapshot.latestResearchCycle.latestCycleStatus)} / broker disabled`
@@ -241,11 +239,17 @@ export function MissionControlShell({ state }: { state: LabState }) {
                   : `Not valid for imported MNQ comparison. ${runtimeSnapshot.marketData.importedDataMessage}`}
               </p>
               <p className="mt-1 text-xs opacity-80">
-                Current chart source: {runtimeSnapshot.marketData.liveMarketDataStatus.dataMode.replace(/_/g, " ")}.{" "}
+                Chart: {runtimeSnapshot.marketData.activeChartDisplaySourceLabel}. Research:{" "}
+                {runtimeSnapshot.marketData.activeResearchSourceLabel}.{" "}
                 {runtimeSnapshot.marketData.liveMarketDataStatus.liveFeedAvailable
                   ? runtimeSnapshot.marketData.liveMarketDataStatus.liveFeedSourceLabel
-                  : "Live feed not connected. Charts are using imported/mock/replay data."}
+                  : runtimeSnapshot.marketData.chartDisplayUsesTradingViewMcp
+                    ? "Live feed not connected. Chart display uses TradingView MCP read-only candles."
+                    : "Live feed not connected. Charts are using imported/mock/replay data."}
               </p>
+              {runtimeSnapshot.marketData.chartDisplayWarning ? (
+                <p className="mt-1 text-xs font-semibold opacity-90">{runtimeSnapshot.marketData.chartDisplayWarning}</p>
+              ) : null}
               <p className="mt-1 text-xs opacity-80">
                 Stored imports: {runtimeSnapshot.marketData.importedDatasetCount}; active import: {runtimeSnapshot.marketData.activeImportId ?? "none"}.
               </p>

@@ -28,6 +28,8 @@ import {
 import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
   MARKET_DATA_IMPORT_UPDATED_EVENT,
+  defaultCandleWindowSettings,
+  resolveChartDisplayCandleSource,
   loadPreparedCandleSource
 } from "@/lib/marketData";
 import {
@@ -35,8 +37,7 @@ import {
   resolveTradingViewMcpStatus,
   TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT,
   TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
-  TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT,
-  tradingViewMcpCandlesToGoTraderCandles
+  TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT
 } from "@/lib/integrations/tradingview";
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import {
@@ -89,22 +90,35 @@ export function ICTLab() {
   const preparedSource = useActiveResearchCandles();
   const [tradingViewStatus, setTradingViewStatus] = useState(() => resolveTradingViewMcpStatus());
   const [tradingViewFeed, setTradingViewFeed] = useState(() => loadActiveTradingViewMcpChartFeed());
-  const tradingViewCandles = useMemo(() => tradingViewMcpCandlesToGoTraderCandles(tradingViewFeed), [tradingViewFeed]);
-  const tradingViewResearchEligible = Boolean(tradingViewFeed?.activeForResearch && tradingViewCandles.length);
-  const activeCandles = tradingViewResearchEligible && tradingViewCandles.length
-    ? tradingViewCandles
-    : preparedSource?.candles.length
-      ? preparedSource.candles
-      : mockCandles;
-  const chartCandles = tradingViewCandles.length ? tradingViewCandles : activeCandles;
-  const sourceType = tradingViewResearchEligible ? "tradingview_mcp_chart" : preparedSource?.mode === "imported" ? "imported" : "mock";
-  const chartSourceType = tradingViewCandles.length ? "tradingview_mcp_chart" : sourceType;
-  const sourceLabel = tradingViewResearchEligible
-    ? "TradingView MCP chart feed - read-only, not broker truth"
-    : preparedSource?.mode === "imported"
-      ? preparedSource.label
-      : "Mock research candles";
-  const chartSourceLabel = tradingViewCandles.length ? "TradingView MCP chart feed - read-only, not broker truth" : sourceLabel;
+  const fallbackPreparedSource = useMemo(
+    () => ({
+      mode: "mock" as const,
+      label: "Mock research candles",
+      candles: mockCandles,
+      rawCandleCount: mockCandles.length,
+      researchWindowCandles: mockCandles.length,
+      processedCandleCount: mockCandles.length,
+      estimatedProcessedCandles: mockCandles.length,
+      appliedSettings: defaultCandleWindowSettings,
+      aggregationApplied: false,
+      performanceMode: "safe" as const,
+      warnings: []
+    }),
+    []
+  );
+  const sourceForDisplay = preparedSource ?? fallbackPreparedSource;
+  const displaySource = useMemo(
+    () => resolveChartDisplayCandleSource(sourceForDisplay, tradingViewFeed),
+    [sourceForDisplay, tradingViewFeed]
+  );
+  const tradingViewCandles = displaySource.chartDisplayUsesTradingViewMcp ? displaySource.activeChartDisplayCandleSource : [];
+  const tradingViewResearchEligible = displaySource.researchUsesTradingViewMcp;
+  const activeCandles = displaySource.activeResearchCandleSource.length ? displaySource.activeResearchCandleSource : mockCandles;
+  const chartCandles = displaySource.activeChartDisplayCandleSource.length ? displaySource.activeChartDisplayCandleSource : activeCandles;
+  const sourceType = displaySource.activeResearchSourceMode;
+  const chartSourceType = displaySource.activeChartDisplaySourceMode;
+  const sourceLabel = displaySource.activeResearchSourceLabel;
+  const chartSourceLabel = displaySource.activeChartDisplaySourceLabel;
 
   const analysis = useMemo(() => {
     const latestAnalysisCandle = activeCandles[activeCandles.length - 1];
@@ -364,7 +378,7 @@ export function ICTLab() {
             {tradingViewCandles.length
               ? tradingViewResearchEligible
                 ? `TradingView MCP chart feed is active for research analysis with ${tradingViewCandles.length.toLocaleString()} read-only candles. It is still not broker truth.`
-                : `TradingView MCP chart feed is visual-only with ${tradingViewCandles.length.toLocaleString()} read-only candles. ${tradingViewFeed?.researchEligibility.reasons[0] ?? "It is not eligible for ICT analysis."}`
+                : `Displaying TradingView MCP candles visually; analysis uses ${displaySource.activeResearchSourceLabel} unless research eligibility passes. ${tradingViewFeed?.researchEligibility.reasons[0] ?? "It is not eligible for ICT analysis."}`
               : tradingViewStatus.latestEvidence?.technicalSummary ??
                 "TradingView MCP evidence is not connected. ICT Lab is using GoTrader candles and deterministic structure analysis only."}
           </div>
