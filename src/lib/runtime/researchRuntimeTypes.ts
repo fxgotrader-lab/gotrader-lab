@@ -4,7 +4,10 @@ import type { LLMAdvisoryRun, LLMProviderStatus } from "@/lib/llm";
 import type { ResearchMaturitySummary } from "@/lib/maturity";
 import type {
   TradingViewMcpStatus,
-  TradingViewEvidence
+  TradingViewEvidence,
+  TradingViewMcpChartFeedStatus,
+  TradingViewMcpFeedUsageMode,
+  TradingViewMcpResearchEligibilityState
 } from "@/lib/integrations/tradingview";
 import type {
   CandleDataSourceMode,
@@ -253,6 +256,14 @@ export interface RuntimeTradingViewMcpState {
   chartFeedSourceLabel: string;
   chartFeedMatchState: string;
   chartFeedLastTimestamp?: string;
+  tradingViewMcpCandleStatus: TradingViewMcpChartFeedStatus | "not_active";
+  researchEligibility: TradingViewMcpResearchEligibilityState | "not_active";
+  eligibilityReasons: string[];
+  candleCount: number;
+  symbolMatch: boolean;
+  timeframeMatch: boolean;
+  activeForResearch: boolean;
+  usageMode: TradingViewMcpFeedUsageMode | "not_active";
   chartBias: TradingViewEvidence["chartBias"] | "unavailable";
   confidence: number;
   authorityLabel: "analysis_only";

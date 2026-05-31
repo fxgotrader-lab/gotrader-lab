@@ -46,7 +46,7 @@ import {
   analyzeGrinchPhase4Smt,
   calculateGrinchStrategyScore
 } from "@/lib/strategyLibrary";
-import type { Candle, MarketStructureEvent, SessionContext } from "@/lib/types";
+import type { Candle, MarketBias, MarketStructureEvent, SessionContext } from "@/lib/types";
 
 const formatTime = (timestamp: string) => timestamp.slice(11, 16);
 
@@ -90,13 +90,21 @@ export function ICTLab() {
   const [tradingViewStatus, setTradingViewStatus] = useState(() => resolveTradingViewMcpStatus());
   const [tradingViewFeed, setTradingViewFeed] = useState(() => loadActiveTradingViewMcpChartFeed());
   const tradingViewCandles = useMemo(() => tradingViewMcpCandlesToGoTraderCandles(tradingViewFeed), [tradingViewFeed]);
-  const activeCandles = tradingViewCandles.length ? tradingViewCandles : preparedSource?.candles.length ? preparedSource.candles : mockCandles;
-  const sourceType = tradingViewCandles.length ? "tradingview_mcp_chart" : preparedSource?.mode === "imported" ? "imported" : "mock";
-  const sourceLabel = tradingViewCandles.length
+  const tradingViewResearchEligible = Boolean(tradingViewFeed?.activeForResearch && tradingViewCandles.length);
+  const activeCandles = tradingViewResearchEligible && tradingViewCandles.length
+    ? tradingViewCandles
+    : preparedSource?.candles.length
+      ? preparedSource.candles
+      : mockCandles;
+  const chartCandles = tradingViewCandles.length ? tradingViewCandles : activeCandles;
+  const sourceType = tradingViewResearchEligible ? "tradingview_mcp_chart" : preparedSource?.mode === "imported" ? "imported" : "mock";
+  const chartSourceType = tradingViewCandles.length ? "tradingview_mcp_chart" : sourceType;
+  const sourceLabel = tradingViewResearchEligible
     ? "TradingView MCP chart feed - read-only, not broker truth"
     : preparedSource?.mode === "imported"
       ? preparedSource.label
       : "Mock research candles";
+  const chartSourceLabel = tradingViewCandles.length ? "TradingView MCP chart feed - read-only, not broker truth" : sourceLabel;
 
   const analysis = useMemo(() => {
     const latestAnalysisCandle = activeCandles[activeCandles.length - 1];
@@ -181,6 +189,7 @@ export function ICTLab() {
   }, [activeCandles]);
 
   const latestCandle = activeCandles[activeCandles.length - 1];
+  const chartLatestCandle = chartCandles[chartCandles.length - 1] ?? latestCandle;
   const latestSession = analysis.sessions[analysis.sessions.length - 1];
   const latestStructure = analysis.structureEvents[analysis.structureEvents.length - 1];
   const latestSweep = analysis.sweeps[analysis.sweeps.length - 1];
@@ -208,14 +217,18 @@ export function ICTLab() {
   }, []);
 
   const chartData = useMemo(() => {
+    const visualOnlyTradingViewChart = tradingViewCandles.length > 0 && !tradingViewResearchEligible;
     const base = createTradingChartData({
-      candles: activeCandles,
-      sourceLabel,
-      sourceType,
-      symbol: latestCandle?.symbol,
-      timeframe: latestCandle?.timeframe
+      candles: chartCandles,
+      sourceLabel: chartSourceLabel,
+      sourceType: chartSourceType,
+      symbol: chartLatestCandle?.symbol,
+      timeframe: chartLatestCandle?.timeframe
     });
-    const overlays = [
+    const chartBias: MarketBias = visualOnlyTradingViewChart ? "neutral" : latestStructure?.direction ?? "neutral";
+    const overlays = visualOnlyTradingViewChart
+      ? [buildVwapOverlay(chartCandles)].filter((overlay): overlay is TradingChartLineOverlay => Boolean(overlay))
+      : [
       buildVwapOverlay(activeCandles),
       horizontalOverlay(activeCandles, analysis.grinchPhase1.sundayOpenState.price, "grinch-sunday-open", "Sunday Open", "#a78bfa", "liquidity_level", {
         lineWidth: 2
@@ -272,16 +285,28 @@ export function ICTLab() {
 
     return {
       ...base,
-      bias: latestStructure?.direction ?? "neutral",
+      bias: chartBias,
       lineOverlays: overlays,
-      markers: buildIctMarkers({
+      markers: visualOnlyTradingViewChart ? [] : buildIctMarkers({
         structureEvents: analysis.structureEvents.slice(-18) as MarketStructureEvent[],
         sweeps: analysis.sweeps.slice(-14)
       }),
-      stateLabel: `${analysis.zone.currentZone} / ${sourceType}`,
-      zoneOverlays: buildFvgZoneOverlays(activeCandles, analysis.gaps)
+      stateLabel: visualOnlyTradingViewChart ? "visual only / tradingview_mcp_chart" : `${analysis.zone.currentZone} / ${sourceType}`,
+      zoneOverlays: visualOnlyTradingViewChart ? [] : buildFvgZoneOverlays(activeCandles, analysis.gaps)
     };
-  }, [activeCandles, analysis, latestCandle?.symbol, latestCandle?.timeframe, latestStructure?.direction, sourceLabel, sourceType]);
+  }, [
+    activeCandles,
+    analysis,
+    chartCandles,
+    chartLatestCandle?.symbol,
+    chartLatestCandle?.timeframe,
+    chartSourceLabel,
+    chartSourceType,
+    latestStructure?.direction,
+    sourceType,
+    tradingViewCandles.length,
+    tradingViewResearchEligible
+  ]);
 
   return (
     <div className="space-y-5">
@@ -295,8 +320,15 @@ export function ICTLab() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant={sourceType === "imported" ? "success" : "warning"}>
-            {sourceType === "imported" ? "Imported data active" : "Mock data active"}
+            {sourceType === "tradingview_mcp_chart"
+              ? "TradingView research source active"
+              : sourceType === "imported"
+                ? "Imported data active"
+                : "Mock data active"}
           </Badge>
+          {tradingViewCandles.length && !tradingViewResearchEligible ? (
+            <Badge variant="warning">TradingView visual only</Badge>
+          ) : null}
           <Badge variant="muted">No execution</Badge>
         </div>
       </div>
@@ -330,7 +362,9 @@ export function ICTLab() {
           <StatusTile label="Authority" value="analysis only" />
           <div className="rounded-lg border border-cyan-300/20 bg-background/45 p-3 text-cyan-100 md:col-span-4">
             {tradingViewCandles.length
-              ? `TradingView MCP chart feed is active with ${tradingViewCandles.length.toLocaleString()} read-only candles. ICT analysis treats it as chart data, not broker truth.`
+              ? tradingViewResearchEligible
+                ? `TradingView MCP chart feed is active for research analysis with ${tradingViewCandles.length.toLocaleString()} read-only candles. It is still not broker truth.`
+                : `TradingView MCP chart feed is visual-only with ${tradingViewCandles.length.toLocaleString()} read-only candles. ${tradingViewFeed?.researchEligibility.reasons[0] ?? "It is not eligible for ICT analysis."}`
               : tradingViewStatus.latestEvidence?.technicalSummary ??
                 "TradingView MCP evidence is not connected. ICT Lab is using GoTrader candles and deterministic structure analysis only."}
           </div>

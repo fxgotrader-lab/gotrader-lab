@@ -256,8 +256,14 @@ export function MissionControlShell({ state }: { state: LabState }) {
               <p className="mt-1 text-xs opacity-80">
                 TradingView MCP chart feed: {runtimeSnapshot.tradingViewMcp.chartFeedAvailable ? "active" : "not active"};{" "}
                 {runtimeSnapshot.tradingViewMcp.chartFeedCandleCount.toLocaleString()} candles; match{" "}
-                {runtimeSnapshot.tradingViewMcp.chartFeedMatchState.replace(/_/g, " ")}.
+                {runtimeSnapshot.tradingViewMcp.chartFeedMatchState.replace(/_/g, " ")}; eligibility{" "}
+                {runtimeSnapshot.tradingViewMcp.researchEligibility.replace(/_/g, " ")}.
               </p>
+              {runtimeSnapshot.tradingViewMcp.chartFeedAvailable && !runtimeSnapshot.tradingViewMcp.activeForResearch ? (
+                <p className="mt-1 text-xs font-semibold opacity-90">
+                  TradingView MCP candles are visual-only and not used for research.
+                </p>
+              ) : null}
             </div>
             <Link to="/market-data">
               <Button variant="secondary" className="w-full md:w-auto">
@@ -359,7 +365,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
             [
               "TradingView chart feed",
               runtimeSnapshot?.tradingViewMcp
-                ? `${runtimeSnapshot.tradingViewMcp.chartFeedAvailable ? "active" : "not active"} / ${runtimeSnapshot.tradingViewMcp.chartFeedCandleCount} candles / ${runtimeSnapshot.tradingViewMcp.chartFeedMatchState.replace(/_/g, " ")}`
+                ? `${runtimeSnapshot.tradingViewMcp.chartFeedAvailable ? "active" : "not active"} / ${runtimeSnapshot.tradingViewMcp.chartFeedCandleCount} candles / ${runtimeSnapshot.tradingViewMcp.chartFeedMatchState.replace(/_/g, " ")} / ${runtimeSnapshot.tradingViewMcp.researchEligibility.replace(/_/g, " ")}`
                 : "not checked"
             ],
             [

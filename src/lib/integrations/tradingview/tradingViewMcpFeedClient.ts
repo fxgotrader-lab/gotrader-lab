@@ -1,6 +1,7 @@
 import type {
   ActiveTradingViewMcpChartFeed,
   TradingViewMcpCandlesResponse,
+  TradingViewMcpFeedUsageMode,
   TradingViewMcpFeedRequest,
   TradingViewMcpQuoteResponse,
   TradingViewMcpSnapshotResponse
@@ -9,7 +10,10 @@ import {
   TRADINGVIEW_MCP_CHART_FEED_STORAGE_KEY,
   TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT
 } from "@/lib/integrations/tradingview/tradingViewCandleFeedTypes";
-import { createActiveTradingViewMcpChartFeed } from "@/lib/integrations/tradingview/tradingViewCandleNormalizer";
+import {
+  createActiveTradingViewMcpChartFeed,
+  evaluateTradingViewMcpResearchEligibility
+} from "@/lib/integrations/tradingview/tradingViewCandleNormalizer";
 import type { TradingViewMcpBridgeSettings } from "@/lib/integrations/tradingview/tradingViewMcpBridgeTypes";
 import { loadTradingViewMcpSettings } from "@/lib/integrations/tradingview/tradingViewMcpSettings";
 
@@ -137,18 +141,21 @@ export async function fetchAndStoreTradingViewMcpChartFeed({
   limit = 240,
   settings,
   symbol,
-  timeframe
+  timeframe,
+  usageMode = "chart_only"
 }: TradingViewMcpFeedRequest & {
   gotraderSymbol?: string;
   gotraderTimeframe?: string;
   settings?: TradingViewMcpBridgeSettings;
+  usageMode?: TradingViewMcpFeedUsageMode;
 }): Promise<ActiveTradingViewMcpChartFeed> {
   const bridgeSettings = settings ?? loadTradingViewMcpSettings();
   const candlesResponse = await fetchTradingViewMcpCandles({ symbol, timeframe, limit }, bridgeSettings);
   const feed = createActiveTradingViewMcpChartFeed({
     candlesResponse,
     gotraderSymbol: gotraderSymbol ?? symbol,
-    gotraderTimeframe: gotraderTimeframe ?? timeframe
+    gotraderTimeframe: gotraderTimeframe ?? timeframe,
+    usageMode
   });
   saveActiveTradingViewMcpChartFeed(feed);
   return feed;
@@ -167,7 +174,23 @@ export function loadActiveTradingViewMcpChartFeed(): ActiveTradingViewMcpChartFe
     if (parsed.provider !== "tradingview_mcp" || parsed.executionAuthority !== "none") {
       return undefined;
     }
-    return parsed;
+    const sourceLabel = parsed.sourceLabel ?? "TradingView MCP chart feed - read-only, not broker truth";
+    const researchEligibility =
+      parsed.researchEligibility ??
+      evaluateTradingViewMcpResearchEligibility({
+        candles: parsed.candles ?? [],
+        connectionStatus: parsed.connectionStatus ?? (parsed.candles?.length ? "connected_with_candles" : "disconnected"),
+        matchState: parsed.matchState ?? "unavailable",
+        sourceLabel
+      });
+    const usageMode = parsed.usageMode ?? "chart_only";
+    return {
+      ...parsed,
+      usageMode,
+      researchEligibility,
+      activeForResearch: usageMode === "research_source" && researchEligibility.state === "eligible_for_research_cycle",
+      sourceLabel
+    };
   } catch {
     return undefined;
   }

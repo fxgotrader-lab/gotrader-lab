@@ -4,6 +4,8 @@ import type {
   TradingViewCompatibleCandle,
   TradingViewMcpCandlesResponse,
   TradingViewMcpFeedCandle,
+  TradingViewMcpFeedUsageMode,
+  TradingViewMcpResearchEligibility,
   TradingViewMcpSymbolMatchState
 } from "@/lib/integrations/tradingview/tradingViewCandleFeedTypes";
 import {
@@ -13,6 +15,12 @@ import {
 
 const futuresSymbols = new Set<FuturesSymbol>(["ES", "NQ", "MES", "MNQ"]);
 const timeframeValues = new Set<Timeframe>(["1m", "5m", "15m", "1h", "4h", "1d"]);
+
+export const tradingViewMcpCandleMinimums = {
+  visual: 5,
+  quickAnalysis: 100,
+  researchCycle: 400
+} as const;
 
 const authority = {
   executionAuthority: "none" as const,
@@ -132,6 +140,93 @@ export const normalizeTradingViewMcpCandles = (
     .slice(-Math.max(1, Math.min(500, limit)));
 };
 
+const hasMonotonicTimestamps = (candles: TradingViewMcpFeedCandle[]) =>
+  candles.every((candle, index) => index === 0 || candle.time > candles[index - 1].time);
+
+export const evaluateTradingViewMcpResearchEligibility = ({
+  candles,
+  connectionStatus,
+  matchState,
+  sourceLabel
+}: {
+  candles: TradingViewMcpFeedCandle[];
+  connectionStatus: TradingViewMcpCandlesResponse["connectionStatus"];
+  matchState: TradingViewMcpSymbolMatchState;
+  sourceLabel: string;
+}): TradingViewMcpResearchEligibility => {
+  const candleCount = candles.length;
+  const connected = connectionStatus === "connected_with_candles";
+  const visualEligible = connected && candleCount >= tradingViewMcpCandleMinimums.visual;
+  const symbolMatch = matchState === "exact_match" || matchState === "equivalent_symbol" || matchState === "timeframe_mismatch";
+  const timeframeMatch = matchState === "exact_match" || matchState === "equivalent_symbol";
+  const monotonicTimestamps = hasMonotonicTimestamps(candles);
+  const quickAnalysisEligible =
+    visualEligible &&
+    symbolMatch &&
+    timeframeMatch &&
+    monotonicTimestamps &&
+    candleCount >= tradingViewMcpCandleMinimums.quickAnalysis &&
+    sourceLabel.toLowerCase().includes("not broker truth");
+  const researchCycleEligible =
+    quickAnalysisEligible && candleCount >= tradingViewMcpCandleMinimums.researchCycle;
+  const reasons: string[] = [];
+
+  if (!connected) {
+    reasons.push("TradingView MCP bridge is disconnected or returned no candle series.");
+  }
+  if (candleCount < tradingViewMcpCandleMinimums.visual) {
+    reasons.push(`At least ${tradingViewMcpCandleMinimums.visual} candles are required for visual display.`);
+  }
+  if (!symbolMatch) {
+    reasons.push("TradingView chart symbol does not match the active GoTrader symbol or recognized alias.");
+  }
+  if (!timeframeMatch && symbolMatch) {
+    reasons.push("TradingView chart timeframe does not match the selected GoTrader timeframe.");
+  }
+  if (!monotonicTimestamps) {
+    reasons.push("TradingView MCP candles do not have valid monotonic timestamps.");
+  }
+  if (!sourceLabel.toLowerCase().includes("not broker truth")) {
+    reasons.push("TradingView MCP source must be explicitly marked read-only and not broker truth.");
+  }
+  if (visualEligible && candleCount < tradingViewMcpCandleMinimums.quickAnalysis) {
+    reasons.push(`Visual-only: quick analysis requires at least ${tradingViewMcpCandleMinimums.quickAnalysis} candles.`);
+  } else if (quickAnalysisEligible && candleCount < tradingViewMcpCandleMinimums.researchCycle) {
+    reasons.push(`Analysis only: research cycle prefers at least ${tradingViewMcpCandleMinimums.researchCycle} candles.`);
+  }
+
+  const state = !connected
+    ? "ineligible_disconnected"
+    : candleCount < tradingViewMcpCandleMinimums.visual
+      ? "ineligible_low_candle_count"
+      : !symbolMatch
+        ? "ineligible_symbol_mismatch"
+        : !timeframeMatch
+          ? "ineligible_timeframe_mismatch"
+          : !monotonicTimestamps
+            ? "ineligible_low_candle_count"
+            : researchCycleEligible
+              ? "eligible_for_research_cycle"
+              : quickAnalysisEligible
+                ? "eligible_for_analysis"
+                : "visual_only";
+
+  return {
+    state,
+    reasons: reasons.length ? reasons : ["TradingView MCP candles satisfy the current read-only eligibility gate."],
+    visualEligible,
+    quickAnalysisEligible,
+    researchCycleEligible,
+    symbolMatch,
+    timeframeMatch,
+    monotonicTimestamps,
+    candleCount,
+    minimumVisualCandles: tradingViewMcpCandleMinimums.visual,
+    minimumQuickAnalysisCandles: tradingViewMcpCandleMinimums.quickAnalysis,
+    minimumResearchCycleCandles: tradingViewMcpCandleMinimums.researchCycle
+  };
+};
+
 const toFuturesSymbol = (symbol?: string): FuturesSymbol => {
   const stripped = canonical(symbol).split(":").pop()?.replace("1!", "") ?? "";
   return futuresSymbols.has(stripped as FuturesSymbol) ? (stripped as FuturesSymbol) : tradingViewMcpFuturesFallbackSymbol;
@@ -166,11 +261,13 @@ export const tradingViewMcpCandlesToGoTraderCandles = (
 export const createActiveTradingViewMcpChartFeed = ({
   candlesResponse,
   gotraderSymbol,
-  gotraderTimeframe
+  gotraderTimeframe,
+  usageMode = "chart_only"
 }: {
   candlesResponse: TradingViewMcpCandlesResponse;
   gotraderSymbol?: string;
   gotraderTimeframe?: string;
+  usageMode?: TradingViewMcpFeedUsageMode;
 }): ActiveTradingViewMcpChartFeed => {
   const candles = normalizeTradingViewMcpCandles(candlesResponse);
   const latest = candles[candles.length - 1];
@@ -183,6 +280,15 @@ export const createActiveTradingViewMcpChartFeed = ({
     requestedTimeframe: candlesResponse.requestedTimeframe
   });
   const connectionStatus = candles.length ? "connected_with_candles" : candlesResponse.connectionStatus;
+  const sourceLabel = "TradingView MCP chart feed - read-only, not broker truth";
+  const researchEligibility = evaluateTradingViewMcpResearchEligibility({
+    candles,
+    connectionStatus,
+    matchState: match.state,
+    sourceLabel
+  });
+  const activeForResearch =
+    usageMode === "research_source" && researchEligibility.state === "eligible_for_research_cycle";
   return {
     provider: "tradingview_mcp",
     dataMode: "tradingview_mcp_chart",
@@ -200,7 +306,10 @@ export const createActiveTradingViewMcpChartFeed = ({
     lastTimestamp: latest?.timestamp,
     latestClose: latest?.close,
     connectionStatus,
-    sourceLabel: "TradingView MCP chart feed - read-only, not broker truth",
+    usageMode,
+    researchEligibility,
+    activeForResearch,
+    sourceLabel,
     sourceCommand: candlesResponse.sourceCommand,
     matchState: match.state,
     matchReason: match.reason,

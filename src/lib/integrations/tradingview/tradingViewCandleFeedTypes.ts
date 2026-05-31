@@ -13,6 +13,32 @@ export type TradingViewMcpSymbolMatchState =
   | "timeframe_mismatch"
   | "unavailable";
 
+export type TradingViewMcpResearchEligibilityState =
+  | "visual_only"
+  | "eligible_for_analysis"
+  | "eligible_for_research_cycle"
+  | "ineligible_symbol_mismatch"
+  | "ineligible_timeframe_mismatch"
+  | "ineligible_low_candle_count"
+  | "ineligible_disconnected";
+
+export type TradingViewMcpFeedUsageMode = "chart_only" | "research_source";
+
+export interface TradingViewMcpResearchEligibility {
+  state: TradingViewMcpResearchEligibilityState;
+  reasons: string[];
+  visualEligible: boolean;
+  quickAnalysisEligible: boolean;
+  researchCycleEligible: boolean;
+  symbolMatch: boolean;
+  timeframeMatch: boolean;
+  monotonicTimestamps: boolean;
+  candleCount: number;
+  minimumVisualCandles: number;
+  minimumQuickAnalysisCandles: number;
+  minimumResearchCycleCandles: number;
+}
+
 export interface TradingViewMcpFeedAuthority {
   executionAuthority: "none";
   brokerAuthority: "none";
@@ -101,6 +127,9 @@ export interface ActiveTradingViewMcpChartFeed extends TradingViewMcpFeedAuthori
   lastTimestamp?: string;
   latestClose?: number;
   connectionStatus: TradingViewMcpChartFeedStatus;
+  usageMode: TradingViewMcpFeedUsageMode;
+  researchEligibility: TradingViewMcpResearchEligibility;
+  activeForResearch: boolean;
   sourceLabel: string;
   sourceCommand?: string;
   matchState: TradingViewMcpSymbolMatchState;

@@ -34,6 +34,7 @@ import {
 import { buildVwapOverlay, createTradingChartData } from "@/lib/charting";
 import {
   clearActiveTradingViewMcpChartFeed,
+  createActiveTradingViewMcpChartFeed,
   fetchAndStoreTradingViewMcpChartFeed,
   fetchTradingViewMcpCandles,
   fetchTradingViewMcpQuote,
@@ -80,6 +81,7 @@ const fallbackSource: PreparedCandleSource = {
 };
 
 const formatDate = (value?: string) => (value ? new Date(value).toLocaleString() : "n/a");
+const formatToken = (value?: string) => (value ?? "not loaded").replace(/_/g, " ");
 const localNormalizedMnqArtifactUrl = "/local-imports/MNQ_06-26_OHLCV.normalized.json";
 const localDevImportAvailable =
   typeof window !== "undefined" && ["127.0.0.1", "localhost"].includes(window.location.hostname);
@@ -145,6 +147,21 @@ export function MarketDataView() {
   const liveMarketDataStatus = useMemo(() => resolveLiveMarketDataStatus(activeSource, tradingViewFeed), [activeSource, tradingViewFeed]);
   const liveDataModeLabel = liveMarketDataStatus.dataMode.replace(/_/g, " ");
   const tradingViewMcpStatus = useMemo(() => resolveTradingViewMcpStatus(), []);
+  const tradingViewCandidateFeed = useMemo(
+    () =>
+      tradingViewCandles
+        ? createActiveTradingViewMcpChartFeed({
+            candlesResponse: tradingViewCandles,
+            gotraderSymbol: symbol,
+            gotraderTimeframe: timeframe,
+            usageMode: "research_source"
+          })
+        : undefined,
+    [symbol, timeframe, tradingViewCandles]
+  );
+  const tradingViewEligibility = tradingViewCandidateFeed?.researchEligibility ?? tradingViewFeed?.researchEligibility;
+  const tradingViewEligibilityReasons = tradingViewEligibility?.reasons ?? ["Fetch candles to evaluate research eligibility."];
+  const tradingViewResearchSourceEligible = tradingViewEligibility?.state === "eligible_for_research_cycle";
 
   const refreshImports = async () => {
     const settings = loadCandleWindowSettings();
@@ -286,30 +303,43 @@ export function MarketDataView() {
   const fetchTradingViewCandlesForChart = async () => {
     setTradingViewFeedMessage(`Fetching TradingView MCP candles for ${symbol} ${timeframe}...`);
     const settings = loadTradingViewMcpSettings();
-    const candles = await fetchTradingViewMcpCandles({ symbol, timeframe, limit: 240 }, { ...settings, enabled: true });
+    const candles = await fetchTradingViewMcpCandles({ symbol, timeframe, limit: 500 }, { ...settings, enabled: true });
     setTradingViewCandles(candles);
+    const candidate = createActiveTradingViewMcpChartFeed({
+      candlesResponse: candles,
+      gotraderSymbol: symbol,
+      gotraderTimeframe: timeframe,
+      usageMode: "research_source"
+    });
     setTradingViewFeedMessage(
       candles.candleCount
-        ? `TradingView MCP returned ${candles.candleCount.toLocaleString()} candles.`
+        ? `TradingView MCP returned ${candles.candleCount.toLocaleString()} candles. Eligibility: ${formatToken(candidate.researchEligibility.state)}.`
         : candles.missingEvidence.join(" ") || "TradingView MCP connected but candle series unavailable."
     );
   };
 
-  const useTradingViewCandlesAsChartSource = async () => {
-    setTradingViewFeedMessage(`Loading TradingView MCP candles into GoTrader chart for ${symbol} ${timeframe}...`);
+  const useTradingViewCandlesAsSource = async (usageMode: "chart_only" | "research_source") => {
+    setTradingViewFeedMessage(
+      usageMode === "research_source"
+        ? `Evaluating TradingView MCP candles as a guarded research source for ${symbol} ${timeframe}...`
+        : `Loading TradingView MCP candles into GoTrader chart for ${symbol} ${timeframe}...`
+    );
     const settings = loadTradingViewMcpSettings();
     const feed = await fetchAndStoreTradingViewMcpChartFeed({
       symbol,
       timeframe,
       gotraderSymbol: symbol,
       gotraderTimeframe: timeframe,
-      limit: 240,
-      settings: { ...settings, enabled: true }
+      limit: usageMode === "research_source" ? 500 : 240,
+      settings: { ...settings, enabled: true },
+      usageMode
     });
     setTradingViewFeed(feed);
     setTradingViewFeedMessage(
       feed.candleCount
-        ? `TradingView MCP chart source active with ${feed.candleCount.toLocaleString()} read-only candles. ${feed.matchReason}`
+        ? usageMode === "research_source" && !feed.activeForResearch
+          ? `TradingView MCP remains visual-only. Eligibility: ${formatToken(feed.researchEligibility.state)}. ${feed.researchEligibility.reasons.join(" ")}`
+          : `TradingView MCP ${usageMode === "research_source" ? "research source" : "chart source"} active with ${feed.candleCount.toLocaleString()} read-only candles. ${feed.matchReason}`
         : feed.missingEvidence.join(" ") || "TradingView MCP connected but did not return full candle series."
     );
   };
@@ -404,7 +434,7 @@ export function MarketDataView() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
-          <div className="grid gap-3 md:grid-cols-5">
+          <div className="grid gap-3 md:grid-cols-6">
             <div className="space-y-2">
               <Label htmlFor="tradingview-feed-symbol">Symbol</Label>
               <Select
@@ -429,8 +459,21 @@ export function MarketDataView() {
             <Button variant="outline" onClick={() => void fetchTradingViewCandlesForChart()} className="self-end">
               Fetch candles
             </Button>
-            <Button variant="secondary" onClick={() => void useTradingViewCandlesAsChartSource()} className="self-end">
-              Use as chart source
+            <Button variant="secondary" onClick={() => void useTradingViewCandlesAsSource("chart_only")} className="self-end">
+              Use for chart only
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={!tradingViewResearchSourceEligible}
+              onClick={() => void useTradingViewCandlesAsSource("research_source")}
+              className="self-end"
+              title={
+                tradingViewResearchSourceEligible
+                  ? "TradingView MCP candles satisfy the research-source gate."
+                  : tradingViewEligibilityReasons[0]
+              }
+            >
+              Use for research source
             </Button>
           </div>
           <div className="grid gap-3 md:grid-cols-4">
@@ -440,8 +483,30 @@ export function MarketDataView() {
             <StatusTile label="Candle count" value={String(tradingViewCandles?.candleCount ?? tradingViewFeed?.candleCount ?? 0)} />
             <StatusTile label="First candle" value={formatDate(tradingViewCandles?.firstTimestamp ?? tradingViewFeed?.firstTimestamp)} />
             <StatusTile label="Last candle" value={formatDate(tradingViewCandles?.lastTimestamp ?? tradingViewFeed?.lastTimestamp)} />
-            <StatusTile label="Match state" value={(tradingViewFeed?.matchState ?? "unavailable").replace(/_/g, " ")} />
+            <StatusTile label="Match state" value={(tradingViewCandidateFeed?.matchState ?? tradingViewFeed?.matchState ?? "unavailable").replace(/_/g, " ")} />
+            <StatusTile label="Eligibility" value={formatToken(tradingViewEligibility?.state)} />
+            <StatusTile label="Symbol match" value={String(tradingViewEligibility?.symbolMatch ?? false)} />
+            <StatusTile label="Timeframe match" value={String(tradingViewEligibility?.timeframeMatch ?? false)} />
+            <StatusTile label="Usage mode" value={formatToken(tradingViewFeed?.usageMode)} />
             <StatusTile label="Authority" value="none" />
+          </div>
+          <div
+            className={`rounded-md border p-3 text-sm ${
+              tradingViewResearchSourceEligible
+                ? "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
+                : tradingViewEligibility?.visualEligible
+                  ? "border-amber-300/25 bg-amber-300/10 text-amber-100"
+                  : "border-slate-300/15 bg-slate-300/5 text-muted-foreground"
+            }`}
+          >
+            <p className="font-medium">
+              TradingView MCP eligibility: {formatToken(tradingViewEligibility?.state)}
+            </p>
+            <ul className="mt-2 space-y-1 text-xs">
+              {tradingViewEligibilityReasons.slice(0, 4).map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
           </div>
           {tradingViewFeedMessage ? (
             <div className="rounded-md border border-sky-300/25 bg-sky-300/10 p-3 text-sky-100">
@@ -451,10 +516,17 @@ export function MarketDataView() {
           {tradingViewFeed?.activeForChart ? (
             <div className="flex flex-col gap-3 rounded-md border border-emerald-300/25 bg-emerald-300/10 p-3 text-emerald-100 md:flex-row md:items-center md:justify-between">
               <div>
-                <p className="font-medium">TradingView MCP chart source active</p>
+                <p className="font-medium">
+                  TradingView MCP {tradingViewFeed.activeForResearch ? "research source" : "chart source"} active
+                </p>
                 <p className="mt-1 text-xs text-emerald-100/80">
                   {tradingViewFeed.providerSymbol} {tradingViewFeed.timeframe} / {tradingViewFeed.candleCount.toLocaleString()} candles / {tradingViewFeed.matchReason}
                 </p>
+                {!tradingViewFeed.activeForResearch ? (
+                  <p className="mt-1 text-xs text-emerald-100/80">
+                    Visual-only unless the research gate reports eligible for research cycle.
+                  </p>
+                ) : null}
               </div>
               <Button variant="outline" onClick={clearTradingViewChartSource} className="shrink-0">
                 Clear chart source

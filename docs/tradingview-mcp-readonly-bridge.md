@@ -76,6 +76,34 @@ This feed may be selected as a chart source in Market Data or Settings. It is la
 If the upstream CLI only returns a summary on a given machine or chart state, `/candles` returns an empty candle array
 with `connected_no_candles` and a `missingEvidence` explanation. GoTrader keeps using imported/mock/replay data.
 
+## Research-Source Eligibility Gate
+
+TradingView MCP candles are always treated as read-only chart data first. They may be displayed visually when the bridge
+is connected and returns at least 5 valid candles. They may become a research source only after a separate eligibility
+gate passes and the user explicitly selects `Use for research source`.
+
+Eligibility states:
+
+- `visual_only`
+- `eligible_for_analysis`
+- `eligible_for_research_cycle`
+- `ineligible_symbol_mismatch`
+- `ineligible_timeframe_mismatch`
+- `ineligible_low_candle_count`
+- `ineligible_disconnected`
+
+Research-cycle eligibility requires all of the following:
+
+- active GoTrader symbol matches the TradingView chart symbol or a known alias
+- active GoTrader timeframe matches the TradingView chart resolution
+- at least 400 normalized candles are available
+- timestamps are monotonic
+- source label explicitly says read-only and not broker truth
+- the user selected TradingView MCP as the research source
+
+Quick analysis can use 100+ candles, but readiness and research promotion still treat TradingView MCP as read-only
+market data, not broker truth. Walk-forward validation still prefers larger imported historical windows.
+
 ## Evidence Contract
 
 Normalized `TradingViewEvidence` includes:

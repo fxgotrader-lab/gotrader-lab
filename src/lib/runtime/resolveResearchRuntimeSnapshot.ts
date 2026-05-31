@@ -149,6 +149,7 @@ const tradingViewMcpStateFor = (): RuntimeTradingViewMcpState => {
   const status = resolveTradingViewMcpStatus();
   const latestEvidence = status.latestEvidence;
   const chartFeed = loadActiveTradingViewMcpChartFeed();
+  const eligibility = chartFeed?.researchEligibility;
   return {
     status,
     evidenceAvailable: status.evidenceAvailable,
@@ -159,12 +160,23 @@ const tradingViewMcpStateFor = (): RuntimeTradingViewMcpState => {
     chartFeedSourceLabel: chartFeed?.sourceLabel ?? "TradingView MCP chart feed not active",
     chartFeedMatchState: chartFeed?.matchState ?? "unavailable",
     chartFeedLastTimestamp: chartFeed?.lastTimestamp,
+    tradingViewMcpCandleStatus: chartFeed?.connectionStatus ?? "not_active",
+    researchEligibility: eligibility?.state ?? "not_active",
+    eligibilityReasons: eligibility?.reasons ?? ["TradingView MCP chart feed is not active."],
+    candleCount: chartFeed?.candleCount ?? 0,
+    symbolMatch: Boolean(eligibility?.symbolMatch),
+    timeframeMatch: Boolean(eligibility?.timeframeMatch),
+    activeForResearch: Boolean(chartFeed?.activeForResearch),
+    usageMode: chartFeed?.usageMode ?? "not_active",
     chartBias: latestEvidence?.chartBias ?? "unavailable",
     confidence: latestEvidence?.confidence ?? 0,
     authorityLabel: "analysis_only",
     warnings: [
       ...status.bridgeStatus.warnings,
-      ...(latestEvidence?.warnings ?? [])
+      ...(latestEvidence?.warnings ?? []),
+      ...(chartFeed?.activeForChart && !chartFeed.activeForResearch
+        ? ["TradingView MCP candles are visual-only and not used for research."]
+        : [])
     ].slice(0, 8)
   };
 };
@@ -721,6 +733,7 @@ export async function resolveResearchRuntimeSnapshot(
     `live feed: ${marketData.liveMarketDataStatus.liveFeedSourceLabel} / ${marketData.liveMarketDataStatus.connectionStatus}`,
     `TradingView MCP evidence: ${tradingViewMcp.evidenceAvailable ? "available" : "not available"} / ${tradingViewMcp.status.bridgeStatus.connectionStatus}`,
     `TradingView MCP chart feed: ${tradingViewMcp.chartFeedAvailable ? `${tradingViewMcp.chartFeedCandleCount} candles` : "not active"} / ${tradingViewMcp.chartFeedMatchState}`,
+    `TradingView MCP research eligibility: ${tradingViewMcp.researchEligibility} / symbol ${tradingViewMcp.symbolMatch ? "match" : "not matched"} / timeframe ${tradingViewMcp.timeframeMatch ? "match" : "not matched"}`,
     `imported data status: ${marketData.importedDataStatus}`,
     `active import id: ${marketData.activeImportId ?? "none"}`,
     `stored imports: ${marketData.importedDatasetCount}`,
