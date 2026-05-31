@@ -55,6 +55,13 @@ The diagnostic checks:
 - `C:\Users\andre\tradingview-mcp`
 - `C:\Users\andre\tradingview-mcp\src\cli\index.js`
 - likely Windows `TradingView.exe` install locations
+- Start Menu and Desktop shortcuts named `TradingView`
+- OneDrive Desktop shortcuts, when Windows redirects the Desktop into OneDrive
+- shortcut targets resolved through Windows `WScript.Shell`
+- installed-app registry entries named `TradingView`
+- Windows Start App and AppX package entries, including Microsoft Store-style installs
+- PATH command aliases such as `TradingView.exe` or `tv.exe`
+- currently running TradingView-like processes and their executable paths, when Windows exposes them
 - TradingView Desktop CDP debug port `9222`
 - GoTrader wrapper port `7331`
 - upstream CLI `status`
@@ -73,6 +80,8 @@ If PowerShell cannot find `TradingView.exe`, use the GoTrader launcher:
 ```powershell
 npm.cmd run tradingview:start-desktop-debug
 ```
+
+The launcher uses the same discovery engine as diagnostics. It searches common install folders, ClickOnce-style local app folders, Start Menu shortcuts, Desktop and OneDrive Desktop shortcuts, Windows app aliases, PATH command aliases, running process paths, AppX package entries, and uninstall registry entries. If more than one executable is found, it prints all candidates and launches the highest-ranked executable path.
 
 If TradingView is installed in a custom location, set:
 
@@ -206,6 +215,27 @@ If upstream is configured but disconnected:
 - start TradingView Desktop with `--remote-debugging-port=9222`
 - run upstream `node src/cli/index.js status`
 - ensure no firewall blocks localhost
+
+If diagnostics still cannot find TradingView Desktop:
+
+1. Right-click the TradingView shortcut in the Start Menu or on the Desktop.
+2. Choose `Open file location`.
+3. If Windows opens a shortcut folder, right-click the TradingView shortcut again and choose `Open file location`.
+4. Copy the full path to `TradingView.exe`.
+5. Set the override and rerun the launcher:
+
+```powershell
+$env:TRADINGVIEW_DESKTOP_EXE="C:\path\to\TradingView.exe"
+npm.cmd run tradingview:start-desktop-debug
+```
+
+Then rerun:
+
+```powershell
+npm.cmd run tradingview:diagnose
+```
+
+If diagnostics shows a Windows Start App or AppX package candidate but no executable path, Windows may be hiding the Microsoft Store package path. The manual shortcut method above is still the safest way to get the real executable path for launching with `--remote-debugging-port=9222`.
 
 If GoTrader Settings still shows disconnected:
 

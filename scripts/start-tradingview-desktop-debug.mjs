@@ -1,97 +1,121 @@
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+
+import { discoverTradingViewDesktop } from "./tradingview-desktop-discovery.mjs";
 
 const debugPort = process.env.TRADINGVIEW_DESKTOP_DEBUG_PORT || "9222";
 
-const unique = (items) => [...new Set(items.filter(Boolean))];
-
-const candidatePaths = () =>
-  unique([
-    process.env.TRADINGVIEW_DESKTOP_EXE,
-    process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Programs", "TradingView", "TradingView.exe"),
-    process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Programs", "TradingView Desktop", "TradingView.exe"),
-    process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "TradingView", "TradingView.exe"),
-    process.env.APPDATA && join(process.env.APPDATA, "TradingView", "TradingView.exe"),
-    process.env.ProgramFiles && join(process.env.ProgramFiles, "TradingView", "TradingView.exe"),
-    process.env.ProgramFiles && join(process.env.ProgramFiles, "TradingView Desktop", "TradingView.exe"),
-    process.env["ProgramFiles(x86)"] && join(process.env["ProgramFiles(x86)"], "TradingView", "TradingView.exe"),
-    process.env["ProgramFiles(x86)"] && join(process.env["ProgramFiles(x86)"], "TradingView Desktop", "TradingView.exe")
-  ]);
-
-const searchRoots = () =>
-  unique([
-    process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Programs"),
-    process.env.LOCALAPPDATA,
-    process.env.APPDATA,
-    process.env.ProgramFiles,
-    process.env["ProgramFiles(x86)"]
-  ]);
-
-const shouldSkipDirectory = (name) => {
-  const lower = name.toLowerCase();
-  return ["node_modules", "cache", "temp", "tmp", "packages", "microsoft", "windowsapps"].some((token) =>
-    lower.includes(token)
-  );
+const printManualInstructions = () => {
+  console.error("");
+  console.error("Manual path fallback:");
+  console.error("1. Right-click the TradingView shortcut.");
+  console.error("2. Choose Open file location.");
+  console.error("3. If Windows opens another shortcut folder, right-click again and choose Open file location.");
+  console.error("4. Copy the full path to TradingView.exe.");
+  console.error('5. Set it with: $env:TRADINGVIEW_DESKTOP_EXE="C:\\path\\to\\TradingView.exe"');
+  console.error("6. Rerun: npm.cmd run tradingview:start-desktop-debug");
 };
 
-const scanForTradingViewExe = (root, maxDepth = 4) => {
-  const results = [];
-  const walk = (dir, depth) => {
-    if (depth > maxDepth || !existsSync(dir)) {
-      return;
-    }
-    let entries = [];
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const fullPath = join(dir, entry.name);
-      if (entry.isFile() && entry.name.toLowerCase() === "tradingview.exe") {
-        results.push(fullPath);
-        continue;
-      }
-      if (!entry.isDirectory() || shouldSkipDirectory(entry.name)) {
-        continue;
-      }
-      const promising = depth === 0 || entry.name.toLowerCase().includes("tradingview");
-      if (promising) {
-        walk(fullPath, depth + 1);
-      }
-    }
-  };
-  walk(root, 0);
-  return results;
+const summarizeCandidate = (candidate, index) => {
+  const sources = candidate.sources?.length ? candidate.sources.join(",") : candidate.source;
+  return `${index + 1}. ${candidate.path} (${sources || "unknown"})`;
 };
 
-const discoverTradingViewExe = () => {
-  const direct = candidatePaths().filter((candidate) => existsSync(candidate));
-  const scanned = searchRoots().flatMap((root) => scanForTradingViewExe(root));
-  return unique([...direct, ...scanned]).map((item) => resolve(item));
-};
+const discovery = await discoverTradingViewDesktop();
+const envOverride = process.env.TRADINGVIEW_DESKTOP_EXE ? resolve(process.env.TRADINGVIEW_DESKTOP_EXE) : null;
+const selectedCandidate = envOverride
+  ? { path: envOverride, source: "env_override", kind: "executable" }
+  : discovery.selectedCandidate;
 
-const discoveredPaths = discoverTradingViewExe();
-const selectedPath = process.env.TRADINGVIEW_DESKTOP_EXE
-  ? resolve(process.env.TRADINGVIEW_DESKTOP_EXE)
-  : discoveredPaths[0];
+console.log("TradingView Desktop discovery summary:");
+if (discovery.executableCandidates.length) {
+  discovery.executableCandidates.forEach((candidate, index) => {
+    console.log(summarizeCandidate(candidate, index));
+  });
+} else {
+  console.log("No executable candidates found.");
+}
 
-if (!selectedPath || !existsSync(selectedPath)) {
-  console.error("TradingView.exe was not found.");
-  console.error("Set TRADINGVIEW_DESKTOP_EXE to the full path, for example:");
-  console.error('$env:TRADINGVIEW_DESKTOP_EXE="C:\\path\\to\\TradingView.exe"');
+if (discovery.shortcutCandidates.length) {
+  console.log("");
+  console.log("Shortcut candidates:");
+  discovery.shortcutCandidates.forEach((shortcut, index) => {
+    const target = shortcut.targetPath || "unresolved";
+    const exists = shortcut.exists ? "exists" : "missing";
+    console.log(`${index + 1}. ${shortcut.shortcutPath} -> ${target} (${exists})`);
+  });
+}
+
+if (discovery.registryCandidates.length) {
+  console.log("");
+  console.log("Registry candidates:");
+  discovery.registryCandidates.forEach((entry, index) => {
+    console.log(
+      `${index + 1}. ${entry.displayName || "TradingView"} | InstallLocation: ${
+        entry.installLocation || "unknown"
+      } | DisplayIcon: ${entry.displayIcon || "unknown"}`
+    );
+  });
+}
+
+if (discovery.startAppCandidates?.length) {
+  console.log("");
+  console.log("Windows Start App candidates:");
+  discovery.startAppCandidates.forEach((entry, index) => {
+    console.log(`${index + 1}. ${entry.name || "TradingView"} | AppID: ${entry.appId || "unknown"}`);
+  });
+}
+
+if (discovery.appPackageCandidates?.length) {
+  console.log("");
+  console.log("Windows App Package candidates:");
+  discovery.appPackageCandidates.forEach((entry, index) => {
+    console.log(
+      `${index + 1}. ${entry.name || "TradingView"} | Package: ${entry.packageFullName || "unknown"} | InstallLocation: ${
+        entry.installLocation || "unknown"
+      }`
+    );
+  });
+}
+
+if (discovery.pathCandidates?.length) {
+  console.log("");
+  console.log("PATH lookup candidates:");
+  discovery.pathCandidates.forEach((entry, index) => {
+    console.log(`${index + 1}. ${entry.command || "TradingView"} -> ${entry.path || entry.source || entry.definition || "unknown"}`);
+  });
+}
+
+if (discovery.runningProcessCandidates?.length) {
+  console.log("");
+  console.log("Running TradingView-like processes:");
+  discovery.runningProcessCandidates.forEach((entry, index) => {
+    console.log(`${index + 1}. ${entry.name || "process"} #${entry.processId || "unknown"} -> ${entry.executablePath || "unknown"}`);
+  });
+}
+
+if (!selectedCandidate?.path || !existsSync(selectedCandidate.path)) {
+  console.error("");
+  if (envOverride) {
+    console.error(`TRADINGVIEW_DESKTOP_EXE is set but the file was not found: ${envOverride}`);
+  } else {
+    console.error("TradingView.exe was not found.");
+  }
+  printManualInstructions();
   process.exitCode = 1;
 } else {
-  if (discoveredPaths.length > 1 && !process.env.TRADINGVIEW_DESKTOP_EXE) {
-    console.log("Multiple TradingView.exe paths found; using the first one.");
-    discoveredPaths.forEach((path, index) => console.log(`${index + 1}. ${path}`));
+  if (discovery.executableCandidates.length > 1 && !envOverride) {
+    console.log("");
+    console.log("Multiple executable candidates found; using the highest-ranked candidate above.");
   }
 
   const args = [`--remote-debugging-port=${debugPort}`];
-  console.log(`Launching: "${selectedPath}" ${args.join(" ")}`);
-  const child = spawn(selectedPath, args, {
-    cwd: dirname(selectedPath),
+  console.log("");
+  console.log(`Selected TradingView path: ${selectedCandidate.path}`);
+  console.log(`Launching: "${selectedCandidate.path}" ${args.join(" ")}`);
+  const child = spawn(selectedCandidate.path, args, {
+    cwd: dirname(selectedCandidate.path),
     detached: true,
     stdio: "ignore",
     windowsHide: false
