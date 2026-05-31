@@ -1,6 +1,6 @@
 import type { CIOSynthesisResult, InternalAgentOpinion } from "@/lib/agents";
 import type { InternalAgentId } from "@/lib/agents";
-import type { GrinchActiveProfile, GrinchStrategyScore } from "@/lib/strategyLibrary";
+import type { GrinchActiveProfile, GrinchFalsePositiveBlocker, GrinchStrategyScore } from "@/lib/strategyLibrary";
 import type {
   Candle,
   ICTContext,
@@ -145,6 +145,8 @@ export interface BacktestSkippedSignal {
   confluenceScore: number;
   sessionLabel: string;
   grinchRuleBlock?: string;
+  grinchHardGateReason?: GrinchStrategyScore["hardGateReason"];
+  grinchFalsePositiveBlockers?: GrinchFalsePositiveBlocker[];
 }
 
 export interface BacktestSkipReasonSummary {
@@ -183,6 +185,8 @@ export interface BacktestGrinchSummary {
   ruleBlocks: string[];
   missingEvidence: string[];
   grinchImprovedLatestRun?: boolean;
+  hardBlockedSignals: number;
+  falsePositiveBlockerCounts: Partial<Record<GrinchFalsePositiveBlocker, number>>;
 }
 
 export interface BacktestResult {

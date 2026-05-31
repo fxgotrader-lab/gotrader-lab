@@ -14,6 +14,7 @@ export type {
   GrinchDrawOnLiquidity,
   GrinchEntryConfirmationResult,
   GrinchExpectedExpansionDirection,
+  GrinchFalsePositiveBlocker,
   GrinchLondonBehavior,
   GrinchLiquidityRaidState,
   GrinchHtfBias,

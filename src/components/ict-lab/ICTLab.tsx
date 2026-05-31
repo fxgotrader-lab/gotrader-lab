@@ -297,6 +297,18 @@ export function ICTLab() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {analysis.grinchStrategyScore.hardGateReason ||
+          analysis.grinchStrategyScore.timingGrade === "expired" ||
+          analysis.grinchStrategyScore.profileState === "weak" ? (
+            <div className="rounded-lg border border-amber-300/30 bg-amber-300/10 p-3 text-sm text-amber-100">
+              <p className="font-medium">
+                Grinch profile is weak and timing is expired; this should be treated as no-trade or low-probability.
+              </p>
+              <p className="mt-1 text-amber-100/80">
+                High entry confirmation, opening-price alignment, or PD alignment cannot override an expired/weak profile gate.
+              </p>
+            </div>
+          ) : null}
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <StatusTile label="Active profile" value={analysis.grinchStrategyScore.activeProfile.replace(/_/g, " ")} detail={analysis.grinchStrategyScore.profileState} />
             <StatusTile label="HTF alignment" value={`${analysis.grinchStrategyScore.htfBiasAlignment}/100`} detail={analysis.grinchPhase1.htfBias} />
@@ -307,7 +319,7 @@ export function ICTLab() {
           <div className="grid gap-3 md:grid-cols-3">
             <InfoBox title="Entry confirmation" body={`${analysis.grinchStrategyScore.entryConfirmationScore}/100; timing ${analysis.grinchStrategyScore.timingAlignment}/100.`} />
             <InfoBox title="Primary rule block" body={analysis.grinchStrategyScore.primaryRuleBlock ?? "No blocking Grinch rule on the latest profile."} />
-            <InfoBox title="Why it matters" body={analysis.grinchStrategyScore.reasons[0] ?? "Grinch scoring is waiting for enough profile evidence."} />
+            <InfoBox title="Why it matters" body={analysis.grinchStrategyScore.hardGateReason ? `Hard gate ${analysis.grinchStrategyScore.hardGateReason} blocks this as a Grinch-supported trade.` : analysis.grinchStrategyScore.reasons[0] ?? "Grinch scoring is waiting for enough profile evidence."} />
           </div>
           {analysis.grinchStrategyScore.ruleBlocks.length || analysis.grinchStrategyScore.missingEvidence.length ? (
             <div className="grid gap-3 md:grid-cols-2">

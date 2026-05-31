@@ -18,6 +18,11 @@ export type TradeQualityReasonCode =
   | "target_r_mismatch"
   | "too_many_low_r_trades"
   | "false_positive_cluster"
+  | "grinch_timing_expired_trades"
+  | "grinch_weak_profile_trades"
+  | "grinch_entry_confirmation_conflict"
+  | "grinch_missing_intermarket_confirmation"
+  | "grinch_score_conflict"
   | "conservative_scenario_unstable";
 
 export type TradeQualityDiagnosticSeverity = "info" | "warning" | "blocking";
@@ -143,6 +148,13 @@ export function diagnoseTradeQuality({
       validation.calibration.readinessStatus === "yellow" ||
       validation.calibration.readinessStatus === "green"
     : quality?.readinessGrade === "Paper-Demo Candidate" || quality?.readinessGrade === "Research Ready";
+  const grinchBlockers = summary.grinchSummary?.falsePositiveBlockerCounts ?? {};
+  const grinchHardBlockedSignals = summary.grinchSummary?.hardBlockedSignals ?? 0;
+  const timingExpiredCount = grinchBlockers.timing_expired_trade ?? 0;
+  const weakProfileCount = grinchBlockers.weak_profile_trade ?? 0;
+  const entryProfileConflictCount = grinchBlockers.entry_confirmation_without_valid_profile ?? 0;
+  const missingIntermarketCount = grinchBlockers.missing_intermarket_confirmation ?? 0;
+  const grinchScoreConflictCount = grinchBlockers.grinch_score_conflict ?? 0;
 
   if (totalTrades < 30) {
     diagnostics.push(
@@ -177,6 +189,77 @@ export function diagnoseTradeQuality({
           hint("NY AM only", { sessionFilter: "NY AM Kill Zone" }, "Isolate a cleaner futures session."),
           hint("London only", { sessionFilter: "London" }, "Compare London behavior separately."),
           hint("Higher confidence filter", { minimumConfidenceThreshold: Math.min(0.85, config.minimumConfidenceThreshold + 0.07) }, "Require stronger CIO conviction.")
+        ]
+      )
+    );
+  }
+
+  if (timingExpiredCount > 0) {
+    diagnostics.push(
+      diagnostic(
+        "grinch_timing_expired_trades",
+        `${timingExpiredCount} expired-timing decision(s); ${grinchHardBlockedSignals} hard blocked`,
+        "0 expired Grinch timing trades",
+        "blocking",
+        "Grinch timing expired before the setup could be treated as a valid Model 1, reversal, or consolidation entry.",
+        "Block expired Grinch timing and rerun Standard imported data before evaluating win rate.",
+        [
+          hint("Block expired Grinch timing", { minimumConfidenceThreshold: Math.min(0.9, config.minimumConfidenceThreshold + 0.06) }, "Require stronger evidence while expired-timing hard gates remove no-trade profiles."),
+          hint("NY AM timing-only check", { sessionFilter: "NY AM Kill Zone" }, "Retest only the intended NY timing window.")
+        ]
+      )
+    );
+  }
+
+  if (weakProfileCount > 0) {
+    diagnostics.push(
+      diagnostic(
+        "grinch_weak_profile_trades",
+        `${weakProfileCount} weak-profile decision(s)`,
+        "Weak profile requires valid timing plus PD respect/displacement",
+        "blocking",
+        "A weak Grinch profile should not raise confidence by itself; it needs stronger PD array respect, displacement, and valid timing.",
+        "Require profile plus entry confirmation instead of allowing opening-price or PD alignment alone.",
+        [
+          hint("Require valid profile plus entry", {
+            minimumConfluenceThreshold: Math.min(0.85, config.minimumConfluenceThreshold + 0.08),
+            minimumConfidenceThreshold: Math.min(0.9, config.minimumConfidenceThreshold + 0.06)
+          }, "Keep only stronger profile-confirmation combinations.")
+        ]
+      )
+    );
+  }
+
+  if (entryProfileConflictCount > 0 || grinchScoreConflictCount > 0) {
+    diagnostics.push(
+      diagnostic(
+        "grinch_entry_confirmation_conflict",
+        `${entryProfileConflictCount} entry/profile conflict(s); ${grinchScoreConflictCount} score conflict(s)`,
+        "Entry confirmation must not override weak/expired profile state",
+        "blocking",
+        "High entry-confirmation components were present while the Grinch profile or timing gate said no-trade.",
+        "Cap Grinch score and block trades whenever timing/profile validity conflicts with entry confirmation.",
+        [
+          hint("Profile plus entry confirmation", {
+            minimumConfluenceThreshold: Math.min(0.85, config.minimumConfluenceThreshold + 0.08),
+            minimumConfidenceThreshold: Math.min(0.9, config.minimumConfidenceThreshold + 0.06)
+          }, "Require confirmation and a valid profile together.")
+        ]
+      )
+    );
+  }
+
+  if (missingIntermarketCount > 0) {
+    diagnostics.push(
+      diagnostic(
+        "grinch_missing_intermarket_confirmation",
+        `${missingIntermarketCount} SMT-unavailable decision(s)`,
+        "SMT unavailable contributes 0 confirmation",
+        "warning",
+        "Missing ES/YM correlation data does not invalidate a setup by itself, but it cannot be counted as intermarket confirmation.",
+        "Keep SMT unavailable as an evidence discount until correlated ES/YM data is imported.",
+        [
+          hint("SMT unavailable penalty", { minimumConfidenceThreshold: Math.min(0.9, config.minimumConfidenceThreshold + 0.04) }, "Discount confidence when intermarket confirmation is missing.")
         ]
       )
     );

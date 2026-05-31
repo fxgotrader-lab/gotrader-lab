@@ -78,6 +78,11 @@ export type AutoResearchCandidateFamily =
   | "grinch_require_opening_price_alignment"
   | "grinch_require_pd_array_hierarchy_alignment"
   | "grinch_require_time_price_alignment"
+  | "grinch_block_expired_timing"
+  | "grinch_require_valid_profile"
+  | "grinch_require_timing_acceptable"
+  | "grinch_require_profile_plus_entry_confirmation"
+  | "grinch_smt_unavailable_penalty"
   | "grinch_penalize_missing_smt"
   | "grinch_allow_smt_unavailable_but_discount_confidence";
 

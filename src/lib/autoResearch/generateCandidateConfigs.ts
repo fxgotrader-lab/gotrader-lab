@@ -521,6 +521,76 @@ export function generateCandidateConfigs(
         },
         ["grinchTimePrice", "sessionFilter", "confidenceThreshold", "agentWeights"],
         "grinch_require_time_price_alignment"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch block expired timing",
+        "Hard-gate expired Grinch timing so Model 1, reversal, or continuation entries cannot pass after the valid NY profile window.",
+        {
+          sessionFilter: "NY AM Kill Zone",
+          minimumConfidenceThreshold: round(clamp01(baseline.minimumConfidenceThreshold + 0.06), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-time-price-alignment-agent": 0.14,
+            "session-timing-agent": 0.06,
+            "grinch-entry-confirmation-agent": -0.02
+          })
+        },
+        ["grinchBlockExpiredTiming", "sessionFilter", "confidenceThreshold", "agentWeights"],
+        "grinch_block_expired_timing"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch require valid profile",
+        "Require the active Grinch profile to be valid instead of letting weak/expired profile evidence raise confidence.",
+        {
+          minimumConfluenceThreshold: round(clamp01(Math.max(0.55, baseline.minimumConfluenceThreshold + 0.08)), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-model-one-power-three-agent": 0.08,
+            "grinch-reversal-profile-agent": 0.08,
+            "grinch-consolidation-profile-agent": 0.08,
+            "grinch-time-price-alignment-agent": 0.06
+          })
+        },
+        ["grinchRequireValidProfile", "confluenceThreshold", "agentWeights"],
+        "grinch_require_valid_profile"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch timing acceptable only",
+        "Reject early, late, and expired Grinch profiles unless timing is ideal or acceptable.",
+        {
+          sessionFilter: "NY AM Kill Zone",
+          minimumConfluenceThreshold: round(clamp01(baseline.minimumConfluenceThreshold + 0.06), 2),
+          minimumConfidenceThreshold: round(clamp01(baseline.minimumConfidenceThreshold + 0.06), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-time-price-alignment-agent": 0.14,
+            "grinch-opening-price-equilibrium-agent": -0.02
+          })
+        },
+        ["grinchRequireTimingAcceptable", "sessionFilter", "confluenceThreshold", "confidenceThreshold", "agentWeights"],
+        "grinch_require_timing_acceptable"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch profile plus entry confirmation",
+        "Require profile validity and entry confirmation together so high entry confirmation cannot override weak profile state.",
+        {
+          minimumConfluenceThreshold: round(clamp01(Math.max(0.55, baseline.minimumConfluenceThreshold + 0.08)), 2),
+          minimumConfidenceThreshold: round(clamp01(Math.max(0.55, baseline.minimumConfidenceThreshold + 0.08)), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-entry-confirmation-agent": 0.1,
+            "grinch-model-one-power-three-agent": 0.06,
+            "grinch-reversal-profile-agent": 0.06,
+            "grinch-consolidation-profile-agent": 0.06,
+            "grinch-time-price-alignment-agent": 0.08
+          })
+        },
+        ["grinchProfilePlusEntry", "confluenceThreshold", "confidenceThreshold", "agentWeights"],
+        "grinch_require_profile_plus_entry_confirmation"
       )
     );
   }
@@ -575,6 +645,22 @@ export function generateCandidateConfigs(
       candidate(
         baseline,
         searchMode,
+        "Grinch SMT unavailable penalty",
+        "Treat missing ES/YM SMT as zero confirmation and a confidence discount, not as evidence for the setup.",
+        {
+          minimumConfidenceThreshold: round(clamp01(baseline.minimumConfidenceThreshold + 0.05), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-smt-intermarket-agent": 0.08,
+            "intermarket-confirmation-agent": 0.03,
+            "grinch-entry-confirmation-agent": -0.02
+          })
+        },
+        ["grinchSmtUnavailablePenalty", "confidenceThreshold", "agentWeights"],
+        "grinch_smt_unavailable_penalty"
+      ),
+      candidate(
+        baseline,
+        searchMode,
         "Grinch missing SMT penalty",
         "Penalize missing or conflicting SMT when other setup evidence is weak, without treating missing SMT as automatic invalidation.",
         {
@@ -622,7 +708,7 @@ export function generateCandidateConfigs(
   const deduped = dedupeCandidates(candidates);
   const grinchCandidates = deduped.filter((item) => item.candidateFamily?.startsWith("grinch_"));
   const otherCandidates = deduped.filter((item) => !item.candidateFamily?.startsWith("grinch_"));
-  const grinchQuota = Math.min(grinchCandidates.length, maxCount <= 5 ? 2 : searchMode === "deep" ? 5 : 3);
+  const grinchQuota = Math.min(grinchCandidates.length, maxCount <= 5 ? Math.min(4, maxCount) : searchMode === "deep" ? 10 : Math.min(9, maxCount));
   return [
     ...otherCandidates.slice(0, Math.max(0, maxCount - grinchQuota)),
     ...grinchCandidates.slice(0, grinchQuota)

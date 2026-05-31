@@ -63,7 +63,14 @@ export function scoreCandidateConfig({
   const profitFactorScore = scoreProfitFactor(metrics.profitFactor);
   const robustScore = robustnessScore(validation);
   const grinchModelScore = grinchScore?.grinchModelScore ?? 50;
-  const grinchPenalty = grinchScore ? Math.min(12, grinchScore.falsePositiveRisk * 0.08) : 0;
+  const grinchPenalty = grinchScore
+    ? Math.min(
+        28,
+        grinchScore.falsePositiveRisk * 0.08 +
+          (grinchScore.setupQuality === "blocked" ? 14 : grinchScore.setupQuality === "low_probability" ? 6 : 0) +
+          ((grinchScore.falsePositiveBlockers ?? []).includes("missing_intermarket_confirmation") ? 3 : 0)
+      )
+    : 0;
   const weights = scoringCriteria.weights;
   const totalScore = round(
     drawdownScore * weights.lowerMaxDrawdown +

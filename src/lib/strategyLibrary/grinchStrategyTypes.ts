@@ -44,6 +44,13 @@ export type GrinchSmtDivergenceType =
   | "none";
 export type GrinchSmtSupportState = boolean | "unclear";
 export type GrinchActiveProfile = "model_1" | "reversal" | "consolidation" | "none";
+export type GrinchSetupQuality = "eligible" | "low_probability" | "blocked";
+export type GrinchFalsePositiveBlocker =
+  | "timing_expired_trade"
+  | "weak_profile_trade"
+  | "entry_confirmation_without_valid_profile"
+  | "missing_intermarket_confirmation"
+  | "grinch_score_conflict";
 
 export type GrinchPdArrayType =
   | "sunday_open"
@@ -342,7 +349,11 @@ export interface GrinchStrategyScore {
   falsePositiveRisk: number;
   profileValidity: number;
   profileState: string;
+  timingGrade: GrinchTimingGrade;
   smtState: GrinchSmtState;
+  setupQuality: GrinchSetupQuality;
+  hardGateReason?: "grinch_timing_expired" | "grinch_profile_invalid" | "grinch_profile_weak_without_confirmation";
+  falsePositiveBlockers: GrinchFalsePositiveBlocker[];
   ruleBlocks: string[];
   primaryRuleBlock?: string;
   reasons: string[];

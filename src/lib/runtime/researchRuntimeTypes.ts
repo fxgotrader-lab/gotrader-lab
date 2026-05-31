@@ -142,6 +142,9 @@ export interface RuntimeResearchCycleState {
     timingGrade: string;
     grinchModelScore?: number;
     falsePositiveRisk?: number;
+    setupQuality?: GrinchStrategyScore["setupQuality"];
+    hardGateReason?: GrinchStrategyScore["hardGateReason"];
+    primaryRuleBlock?: string;
     improvedLatestRun?: boolean;
     detail: string;
   };

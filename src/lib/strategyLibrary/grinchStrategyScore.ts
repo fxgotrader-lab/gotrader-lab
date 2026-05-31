@@ -10,6 +10,7 @@ import type {
   GrinchPhase3ConsolidationModelOutput,
   GrinchPhase4SmtModelOutput,
   GrinchStrategyScore,
+  GrinchFalsePositiveBlocker,
   GrinchTimingGrade
 } from "@/lib/strategyLibrary/grinchStrategyTypes";
 
@@ -28,7 +29,7 @@ const stateScore = (state?: string) => {
     return 90;
   }
   if (state === "weak") {
-    return 62;
+    return 48;
   }
   if (state === "invalid") {
     return 18;
@@ -101,7 +102,7 @@ const smtScore = (smt: GrinchPhase4SmtModelOutput) => {
     return 16;
   }
   if (smt.smtState === "unavailable") {
-    return 38;
+    return 0;
   }
   return 46;
 };
@@ -139,15 +140,38 @@ export function calculateGrinchStrategyScore(input: GrinchStrategyScoreInput): G
   const entryConfirmationScore = clamp(phase1.entryConfirmation.confirmationScore * 100);
   const smtConfirmationScore = smtScore(smt);
   const profileValidity = stateScore(profile.profileState);
+  const timingExpired = profile.timingGrade === "expired";
+  const validTiming = profile.timingGrade === "ideal" || profile.timingGrade === "acceptable";
+  const activeProfileWeak = profile.profileState === "weak";
+  const activeProfileInvalid =
+    profile.activeProfile === "none" || profile.profileState === "invalid" || profile.profileState === "not_present";
+  const strongPdArrayRespect =
+    pdArrayHierarchyAlignment >= 80 && Boolean(phase1.activePdArrays[0]?.respected) && !phase1.activePdArrays[0]?.violated;
+  const strongDisplacementConfirmation =
+    phase1.entryConfirmation.displacementAway &&
+    phase1.entryConfirmation.mssOrBos &&
+    phase1.entryConfirmation.timeWindowAlignment &&
+    entryConfirmationScore >= 78;
+  const weakProfileWithoutConfirmation = activeProfileWeak && !(strongPdArrayRespect && strongDisplacementConfirmation && validTiming);
+  const entryConfirmationWithoutValidProfile =
+    entryConfirmationScore >= 70 && (timingExpired || activeProfileInvalid || weakProfileWithoutConfirmation);
+  const smtUnavailable = smt.smtState === "unavailable";
+  const falsePositiveBlockers: GrinchFalsePositiveBlocker[] = [
+    timingExpired ? "timing_expired_trade" : undefined,
+    weakProfileWithoutConfirmation ? "weak_profile_trade" : undefined,
+    entryConfirmationWithoutValidProfile ? "entry_confirmation_without_valid_profile" : undefined,
+    smtUnavailable ? "missing_intermarket_confirmation" : undefined
+  ].filter((item): item is GrinchFalsePositiveBlocker => Boolean(item));
   const falsePositiveRisk = clamp(
     (100 - profileValidity) * 0.28 +
       (100 - pdArrayHierarchyAlignment) * 0.22 +
       (100 - timingAlignment) * 0.18 +
       (100 - entryConfirmationScore) * 0.2 +
       (smt.smtState === "conflict" ? 22 : 0) +
+      (smtUnavailable ? 12 : 0) +
       (phase1.htfBias === "unclear" ? 12 : 0)
   );
-  const grinchModelScore = clamp(
+  const rawGrinchModelScore = clamp(
     htfBiasAlignment * 0.15 +
       pdArrayHierarchyAlignment * 0.15 +
       openingPriceAlignment * 0.12 +
@@ -157,13 +181,39 @@ export function calculateGrinchStrategyScore(input: GrinchStrategyScoreInput): G
       profileValidity * 0.22 -
       falsePositiveRisk * 0.12
   );
+  const hardGateReason = timingExpired
+    ? "grinch_timing_expired"
+    : activeProfileInvalid
+      ? "grinch_profile_invalid"
+      : weakProfileWithoutConfirmation
+        ? "grinch_profile_weak_without_confirmation"
+        : undefined;
+  const setupQuality = hardGateReason ? "blocked" : activeProfileWeak || smtUnavailable ? "low_probability" : "eligible";
+  const scoreConflict = rawGrinchModelScore >= 55 && Boolean(hardGateReason);
+  if (scoreConflict) {
+    falsePositiveBlockers.push("grinch_score_conflict");
+  }
+  const grinchModelScore = clamp(
+    Math.min(
+      rawGrinchModelScore,
+      timingExpired ? 42 : 100,
+      activeProfileInvalid ? 35 : 100,
+      weakProfileWithoutConfirmation ? 48 : 100,
+      scoreConflict ? 42 : 100
+    )
+  );
   const ruleBlocks = [
     phase1.htfBias === "unclear" ? "HTF draw unclear." : undefined,
     !phase1.activePdArrays.length ? "No active ranked PD array." : undefined,
     openingPriceAlignment < 45 ? "Opening-price alignment weak." : undefined,
-    timingAlignment < 45 ? `Timing ${profile.timingGrade}; setup is not in a clean model window.` : undefined,
+    timingExpired ? "Grinch profile is weak and timing is expired; this should be treated as no-trade or low-probability." : undefined,
+    timingAlignment < 45 && !timingExpired ? `Timing ${profile.timingGrade}; setup is not in a clean model window.` : undefined,
     entryConfirmationScore < 45 ? "Entry confirmation incomplete." : undefined,
     profile.activeProfile === "none" ? "No valid Model 1, reversal, or consolidation profile." : undefined,
+    activeProfileWeak ? "Active Grinch profile is weak; profile evidence cannot raise confidence by itself." : undefined,
+    entryConfirmationWithoutValidProfile ? "Entry confirmation is high, but timing/profile validity does not permit a Grinch trade." : undefined,
+    smtUnavailable ? "SMT unavailable - correlated instruments missing; SMT contributes 0 and cannot imply confirmation." : undefined,
+    scoreConflict ? "Grinch score conflict: alignment components are high, but a hard timing/profile gate blocks the setup." : undefined,
     smt.smtState === "conflict" ? "SMT conflicts with weak setup evidence." : undefined
   ].filter((item): item is string => Boolean(item));
   const missingEvidence = Array.from(new Set([
@@ -176,7 +226,9 @@ export function calculateGrinchStrategyScore(input: GrinchStrategyScoreInput): G
     `Active profile: ${profile.activeProfile.replace(/_/g, " ")} (${profile.profileState}).`,
     `HTF bias ${phase1.htfBias}; draw ${phase1.htfDrawOnLiquidity}.`,
     phase1.activePdArrays[0] ? `Top PD array: ${phase1.activePdArrays[0].label}.` : "No active PD array.",
-    `Opening-price alignment ${round(openingPriceAlignment)} / timing ${profile.timingGrade}.`,
+    setupQuality === "blocked"
+      ? `Hard Grinch gate: ${hardGateReason}.`
+      : `Opening-price alignment ${round(openingPriceAlignment)} / timing ${profile.timingGrade}.`,
     `SMT ${smt.smtState}; pair ${smt.primaryPair}.`,
     ...phase1.reasons.slice(0, 3)
   ])).slice(0, 10);
@@ -194,7 +246,11 @@ export function calculateGrinchStrategyScore(input: GrinchStrategyScoreInput): G
     falsePositiveRisk: round(falsePositiveRisk),
     profileValidity: round(profileValidity),
     profileState: profile.profileState,
+    timingGrade: profile.timingGrade,
     smtState: smt.smtState,
+    setupQuality,
+    hardGateReason,
+    falsePositiveBlockers: Array.from(new Set(falsePositiveBlockers)),
     ruleBlocks,
     primaryRuleBlock: ruleBlocks[0],
     reasons,

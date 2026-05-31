@@ -559,6 +559,9 @@ export async function resolveResearchRuntimeSnapshot(
         detail: summarizeGrinchSmtIntermarket(grinchPhase4SmtSummary)
       }
     : undefined;
+  const grinchHardGateDetail = grinchStrategyScore?.primaryRuleBlock
+    ? ` ${grinchStrategyScore.primaryRuleBlock}`
+    : "";
   const activeGrinchProfileSummary = grinchPhase3ConsolidationSummary?.consolidationProfileState === "valid"
     ? {
         profile: "consolidation" as const,
@@ -567,8 +570,11 @@ export async function resolveResearchRuntimeSnapshot(
         timingGrade: grinchPhase3ConsolidationSummary.timingGrade,
         grinchModelScore: grinchStrategyScore?.grinchModelScore,
         falsePositiveRisk: grinchStrategyScore?.falsePositiveRisk,
+        setupQuality: grinchStrategyScore?.setupQuality,
+        hardGateReason: grinchStrategyScore?.hardGateReason,
+        primaryRuleBlock: grinchStrategyScore?.primaryRuleBlock,
         improvedLatestRun: latestCycle?.backtestSummary?.grinchSummary?.grinchImprovedLatestRun,
-        detail: summarizeGrinchConsolidationProfile(grinchPhase3ConsolidationSummary)
+        detail: `${summarizeGrinchConsolidationProfile(grinchPhase3ConsolidationSummary)}${grinchHardGateDetail}`
       }
     : grinchPhase2ReversalSummary?.reversalProfileState === "valid"
       ? {
@@ -578,8 +584,11 @@ export async function resolveResearchRuntimeSnapshot(
           timingGrade: grinchPhase2ReversalSummary.timingGrade,
           grinchModelScore: grinchStrategyScore?.grinchModelScore,
           falsePositiveRisk: grinchStrategyScore?.falsePositiveRisk,
+          setupQuality: grinchStrategyScore?.setupQuality,
+          hardGateReason: grinchStrategyScore?.hardGateReason,
+          primaryRuleBlock: grinchStrategyScore?.primaryRuleBlock,
           improvedLatestRun: latestCycle?.backtestSummary?.grinchSummary?.grinchImprovedLatestRun,
-          detail: summarizeGrinchReversalProfile(grinchPhase2ReversalSummary)
+          detail: `${summarizeGrinchReversalProfile(grinchPhase2ReversalSummary)}${grinchHardGateDetail}`
         }
       : grinchPhase1Summary
         ? {
@@ -589,8 +598,11 @@ export async function resolveResearchRuntimeSnapshot(
             timingGrade: grinchPhase1Summary.timingGrade,
             grinchModelScore: grinchStrategyScore?.grinchModelScore,
             falsePositiveRisk: grinchStrategyScore?.falsePositiveRisk,
+            setupQuality: grinchStrategyScore?.setupQuality,
+            hardGateReason: grinchStrategyScore?.hardGateReason,
+            primaryRuleBlock: grinchStrategyScore?.primaryRuleBlock,
             improvedLatestRun: latestCycle?.backtestSummary?.grinchSummary?.grinchImprovedLatestRun,
-            detail: summarizeGrinchPhase1(grinchPhase1Summary)
+            detail: `${summarizeGrinchPhase1(grinchPhase1Summary)}${grinchHardGateDetail}`
           }
         : {
             profile: "none" as const,
@@ -599,6 +611,9 @@ export async function resolveResearchRuntimeSnapshot(
             timingGrade: "unknown",
             grinchModelScore: grinchStrategyScore?.grinchModelScore,
             falsePositiveRisk: grinchStrategyScore?.falsePositiveRisk,
+            setupQuality: grinchStrategyScore?.setupQuality,
+            hardGateReason: grinchStrategyScore?.hardGateReason,
+            primaryRuleBlock: grinchStrategyScore?.primaryRuleBlock,
             improvedLatestRun: latestCycle?.backtestSummary?.grinchSummary?.grinchImprovedLatestRun,
             detail: "No Grinch profile available."
           };

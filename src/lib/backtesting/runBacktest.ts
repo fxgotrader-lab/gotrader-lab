@@ -146,6 +146,9 @@ const skipReasonFor = (decision: BacktestDecisionPoint, config: ResolvedBacktest
   if (decision.thesis.finalBias === "neutral") {
     return "CIO thesis was neutral.";
   }
+  if (decision.grinchScore?.hardGateReason) {
+    return `Grinch hard gate blocked setup: ${decision.grinchScore.hardGateReason}.`;
+  }
   return undefined;
 };
 
@@ -324,6 +327,12 @@ const grinchSummaryFor = (
     counts[block] = (counts[block] ?? 0) + 1;
     return counts;
   }, {});
+  const falsePositiveBlockerCounts = scores.reduce<BacktestGrinchSummary["falsePositiveBlockerCounts"]>((counts, score) => {
+    for (const blocker of score.falsePositiveBlockers ?? []) {
+      counts[blocker] = (counts[blocker] ?? 0) + 1;
+    }
+    return counts;
+  }, {});
   const latestScore = scores[scores.length - 1];
   const tradeScores = trades.map((trade) => trade.grinchScore).filter((score): score is NonNullable<typeof score> => Boolean(score));
   const skippedScores = skippedSignals
@@ -345,7 +354,9 @@ const grinchSummaryFor = (
       .slice(0, 8)
       .map(([block]) => block),
     missingEvidence: Array.from(new Set(scores.flatMap((score) => score.missingEvidence))).slice(0, 8),
-    grinchImprovedLatestRun: tradeScores.length ? tradeAverage >= skippedAverage : undefined
+    grinchImprovedLatestRun: tradeScores.length ? tradeAverage >= skippedAverage : undefined,
+    hardBlockedSignals: scores.filter((score) => score.hardGateReason).length,
+    falsePositiveBlockerCounts
   };
 };
 
@@ -416,7 +427,9 @@ export function runBacktest(candles: Candle[], config: BacktestConfig = {}): Bac
         confidence: decision.thesis.confidence,
         confluenceScore: decision.ictContext.confluenceScore,
         sessionLabel: tagSession(decision.candle).label,
-        grinchRuleBlock: decision.grinchScore?.primaryRuleBlock
+        grinchRuleBlock: decision.grinchScore?.primaryRuleBlock,
+        grinchHardGateReason: decision.grinchScore?.hardGateReason,
+        grinchFalsePositiveBlockers: decision.grinchScore?.falsePositiveBlockers
       });
     } else {
       eligibleDecisions.push(decision);
