@@ -562,6 +562,10 @@ export async function resolveResearchRuntimeSnapshot(
   const grinchHardGateDetail = grinchStrategyScore?.primaryRuleBlock
     ? ` ${grinchStrategyScore.primaryRuleBlock}`
     : "";
+  const latestGrinchSummary = latestCycle?.backtestSummary?.grinchSummary;
+  const tradeProducingProfile = latestGrinchSummary?.tradeProfileCounts
+    ? (Object.entries(latestGrinchSummary.tradeProfileCounts).sort((a, b) => b[1] - a[1])[0]?.[0] as "model_1" | "reversal" | "consolidation" | "none" | undefined)
+    : undefined;
   const activeProfile = grinchStrategyScore?.activeProfile ?? (grinchPhase1Summary ? "model_1" : "none");
   const activeGrinchProfileSummary = {
     profile: activeProfile,
@@ -596,6 +600,12 @@ export async function resolveResearchRuntimeSnapshot(
     fallbackState: grinchStrategyScore?.fallbackState,
     fallbackProfileUsed: grinchStrategyScore?.fallbackProfileUsed,
     noValidProfile: grinchStrategyScore?.noValidProfile,
+    expiredTimingBlocks: latestGrinchSummary?.falsePositiveBlockerCounts?.timing_expired_trade ?? 0,
+    weakProfileBlocks: latestGrinchSummary?.falsePositiveBlockerCounts?.weak_profile_trade ?? 0,
+    reversalCandidates: latestGrinchSummary?.profileCandidateCounts?.reversal ?? 0,
+    consolidationCandidates: latestGrinchSummary?.profileCandidateCounts?.consolidation ?? 0,
+    noValidProfileCount: latestGrinchSummary?.noValidProfileSignals ?? 0,
+    tradeProducingProfile: tradeProducingProfile ?? "none",
     primaryRuleBlock: grinchStrategyScore?.primaryRuleBlock,
     improvedLatestRun: latestCycle?.backtestSummary?.grinchSummary?.grinchImprovedLatestRun,
     detail:

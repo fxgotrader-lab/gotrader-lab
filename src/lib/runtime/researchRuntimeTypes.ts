@@ -147,6 +147,12 @@ export interface RuntimeResearchCycleState {
     fallbackState?: GrinchStrategyScore["fallbackState"];
     fallbackProfileUsed?: GrinchStrategyScore["fallbackProfileUsed"];
     noValidProfile?: boolean;
+    expiredTimingBlocks?: number;
+    weakProfileBlocks?: number;
+    reversalCandidates?: number;
+    consolidationCandidates?: number;
+    noValidProfileCount?: number;
+    tradeProducingProfile?: "model_1" | "reversal" | "consolidation" | "none";
     primaryRuleBlock?: string;
     improvedLatestRun?: boolean;
     detail: string;
