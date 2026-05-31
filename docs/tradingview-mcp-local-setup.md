@@ -42,11 +42,46 @@ cd C:\Users\andre\tradingview-mcp
 npm install
 ```
 
+## Run Diagnostics
+
+From the GoTrader repo:
+
+```powershell
+npm.cmd run tradingview:diagnose
+```
+
+The diagnostic checks:
+
+- `C:\Users\andre\tradingview-mcp`
+- `C:\Users\andre\tradingview-mcp\src\cli\index.js`
+- likely Windows `TradingView.exe` install locations
+- TradingView Desktop CDP debug port `9222`
+- GoTrader wrapper port `7331`
+- upstream CLI `status`
+- GoTrader wrapper `/health`
+
+The output includes next-step instructions for whatever failed.
+
 Launch TradingView Desktop with the CDP debug port enabled. Upstream documents a Windows helper script, and also the generic Chromium/Electron flag:
 
 ```powershell
 TradingView.exe --remote-debugging-port=9222
 ```
+
+If PowerShell cannot find `TradingView.exe`, use the GoTrader launcher:
+
+```powershell
+npm.cmd run tradingview:start-desktop-debug
+```
+
+If TradingView is installed in a custom location, set:
+
+```powershell
+$env:TRADINGVIEW_DESKTOP_EXE="C:\path\to\TradingView.exe"
+npm.cmd run tradingview:start-desktop-debug
+```
+
+The launcher prints the exact command it starts and does not require admin rights.
 
 Then verify upstream CLI access from the upstream repo:
 
@@ -64,6 +99,8 @@ From the GoTrader repo:
 $env:TRADINGVIEW_MCP_REPO_DIR="C:\Users\andre\tradingview-mcp"
 npm.cmd run tradingview:mcp-bridge
 ```
+
+Keep that terminal open while GoTrader checks status or fetches chart evidence.
 
 Defaults:
 
@@ -92,6 +129,21 @@ npm.cmd run test:tradingview-mcp
 ```
 
 If the wrapper is not running, the test reports disconnected and exits successfully. That is intentional so build/smoke validation does not require TradingView Desktop.
+
+Full local sequence:
+
+```powershell
+npm.cmd run tradingview:diagnose
+npm.cmd run tradingview:start-desktop-debug
+$env:TRADINGVIEW_MCP_REPO_DIR="C:\Users\andre\tradingview-mcp"
+npm.cmd run tradingview:mcp-bridge
+```
+
+Then in another terminal:
+
+```powershell
+npm.cmd run test:tradingview-mcp
+```
 
 Manual checks:
 

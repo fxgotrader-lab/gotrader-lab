@@ -7,6 +7,8 @@
     "dev": "vite --host 127.0.0.1",
     "llm:bridge": "node scripts/llm-local-bridge-server.mjs",
     "tradingview:mcp-bridge": "node scripts/start-tradingview-mcp-bridge.mjs",
+    "tradingview:diagnose": "node scripts/diagnose-tradingview-mcp.mjs",
+    "tradingview:start-desktop-debug": "node scripts/start-tradingview-desktop-debug.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "smoke:http": "node scripts/smoke-routes.mjs",
