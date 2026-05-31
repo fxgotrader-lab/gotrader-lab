@@ -1,5 +1,5 @@
 import type { InternalAgentDefinition, InternalAgentRunContext } from "@/lib/agents/agentTypes";
-import { analyzeGrinchPhase1 } from "@/lib/strategyLibrary";
+import { analyzeGrinchPhase1, analyzeGrinchPhase2Reversal } from "@/lib/strategyLibrary";
 import type { MarketBias, MarketRegime } from "@/lib/types";
 import { clamp } from "@/lib/utils";
 
@@ -36,6 +36,21 @@ const grinchPhase1For = ({ ictContext, marketContext }: InternalAgentRunContext)
       currentTimestamp: marketContext.priceVolume.ohlcv.candles[marketContext.priceVolume.ohlcv.candles.length - 1]?.timestamp
     }
   });
+
+const grinchReversalFor = (context: InternalAgentRunContext) => {
+  const phase1 = grinchPhase1For(context);
+  return analyzeGrinchPhase2Reversal({
+    candles: context.marketContext.priceVolume.ohlcv.candles,
+    fairValueGaps: context.ictContext.fairValueGaps,
+    liquiditySweeps: context.ictContext.liquiditySweeps,
+    phase1,
+    options: {
+      symbol: context.marketContext.symbol,
+      timeframe: context.marketContext.timeframe,
+      currentTimestamp: context.marketContext.priceVolume.ohlcv.candles[context.marketContext.priceVolume.ohlcv.candles.length - 1]?.timestamp
+    }
+  });
+};
 
 const grinchBiasToMarketBias = (bias: string): MarketBias => (bias === "bullish" || bias === "bearish" ? bias : "neutral");
 
@@ -260,6 +275,32 @@ export const researchAgentRegistry: InternalAgentDefinition[] = [
             ? "Treat Model 1 as a research profile only; 5m/1m confirmation is still required."
             : "Do not use Model 1 until London/12AM/displacement/NY retracement evidence is complete.",
         ictTags: ["session timing", "displacement", "fair value gap"]
+      };
+    }
+  },
+  {
+    agentId: "grinch-reversal-profile-agent",
+    name: "Reversal Profile Agent",
+    layer: "strategy",
+    weight: 0.06,
+    run(context) {
+      const reversal = grinchReversalFor(context);
+      const bias = reversal.reversalProfileState === "valid" ? grinchBiasToMarketBias(reversal.reversalBias) : "neutral";
+      return {
+        agentId: "grinch-reversal-profile-agent",
+        name: "Reversal Profile Agent",
+        layer: "strategy",
+        bias,
+        confidence: clamp(0.28 + (reversal.reversalProfileState === "valid" ? 0.36 : reversal.reversalProfileState === "weak" ? 0.16 : 0), 0.28, 0.82),
+        weight: 0.06,
+        reasoning: `Reversal Profile is ${reversal.reversalProfileState}; London behavior ${reversal.londonBehavior}; first target ${reversal.firstTarget}.`,
+        supportingFactors: reversal.reasons.slice(0, 4),
+        warningFactors: reversal.missingEvidence.slice(0, 4),
+        recommendation:
+          reversal.reversalProfileState === "valid"
+            ? "Treat reversal profile as research-only; 5m/1m confirmation is still required before any simulated entry."
+            : "Do not use Reversal Profile until London fails to interact with 12AM and NY rotates toward the open.",
+        ictTags: ["session timing", "displacement", "higher-timeframe bias"]
       };
     }
   },

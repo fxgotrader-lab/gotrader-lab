@@ -1,8 +1,11 @@
 export { analyzeGrinchPhase1, summarizeGrinchPhase1 } from "@/lib/strategyLibrary/grinchPhase1Model";
+export { analyzeGrinchPhase2Reversal, summarizeGrinchReversalProfile } from "@/lib/strategyLibrary/grinchPhase2ReversalModel";
 export type {
+  GrinchContinuationBeyond12Am,
   GrinchDealingRange,
   GrinchDrawOnLiquidity,
   GrinchEntryConfirmationResult,
+  GrinchLondonBehavior,
   GrinchHtfBias,
   GrinchHtfBiasResult,
   GrinchInvalidationPlan,
@@ -10,6 +13,7 @@ export type {
   GrinchMarketCycleResult,
   GrinchModelOnePowerThreeResult,
   GrinchModelOneState,
+  GrinchNyReversalWindow,
   GrinchOpeningPriceReference,
   GrinchPdArray,
   GrinchPdArrayHierarchyResult,
@@ -17,9 +21,15 @@ export type {
   GrinchPhase1AnalysisOptions,
   GrinchPhase1ContextInput,
   GrinchPhase1ModelOutput,
+  GrinchPhase2ReversalContextInput,
+  GrinchPhase2ReversalModelOutput,
   GrinchPremiumDiscountState,
   GrinchRangeDirection,
+  GrinchReversalEntryIntent,
+  GrinchReversalProfileResult,
+  GrinchReversalProfileState,
   GrinchTargetHierarchy,
+  GrinchTwelveAmInteractionState,
   GrinchTimePriceAlignment,
   GrinchTimingGrade,
   GrinchTradeIntent

@@ -35,7 +35,7 @@ import {
   resolveActiveBacktestConfig,
   SELF_IMPROVEMENT_STORAGE_KEY
 } from "@/lib/selfImprovement";
-import { analyzeGrinchPhase1, summarizeGrinchPhase1 } from "@/lib/strategyLibrary";
+import { analyzeGrinchPhase1, analyzeGrinchPhase2Reversal, summarizeGrinchPhase1, summarizeGrinchReversalProfile } from "@/lib/strategyLibrary";
 import {
   countCompletedRunbookItems,
   loadSimulationRunbookState,
@@ -449,6 +449,17 @@ export async function resolveResearchRuntimeSnapshot(
         }
       })
     : undefined;
+  const grinchPhase2ReversalSummary = source.candles.length && grinchPhase1Summary
+    ? analyzeGrinchPhase2Reversal({
+        candles: source.candles,
+        phase1: grinchPhase1Summary,
+        options: {
+          symbol: marketData.symbol,
+          timeframe: marketData.timeframe,
+          currentTimestamp: source.candles[source.candles.length - 1]?.timestamp
+        }
+      })
+    : undefined;
   const readinessSnapshot = evaluateReadinessGate({
     validation,
     quality: researchQuality,
@@ -519,6 +530,7 @@ export async function resolveResearchRuntimeSnapshot(
     `latest proposal: ${latestProposal?.proposalId ?? "none"}`,
     `latest LLM run: ${latestLLMRun?.runId ?? "none"}`,
     `Grinch Phase 1: ${summarizeGrinchPhase1(grinchPhase1Summary)}`,
+    `Grinch Reversal Profile: ${summarizeGrinchReversalProfile(grinchPhase2ReversalSummary)}`,
     `readiness: ${readinessSnapshot.state}`
   ];
   const staleStateWarnings = [
@@ -696,6 +708,7 @@ export async function resolveResearchRuntimeSnapshot(
       latestResearchQualitySummary: latestCycle?.researchQualitySummary,
       latestReadinessSummary: latestCycle?.readinessSnapshot,
       grinchPhase1Summary,
+      grinchPhase2ReversalSummary,
       latestRun: latestCycle
     },
     llm: {

@@ -68,6 +68,22 @@ export interface LLMGrinchPhase1Summary {
   missingEvidence: string[];
 }
 
+export interface LLMGrinchReversalProfileSummary {
+  reversalProfileState: string;
+  twelveAmInteractionState: string;
+  londonBehavior: string;
+  reversalBias: string;
+  nyReversalWindow: string;
+  firstTarget: string;
+  continuationBeyond12am: string;
+  timingGrade: string;
+  entryIntent: string;
+  confidenceAdjustment: number;
+  invalidationSummary: string;
+  reasons: string[];
+  missingEvidence: string[];
+}
+
 export interface LLMBaselineDebateSummary {
   agentId: string;
   agentName: string;
@@ -152,6 +168,7 @@ export interface LLMResearchContextPacket {
   timeframe?: Timeframe;
   ictContextSummary?: LLMICTContextSummary;
   grinchPhase1Summary?: LLMGrinchPhase1Summary;
+  grinchReversalProfileSummary?: LLMGrinchReversalProfileSummary;
   marketContextSummary?: LLMMarketContextSummary;
   evidenceQualitySummary?: LLMEvidenceQualitySummary;
   deterministicICTFacts: string[];

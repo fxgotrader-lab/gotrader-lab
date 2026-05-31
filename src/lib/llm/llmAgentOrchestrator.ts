@@ -16,7 +16,7 @@ import { buildMarketContext, summarizeMarketContext } from "@/lib/marketData";
 import type { MarketContext } from "@/lib/marketData";
 import type { ResearchQualityReview } from "@/lib/researchQuality";
 import type { SimulationRunbookState } from "@/lib/simulationRunbook";
-import { analyzeGrinchPhase1 } from "@/lib/strategyLibrary";
+import { analyzeGrinchPhase1, analyzeGrinchPhase2Reversal } from "@/lib/strategyLibrary";
 import { countCompletedRunbookItems, simulationRunbookChecklist } from "@/lib/simulationRunbook";
 import type { DebateSession, LabState, TradeThesis } from "@/lib/types";
 import { safeArray, uid } from "@/lib/utils";
@@ -66,6 +66,17 @@ export function buildLLMResearchContextPacket({
   const grinchPhase1 = sourceMarketContext?.priceVolume.ohlcv.candles.length
     ? analyzeGrinchPhase1({
         candles: sourceMarketContext.priceVolume.ohlcv.candles,
+        options: {
+          symbol: thesis?.symbol,
+          timeframe: thesis?.timeframe,
+          currentTimestamp: sourceMarketContext.priceVolume.ohlcv.candles[sourceMarketContext.priceVolume.ohlcv.candles.length - 1]?.timestamp
+        }
+      })
+    : undefined;
+  const grinchReversalProfile = sourceMarketContext?.priceVolume.ohlcv.candles.length && grinchPhase1
+    ? analyzeGrinchPhase2Reversal({
+        candles: sourceMarketContext.priceVolume.ohlcv.candles,
+        phase1: grinchPhase1,
         options: {
           symbol: thesis?.symbol,
           timeframe: thesis?.timeframe,
@@ -141,6 +152,23 @@ export function buildLLMResearchContextPacket({
           missingEvidence: grinchPhase1.missingEvidence.slice(0, 8)
         }
       : undefined,
+    grinchReversalProfileSummary: grinchReversalProfile
+      ? {
+          reversalProfileState: grinchReversalProfile.reversalProfileState,
+          twelveAmInteractionState: grinchReversalProfile.twelveAmInteractionState,
+          londonBehavior: grinchReversalProfile.londonBehavior,
+          reversalBias: grinchReversalProfile.reversalBias,
+          nyReversalWindow: grinchReversalProfile.nyReversalWindow,
+          firstTarget: grinchReversalProfile.firstTarget,
+          continuationBeyond12am: grinchReversalProfile.continuationBeyond12am,
+          timingGrade: grinchReversalProfile.timingGrade,
+          entryIntent: grinchReversalProfile.entryIntent,
+          confidenceAdjustment: grinchReversalProfile.confidenceAdjustment,
+          invalidationSummary: grinchReversalProfile.invalidation.primaryInvalidation,
+          reasons: grinchReversalProfile.reasons.slice(0, 6),
+          missingEvidence: grinchReversalProfile.missingEvidence.slice(0, 6)
+        }
+      : undefined,
     marketContextSummary: marketContext,
     evidenceQualitySummary: compactEvidenceSummary,
     deterministicICTFacts: [
@@ -153,6 +181,7 @@ export function buildLLMResearchContextPacket({
       `Market context mode: ${marketContext?.mode ?? "missing"}`,
       `Market context missing modules: ${marketContext?.missingModules.join(", ") ?? "missing"}`,
       `Grinch Phase 1: ${grinchPhase1 ? `${grinchPhase1.htfBias}/${grinchPhase1.modelOneState}/${grinchPhase1.timingGrade}` : "missing"}`,
+      `Grinch Reversal Profile: ${grinchReversalProfile ? `${grinchReversalProfile.reversalProfileState}/${grinchReversalProfile.nyReversalWindow}/${grinchReversalProfile.entryIntent}` : "missing"}`,
       `Evidence quality score: ${compactEvidenceSummary.overallScore}/100`,
       `Evidence quality labels: ${compactEvidenceSummary.entries
         .map((item) => `${item.category}=${item.sourceType}`)

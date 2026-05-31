@@ -78,6 +78,7 @@ const agentWeightLabels: Record<BacktestAgentWeightId, string> = {
   "grinch-dealing-range-agent": "Dealing Range",
   "grinch-market-cycle-agent": "Market Cycle",
   "grinch-model-one-power-three-agent": "Model 1 / Power 3",
+  "grinch-reversal-profile-agent": "Reversal Profile",
   "grinch-time-price-alignment-agent": "Time-Price",
   "grinch-entry-confirmation-agent": "Entry Confirmation",
   "session-timing-agent": "Session Timing",

@@ -20,5 +20,6 @@ export { classifyMarketCycle } from "@/lib/ict/marketCycleClassifier";
 export { detectModelOnePowerThree } from "@/lib/ict/modelOnePowerThree";
 export { findSundayOpenState, findTwelveAmOpenState } from "@/lib/ict/openingPriceEquilibrium";
 export { buildPdArrayHierarchy } from "@/lib/ict/pdArrayHierarchy";
+export { detectReversalProfile } from "@/lib/ict/reversalProfile";
 export { tagSession, tagSessions } from "@/lib/ict/sessionTagger";
 export { classifyTimePriceAlignment } from "@/lib/ict/timePriceAlignment";

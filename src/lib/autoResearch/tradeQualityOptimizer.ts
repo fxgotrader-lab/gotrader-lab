@@ -238,6 +238,21 @@ export function generateTradeQualityCandidateConfigs(
       },
       ["confluenceThreshold", "confidenceThreshold", "agentWeights"]
     );
+    add(
+      "Grinch reversal profile validation gate",
+      "False positives were elevated, so this tests whether requiring failed London/12AM interaction and NY reversal timing improves reversal-profile quality.",
+      {
+        minimumConfluenceThreshold: round(clamp01(Math.max(0.52, baseline.minimumConfluenceThreshold + 0.08)), 2),
+        minimumConfidenceThreshold: round(clamp01(Math.max(0.5, baseline.minimumConfidenceThreshold + 0.06)), 2),
+        agentWeights: {
+          ...baseline.agentWeights,
+          "grinch-reversal-profile-agent": round(Math.min(1.5, (baseline.agentWeights["grinch-reversal-profile-agent"] ?? 0.06) + 0.08), 3),
+          "grinch-opening-price-equilibrium-agent": round(Math.min(1.5, baseline.agentWeights["grinch-opening-price-equilibrium-agent"] + 0.04), 3),
+          "grinch-time-price-alignment-agent": round(Math.min(1.5, baseline.agentWeights["grinch-time-price-alignment-agent"] + 0.04), 3)
+        }
+      },
+      ["confluenceThreshold", "confidenceThreshold", "agentWeights"]
+    );
   }
 
   if (reasonCodes.has("sample_size_too_low")) {

@@ -294,9 +294,11 @@ export function MissionControlShell({ state }: { state: LabState }) {
                   : "no current proposal"
             ],
             [
-              "Grinch Phase 1",
-              runtimeSnapshot?.latestResearchCycle.grinchPhase1Summary
-                ? `${runtimeSnapshot.latestResearchCycle.grinchPhase1Summary.htfBias} / ${runtimeSnapshot.latestResearchCycle.grinchPhase1Summary.modelOneState} / ${runtimeSnapshot.latestResearchCycle.grinchPhase1Summary.timingGrade}`
+              "Active Grinch profile",
+              runtimeSnapshot?.latestResearchCycle.grinchPhase2ReversalSummary
+                ? `Reversal ${runtimeSnapshot.latestResearchCycle.grinchPhase2ReversalSummary.reversalProfileState} / ${runtimeSnapshot.latestResearchCycle.grinchPhase2ReversalSummary.nyReversalWindow} / ${runtimeSnapshot.latestResearchCycle.grinchPhase2ReversalSummary.entryIntent}`
+                : runtimeSnapshot?.latestResearchCycle.grinchPhase1Summary
+                  ? `Phase 1 ${runtimeSnapshot.latestResearchCycle.grinchPhase1Summary.htfBias} / ${runtimeSnapshot.latestResearchCycle.grinchPhase1Summary.modelOneState} / ${runtimeSnapshot.latestResearchCycle.grinchPhase1Summary.timingGrade}`
                 : "not available"
             ]
           ].map(([label, value]) => (

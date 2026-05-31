@@ -31,7 +31,7 @@ import {
   loadPreparedCandleSource
 } from "@/lib/marketData";
 import { mockCandles } from "@/lib/mockData/mockCandles";
-import { analyzeGrinchPhase1 } from "@/lib/strategyLibrary";
+import { analyzeGrinchPhase1, analyzeGrinchPhase2Reversal } from "@/lib/strategyLibrary";
 import type { Candle, MarketStructureEvent, SessionContext } from "@/lib/types";
 
 const formatTime = (timestamp: string) => timestamp.slice(11, 16);
@@ -99,7 +99,20 @@ export function ICTLab() {
         currentTimestamp: latestAnalysisCandle?.timestamp
       }
     });
-    return { bos, gaps, grinchPhase1, mss, sessions, structureEvents, sweeps, swings, zone };
+    const grinchReversalProfile = analyzeGrinchPhase2Reversal({
+      candles: activeCandles,
+      fairValueGaps: gaps,
+      liquiditySweeps: sweeps,
+      structureEvents,
+      swings,
+      phase1: grinchPhase1,
+      options: {
+        symbol: latestAnalysisCandle?.symbol,
+        timeframe: latestAnalysisCandle?.timeframe,
+        currentTimestamp: latestAnalysisCandle?.timestamp
+      }
+    });
+    return { bos, gaps, grinchPhase1, grinchReversalProfile, mss, sessions, structureEvents, sweeps, swings, zone };
   }, [activeCandles]);
 
   const latestCandle = activeCandles[activeCandles.length - 1];
@@ -231,6 +244,77 @@ export function ICTLab() {
               <p className="font-medium">Missing evidence</p>
               <ul className="mt-2 space-y-1">
                 {analysis.grinchPhase1.missingEvidence.slice(0, 5).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card className="border-fuchsia-400/20 bg-fuchsia-400/5">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Grinch ICT Phase 2 / Reversal Profile</CardTitle>
+              <CardDescription>
+                Detects failed London interaction with 12AM Open, expansion into NY, first target back to 12AM, and continuation quality.
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge
+                variant={
+                  analysis.grinchReversalProfile.reversalProfileState === "valid"
+                    ? "success"
+                    : analysis.grinchReversalProfile.reversalProfileState === "weak"
+                      ? "warning"
+                      : "muted"
+                }
+              >
+                Reversal {analysis.grinchReversalProfile.reversalProfileState.replace(/_/g, " ")}
+              </Badge>
+              <Badge variant={analysis.grinchReversalProfile.entryIntent === "reversal_entry" ? "warning" : "secondary"}>
+                {analysis.grinchReversalProfile.entryIntent.replace(/_/g, " ")}
+              </Badge>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <StatusTile
+              label="12AM interaction"
+              value={analysis.grinchReversalProfile.twelveAmInteractionState.replace(/_/g, " ")}
+              detail={`London: ${analysis.grinchReversalProfile.londonBehavior.replace(/_/g, " ")}`}
+            />
+            <StatusTile
+              label="NY reversal window"
+              value={analysis.grinchReversalProfile.nyReversalWindow}
+              detail={`Timing: ${analysis.grinchReversalProfile.timingGrade}`}
+            />
+            <StatusTile
+              label="First target"
+              value="12AM Open"
+              detail={analysis.grinchReversalProfile.firstTargetPrice?.toFixed(2) ?? "level unavailable"}
+            />
+            <StatusTile
+              label="Beyond 12AM"
+              value={analysis.grinchReversalProfile.continuationBeyond12am}
+              detail={`Confidence adj ${analysis.grinchReversalProfile.confidenceAdjustment}`}
+            />
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <InfoBox title="Invalidation" body={analysis.grinchReversalProfile.invalidation.primaryInvalidation} />
+            <InfoBox
+              title="Continuation rule"
+              body="Beyond 12AM requires HTF draw, displacement/reclaim, and a valid PD array or liquidity target beyond the open."
+            />
+            <InfoBox title="Profile reason" body={analysis.grinchReversalProfile.reasons[0] ?? "No reversal profile evidence yet."} />
+          </div>
+          {analysis.grinchReversalProfile.missingEvidence.length ? (
+            <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+              <p className="font-medium">Reversal profile missing evidence</p>
+              <ul className="mt-2 space-y-1">
+                {analysis.grinchReversalProfile.missingEvidence.slice(0, 5).map((item) => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>

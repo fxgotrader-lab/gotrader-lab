@@ -14,9 +14,15 @@ export type GrinchDrawOnLiquidity = "buyside" | "sellside" | "internal_range" | 
 export type GrinchPremiumDiscountState = "premium" | "discount" | "equilibrium" | "outside_range" | "unclear";
 export type GrinchMarketCycle = "consolidation" | "expansion" | "retracement" | "reversal" | "unclear";
 export type GrinchModelOneState = "valid" | "weak" | "invalid" | "not_present";
+export type GrinchReversalProfileState = "valid" | "weak" | "invalid" | "not_present";
 export type GrinchTradeIntent = "retracement_entry" | "continuation_entry" | "reversal_entry" | "no_trade";
+export type GrinchReversalEntryIntent = "reversal_entry" | "no_trade" | "wait_for_confirmation";
 export type GrinchTimingGrade = "ideal" | "acceptable" | "early" | "late" | "expired";
 export type GrinchRangeDirection = "bullish_range" | "bearish_range" | "balanced_range" | "unclear";
+export type GrinchTwelveAmInteractionState = "interacted" | "failed_to_interact" | "unclear";
+export type GrinchLondonBehavior = "above_12am" | "below_12am" | "around_12am" | "expanded_away" | "unclear";
+export type GrinchNyReversalWindow = "expected" | "active" | "missed" | "expired";
+export type GrinchContinuationBeyond12Am = "supported" | "weak" | "rejected" | "unclear";
 
 export type GrinchPdArrayType =
   | "sunday_open"
@@ -144,6 +150,23 @@ export interface GrinchEntryConfirmationResult {
   missingEvidence: string[];
 }
 
+export interface GrinchReversalProfileResult {
+  reversalProfileState: GrinchReversalProfileState;
+  twelveAmInteractionState: GrinchTwelveAmInteractionState;
+  londonBehavior: GrinchLondonBehavior;
+  reversalBias: "bullish" | "bearish" | "unclear";
+  nyReversalWindow: GrinchNyReversalWindow;
+  firstTarget: "12am_open";
+  firstTargetPrice?: number;
+  continuationBeyond12am: GrinchContinuationBeyond12Am;
+  timingGrade: GrinchTimingGrade;
+  entryIntent: GrinchReversalEntryIntent;
+  confidenceAdjustment: number;
+  invalidation: GrinchInvalidationPlan;
+  reasons: string[];
+  missingEvidence: string[];
+}
+
 export interface GrinchTargetHierarchy {
   target1: string;
   target2: string;
@@ -189,4 +212,22 @@ export interface GrinchPhase1ContextInput {
   liquiditySweeps?: LiquiditySweep[];
   structureEvents?: MarketStructureEvent[];
   options?: GrinchPhase1AnalysisOptions;
+}
+
+export interface GrinchPhase2ReversalContextInput extends GrinchPhase1ContextInput {
+  phase1?: GrinchPhase1ModelOutput;
+}
+
+export interface GrinchPhase2ReversalModelOutput extends GrinchReversalProfileResult {
+  modelId: "grinch_phase_2_reversal_profile";
+  generatedAt: string;
+  symbol?: FuturesSymbol;
+  timeframe?: Timeframe;
+  phase1ModelId: GrinchPhase1ModelOutput["modelId"];
+  htfBias: GrinchHtfBias;
+  htfDrawOnLiquidity: GrinchDrawOnLiquidity;
+  marketCycle: GrinchMarketCycle;
+  twelveAmOpenState: GrinchOpeningPriceReference;
+  activePdArray?: string;
+  safetyNotice: "Research-only reversal profile. No broker execution, no order placement, no readiness override.";
 }

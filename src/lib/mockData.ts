@@ -540,6 +540,25 @@ const agentSeeds: AgentSeed[] = [
     tags: ["strategy", "ict", "grinch", "model 1"]
   },
   {
+    id: "strategy-grinch-reversal-profile",
+    name: "Reversal Profile Agent",
+    layer: "strategy",
+    domain: "Grinch Phase 2 Reversal Profile",
+    description: "Detects failed London interaction with 12AM Open, NY reversal timing, first target, and continuation quality.",
+    active: true,
+    weight: 0.05,
+    prompt: `${promptGuardrail} Detect the Reversal Profile from 12AM Open, London 2-3 behavior, NY 9:30-10 timing, first target back to 12AM, and continuation quality. Research-only.`,
+    confidence: 0.56,
+    historySeed: [0.45, 0.48, 0.51, 0.53, 0.55, 0.56],
+    hitRate: 0.51,
+    wins: 10,
+    losses: 10,
+    drawdown: 0.11,
+    sharpeLike: 0.64,
+    confidenceCalibration: 0.65,
+    tags: ["strategy", "ict", "grinch", "reversal profile"]
+  },
+  {
     id: "strategy-grinch-time-price",
     name: "Time-Price Alignment Agent",
     layer: "strategy",
