@@ -15,6 +15,8 @@ import {
   getImportedDataPreset,
   loadCandleWindowSettings,
   loadPreparedCandleSource,
+  resolveImportedCandleActivationState,
+  type ImportedCandleActivationState,
   type PreparedCandleSource
 } from "@/lib/marketData";
 import {
@@ -88,13 +90,28 @@ const dataPresetFor = (source: PreparedCandleSource): RuntimeDataPreset => {
   return getImportedDataPreset(source.appliedSettings);
 };
 
-const marketStateFor = (source: PreparedCandleSource, fallbackSymbol?: FuturesSymbol, fallbackTimeframe?: Timeframe): RuntimeMarketDataState => {
+const fallbackImportActivation = (): ImportedCandleActivationState => ({
+  imports: [],
+  activeCandlesAvailable: false,
+  importedDatasetCount: 0,
+  status: "mock_fallback",
+  message: "Imported data activation state could not be loaded."
+});
+
+const marketStateFor = (
+  source: PreparedCandleSource,
+  importActivation: ImportedCandleActivationState,
+  fallbackSymbol?: FuturesSymbol,
+  fallbackTimeframe?: Timeframe
+): RuntimeMarketDataState => {
   const metadata = source.metadata;
   const symbol = metadata?.symbol ?? source.candles[0]?.symbol ?? fallbackSymbol ?? "NQ";
   const timeframe = source.appliedSettings.targetTimeframe ?? metadata?.timeframe ?? source.candles[0]?.timeframe ?? fallbackTimeframe ?? "5m";
+  const fallbackToMock = source.mode === "mock";
 
   return {
     activeDataSource: source.mode,
+    activeImportId: importActivation.activeImportId,
     sourceLabel: source.label,
     symbol,
     contract: metadata?.contract,
@@ -105,6 +122,12 @@ const marketStateFor = (source: PreparedCandleSource, fallbackSymbol?: FuturesSy
     dataPreset: dataPresetFor(source),
     isImportedDataActive: source.mode === "imported",
     isMockDataActive: source.mode === "mock",
+    importedDatasetCount: importActivation.importedDatasetCount,
+    importedDataStatus: importActivation.status,
+    importedDataMessage: importActivation.message,
+    importedDataMissing: importActivation.status === "imported_missing" || importActivation.status === "mock_fallback",
+    activeImportIdStale: importActivation.status === "active_import_missing_stale",
+    fallbackToMock,
     preparedSource: source
   };
 };
@@ -230,6 +253,12 @@ const buildMismatchWarnings = ({
   }
   if (activeImportId && marketData.isMockDataActive) {
     warnings.push("An imported candle set is selected, but the active prepared data source resolved to mock candles.");
+  }
+  if (marketData.activeImportIdStale) {
+    warnings.push(marketData.importedDataMessage);
+  }
+  if (marketData.importedDataStatus === "imported_missing") {
+    warnings.push("Imported candle sets exist, but none is active. Reactivate one before imported-data research.");
   }
   const proposalCycleId = latestProposal?.metricsSnapshot?.sourceCycleId;
   if (latestCycleId && proposalCycleId && proposalCycleId !== latestCycleId) {
@@ -435,6 +464,7 @@ export async function resolveResearchRuntimeSnapshot(
   const llmState = loadLLMResearchState();
   const latestLLMRun = latestLLMAdvisoryRun(llmState);
   const providerStatus = providerStatusForMode(llmState.providerMode);
+  const importActivation = await resolveImportedCandleActivationState().catch(fallbackImportActivation);
   const preparedCandleSource = options.preparedCandleSource ?? await loadPreparedCandleSource().catch(() => undefined);
   const source = preparedCandleSource ?? {
     mode: "mock" as const,
@@ -449,7 +479,7 @@ export async function resolveResearchRuntimeSnapshot(
     performanceMode: "safe" as const,
     warnings: ["Prepared candle source could not be loaded; runtime snapshot used an empty mock fallback."]
   };
-  const marketData = marketStateFor(source, latestCycle?.backtestSummary?.config.symbol, latestCycle?.researchTimeframe);
+  const marketData = marketStateFor(source, importActivation, latestCycle?.backtestSummary?.config.symbol, latestCycle?.researchTimeframe);
   const grinchPhase1Summary = source.candles.length
     ? analyzeGrinchPhase1({
         candles: source.candles,
@@ -627,6 +657,9 @@ export async function resolveResearchRuntimeSnapshot(
   });
   const sourceTrace = [
     `market data: ${marketData.sourceLabel}`,
+    `imported data status: ${marketData.importedDataStatus}`,
+    `active import id: ${marketData.activeImportId ?? "none"}`,
+    `stored imports: ${marketData.importedDatasetCount}`,
     `candle window: ${marketData.researchWindow.toLocaleString()} raw -> ${marketData.processedCandleCount.toLocaleString()} processed ${marketData.timeframe}`,
     `config merge: ${activeConfig.mergeStatusLabel}`,
     `latest cycle: ${latestCycle?.cycleId ?? "none"}`,
@@ -761,6 +794,9 @@ export async function resolveResearchRuntimeSnapshot(
     .filter((label) => Boolean(label?.trim()) && !isBlockerLikeLabel(label));
   const readinessWarnings = [
     ...readinessSnapshot.warnings,
+    marketData.isMockDataActive
+      ? `Current data source is Mock. Not valid for imported MNQ comparison. ${marketData.importedDataMessage}`
+      : undefined,
     ...safeArray(readinessSnapshot.passedRequirements)
       .map((item) => displayLabelForRequirement(item))
       .filter((label) => isBlockerLikeLabel(label)),

@@ -42,6 +42,7 @@ import {
   getImportedDataPreset,
   loadCandleWindowSettings,
   loadPreparedCandleSource,
+  resolveImportedCandleActivationState,
   type PreparedCandleSource
 } from "@/lib/marketData";
 import { mockCandles } from "@/lib/mockData/mockCandles";
@@ -455,6 +456,7 @@ export async function runResearchCycle({
   const activeResearchConfig = resolveActiveBacktestConfig(backtestConfig ? sanitizeBacktestConfig(backtestConfig) : undefined);
   const baseActiveConfig = activeResearchConfig.config;
   const requestedCandleWindowSettings = candleWindowSettings ?? loadCandleWindowSettings();
+  const importActivation = await resolveImportedCandleActivationState().catch(() => undefined);
   const activeCandleSource: PreparedCandleSource = await loadPreparedCandleSource(requestedCandleWindowSettings).catch(() => ({
     mode: "mock" as const,
     label: "Mock candles",
@@ -475,6 +477,9 @@ export async function runResearchCycle({
     warnings: []
   }));
   const importedPreset = activeCandleSource.mode === "imported" ? getImportedDataPreset(activeCandleSource.appliedSettings) : "mock";
+  const importedExpectedButMissing =
+    activeCandleSource.mode !== "imported" &&
+    ((importActivation?.importedDatasetCount ?? 0) > 0 || importActivation?.status === "active_import_missing_stale");
   const importedGuardedMode = activeCandleSource.mode === "imported" && !advancedFullResearchMode;
   const effectiveSearchMode = searchMode;
   const effectiveMaxCandidateCount = importedGuardedMode
@@ -543,7 +548,13 @@ export async function runResearchCycle({
     effectiveMaxCandidateCount,
     heavyAuditSkipped,
     candleWindowSettings: activeCandleSource.appliedSettings,
-    candleWindowWarnings: [...activeCandleSource.warnings, ...hardLimitWarnings],
+    candleWindowWarnings: [
+      ...activeCandleSource.warnings,
+      ...hardLimitWarnings,
+      ...(activeCandleSource.mode === "mock"
+        ? [`Current data source is Mock. Not valid for imported MNQ comparison. ${importActivation?.message ?? ""}`.trim()]
+        : [])
+    ],
     nextRecommendedAction: "Research cycle is running.",
     resultSummary: "Research cycle is running.",
     safetyNotice: "Research cycle only. Broker execution remains disabled."
@@ -579,6 +590,28 @@ export async function runResearchCycle({
     setStep(stepId, { status: "skipped", completedAt: now(), summary, detail });
 
   notify();
+
+  if (importedExpectedButMissing) {
+    failStep(
+      "thesis_generation",
+      `Imported data is expected but not active. ${importActivation?.message ?? "Reactivate the imported dataset on Market Data before running imported-data research."}`
+    );
+    skipStep("backtest", "Backtest skipped because imported data is not active.");
+    skipStep("llm_advisory", "LLM advisory skipped because imported data is not active.");
+    skipStep("auto_research", "Auto Research skipped because imported data is not active.");
+    skipStep("validation", "Validation skipped because imported data is not active.");
+    skipStep("research_quality", "Research quality skipped because imported data is not active.");
+    skipStep("self_improvement", "Self-improvement skipped because imported data is not active.");
+    skipStep("simulation_verification", "Simulation runbook update skipped because imported data is not active.");
+    skipStep("readiness_gate", "Readiness skipped because imported data is not active.");
+    skipStep("communications_audit", "Communications audit skipped because imported data is not active.");
+    run.status = "failed";
+    run.completedAt = now();
+    run.nextRecommendedAction = "Reactivate an imported dataset on Market Data, or re-import MNQ historical data, then rerun the research cycle.";
+    run.resultSummary = resultSummaryFor(run);
+    saveResearchCycleRun(snapshot());
+    return snapshot();
+  }
 
   if (hardLimitWarnings.length) {
     failStep(

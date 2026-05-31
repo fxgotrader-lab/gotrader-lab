@@ -41,6 +41,7 @@ export {
   loadActiveCandleSource,
   loadImportedCandles,
   MARKET_DATA_IMPORT_UPDATED_EVENT,
+  resolveImportedCandleActivationState,
   saveImportedCandleSet,
   setActiveImportedCandleSet
 } from "@/lib/marketData/historicalCandleImport";
@@ -63,6 +64,8 @@ export type {
   HistoricalCandleValidationWarning,
   HistoricalImportFormat,
   HistoricalImportStatus,
+  ImportedCandleActivationState,
+  ImportedCandleActivationStatus,
   ImportedCandleMetadata
 } from "@/lib/marketData/historicalCandleImport";
 export type {

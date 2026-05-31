@@ -139,6 +139,10 @@ export function WalkForwardView() {
       : 0;
 
   const run = async () => {
+    if (walkForwardSource.mode !== "imported") {
+      setActionMessage("Walk-forward imported-data validation requires an active imported dataset. Reactivate or re-import MNQ data on Market Data first.");
+      return;
+    }
     if (expectedWindows < 3) {
       setActionMessage("Not enough data for meaningful walk-forward. Increase the walk-forward raw window or select Standard.");
       return;
@@ -210,6 +214,9 @@ export function WalkForwardView() {
     walkForwardSource.researchWindowCandles <= 500 &&
     walkForwardSource.appliedSettings.targetTimeframe === "5m";
   const feasibilityWarnings = [
+    walkForwardSource.mode !== "imported"
+      ? "Walk-forward is using mock data. Reactivate imported MNQ data before running imported-data validation."
+      : undefined,
     expectedWindows < 3 ? "Not enough data for meaningful walk-forward. Increase raw window." : undefined,
     usingDashboardSafeData
       ? "Walk-forward is using Dashboard Safe data. Select a larger walk-forward data preset for meaningful validation."
@@ -409,9 +416,9 @@ export function WalkForwardView() {
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2">
-              <Button onClick={run} disabled={busy} className="justify-center gap-2">
+              <Button onClick={run} disabled={busy || walkForwardSource.mode !== "imported"} className="justify-center gap-2">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
-                {busy ? "Walk-forward running" : "Run Walk-Forward"}
+                {busy ? "Walk-forward running" : walkForwardSource.mode !== "imported" ? "Reactivate imported data first" : "Run Walk-Forward"}
               </Button>
               {busy ? (
                 <Button variant="destructive" onClick={cancel} className="justify-center gap-2">

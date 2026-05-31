@@ -46,6 +46,22 @@ export interface CandleDataSource {
   metadata?: ImportedCandleMetadata;
 }
 
+export type ImportedCandleActivationStatus =
+  | "imported_active"
+  | "imported_missing"
+  | "active_import_missing_stale"
+  | "mock_fallback";
+
+export interface ImportedCandleActivationState {
+  activeImportId?: string;
+  imports: ImportedCandleMetadata[];
+  activeMetadata?: ImportedCandleMetadata;
+  activeCandlesAvailable: boolean;
+  importedDatasetCount: number;
+  status: ImportedCandleActivationStatus;
+  message: string;
+}
+
 const DB_NAME = "gotrader-ai-lab-market-data";
 const DB_VERSION = 1;
 const IMPORTS_STORE = "imports";
@@ -155,9 +171,60 @@ export function getActiveImportedCandleSetId() {
   return window.localStorage.getItem(ACTIVE_IMPORT_KEY) ?? undefined;
 }
 
-export async function loadActiveCandleSource(): Promise<CandleDataSource> {
+export async function resolveImportedCandleActivationState(): Promise<ImportedCandleActivationState> {
   const activeImportId = getActiveImportedCandleSetId();
-  if (!activeImportId) {
+  const imports = await listImportedCandleMetadata();
+  const activeMetadata = activeImportId ? imports.find((item) => item.importId === activeImportId) : undefined;
+  const activeCandlesAvailable = activeMetadata ? (await loadImportedCandles(activeMetadata.importId)).length > 0 : false;
+
+  if (activeMetadata && activeCandlesAvailable) {
+    return {
+      activeImportId,
+      imports,
+      activeMetadata,
+      activeCandlesAvailable,
+      importedDatasetCount: imports.length,
+      status: "imported_active",
+      message: `${activeMetadata.sourceLabel} is active for research.`
+    };
+  }
+
+  if (activeImportId) {
+    return {
+      activeImportId,
+      imports,
+      activeMetadata,
+      activeCandlesAvailable,
+      importedDatasetCount: imports.length,
+      status: "active_import_missing_stale",
+      message: activeMetadata
+        ? `Active import ${activeImportId} exists but its candle rows are missing. Reactivate another dataset or re-import the file.`
+        : `Active import ${activeImportId} is stale or missing from IndexedDB. Reactivate a stored dataset or re-import the file.`
+    };
+  }
+
+  if (imports.length) {
+    return {
+      imports,
+      activeCandlesAvailable: false,
+      importedDatasetCount: imports.length,
+      status: "imported_missing",
+      message: "Imported datasets exist in IndexedDB, but none is active. Reactivate one before imported-data research."
+    };
+  }
+
+  return {
+    imports,
+    activeCandlesAvailable: false,
+    importedDatasetCount: 0,
+    status: "mock_fallback",
+    message: "No imported historical datasets were found. Re-import MNQ data before comparing imported-data research."
+  };
+}
+
+export async function loadActiveCandleSource(): Promise<CandleDataSource> {
+  const activation = await resolveImportedCandleActivationState();
+  if (activation.status !== "imported_active" || !activation.activeMetadata || !activation.activeImportId) {
     return {
       mode: "mock",
       label: "Mock candles",
@@ -165,17 +232,8 @@ export async function loadActiveCandleSource(): Promise<CandleDataSource> {
     };
   }
 
-  const imports = await listImportedCandleMetadata();
-  const metadata = imports.find((item) => item.importId === activeImportId);
-  const candles = metadata ? await loadImportedCandles(activeImportId) : [];
-  if (!metadata || !candles.length) {
-    setActiveImportedCandleSet(undefined);
-    return {
-      mode: "mock",
-      label: "Mock candles",
-      candles: mockCandles
-    };
-  }
+  const metadata = activation.activeMetadata;
+  const candles = await loadImportedCandles(activation.activeImportId);
 
   return {
     mode: "imported",

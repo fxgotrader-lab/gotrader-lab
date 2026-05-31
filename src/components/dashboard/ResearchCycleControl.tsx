@@ -33,7 +33,10 @@ import {
   loadCandleWindowSettings,
   loadPreparedCandleSource,
   MARKET_DATA_IMPORT_UPDATED_EVENT,
+  resolveImportedCandleActivationState,
   saveCandleWindowSettings,
+  setActiveImportedCandleSet,
+  type ImportedCandleActivationState,
   type PreparedCandleSource
 } from "@/lib/marketData";
 import {
@@ -175,12 +178,22 @@ const fallbackCandleSource: PreparedCandleSource = {
   warnings: []
 };
 
+const fallbackImportActivation: ImportedCandleActivationState = {
+  imports: [],
+  activeCandlesAvailable: false,
+  importedDatasetCount: 0,
+  status: "mock_fallback",
+  message: "Imported data activation state has not loaded yet."
+};
+
 export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleControlProps) {
   const [cycleState, setCycleState] = useState(() => loadResearchCycleState());
   const [activeRun, setActiveRun] = useState<ResearchCycleRun>();
   const [activeCalibration, setActiveCalibration] = useState(() => loadActiveResearchCalibration());
   const [activeConfigResolution, setActiveConfigResolution] = useState(() => resolveActiveBacktestConfig());
   const [activeCandleSource, setActiveCandleSource] = useState<PreparedCandleSource>(fallbackCandleSource);
+  const [importActivation, setImportActivation] = useState<ImportedCandleActivationState>(fallbackImportActivation);
+  const [dataSourceMessage, setDataSourceMessage] = useState("");
   const [searchMode, setSearchMode] = useState<AutoResearchSearchMode>("standard");
   const [advancedFullResearchMode, setAdvancedFullResearchMode] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -263,7 +276,12 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
       setAutoResearchState(loadAutoResearchState());
       setActiveCalibration(loadActiveResearchCalibration());
       setActiveConfigResolution(resolveActiveBacktestConfig());
-      loadPreparedCandleSource().then(async (source) => {
+      resolveImportedCandleActivationState().then((activation) => {
+        if (mounted) {
+          setImportActivation(activation);
+        }
+      });
+      loadPreparedCandleSource().then((source) => {
         if (mounted) {
           setActiveCandleSource(source);
         }
@@ -297,7 +315,16 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
     };
   }, [latestRun]);
 
+  const importedExpectedButMissing =
+    activeCandleSource.mode !== "imported" &&
+    (importActivation.importedDatasetCount > 0 || importActivation.status === "active_import_missing_stale");
+  const latestStoredImport = importActivation.imports[0];
+
   const runCycle = async () => {
+    if (importedExpectedButMissing) {
+      setDataSourceMessage(importActivation.message);
+      return;
+    }
     setBusy(true);
     setActiveRun(undefined);
     setLiveCheckpoint(undefined);
@@ -359,6 +386,21 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
     setAdvancedFullResearchMode(preset === "advanced");
   };
 
+  const reactivateLatestImport = async () => {
+    if (!latestStoredImport) {
+      setDataSourceMessage("Re-import required: no historical MNQ datasets were found in IndexedDB.");
+      return;
+    }
+    setActiveImportedCandleSet(latestStoredImport.importId);
+    const [activation, source] = await Promise.all([
+      resolveImportedCandleActivationState(),
+      loadPreparedCandleSource()
+    ]);
+    setImportActivation(activation);
+    setActiveCandleSource(source);
+    setDataSourceMessage(`Reactivated ${latestStoredImport.sourceLabel} for imported-data research.`);
+  };
+
   const previousDataSizeFailure =
     latestRun?.status === "failed" &&
     latestRun.dataSourceMode === "imported" &&
@@ -388,6 +430,33 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
           message="Research cycle only. Broker execution remains disabled."
           className="border-cyan-400/20 bg-cyan-400/10 text-cyan-50"
         />
+
+        {activeCandleSource.mode === "imported" ? (
+          <div className="rounded-lg border border-emerald-300/25 bg-emerald-300/10 p-3 text-sm text-emerald-100">
+            Current data source: Imported historical data. Active import {activeCandleSource.metadata?.sourceLabel ?? "selected"} will be used for the research cycle.
+          </div>
+        ) : (
+          <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="font-medium">Current data source: Mock candles.</p>
+                <p className="mt-1">
+                  Not valid for imported MNQ comparison. {importActivation.message}
+                </p>
+                {dataSourceMessage ? <p className="mt-1">{dataSourceMessage}</p> : null}
+              </div>
+              {latestStoredImport ? (
+                <Button variant="secondary" onClick={() => void reactivateLatestImport()} disabled={busy} className="shrink-0">
+                  Reactivate imported dataset
+                </Button>
+              ) : (
+                <Link to="/market-data" className="shrink-0">
+                  <Button variant="secondary">Re-import required</Button>
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="grid gap-3 lg:grid-cols-[1fr_260px] lg:items-end">
           <div className="rounded-lg border border-white/10 bg-slate-950/60 p-3">
@@ -574,9 +643,9 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
               </label>
             ) : null}
             <div className="grid gap-2">
-              <Button onClick={runCycle} disabled={busy} className="h-12 w-full justify-center gap-2">
+              <Button onClick={runCycle} disabled={busy || importedExpectedButMissing} className="h-12 w-full justify-center gap-2">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
-                {busy ? "Research cycle running" : "Run AI Research Cycle"}
+                {busy ? "Research cycle running" : importedExpectedButMissing ? "Reactivate imported data first" : "Run AI Research Cycle"}
               </Button>
               {busy ? (
                 <Button variant="destructive" onClick={cancelCycle} className="w-full">

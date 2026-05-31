@@ -2,7 +2,13 @@ import type { ResolvedBacktestConfig } from "@/lib/backtesting";
 import type { EvidenceCategory, EvidenceLedgerSummary } from "@/lib/evidence";
 import type { LLMAdvisoryRun, LLMProviderStatus } from "@/lib/llm";
 import type { ResearchMaturitySummary } from "@/lib/maturity";
-import type { CandleDataSourceMode, CandleWindowSettings, PreparedCandleSource, WalkForwardDataPreset } from "@/lib/marketData";
+import type {
+  CandleDataSourceMode,
+  CandleWindowSettings,
+  ImportedCandleActivationStatus,
+  PreparedCandleSource,
+  WalkForwardDataPreset
+} from "@/lib/marketData";
 import type { CanonicalPerformanceMetrics } from "@/lib/performance/canonicalMetrics";
 import type { SimulatedAccount } from "@/lib/performance/simulatedAccount";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
@@ -72,6 +78,7 @@ export interface RuntimeMetricProvenanceState {
 
 export interface RuntimeMarketDataState {
   activeDataSource: CandleDataSourceMode;
+  activeImportId?: string;
   sourceLabel: string;
   symbol: FuturesSymbol;
   contract?: string;
@@ -82,6 +89,12 @@ export interface RuntimeMarketDataState {
   dataPreset: RuntimeDataPreset;
   isImportedDataActive: boolean;
   isMockDataActive: boolean;
+  importedDatasetCount: number;
+  importedDataStatus: ImportedCandleActivationStatus;
+  importedDataMessage: string;
+  importedDataMissing: boolean;
+  activeImportIdStale: boolean;
+  fallbackToMock: boolean;
   preparedSource: PreparedCandleSource;
 }
 

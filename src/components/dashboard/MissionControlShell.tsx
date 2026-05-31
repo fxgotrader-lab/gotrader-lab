@@ -203,6 +203,37 @@ export function MissionControlShell({ state }: { state: LabState }) {
 
       <WhyNotReadyCard context="command_center" snapshot={runtimeSnapshot} />
 
+      {runtimeSnapshot ? (
+        <section
+          className={`rounded-xl border p-4 text-sm ${
+            runtimeSnapshot.marketData.isImportedDataActive
+              ? "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
+              : "border-amber-300/25 bg-amber-300/10 text-amber-100"
+          }`}
+        >
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="font-semibold">
+                Current data source: {runtimeSnapshot.marketData.isImportedDataActive ? "Imported historical data" : "Mock candles"}
+              </p>
+              <p className="mt-1">
+                {runtimeSnapshot.marketData.isImportedDataActive
+                  ? `${runtimeSnapshot.marketData.sourceLabel}; ${runtimeSnapshot.marketData.processedCandleCount.toLocaleString()} processed candles.`
+                  : `Not valid for imported MNQ comparison. ${runtimeSnapshot.marketData.importedDataMessage}`}
+              </p>
+              <p className="mt-1 text-xs opacity-80">
+                Stored imports: {runtimeSnapshot.marketData.importedDatasetCount}; active import: {runtimeSnapshot.marketData.activeImportId ?? "none"}.
+              </p>
+            </div>
+            <Link to="/market-data">
+              <Button variant="secondary" className="w-full md:w-auto">
+                {runtimeSnapshot.marketData.isImportedDataActive ? "Manage market data" : "Reactivate or re-import"}
+              </Button>
+            </Link>
+          </div>
+        </section>
+      ) : null}
+
       <MissionControlActionPanel
         actionItems={actionItems}
         advancedFullResearchMode={advancedFullResearchMode}
@@ -619,7 +650,7 @@ function buildActionItems(snapshot?: ResearchRuntimeSnapshot, run?: AutonomousRe
     items.push({
       id: "imported-data",
       title: "Imported data unavailable",
-      detail: "The loop can use mock data, but imported MNQ evidence is stronger for maturity.",
+      detail: `Not valid for imported MNQ comparison. ${snapshot.marketData.importedDataMessage}`,
       href: "/market-data",
       severity: "warning"
     });

@@ -13,6 +13,7 @@ import { Select } from "@/components/ui/select";
 import {
   buildMarketContext,
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
+  getActiveImportedCandleSetId,
   importedDataPresetSettings,
   importHistoricalCandleFile,
   listImportedCandleMetadata,
@@ -67,6 +68,7 @@ export function MarketDataView() {
   const [symbol, setSymbol] = useState<FuturesSymbol>("NQ");
   const [timeframe, setTimeframe] = useState<Timeframe>("5m");
   const [imports, setImports] = useState<ImportedCandleMetadata[]>([]);
+  const [activeImportId, setActiveImportId] = useState<string>();
   const [activeSource, setActiveSource] = useState<PreparedCandleSource>(fallbackSource);
   const [windowSettings, setWindowSettings] = useState<CandleWindowSettings>(() => loadCandleWindowSettings());
   const [importMessage, setImportMessage] = useState<string>();
@@ -106,11 +108,15 @@ export function MarketDataView() {
       value: item.importId
     }))
   ];
+  const latestImport = imports[0];
+  const activeImportIsStale = Boolean(activeImportId && !imports.some((item) => item.importId === activeImportId));
+  const importedDatasetsNeedActivation = imports.length > 0 && activeSource.mode !== "imported";
 
   const refreshImports = async () => {
     const settings = loadCandleWindowSettings();
     const [metadata, source] = await Promise.all([listImportedCandleMetadata(), loadPreparedCandleSource(settings)]);
     setImports(metadata);
+    setActiveImportId(getActiveImportedCandleSetId());
     setWindowSettings(settings);
     setActiveSource(source);
     if (source.metadata) {
@@ -171,6 +177,15 @@ export function MarketDataView() {
     setImportMessage(undefined);
     setActiveImportedCandleSet(value === "mock" ? undefined : value);
     await refreshImports();
+  };
+
+  const reactivateImport = async (importId: string) => {
+    setImportError(undefined);
+    setImportMessage(undefined);
+    setActiveImportedCandleSet(importId);
+    await refreshImports();
+    const metadata = imports.find((item) => item.importId === importId);
+    setImportMessage(`Reactivated ${metadata?.sourceLabel ?? "imported dataset"} for research.`);
   };
 
   const patchWindowSettings = async (patch: Partial<CandleWindowSettings>) => {
@@ -257,6 +272,35 @@ export function MarketDataView() {
           {importError ? (
             <div className="rounded-md border border-red-300/25 bg-red-300/10 p-3 text-sm text-red-100">
               {importError}
+            </div>
+          ) : null}
+
+          {activeImportIsStale ? (
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+              Active import id <span className="font-mono">{activeImportId}</span> is stale or missing from IndexedDB.
+              Reactivate a stored dataset below, or re-import MNQ if no matching dataset remains.
+            </div>
+          ) : null}
+
+          {importedDatasetsNeedActivation ? (
+            <div className="flex flex-col gap-3 rounded-md border border-cyan-300/25 bg-cyan-300/10 p-3 text-sm text-cyan-100 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="font-medium">Imported historical datasets are available but not active.</p>
+                <p className="mt-1 text-cyan-100/75">
+                  Reactivate one before running imported MNQ research. Mock candles are demo/fallback only and are not valid for imported-data comparison.
+                </p>
+              </div>
+              {latestImport ? (
+                <Button variant="secondary" onClick={() => void reactivateImport(latestImport.importId)} className="shrink-0">
+                  Reactivate latest imported dataset
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {!imports.length && activeSource.mode !== "imported" ? (
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+              Re-import required: no historical candle datasets were found in IndexedDB. Current mock candles are not valid for imported MNQ comparison.
             </div>
           ) : null}
 
@@ -376,6 +420,12 @@ export function MarketDataView() {
           </div>
 
           {activeSource.metadata ? <ImportMetadataPanel metadata={activeSource.metadata} /> : null}
+
+          <StoredImportsPanel
+            activeImportId={activeSource.metadata?.importId}
+            imports={imports}
+            onReactivate={(importId) => void reactivateImport(importId)}
+          />
 
           <div className="rounded-lg border border-border bg-background/45 p-3">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -565,6 +615,68 @@ function ModuleRow({ name, status, summary }: { name: string; status: string; su
         <Badge variant={statusVariant(status)}>{status.replace(/_/g, " ")}</Badge>
       </div>
       <p className="mt-2 text-sm text-muted-foreground">{summary}</p>
+    </div>
+  );
+}
+
+function StoredImportsPanel({
+  activeImportId,
+  imports,
+  onReactivate
+}: {
+  activeImportId?: string;
+  imports: ImportedCandleMetadata[];
+  onReactivate: (importId: string) => void;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-background/45 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-semibold">Stored Imported Datasets</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            IndexedDB imports remain local to this browser. Reactivate a dataset after refresh before running imported-data research.
+          </p>
+        </div>
+        <Badge variant={imports.length ? "success" : "warning"}>
+          {imports.length ? `${imports.length} stored` : "none found"}
+        </Badge>
+      </div>
+      {imports.length ? (
+        <div className="mt-3 space-y-2">
+          {imports.map((metadata) => {
+            const isActive = metadata.importId === activeImportId;
+            return (
+              <div
+                key={metadata.importId}
+                className="flex flex-col gap-3 rounded-md border border-border bg-card/45 p-3 md:flex-row md:items-center md:justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium">{metadata.sourceLabel}</p>
+                    {isActive ? <Badge variant="success">active</Badge> : null}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {metadata.fileName} / {metadata.candleCount.toLocaleString()} candles / {formatDate(metadata.firstTimestamp)} to {formatDate(metadata.lastTimestamp)}
+                  </p>
+                  <p className="mt-1 break-all font-mono text-[0.7rem] text-muted-foreground">{metadata.importId}</p>
+                </div>
+                <Button
+                  variant={isActive ? "secondary" : "outline"}
+                  disabled={isActive}
+                  onClick={() => onReactivate(metadata.importId)}
+                  className="shrink-0"
+                >
+                  {isActive ? "Active" : "Reactivate imported dataset"}
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="mt-3 rounded-md border border-amber-300/20 bg-amber-300/10 p-2 text-xs text-amber-100">
+          No imported datasets are discoverable. Import the MNQ historical file again before running imported-data comparisons.
+        </div>
+      )}
     </div>
   );
 }
