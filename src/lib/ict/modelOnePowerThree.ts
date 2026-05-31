@@ -86,6 +86,34 @@ export function detectModelOnePowerThree({
 
   const londonHigh = londonCandles.length ? Math.max(...londonCandles.map((candle) => candle.high)) : undefined;
   const londonLow = londonCandles.length ? Math.min(...londonCandles.map((candle) => candle.low)) : undefined;
+  const displacementDirection = displacementCandle
+    ? displacementCandle.close > displacementCandle.open
+      ? "higher"
+      : "lower"
+    : undefined;
+  const postNyCandles = candles.filter((candle) => {
+    const clock = clockMinutesFor(candle.timestamp);
+    return typeof clock === "number" && clock >= minutes(9, 30);
+  });
+  const protectedHighViolated =
+    londonRelationToTwelveAm === "above" &&
+    displacementDirection === "lower" &&
+    typeof londonHigh === "number" &&
+    postNyCandles.some((candle) => candle.high > londonHigh);
+  const protectedLowViolated =
+    londonRelationToTwelveAm === "below" &&
+    displacementDirection === "higher" &&
+    typeof londonLow === "number" &&
+    postNyCandles.some((candle) => candle.low < londonLow);
+  const protectedExtremeViolated = protectedHighViolated || protectedLowViolated;
+
+  if (protectedHighViolated) {
+    missingEvidence.push("London high was not protected after accumulation above 12AM Open and bearish displacement.");
+  }
+  if (protectedLowViolated) {
+    missingEvidence.push("London low was not protected after accumulation below 12AM Open and bullish displacement.");
+  }
+
   const accumulationExtreme =
     londonRelationToTwelveAm === "below" ? londonLow : londonRelationToTwelveAm === "above" ? londonHigh : undefined;
   const displacementExtreme = displacementCandle
@@ -122,6 +150,11 @@ export function detectModelOnePowerThree({
   if (nyRetraced) {
     reasons.push(`NY setup window retraced into A-B equilibrium near ${round(abRange!.equilibrium)}.`);
   }
+  if (timePriceAlignment.currentWindow === "ny_setup") {
+    reasons.push(
+      "9:30-10:00 is treated as retracement/observation unless a target-met reversal appears in the first five minutes; 10:00-10:15 confirmation is preferred."
+    );
+  }
 
   const accumulationIdentified = londonRelationToTwelveAm !== "missing" && londonRelationToTwelveAm !== "around";
   const displacementIdentified = Boolean(displacementCandle);
@@ -131,7 +164,7 @@ export function detectModelOnePowerThree({
     (timePriceAlignment.currentWindow === "ny_confirmation" || timePriceAlignment.currentWindow === "delayed_profile");
   const retracementContext = nyRetraced || timePriceAlignment.currentWindow === "ny_setup";
 
-  if (accumulationIdentified && displacementIdentified && activeArray?.respected && retracementContext) {
+  if (accumulationIdentified && displacementIdentified && activeArray?.respected && retracementContext && !protectedExtremeViolated) {
     return {
       modelOneState: "valid",
       tradeIntent: continuationContext ? "continuation_entry" : "retracement_entry",

@@ -32,6 +32,25 @@ const relationTo = (price: number | undefined, current: number | undefined): Gri
   return current > price ? "above" : "below";
 };
 
+const gapDirectionFor = (
+  openPrice: number | undefined,
+  previousClose: number | undefined
+): GrinchOpeningPriceReference["openingGapDirection"] => {
+  if (
+    typeof openPrice !== "number" ||
+    typeof previousClose !== "number" ||
+    !Number.isFinite(openPrice) ||
+    !Number.isFinite(previousClose)
+  ) {
+    return "unknown";
+  }
+  const tolerance = Math.max(0.01, Math.abs(openPrice) * 0.0005);
+  if (Math.abs(openPrice - previousClose) <= tolerance) {
+    return "flat";
+  }
+  return openPrice > previousClose ? "gap_up" : "gap_down";
+};
+
 const touchedAfter = (candles: Candle[], openIndex: number, price: number) =>
   candles.slice(openIndex + 1).some((candle) => candle.low <= price && candle.high >= price);
 
@@ -55,6 +74,7 @@ const sensitivityFor = (candles: Candle[], price: number | undefined) => {
 const buildMissingState = (type: GrinchOpeningPriceReference["type"], label: string, missingEvidence: string[]): GrinchOpeningPriceReference => ({
   type,
   label,
+  openingGapDirection: "unknown",
   currentRelation: "unknown",
   touchedAfterOpen: false,
   reclaimed: false,
@@ -88,6 +108,7 @@ export function findTwelveAmOpenState(candles: Candle[]): GrinchOpeningPriceRefe
     label: "12AM Open",
     price,
     timestamp: openCandle.timestamp,
+    openingGapDirection: "unknown",
     currentRelation: relation,
     touchedAfterOpen: touched,
     reclaimed: reclaimedAfter(candles, openIndex, price),
@@ -119,24 +140,34 @@ export function findSundayOpenState(candles: Candle[]): GrinchOpeningPriceRefere
   const openIndex = candles.findIndex((candle) => candle.id === weeklyOpen.id);
   const price = weeklyOpen.open;
   const relation = relationTo(price, latest.close);
-  const movedHigherFirst = candles.slice(openIndex + 1, Math.min(candles.length, openIndex + 24)).every((candle) => candle.low >= price);
-  const movedLowerFirst = candles.slice(openIndex + 1, Math.min(candles.length, openIndex + 24)).every((candle) => candle.high <= price);
+  const firstSessionCandles = candles.slice(openIndex + 1, Math.min(candles.length, openIndex + 24));
+  const movedHigherFirst = firstSessionCandles.length > 0 && firstSessionCandles.every((candle) => candle.low >= price);
+  const movedLowerFirst = firstSessionCandles.length > 0 && firstSessionCandles.every((candle) => candle.high <= price);
+  const previousCandle = candles[openIndex - 1];
+  const openingGapDirection = gapDirectionFor(price, previousCandle?.close);
+  const expectation =
+    openingGapDirection === "gap_up"
+      ? movedHigherFirst && relation === "above"
+        ? "Sunday gapped up and delivered higher without first trading lower; expect sensitivity back to or below Sunday Open during the week."
+        : "Sunday gap up prices bullishness early; bullish continuation wants discount accumulation at or below Sunday Open first, while bearish context can use premium above Sunday Open."
+      : openingGapDirection === "gap_down"
+        ? movedLowerFirst && relation === "below"
+          ? "Sunday gapped down and delivered lower without first trading higher; expect sensitivity back to or above Sunday Open during the week."
+          : "Sunday gap down prices bearishness early; bearish continuation should not be chased below Sunday Open and wants a premium return above it first."
+        : "Sunday Open is the weekly equilibrium reference on 1H and lower.";
 
   return {
     type: "sunday_open",
     label: "Sunday Open",
     price,
     timestamp: weeklyOpen.timestamp,
+    openingGapDirection,
+    gapReferenceClose: previousCandle?.close,
     currentRelation: relation,
     touchedAfterOpen: touchedAfter(candles, openIndex, price),
     reclaimed: reclaimedAfter(candles, openIndex, price),
     sensitivityScore: sensitivityFor(candles.slice(openIndex), price),
-    expectation:
-      movedHigherFirst && relation === "above"
-        ? "Sunday opened and delivered higher without first trading lower; expect sensitivity back to or below Sunday Open during the week."
-        : movedLowerFirst && relation === "below"
-          ? "Sunday opened and delivered lower without first trading higher; expect sensitivity back to or above Sunday Open during the week."
-          : "Sunday Open is the weekly equilibrium reference on 1H and lower.",
+    expectation,
     missingEvidence: []
   };
 }

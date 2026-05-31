@@ -28,14 +28,26 @@ export function classifyTimePriceAlignment(timestamp?: string): GrinchTimePriceA
     };
   }
 
-  if (isBetween(clockMinutes, minutes(9, 30), minutes(10))) {
+  if (isBetween(clockMinutes, minutes(9, 30), minutes(9, 34))) {
     return {
       timingGrade: "ideal",
       currentWindow: "ny_setup",
       isLondonObservationWindow: false,
       isNySetupWindow: true,
       isNyConfirmationWindow: false,
-      reason: "NY 9:30-10:00 setup window is active; Model 1 retracement timing is on time."
+      reason: "NY first-five timing is active; transcript treats it as ideal mainly when a target has already been met and reversal evidence is immediate."
+    };
+  }
+
+  if (isBetween(clockMinutes, minutes(9, 35), minutes(9, 59))) {
+    return {
+      timingGrade: "acceptable",
+      currentWindow: "ny_setup",
+      isLondonObservationWindow: false,
+      isNySetupWindow: true,
+      isNyConfirmationWindow: false,
+      reason:
+        "NY 9:35-10:00 is retracement and observation time; transcript warns to wait for 10:00 confirmation unless exceptional reversal evidence exists."
     };
   }
 

@@ -40,6 +40,8 @@ export interface GrinchOpeningPriceReference {
   label: string;
   price?: number;
   timestamp?: string;
+  openingGapDirection?: "gap_up" | "gap_down" | "flat" | "unknown";
+  gapReferenceClose?: number;
   currentRelation: "above" | "below" | "at" | "unknown";
   touchedAfterOpen: boolean;
   reclaimed: boolean;

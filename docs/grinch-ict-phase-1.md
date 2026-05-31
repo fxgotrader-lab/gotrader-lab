@@ -2,6 +2,8 @@
 
 GoTrader AI Lab now has a research-only Grinch strategy profile layer beside the existing deterministic ICT engine. It does not replace the existing detectors and it cannot execute trades, create broker handoffs, or override readiness gates.
 
+This phase is aligned to the uploaded transcript `(8) Grinch video-jZdl_0Jgo2k.md` plus the user-defined Phase 1 rules.
+
 ## Scope
 
 Phase 1 implements:
@@ -55,9 +57,22 @@ Phase 1 intentionally does not implement full reversal profiles, full consolidat
 
 The model starts from 12AM Open as daily equilibrium. London 2:00-3:00 is observed relative to 12AM Open. If London trades above or below that level and then displacement appears before NY, the London extreme becomes one side of the A-B dealing range and the displacement extreme becomes the other side.
 
-If retracement has not already occurred before NY, the 9:30-10:00 window is treated as the preferred retracement-entry window. The 10:00-10:15 window is confirmation/continuation. Delayed profiles to 10:30 are lower probability. After 10:30, Phase 1 grades timing as expired unless a future phase supplies exceptional confirmation.
+If retracement has not already occurred before NY, the 9:30-10:00 window is treated as retracement and observation time. The transcript is stricter than a generic "9:30 entry" rule: the first five minutes are highest quality mainly when the higher-timeframe target was already met and reversal evidence is immediate; otherwise the model prefers waiting for the 10:00-10:15 entry drill/confirmation window. Delayed profiles to 10:30 are lower probability. After 10:30, Phase 1 grades timing as expired unless a future phase supplies exceptional confirmation.
 
 Retracement entry and continuation entry are separated. Continuation requires PD array respect and displacement confirmation.
+
+When London accumulation forms above 12AM Open and displacement delivers lower, the London high is expected to remain protected. When London accumulation forms below 12AM Open and displacement delivers higher, the London low is expected to remain protected. Violating that protected extreme weakens the Model 1 profile.
+
+## Sunday Open Gap Logic
+
+Sunday Open is the weekly equilibrium reference. The transcript adds gap-sensitive behavior:
+
+- A Sunday gap up prices bullishness early. Bullish continuation should ideally see discount accumulation at or below Sunday Open before delivery higher; bearish context can use premium above Sunday Open as weekly resistance.
+- If Sunday gaps up and trades higher without first trading lower, the model expects sensitivity back to or below Sunday Open later in the week.
+- A Sunday gap down prices bearishness early. Bearish continuation should not be chased below Sunday Open; it should ideally return above Sunday Open into premium before a short profile.
+- If Sunday gaps down and trades lower without first trading higher, the model expects sensitivity back to or above Sunday Open later in the week.
+
+Opening-price overlays are rendered as levels. Any tolerance bands used by code are implementation aids for candle data and should not be interpreted as generic zones.
 
 ## Entry Confirmation
 
