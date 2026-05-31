@@ -228,6 +228,8 @@ const buildMismatchWarnings = ({
   activeCalibrationExists,
   activeCalibrationApplied,
   canonicalMismatchWarnings,
+  latestAutoResearchCycleId,
+  latestCycleCreatedProposalId,
   latestCycleId,
   latestProposal,
   marketData,
@@ -238,6 +240,8 @@ const buildMismatchWarnings = ({
   activeCalibrationExists: boolean;
   activeCalibrationApplied: boolean;
   canonicalMismatchWarnings: string[];
+  latestAutoResearchCycleId?: string;
+  latestCycleCreatedProposalId?: string;
   latestCycleId?: string;
   latestProposal?: ReturnType<typeof latestProposalFrom>;
   marketData: RuntimeMarketDataState;
@@ -261,13 +265,17 @@ const buildMismatchWarnings = ({
     warnings.push("Imported candle sets exist, but none is active. Reactivate one before imported-data research.");
   }
   const proposalCycleId = latestProposal?.metricsSnapshot?.sourceCycleId;
-  if (latestCycleId && proposalCycleId && proposalCycleId !== latestCycleId) {
+  const proposalLinkedToLatestCycle =
+    Boolean(latestCycleId && proposalCycleId === latestCycleId) ||
+    Boolean(latestAutoResearchCycleId && proposalCycleId === latestAutoResearchCycleId) ||
+    Boolean(latestCycleCreatedProposalId && latestCycleCreatedProposalId === latestProposal?.proposalId);
+  if (latestCycleId && proposalCycleId && !proposalLinkedToLatestCycle) {
     warnings.push(`Latest proposal snapshot is from cycle ${proposalCycleId}, while the latest dashboard cycle is ${latestCycleId}.`);
   }
-  if (latestCycleId && validation && latestProposal?.metricsSnapshot?.sourceCycleId && latestProposal.metricsSnapshot.sourceCycleId !== latestCycleId) {
+  if (latestCycleId && validation && proposalCycleId && !proposalLinkedToLatestCycle) {
     warnings.push("Proposal metrics and latest validation may refer to different research cycles.");
   }
-  if (latestCycleId && researchQuality && latestProposal?.metricsSnapshot?.sourceCycleId && latestProposal.metricsSnapshot.sourceCycleId !== latestCycleId) {
+  if (latestCycleId && researchQuality && proposalCycleId && !proposalLinkedToLatestCycle) {
     warnings.push("Proposal metrics and latest research quality review may refer to different research cycles.");
   }
   return warnings;
@@ -706,6 +714,8 @@ export async function resolveResearchRuntimeSnapshot(
     activeCalibrationExists: Boolean(activeConfig.activeResearchCalibration),
     activeCalibrationApplied: activeConfig.activeCalibrationApplied,
     canonicalMismatchWarnings,
+    latestAutoResearchCycleId: latestCycle?.autoResearchCycle?.cycleId ?? latestAutoResearch?.cycleId,
+    latestCycleCreatedProposalId: latestCycle?.createdProposalId,
     latestCycleId: latestCycle?.cycleId,
     latestProposal,
     marketData,
