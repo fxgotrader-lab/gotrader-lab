@@ -2,7 +2,7 @@ import { mockCandles } from "@/lib/mockData/mockCandles";
 import type { Candle, FuturesSymbol, Timeframe } from "@/lib/types";
 import { uid } from "@/lib/utils";
 
-export type HistoricalImportFormat = "csv" | "xlsx";
+export type HistoricalImportFormat = "csv" | "xlsx" | "json";
 export type HistoricalImportStatus = "valid" | "valid_with_warnings" | "invalid";
 export type CandleDataSourceMode = "mock" | "imported";
 
@@ -37,6 +37,38 @@ export interface ImportedCandleMetadata {
 export interface HistoricalCandleImportResult {
   metadata: ImportedCandleMetadata;
   candles: Candle[];
+}
+
+export interface NormalizedHistoricalCandleArtifact {
+  importId?: string;
+  symbol: FuturesSymbol;
+  contract?: string;
+  sourceTimeframe: Timeframe;
+  candles: Array<{
+    id?: string;
+    symbol?: FuturesSymbol;
+    timeframe?: Timeframe;
+    timestamp?: string;
+    datetime?: string;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume?: number;
+  }>;
+  firstTimestamp?: string;
+  lastTimestamp?: string;
+  rawCandleCount?: number;
+  validationSummary?: {
+    status?: HistoricalImportStatus;
+    warnings?: HistoricalCandleValidationWarning[];
+    duplicateTimestampsHandled?: number;
+    missingIntervalsDetected?: number;
+    dominantIntervalMinutes?: number;
+    columnNames?: string[];
+  };
+  sourceFileName?: string;
+  generatedAt?: string;
 }
 
 export interface CandleDataSource {
@@ -74,6 +106,8 @@ const textDecoder = new TextDecoder("utf-8");
 
 const symbolOptions: FuturesSymbol[] = ["ES", "NQ", "MES", "MNQ"];
 const timeframeOptions: Timeframe[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
+const isFuturesSymbol = (value: unknown): value is FuturesSymbol => symbolOptions.includes(value as FuturesSymbol);
+const isTimeframe = (value: unknown): value is Timeframe => timeframeOptions.includes(value as Timeframe);
 
 const normalizeHeader = (value: unknown) => String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
 const columnLetterToIndex = (cellRef: string) => {
@@ -685,6 +719,111 @@ export async function importHistoricalCandleFile(file: File, fallbackSymbol: Fut
     });
   }
   throw new Error("Unsupported file type. Import .xlsx or .csv historical OHLCV files.");
+}
+
+export function importNormalizedHistoricalCandleArtifact(artifact: NormalizedHistoricalCandleArtifact): HistoricalCandleImportResult {
+  if (!artifact || !Array.isArray(artifact.candles)) {
+    throw new Error("Normalized historical import JSON is invalid or missing candles.");
+  }
+  if (!isFuturesSymbol(artifact.symbol)) {
+    throw new Error("Normalized historical import JSON has an unsupported symbol.");
+  }
+  if (!isTimeframe(artifact.sourceTimeframe)) {
+    throw new Error("Normalized historical import JSON has an unsupported timeframe.");
+  }
+
+  const warnings: HistoricalCandleValidationWarning[] = [...(artifact.validationSummary?.warnings ?? [])];
+  const seen = new Set<string>();
+  const invalidRows: number[] = [];
+  let duplicateTimestampsHandled = artifact.validationSummary?.duplicateTimestampsHandled ?? 0;
+  const candles: Candle[] = [];
+
+  artifact.candles.forEach((row, index) => {
+    const timestampValue = row.timestamp ?? row.datetime;
+    const parsedTimestamp = timestampValue ? new Date(timestampValue) : undefined;
+    const timestamp = parsedTimestamp && !Number.isNaN(parsedTimestamp.getTime()) ? parsedTimestamp.toISOString() : undefined;
+    const open = Number(row.open);
+    const high = Number(row.high);
+    const low = Number(row.low);
+    const close = Number(row.close);
+    const volume = row.volume === undefined ? undefined : Number(row.volume);
+
+    if (!timestamp || ![open, high, low, close].every(Number.isFinite)) {
+      invalidRows.push(index + 1);
+      return;
+    }
+    if (high < Math.max(open, close, low) || low > Math.min(open, close, high)) {
+      invalidRows.push(index + 1);
+      return;
+    }
+    if (seen.has(timestamp)) {
+      duplicateTimestampsHandled += 1;
+      return;
+    }
+
+    seen.add(timestamp);
+    candles.push({
+      id: row.id ?? `${artifact.symbol}_${timestamp}`,
+      symbol: artifact.symbol,
+      timeframe: artifact.sourceTimeframe,
+      timestamp,
+      open,
+      high,
+      low,
+      close,
+      volume: Number.isFinite(volume) ? volume : undefined
+    });
+  });
+
+  candles.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+
+  if (invalidRows.length) {
+    warnings.push({
+      code: "invalid_normalized_json_rows",
+      message: `${invalidRows.length} normalized JSON candle row(s) had invalid timestamps or OHLC values.`,
+      severity: "blocking"
+    });
+  }
+  if (duplicateTimestampsHandled) {
+    warnings.push({
+      code: "duplicate_timestamps",
+      message: `${duplicateTimestampsHandled} duplicate timestamp(s) were skipped.`,
+      severity: "warning"
+    });
+  }
+  if (!candles.length) {
+    warnings.push({
+      code: "no_valid_candles",
+      message: "Normalized JSON did not contain any valid candles.",
+      severity: "blocking"
+    });
+  }
+
+  const blocking = warnings.some((warning) => warning.severity === "blocking");
+  const sourceStatus = artifact.validationSummary?.status;
+  const metadata: ImportedCandleMetadata = {
+    importId: artifact.importId ?? uid("candle_import"),
+    fileName: artifact.sourceFileName ?? "normalized-local-history.json",
+    format: "json",
+    sheetName: "Normalized local JSON",
+    sheetNames: ["Normalized local JSON"],
+    columnNames: artifact.validationSummary?.columnNames ?? ["datetime", "open", "high", "low", "close", "volume"],
+    symbol: artifact.symbol,
+    contract: artifact.contract,
+    timeframe: artifact.sourceTimeframe,
+    candleCount: candles.length,
+    firstTimestamp: candles[0]?.timestamp ?? artifact.firstTimestamp,
+    lastTimestamp: candles[candles.length - 1]?.timestamp ?? artifact.lastTimestamp,
+    duplicateTimestampsHandled,
+    missingIntervalsDetected: artifact.validationSummary?.missingIntervalsDetected ?? 0,
+    dominantIntervalMinutes: artifact.validationSummary?.dominantIntervalMinutes,
+    validationWarnings: warnings,
+    importedAt: new Date().toISOString(),
+    status: blocking || sourceStatus === "invalid" ? "invalid" : warnings.length ? "valid_with_warnings" : sourceStatus ?? "valid",
+    sourceLabel: `${artifact.symbol}${artifact.contract ? ` ${artifact.contract}` : ""} ${artifact.sourceTimeframe} normalized JSON`
+  };
+
+  return { metadata, candles };
 }
 
 export const isImportedCandleSource = (source: CandleDataSource) => source.mode === "imported" && Boolean(source.metadata);

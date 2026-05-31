@@ -22,4 +22,7 @@ llm/errors/*.json
 !llm/responses/.gitkeep
 !llm/errors/.gitkeep
 .gotrader/journal/
+.gotrader/imports/
+public/local-imports/*.json
+!public/local-imports/.gitkeep
 *.jsonl

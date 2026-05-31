@@ -36,6 +36,7 @@ export { buildMarketContext, summarizeMarketContext } from "@/lib/marketData/mar
 export {
   getActiveImportedCandleSetId,
   importHistoricalCandleFile,
+  importNormalizedHistoricalCandleArtifact,
   isImportedCandleSource,
   listImportedCandleMetadata,
   loadActiveCandleSource,
@@ -66,7 +67,8 @@ export type {
   HistoricalImportStatus,
   ImportedCandleActivationState,
   ImportedCandleActivationStatus,
-  ImportedCandleMetadata
+  ImportedCandleMetadata,
+  NormalizedHistoricalCandleArtifact
 } from "@/lib/marketData/historicalCandleImport";
 export type {
   IntermarketContext,

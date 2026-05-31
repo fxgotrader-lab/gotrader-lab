@@ -16,6 +16,7 @@ import {
   getActiveImportedCandleSetId,
   importedDataPresetSettings,
   importHistoricalCandleFile,
+  importNormalizedHistoricalCandleArtifact,
   listImportedCandleMetadata,
   loadCandleWindowSettings,
   loadPreparedCandleSource,
@@ -26,6 +27,7 @@ import {
   saveCandleWindowSettings,
   type CandleWindowSettings,
   type ImportedCandleMetadata,
+  type NormalizedHistoricalCandleArtifact,
   type PreparedCandleSource
 } from "@/lib/marketData";
 import { buildVwapOverlay, createTradingChartData } from "@/lib/charting";
@@ -63,6 +65,9 @@ const fallbackSource: PreparedCandleSource = {
 };
 
 const formatDate = (value?: string) => (value ? new Date(value).toLocaleString() : "n/a");
+const localNormalizedMnqArtifactUrl = "/local-imports/MNQ_06-26_OHLCV.normalized.json";
+const localDevImportAvailable =
+  typeof window !== "undefined" && ["127.0.0.1", "localhost"].includes(window.location.hostname);
 
 export function MarketDataView() {
   const [symbol, setSymbol] = useState<FuturesSymbol>("NQ");
@@ -172,6 +177,30 @@ export function MarketDataView() {
     }
   };
 
+  const handleLocalNormalizedJsonImport = async () => {
+    setImporting(true);
+    setImportError(undefined);
+    setImportMessage(undefined);
+    try {
+      const response = await fetch(`${localNormalizedMnqArtifactUrl}?t=${Date.now()}`, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("Normalized local MNQ artifact was not found. Run `npm run import:local-mnq-history` first.");
+      }
+      const artifact = (await response.json()) as NormalizedHistoricalCandleArtifact;
+      const result = importNormalizedHistoricalCandleArtifact(artifact);
+      await saveImportedCandleSet(result);
+      setActiveImportedCandleSet(result.metadata.importId);
+      await refreshImports();
+      setImportMessage(
+        `Imported ${result.metadata.candleCount.toLocaleString()} ${result.metadata.timeframe ?? "detected"} candle(s) from normalized local JSON.`
+      );
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Normalized local JSON import failed.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const handleSourceChange = async (value: string) => {
     setImportError(undefined);
     setImportMessage(undefined);
@@ -263,6 +292,20 @@ export function MarketDataView() {
               {importing ? "Importing" : "Refresh"}
             </Button>
           </div>
+
+          {localDevImportAvailable ? (
+            <div className="flex flex-col gap-3 rounded-md border border-cyan-300/25 bg-cyan-300/10 p-3 text-sm text-cyan-100 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="font-medium">Local dev import helper</p>
+                <p className="mt-1 text-cyan-100/75">
+                  Run <span className="font-mono">npm run import:local-mnq-history</span>, then load the generated normalized MNQ JSON without the browser file picker.
+                </p>
+              </div>
+              <Button variant="secondary" onClick={() => void handleLocalNormalizedJsonImport()} disabled={importing} className="shrink-0">
+                Import normalized local JSON
+              </Button>
+            </div>
+          ) : null}
 
           {importMessage ? (
             <div className="rounded-md border border-emerald-300/25 bg-emerald-300/10 p-3 text-sm text-emerald-100">

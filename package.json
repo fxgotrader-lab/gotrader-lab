@@ -9,6 +9,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "smoke:routes": "node scripts/smoke-routes.mjs",
+    "import:local-mnq-history": "node scripts/import-local-mnq-history.mjs",
     "test:twelvedata": "node scripts/test-twelve-data.mjs",
     "test:agent-bridge-contracts": "node scripts/test-agent-bridge-contracts.mjs",
     "test:fmp-market-context": "node scripts/test-fmp-market-context.mjs",
