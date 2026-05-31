@@ -41,6 +41,9 @@ export interface TradingViewMcpRuntimeState {
   chartFeedSymbol?: string;
   chartFeedTimeframe?: string;
   chartFeedLatestPrice?: number;
+  chartFeedStorageBackend?: string;
+  chartFeedCandlesPersisted: boolean;
+  chartFeedId?: string;
   usageMode: TradingViewMcpRuntimeUsageMode;
   researchEligibility: TradingViewMcpResearchEligibilityState | "ineligible_disconnected";
   eligibilityReasons: string[];
@@ -120,11 +123,11 @@ const bridgeStatusCheckFor = (
   };
 };
 
-export const resolveTradingViewMcpRuntimeState = (): TradingViewMcpRuntimeState => {
+export const resolveTradingViewMcpRuntimeState = (providedChartFeed = loadActiveTradingViewMcpChartFeed()): TradingViewMcpRuntimeState => {
   const settings = loadTradingViewMcpSettings();
   const statusCheck = loadTradingViewMcpBridgeStatus();
   const latestEvidence = loadLatestTradingViewEvidence();
-  const chartFeed = loadActiveTradingViewMcpChartFeed();
+  const chartFeed = providedChartFeed;
   const chartFeedCandleCount = chartFeed?.candleCount ?? 0;
   const chartFeedConnected = Boolean(
     chartFeed?.activeForChart || chartFeedCandleCount > 0 || feedImpliesConnected(chartFeed?.connectionStatus)
@@ -171,6 +174,9 @@ export const resolveTradingViewMcpRuntimeState = (): TradingViewMcpRuntimeState 
     chartFeedSymbol: chartFeed?.providerSymbol ?? chartFeed?.symbol,
     chartFeedTimeframe: chartFeed?.timeframe,
     chartFeedLatestPrice: chartFeed?.latestClose,
+    chartFeedStorageBackend: chartFeed?.storageBackend,
+    chartFeedCandlesPersisted: Boolean(chartFeed?.candlesPersisted),
+    chartFeedId: chartFeed?.feedId,
     usageMode: chartFeed?.usageMode ?? "none",
     researchEligibility: eligibility?.state ?? "ineligible_disconnected",
     eligibilityReasons: eligibility?.reasons ?? ["TradingView MCP chart feed is not active."],

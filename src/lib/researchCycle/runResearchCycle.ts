@@ -46,7 +46,7 @@ import {
   resolveImportedCandleActivationState,
   type PreparedCandleSource
 } from "@/lib/marketData";
-import { loadActiveTradingViewMcpChartFeed } from "@/lib/integrations/tradingview";
+import { hydrateActiveTradingViewMcpChartFeed } from "@/lib/integrations/tradingview";
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import { buildCanonicalPerformanceMetricsFromRun } from "@/lib/performance/canonicalMetrics";
 import { evaluateReadinessGate } from "@/lib/readiness";
@@ -479,7 +479,7 @@ export async function runResearchCycle({
     warnings: []
   }));
   const importedPreset = activeCandleSource.mode === "imported" ? getImportedDataPreset(activeCandleSource.appliedSettings) : "mock";
-  const tradingViewChartFeed = loadActiveTradingViewMcpChartFeed();
+  const tradingViewChartFeed = await hydrateActiveTradingViewMcpChartFeed().catch(() => undefined);
   const activeResearchCandleSource = resolveActiveResearchCandleSource(activeCandleSource, tradingViewChartFeed);
   const importedExpectedButMissing =
     !activeResearchCandleSource.usesTradingViewMcp &&

@@ -29,13 +29,13 @@ import { paperclipAgentOperationsPolicy } from "@/lib/integrations/paperclipAuth
 import {
   checkAndStoreTradingViewMcpStatus,
   createActiveTradingViewMcpChartFeed,
-  fetchAndStoreTradingViewMcpChartFeed,
   fetchTradingViewMcpCandles,
   fetchTradingViewMcpQuote,
+  hydrateActiveTradingViewMcpChartFeed,
   loadActiveTradingViewMcpChartFeed,
   loadTradingViewMcpSettings,
-  saveActiveTradingViewMcpChartFeed,
   saveTradingViewMcpSettings,
+  storeActiveTradingViewMcpChartFeed,
   TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT,
   TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
   TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT,
@@ -216,7 +216,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
         return;
       }
 
-      const feed = saveActiveTradingViewMcpChartFeed(
+      const feed = await storeActiveTradingViewMcpChartFeed(
         createActiveTradingViewMcpChartFeed({
           candlesResponse: candles,
           gotraderSymbol: commandCenterSymbol,
@@ -228,6 +228,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
       setTradingViewOperationMessage(
         [
           `TradingView MCP chart source active with ${feed.candleCount.toLocaleString()} read-only candles.`,
+          `Storage: ${feed.candlesPersisted ? "IndexedDB" : "session-only"}.`,
           feed.activeForResearch
             ? "Ready for guarded research source use."
             : `Research remains guarded: ${feed.researchEligibility.reasons.join(" ")}`
@@ -235,7 +236,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
       );
       addDataConnectionEvent(
         "Candles fetched",
-        `${feed.candleCount.toLocaleString()} candles from ${feed.firstTimestamp ?? "n/a"} to ${feed.lastTimestamp ?? "n/a"}.`,
+        `${feed.candleCount.toLocaleString()} candles from ${feed.firstTimestamp ?? "n/a"} to ${feed.lastTimestamp ?? "n/a"}. Storage ${feed.candlesPersisted ? "IndexedDB" : "session-only"}.`,
         "success",
         feed.providerSymbol
       );
@@ -265,12 +266,12 @@ export function MissionControlShell({ state }: { state: LabState }) {
   };
 
   const useExistingTradingViewForResearch = async () => {
-    const feed = loadActiveTradingViewMcpChartFeed();
+    const feed = await hydrateActiveTradingViewMcpChartFeed().catch(() => loadActiveTradingViewMcpChartFeed());
     if (!feed?.candleCount) {
       await connectTradingViewChart({ usageMode: "research_source" });
       return;
     }
-    const researchFeed: ActiveTradingViewMcpChartFeed = saveActiveTradingViewMcpChartFeed(
+    const researchFeed: ActiveTradingViewMcpChartFeed = await storeActiveTradingViewMcpChartFeed(
       createActiveTradingViewMcpChartFeed({
         candlesResponse: {
           provider: "tradingview_mcp",
@@ -486,6 +487,12 @@ export function MissionControlShell({ state }: { state: LabState }) {
             label="Research source"
             value={runtimeSnapshot?.marketData.activeResearchSourceLabel ?? "loading"}
             tone={runtimeSnapshot?.marketData.researchUsesTradingViewMcp ? "good" : "neutral"}
+          />
+          <CommandStatusTile
+            label="MCP storage"
+            value={runtimeSnapshot?.tradingViewMcp.chartFeedStorageBackend ?? "none"}
+            detail={runtimeSnapshot?.tradingViewMcp.chartFeedCandlesPersisted ? "IndexedDB persisted" : "metadata/session only"}
+            tone={runtimeSnapshot?.tradingViewMcp.chartFeedCandlesPersisted ? "good" : "neutral"}
           />
         </div>
 

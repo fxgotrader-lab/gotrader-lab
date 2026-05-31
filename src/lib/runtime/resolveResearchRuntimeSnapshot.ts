@@ -10,6 +10,7 @@ import {
   requiredLLMAgents
 } from "@/lib/llm";
 import {
+  hydrateActiveTradingViewMcpChartFeed,
   loadActiveTradingViewMcpChartFeed,
   resolveTradingViewMcpRuntimeState,
   resolveTradingViewMcpStatus,
@@ -166,7 +167,7 @@ const marketStateFor = (
 };
 
 const tradingViewMcpStateFor = (chartFeed: ReturnType<typeof loadActiveTradingViewMcpChartFeed> = loadActiveTradingViewMcpChartFeed()): RuntimeTradingViewMcpState => {
-  const runtime = resolveTradingViewMcpRuntimeState();
+  const runtime = resolveTradingViewMcpRuntimeState(chartFeed);
   const status = resolveTradingViewMcpStatus();
   const latestEvidence = runtime.latestEvidence;
   return {
@@ -187,6 +188,9 @@ const tradingViewMcpStateFor = (chartFeed: ReturnType<typeof loadActiveTradingVi
     chartFeedSymbol: runtime.chartFeedSymbol,
     chartFeedTimeframe: runtime.chartFeedTimeframe,
     chartFeedLatestPrice: runtime.chartFeedLatestPrice,
+    chartFeedStorageBackend: runtime.chartFeedStorageBackend,
+    chartFeedCandlesPersisted: runtime.chartFeedCandlesPersisted,
+    chartFeedId: runtime.chartFeedId,
     tradingViewMcpCandleStatus: chartFeed?.connectionStatus ?? "not_active",
     researchEligibility: runtime.researchEligibility,
     eligibilityReasons: runtime.eligibilityReasons,
@@ -557,7 +561,7 @@ export async function resolveResearchRuntimeSnapshot(
     performanceMode: "safe" as const,
     warnings: ["Prepared candle source could not be loaded; runtime snapshot used an empty mock fallback."]
   };
-  const tradingViewChartFeed = loadActiveTradingViewMcpChartFeed();
+  const tradingViewChartFeed = await hydrateActiveTradingViewMcpChartFeed().catch(() => loadActiveTradingViewMcpChartFeed());
   const marketData = marketStateFor(
     source,
     importActivation,

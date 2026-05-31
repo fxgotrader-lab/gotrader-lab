@@ -137,7 +137,7 @@ export const normalizeTradingViewMcpCandles = (
       seen.add(candle.time);
       return true;
     })
-    .slice(-Math.max(1, Math.min(500, limit)));
+    .slice(-Math.max(1, Math.min(1000, limit)));
 };
 
 const hasMonotonicTimestamps = (candles: TradingViewMcpFeedCandle[]) =>
@@ -271,6 +271,7 @@ export const createActiveTradingViewMcpChartFeed = ({
 }): ActiveTradingViewMcpChartFeed => {
   const candles = normalizeTradingViewMcpCandles(candlesResponse);
   const latest = candles[candles.length - 1];
+  const fetchedAt = new Date().toISOString();
   const match = resolveTradingViewMcpSymbolMatch({
     gotraderSymbol,
     gotraderTimeframe,
@@ -290,6 +291,7 @@ export const createActiveTradingViewMcpChartFeed = ({
   const activeForResearch =
     usageMode === "research_source" && researchEligibility.state === "eligible_for_research_cycle";
   return {
+    feedId: `tradingview_mcp_feed_${candlesResponse.requestedSymbol}_${candlesResponse.requestedTimeframe}_${Date.now().toString(36)}`,
     provider: "tradingview_mcp",
     dataMode: "tradingview_mcp_chart",
     activeForChart: candles.length > 0,
@@ -313,13 +315,19 @@ export const createActiveTradingViewMcpChartFeed = ({
     sourceCommand: candlesResponse.sourceCommand,
     matchState: match.state,
     matchReason: match.reason,
+    firstClose: candles[0]?.close,
+    lastClose: latest?.close,
+    fetchedAt,
+    storageBackend: "session",
+    candlesPersisted: false,
+    storageWarnings: [],
     warnings: [
       ...candlesResponse.warnings,
       "TradingView MCP chart feed is visual/analysis data only and has no broker execution authority.",
       match.state === "symbol_mismatch" || match.state === "timeframe_mismatch" ? match.reason : undefined
     ].filter(Boolean) as string[],
     missingEvidence: candlesResponse.missingEvidence,
-    storedAt: new Date().toISOString(),
+    storedAt: fetchedAt,
     ...authority
   };
 };

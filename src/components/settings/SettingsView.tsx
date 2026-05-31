@@ -51,6 +51,7 @@ import {
   fetchAndStoreTradingViewEvidence,
   fetchAndStoreTradingViewMcpChartFeed,
   fetchTradingViewMcpCandles,
+  hydrateActiveTradingViewMcpChartFeed,
   loadActiveTradingViewMcpChartFeed,
   loadTradingViewMcpSettings,
   resolveTradingViewMcpRuntimeState,
@@ -250,7 +251,14 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
       setTradingViewSettings(loadTradingViewMcpSettings());
       setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
       setTradingViewFeed(loadActiveTradingViewMcpChartFeed());
+      void hydrateActiveTradingViewMcpChartFeed()
+        .then((feed) => {
+          setTradingViewRuntime(resolveTradingViewMcpRuntimeState(feed));
+          setTradingViewFeed(feed);
+        })
+        .catch(() => undefined);
     };
+    refreshTradingView();
     window.addEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refreshTradingView);
     window.addEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refreshTradingView);
     window.addEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refreshTradingView);

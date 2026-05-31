@@ -281,6 +281,9 @@ export interface RuntimeTradingViewMcpState {
   chartFeedSymbol?: string;
   chartFeedTimeframe?: string;
   chartFeedLatestPrice?: number;
+  chartFeedStorageBackend?: string;
+  chartFeedCandlesPersisted: boolean;
+  chartFeedId?: string;
   tradingViewMcpCandleStatus: TradingViewMcpChartFeedStatus | "not_active";
   researchEligibility: TradingViewMcpResearchEligibilityState | "ineligible_disconnected" | "not_active";
   eligibilityReasons: string[];

@@ -33,6 +33,7 @@ import {
   loadPreparedCandleSource
 } from "@/lib/marketData";
 import {
+  hydrateActiveTradingViewMcpChartFeed,
   loadActiveTradingViewMcpChartFeed,
   resolveTradingViewMcpRuntimeState,
   TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT,
@@ -217,7 +218,14 @@ export function ICTLab() {
     const refreshTradingViewStatus = () => {
       setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
       setTradingViewFeed(loadActiveTradingViewMcpChartFeed());
+      void hydrateActiveTradingViewMcpChartFeed()
+        .then((feed) => {
+          setTradingViewRuntime(resolveTradingViewMcpRuntimeState(feed));
+          setTradingViewFeed(feed);
+        })
+        .catch(() => undefined);
     };
+    refreshTradingViewStatus();
     window.addEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refreshTradingViewStatus);
     window.addEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refreshTradingViewStatus);
     window.addEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refreshTradingViewStatus);

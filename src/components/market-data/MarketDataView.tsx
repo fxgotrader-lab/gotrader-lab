@@ -37,16 +37,17 @@ import {
 import { buildVwapOverlay, createTradingChartData } from "@/lib/charting";
 import {
   checkAndStoreTradingViewMcpStatus,
-  clearActiveTradingViewMcpChartFeed,
+  clearTradingViewMcpChartFeedCache,
   createActiveTradingViewMcpChartFeed,
   fetchAndStoreTradingViewMcpChartFeed,
   fetchTradingViewMcpCandles,
   fetchTradingViewMcpQuote,
+  hydrateActiveTradingViewMcpChartFeed,
   loadActiveTradingViewMcpChartFeed,
   loadTradingViewMcpSettings,
   resolveTradingViewMcpRuntimeState,
-  saveActiveTradingViewMcpChartFeed,
   saveTradingViewMcpSettings,
+  storeActiveTradingViewMcpChartFeed,
   TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT,
   TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
   TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT,
@@ -236,7 +237,14 @@ export function MarketDataView() {
     const refreshTradingViewFeed = () => {
       setTradingViewFeed(loadActiveTradingViewMcpChartFeed());
       setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
+      void hydrateActiveTradingViewMcpChartFeed()
+        .then((feed) => {
+          setTradingViewFeed(feed);
+          setTradingViewRuntime(resolveTradingViewMcpRuntimeState(feed));
+        })
+        .catch(() => undefined);
     };
+    refreshTradingViewFeed();
     window.addEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refreshTradingViewFeed);
     window.addEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refreshTradingViewFeed);
     window.addEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refreshTradingViewFeed);
@@ -373,7 +381,7 @@ export function MarketDataView() {
         return;
       }
 
-      const feed = saveActiveTradingViewMcpChartFeed(
+      const feed = await storeActiveTradingViewMcpChartFeed(
         createActiveTradingViewMcpChartFeed({
           candlesResponse: candles,
           gotraderSymbol: symbol,
@@ -413,7 +421,7 @@ export function MarketDataView() {
       usageMode: "chart_only"
     });
     if (candles.candleCount) {
-      const feed = saveActiveTradingViewMcpChartFeed(candidate);
+      const feed = await storeActiveTradingViewMcpChartFeed(candidate);
       setTradingViewFeed(feed);
     }
     setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
@@ -452,12 +460,12 @@ export function MarketDataView() {
     );
   };
 
-  const clearTradingViewChartSource = () => {
-    clearActiveTradingViewMcpChartFeed();
+  const clearTradingViewChartSource = async () => {
+    await clearTradingViewMcpChartFeedCache();
     setTradingViewFeed(undefined);
     setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
     setChartVerification(undefined);
-    setTradingViewFeedMessage("TradingView MCP chart source cleared. Falling back to imported/mock candles.");
+    setTradingViewFeedMessage("TradingView MCP cached candles cleared. Falling back to imported/mock candles.");
   };
 
   const verifyChartSource = () => {
@@ -689,6 +697,9 @@ export function MarketDataView() {
             <StatusTile label="Timeframe match" value={String(tradingViewEligibility?.timeframeMatch ?? false)} />
             <StatusTile label="Usage mode" value={formatToken(tradingViewFeed?.usageMode)} />
             <StatusTile label="Authority" value="none" />
+            <StatusTile label="Feed stored" value={tradingViewFeed?.candlesPersisted ? "yes" : tradingViewFeed ? "session-only" : "no"} />
+            <StatusTile label="Storage backend" value={tradingViewFeed?.storageBackend ?? tradingViewRuntime.chartFeedStorageBackend ?? "none"} />
+            <StatusTile label="Last feed id" value={tradingViewFeed?.feedId ?? tradingViewRuntime.chartFeedId ?? "none"} />
           </div>
           <div
             className={`rounded-md border p-3 text-sm ${
@@ -729,7 +740,7 @@ export function MarketDataView() {
                 ) : null}
               </div>
               <Button variant="outline" onClick={clearTradingViewChartSource} className="shrink-0">
-                Clear chart source
+                Clear TradingView MCP cached candles
               </Button>
             </div>
           ) : (

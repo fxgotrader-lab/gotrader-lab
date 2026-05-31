@@ -23,6 +23,7 @@ export type TradingViewMcpResearchEligibilityState =
   | "ineligible_disconnected";
 
 export type TradingViewMcpFeedUsageMode = "chart_only" | "research_source";
+export type TradingViewMcpFeedStorageBackend = "indexeddb" | "session" | "metadata_only";
 
 export interface TradingViewMcpResearchEligibility {
   state: TradingViewMcpResearchEligibilityState;
@@ -111,6 +112,7 @@ export interface TradingViewMcpSnapshotResponse extends TradingViewMcpFeedAuthor
 }
 
 export interface ActiveTradingViewMcpChartFeed extends TradingViewMcpFeedAuthority {
+  feedId: string;
   provider: "tradingview_mcp";
   dataMode: "tradingview_mcp_chart";
   activeForChart: boolean;
@@ -134,9 +136,26 @@ export interface ActiveTradingViewMcpChartFeed extends TradingViewMcpFeedAuthori
   sourceCommand?: string;
   matchState: TradingViewMcpSymbolMatchState;
   matchReason: string;
+  firstClose?: number;
+  lastClose?: number;
+  fetchedAt: string;
+  storageBackend: TradingViewMcpFeedStorageBackend;
+  candlesPersisted: boolean;
+  storageWarnings: string[];
   warnings: string[];
   missingEvidence: string[];
   storedAt: string;
+}
+
+export type TradingViewMcpChartFeedMetadata = Omit<ActiveTradingViewMcpChartFeed, "candles"> & {
+  candles?: never;
+};
+
+export interface TradingViewMcpChartFeedRecord {
+  feedId: string;
+  metadata: TradingViewMcpChartFeedMetadata;
+  candles: TradingViewMcpFeedCandle[];
+  fetchedAt: string;
 }
 
 export interface TradingViewMcpFeedRequest {

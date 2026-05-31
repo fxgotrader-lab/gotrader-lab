@@ -1,5 +1,7 @@
 import type {
   ActiveTradingViewMcpChartFeed,
+  TradingViewMcpChartFeedMetadata,
+  TradingViewMcpChartFeedRecord,
   TradingViewMcpCandlesResponse,
   TradingViewMcpFeedUsageMode,
   TradingViewMcpFeedRequest,
@@ -18,6 +20,9 @@ import type { TradingViewMcpBridgeSettings } from "@/lib/integrations/tradingvie
 import { loadTradingViewMcpSettings } from "@/lib/integrations/tradingview/tradingViewMcpSettings";
 
 const REQUEST_TIMEOUT_MS = 10000;
+const DB_NAME = "gotrader-ai-lab-tradingview-mcp";
+const DB_VERSION = 1;
+const FEEDS_STORE = "gotrader_tradingview_mcp_feeds";
 const defaultAuthority = {
   executionAuthority: "none" as const,
   brokerAuthority: "none" as const,
@@ -25,6 +30,44 @@ const defaultAuthority = {
 };
 
 const isBrowser = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+const hasIndexedDb = () => typeof indexedDB !== "undefined";
+let activeFeedSessionCache: ActiveTradingViewMcpChartFeed | undefined;
+
+const openTradingViewFeedDb = () =>
+  new Promise<IDBDatabase>((resolve, reject) => {
+    if (!isBrowser() || !hasIndexedDb()) {
+      reject(new Error("IndexedDB is unavailable for TradingView MCP candles."));
+      return;
+    }
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(FEEDS_STORE)) {
+        db.createObjectStore(FEEDS_STORE, { keyPath: "feedId" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("Unable to open TradingView MCP candle store."));
+  });
+
+const txDone = (tx: IDBTransaction) =>
+  new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error("TradingView MCP IndexedDB transaction failed."));
+    tx.onabort = () => reject(tx.error ?? new Error("TradingView MCP IndexedDB transaction aborted."));
+  });
+
+const idbRequest = <T>(request: IDBRequest<T>) =>
+  new Promise<T>((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("TradingView MCP IndexedDB request failed."));
+  });
+
+const publishFeedEvent = (detail?: unknown) => {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, { detail }));
+  }
+};
 
 const endpoint = (settings: TradingViewMcpBridgeSettings, path: string, params?: Record<string, string | number | undefined>) => {
   const url = new URL(`${settings.bridgeUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`);
@@ -72,6 +115,153 @@ const disconnectedCandles = (request: TradingViewMcpFeedRequest, error?: unknown
   mode: "read_only_chart_data",
   ...defaultAuthority
 });
+
+const metadataFromFeed = (
+  feed: ActiveTradingViewMcpChartFeed,
+  patch: Partial<TradingViewMcpChartFeedMetadata> = {}
+): TradingViewMcpChartFeedMetadata => {
+  const { candles: _candles, ...metadata } = feed;
+  return {
+    ...metadata,
+    firstClose: feed.firstClose ?? feed.candles[0]?.close,
+    lastClose: feed.lastClose ?? feed.candles[feed.candles.length - 1]?.close,
+    fetchedAt: feed.fetchedAt ?? feed.storedAt,
+    storageBackend: feed.storageBackend ?? "session",
+    candlesPersisted: Boolean(feed.candlesPersisted),
+    storageWarnings: feed.storageWarnings ?? [],
+    ...patch
+  };
+};
+
+const feedFromMetadata = (
+  metadata: TradingViewMcpChartFeedMetadata,
+  candles: ActiveTradingViewMcpChartFeed["candles"] = []
+): ActiveTradingViewMcpChartFeed => {
+  const sourceLabel = metadata.sourceLabel ?? "TradingView MCP chart feed - read-only, not broker truth";
+  const researchEligibility =
+    metadata.researchEligibility ??
+    evaluateTradingViewMcpResearchEligibility({
+      candles,
+      connectionStatus: metadata.connectionStatus ?? (candles.length ? "connected_with_candles" : "disconnected"),
+      matchState: metadata.matchState ?? "unavailable",
+      sourceLabel
+    });
+  const usageMode = metadata.usageMode ?? "chart_only";
+  const activeForResearch = usageMode === "research_source" && researchEligibility.state === "eligible_for_research_cycle";
+  const feed: ActiveTradingViewMcpChartFeed = {
+    ...metadata,
+    candles,
+    candleCount: candles.length || metadata.candleCount || 0,
+    firstTimestamp: candles[0]?.timestamp ?? metadata.firstTimestamp,
+    lastTimestamp: candles[candles.length - 1]?.timestamp ?? metadata.lastTimestamp,
+    latestClose: candles[candles.length - 1]?.close ?? metadata.latestClose,
+    firstClose: candles[0]?.close ?? metadata.firstClose,
+    lastClose: candles[candles.length - 1]?.close ?? metadata.lastClose,
+    usageMode,
+    researchEligibility,
+    activeForChart: Boolean(candles.length),
+    activeForResearch,
+    sourceLabel,
+    storageBackend: candles.length ? metadata.storageBackend : "metadata_only",
+    candlesPersisted: metadata.candlesPersisted,
+    storageWarnings: metadata.storageWarnings ?? [],
+    ...defaultAuthority
+  };
+  return feed;
+};
+
+const writeMetadataToLocalStorage = (metadata: TradingViewMcpChartFeedMetadata) => {
+  if (!isBrowser()) {
+    return;
+  }
+  try {
+    window.localStorage.setItem(TRADINGVIEW_MCP_CHART_FEED_STORAGE_KEY, JSON.stringify(metadata));
+  } catch {
+    // Metadata is small, but quota can still fail in constrained browsers. Keep the session cache alive.
+  }
+};
+
+const migrateOrLoadMetadataFromLocalStorage = (): TradingViewMcpChartFeedMetadata | undefined => {
+  if (!isBrowser()) {
+    return undefined;
+  }
+  const raw = window.localStorage.getItem(TRADINGVIEW_MCP_CHART_FEED_STORAGE_KEY);
+  if (!raw) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<ActiveTradingViewMcpChartFeed> & Partial<TradingViewMcpChartFeedMetadata>;
+    if (parsed.provider !== "tradingview_mcp" || parsed.executionAuthority !== "none") {
+      return undefined;
+    }
+    if (Array.isArray(parsed.candles)) {
+      const legacyFeed = feedFromMetadata(
+        {
+          ...(parsed as TradingViewMcpChartFeedMetadata),
+          feedId: parsed.feedId ?? `tradingview_mcp_legacy_${Date.now().toString(36)}`,
+          candlesPersisted: false,
+          storageBackend: "session",
+          storageWarnings: [
+            ...(parsed.storageWarnings ?? []),
+            "Migrated legacy TradingView MCP candle payload out of localStorage."
+          ]
+        },
+        parsed.candles
+      );
+      activeFeedSessionCache = legacyFeed;
+      const metadata = metadataFromFeed(legacyFeed, {
+        storageBackend: "session",
+        candlesPersisted: false,
+        storageWarnings: legacyFeed.storageWarnings
+      });
+      writeMetadataToLocalStorage(metadata);
+      void persistTradingViewMcpFeedToIndexedDb(legacyFeed).catch(() => undefined);
+      return metadata;
+    }
+    return {
+      ...(parsed as TradingViewMcpChartFeedMetadata),
+      feedId: parsed.feedId ?? `tradingview_mcp_metadata_${Date.now().toString(36)}`,
+      storageBackend: parsed.storageBackend ?? "metadata_only",
+      candlesPersisted: Boolean(parsed.candlesPersisted),
+      storageWarnings: parsed.storageWarnings ?? []
+    };
+  } catch {
+    window.localStorage.removeItem(TRADINGVIEW_MCP_CHART_FEED_STORAGE_KEY);
+    return undefined;
+  }
+};
+
+async function persistTradingViewMcpFeedToIndexedDb(feed: ActiveTradingViewMcpChartFeed): Promise<ActiveTradingViewMcpChartFeed> {
+  const metadata = metadataFromFeed(feed, {
+    storageBackend: "indexeddb",
+    candlesPersisted: true,
+    storageWarnings: feed.storageWarnings.filter((warning) => !warning.includes("could not be persisted"))
+  });
+  const record: TradingViewMcpChartFeedRecord = {
+    feedId: feed.feedId,
+    metadata,
+    candles: feed.candles,
+    fetchedAt: metadata.fetchedAt
+  };
+  const db = await openTradingViewFeedDb();
+  const tx = db.transaction(FEEDS_STORE, "readwrite");
+  tx.objectStore(FEEDS_STORE).put(record);
+  await txDone(tx);
+  db.close();
+  const persisted = feedFromMetadata(metadata, feed.candles);
+  activeFeedSessionCache = persisted;
+  writeMetadataToLocalStorage(metadata);
+  return persisted;
+}
+
+async function loadTradingViewMcpFeedRecord(feedId: string): Promise<TradingViewMcpChartFeedRecord | undefined> {
+  const db = await openTradingViewFeedDb();
+  const tx = db.transaction(FEEDS_STORE, "readonly");
+  const record = await idbRequest<TradingViewMcpChartFeedRecord | undefined>(tx.objectStore(FEEDS_STORE).get(feedId));
+  await txDone(tx);
+  db.close();
+  return record;
+}
 
 export async function fetchTradingViewMcpQuote(
   request: TradingViewMcpFeedRequest,
@@ -157,42 +347,46 @@ export async function fetchAndStoreTradingViewMcpChartFeed({
     gotraderTimeframe: gotraderTimeframe ?? timeframe,
     usageMode
   });
-  saveActiveTradingViewMcpChartFeed(feed);
-  return feed;
+  return storeActiveTradingViewMcpChartFeed(feed);
 }
 
 export function loadActiveTradingViewMcpChartFeed(): ActiveTradingViewMcpChartFeed | undefined {
-  if (!isBrowser()) {
+  const metadata = migrateOrLoadMetadataFromLocalStorage();
+  if (!metadata) {
     return undefined;
   }
-  const raw = window.localStorage.getItem(TRADINGVIEW_MCP_CHART_FEED_STORAGE_KEY);
-  if (!raw) {
+  if (activeFeedSessionCache?.feedId === metadata.feedId && activeFeedSessionCache.candles.length) {
+    return activeFeedSessionCache;
+  }
+  return feedFromMetadata(metadata);
+}
+
+export async function hydrateActiveTradingViewMcpChartFeed(): Promise<ActiveTradingViewMcpChartFeed | undefined> {
+  const metadata = migrateOrLoadMetadataFromLocalStorage();
+  if (!metadata) {
     return undefined;
+  }
+  if (activeFeedSessionCache?.feedId === metadata.feedId && activeFeedSessionCache.candles.length) {
+    return activeFeedSessionCache;
   }
   try {
-    const parsed = JSON.parse(raw) as ActiveTradingViewMcpChartFeed;
-    if (parsed.provider !== "tradingview_mcp" || parsed.executionAuthority !== "none") {
-      return undefined;
+    const record = await loadTradingViewMcpFeedRecord(metadata.feedId);
+    if (!record?.candles?.length) {
+      return feedFromMetadata(metadata);
     }
-    const sourceLabel = parsed.sourceLabel ?? "TradingView MCP chart feed - read-only, not broker truth";
-    const researchEligibility =
-      parsed.researchEligibility ??
-      evaluateTradingViewMcpResearchEligibility({
-        candles: parsed.candles ?? [],
-        connectionStatus: parsed.connectionStatus ?? (parsed.candles?.length ? "connected_with_candles" : "disconnected"),
-        matchState: parsed.matchState ?? "unavailable",
-        sourceLabel
-      });
-    const usageMode = parsed.usageMode ?? "chart_only";
-    return {
-      ...parsed,
-      usageMode,
-      researchEligibility,
-      activeForResearch: usageMode === "research_source" && researchEligibility.state === "eligible_for_research_cycle",
-      sourceLabel
-    };
+    const feed = feedFromMetadata(record.metadata, record.candles);
+    activeFeedSessionCache = feed;
+    publishFeedEvent(feed);
+    return feed;
   } catch {
-    return undefined;
+    return feedFromMetadata({
+      ...metadata,
+      storageBackend: "metadata_only",
+      storageWarnings: [
+        ...metadata.storageWarnings,
+        "TradingView MCP candles could not be loaded from IndexedDB; using metadata only."
+      ]
+    });
   }
 }
 
@@ -200,15 +394,97 @@ export function saveActiveTradingViewMcpChartFeed(feed: ActiveTradingViewMcpChar
   if (!isBrowser()) {
     return feed;
   }
-  window.localStorage.setItem(TRADINGVIEW_MCP_CHART_FEED_STORAGE_KEY, JSON.stringify(feed));
-  window.dispatchEvent(new CustomEvent(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, { detail: feed }));
-  return feed;
+  const sessionFeed = {
+    ...feed,
+    storageBackend: "session" as const,
+    candlesPersisted: false,
+    storageWarnings: feed.storageWarnings ?? []
+  };
+  activeFeedSessionCache = sessionFeed;
+  writeMetadataToLocalStorage(metadataFromFeed(sessionFeed));
+  void persistTradingViewMcpFeedToIndexedDb(sessionFeed)
+    .then((persisted) => publishFeedEvent(persisted))
+    .catch(() => {
+      const sessionOnlyFeed = {
+        ...sessionFeed,
+        storageBackend: "session" as const,
+        candlesPersisted: false,
+        storageWarnings: [
+          ...sessionFeed.storageWarnings,
+          "TradingView MCP candles could not be persisted; using session-only chart data."
+        ]
+      };
+      activeFeedSessionCache = sessionOnlyFeed;
+      writeMetadataToLocalStorage(metadataFromFeed(sessionOnlyFeed));
+      publishFeedEvent(sessionOnlyFeed);
+    });
+  publishFeedEvent(sessionFeed);
+  return sessionFeed;
+}
+
+export async function storeActiveTradingViewMcpChartFeed(feed: ActiveTradingViewMcpChartFeed) {
+  if (!isBrowser()) {
+    return feed;
+  }
+  activeFeedSessionCache = {
+    ...feed,
+    storageBackend: "session",
+    candlesPersisted: false,
+    storageWarnings: feed.storageWarnings ?? []
+  };
+  writeMetadataToLocalStorage(metadataFromFeed(activeFeedSessionCache));
+  try {
+    const persisted = await persistTradingViewMcpFeedToIndexedDb(activeFeedSessionCache);
+    publishFeedEvent(persisted);
+    return persisted;
+  } catch {
+    const sessionOnlyFeed = {
+      ...activeFeedSessionCache,
+      storageBackend: "session" as const,
+      candlesPersisted: false,
+      storageWarnings: [
+        ...activeFeedSessionCache.storageWarnings,
+        "TradingView MCP candles could not be persisted; using session-only chart data."
+      ]
+    };
+    activeFeedSessionCache = sessionOnlyFeed;
+    writeMetadataToLocalStorage(metadataFromFeed(sessionOnlyFeed));
+    publishFeedEvent(sessionOnlyFeed);
+    return sessionOnlyFeed;
+  }
 }
 
 export function clearActiveTradingViewMcpChartFeed() {
   if (!isBrowser()) {
     return;
   }
+  const metadata = migrateOrLoadMetadataFromLocalStorage();
+  activeFeedSessionCache = undefined;
   window.localStorage.removeItem(TRADINGVIEW_MCP_CHART_FEED_STORAGE_KEY);
-  window.dispatchEvent(new CustomEvent(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT));
+  if (metadata?.feedId && hasIndexedDb()) {
+    void openTradingViewFeedDb()
+      .then(async (db) => {
+        const tx = db.transaction(FEEDS_STORE, "readwrite");
+        tx.objectStore(FEEDS_STORE).delete(metadata.feedId);
+        await txDone(tx);
+        db.close();
+      })
+      .catch(() => undefined);
+  }
+  publishFeedEvent();
+}
+
+export async function clearTradingViewMcpChartFeedCache() {
+  activeFeedSessionCache = undefined;
+  if (isBrowser()) {
+    window.localStorage.removeItem(TRADINGVIEW_MCP_CHART_FEED_STORAGE_KEY);
+  }
+  if (isBrowser() && hasIndexedDb()) {
+    const db = await openTradingViewFeedDb();
+    const tx = db.transaction(FEEDS_STORE, "readwrite");
+    tx.objectStore(FEEDS_STORE).clear();
+    await txDone(tx);
+    db.close();
+  }
+  publishFeedEvent();
 }
