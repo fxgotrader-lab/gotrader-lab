@@ -85,10 +85,12 @@ const scanRoots = () =>
   unique([
     join(homeDir, "AppData", "Local", "Programs"),
     join(homeDir, "AppData", "Local", "Apps", "2.0"),
+    join(homeDir, "AppData", "Local", "Packages"),
     join(homeDir, "AppData", "Local"),
     join(homeDir, "AppData", "Roaming"),
     process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Programs"),
     process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Apps", "2.0"),
+    process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Packages"),
     process.env.LOCALAPPDATA,
     process.env.APPDATA,
     process.env.ProgramFiles,
@@ -161,6 +163,47 @@ const scanForShortcuts = (root, maxDepth = 7) => {
   };
   walk(root, 0);
   return found;
+};
+
+const scanForLocalPackageHints = () => {
+  const packageRoots = unique([
+    join(homeDir, "AppData", "Local", "Packages"),
+    process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Packages")
+  ])
+    .map(toResolvedPath)
+    .filter((item) => item && pathExists(item));
+
+  const packageFolders = packageRoots.flatMap((root) =>
+    safeReadDir(root)
+      .filter((entry) => entry.isDirectory() && looksLikeTradingView(entry.name))
+      .map((entry) => ({
+        packageFamilyName: entry.name,
+        packageDataPath: join(root, entry.name)
+      }))
+  );
+
+  const desktopInstallerHints = packageRoots.flatMap((root) =>
+    safeReadDir(root)
+      .filter((entry) => entry.isDirectory() && entry.name.toLowerCase().startsWith("microsoft.desktopappinstaller_"))
+      .flatMap((entry) => {
+        const localCache = join(root, entry.name, "LocalCache");
+        return safeReadDir(localCache)
+          .filter((item) => item.isFile() && looksLikeTradingView(item.name))
+          .map((item) => {
+            const packageFullName = item.name.match(/^(TradingView\.Desktop_[^{}]+__[^{}]+)(?:\{|_temp|\.pri)/i)?.[1];
+            return {
+              packageFullName,
+              hintFile: join(localCache, item.name)
+            };
+          })
+          .filter((item) => item.packageFullName);
+      })
+  );
+
+  return {
+    packageFolders,
+    desktopInstallerHints
+  };
 };
 
 const runPowerShellJson = (script, env = {}, timeoutMs = 8000) =>
@@ -379,6 +422,23 @@ const appPackageExecutableCandidates = (entries) =>
       }))
   );
 
+const packageHintExecutableCandidates = (packageHints) =>
+  packageHints.desktopInstallerHints
+    .flatMap((hint) =>
+      unique([
+        hint.packageFullName && join("C:\\Program Files\\WindowsApps", hint.packageFullName, "TradingView.exe"),
+        hint.packageFullName && join("C:\\Program Files\\WindowsApps", hint.packageFullName, "tv.exe")
+      ])
+        .map(toResolvedPath)
+        .filter((candidate) => candidate && pathExists(candidate) && isExecutable(candidate))
+        .map((candidate) => ({
+          path: candidate,
+          source: "local_package_hint",
+          packageFullName: hint.packageFullName,
+          hintFile: hint.hintFile
+        }))
+    );
+
 const pathExecutableCandidates = (entries) =>
   entries
     .flatMap((entry) => unique([entry.path, entry.source, entry.definition]))
@@ -417,6 +477,7 @@ const candidateRank = (candidate) => {
   if (candidate.source === "shortcut_target") score += 80;
   if (candidate.source === "registry") score += 70;
   if (candidate.source === "app_package") score += 65;
+  if (candidate.source === "local_package_hint") score += 95;
   if (candidate.source === "running_process") score += 90;
   if (candidate.source === "path_lookup") score += 75;
   if (candidate.source === "windows_app_alias") score += 30;
@@ -462,6 +523,8 @@ export async function discoverTradingViewDesktop() {
   const startAppEntries = await readTradingViewStartApps();
   const appPackageEntries = await readTradingViewAppPackages();
   const appPackageCandidates = appPackageExecutableCandidates(appPackageEntries);
+  const localPackageHints = scanForLocalPackageHints();
+  const localPackageCandidates = packageHintExecutableCandidates(localPackageHints);
   const pathEntries = await readTradingViewPathEntries();
   const pathCandidates = pathExecutableCandidates(pathEntries);
   const runningProcessEntries = await readTradingViewRunningProcesses();
@@ -474,6 +537,7 @@ export async function discoverTradingViewDesktop() {
     ...shortcutCandidates,
     ...registryCandidates,
     ...appPackageCandidates,
+    ...localPackageCandidates,
     ...pathCandidates,
     ...runningProcessCandidates
   ].forEach((candidate) => {
@@ -496,6 +560,7 @@ export async function discoverTradingViewDesktop() {
     registryCandidates: registryEntries,
     startAppCandidates: startAppEntries,
     appPackageCandidates: appPackageEntries,
+    localPackageHints,
     pathCandidates: pathEntries,
     runningProcessCandidates: runningProcessEntries,
     selectedCandidate: executableCandidates[0] ?? null,

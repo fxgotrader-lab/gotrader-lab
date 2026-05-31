@@ -79,6 +79,17 @@ if (discovery.appPackageCandidates?.length) {
   });
 }
 
+if (discovery.localPackageHints?.packageFolders?.length || discovery.localPackageHints?.desktopInstallerHints?.length) {
+  console.log("");
+  console.log("Local package hints:");
+  discovery.localPackageHints.packageFolders?.forEach((entry, index) => {
+    console.log(`${index + 1}. Package data: ${entry.packageDataPath}`);
+  });
+  discovery.localPackageHints.desktopInstallerHints?.forEach((entry, index) => {
+    console.log(`${index + 1}. Desktop installer hint: ${entry.packageFullName} from ${entry.hintFile}`);
+  });
+}
+
 if (discovery.pathCandidates?.length) {
   console.log("");
   console.log("PATH lookup candidates:");

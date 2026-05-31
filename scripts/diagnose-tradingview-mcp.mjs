@@ -146,6 +146,7 @@ const report = {
     registryCandidates: desktopDiscovery.registryCandidates,
     startAppCandidates: desktopDiscovery.startAppCandidates,
     appPackageCandidates: desktopDiscovery.appPackageCandidates,
+    localPackageHints: desktopDiscovery.localPackageHints,
     pathCandidates: desktopDiscovery.pathCandidates,
     runningProcessCandidates: desktopDiscovery.runningProcessCandidates,
     searchedRoots: desktopDiscovery.searchedRoots,

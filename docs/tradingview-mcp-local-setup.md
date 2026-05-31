@@ -60,6 +60,7 @@ The diagnostic checks:
 - shortcut targets resolved through Windows `WScript.Shell`
 - installed-app registry entries named `TradingView`
 - Windows Start App and AppX package entries, including Microsoft Store-style installs
+- `%LOCALAPPDATA%\Packages`, including `TradingView.Desktop_*` package data and Desktop App Installer hints
 - PATH command aliases such as `TradingView.exe` or `tv.exe`
 - currently running TradingView-like processes and their executable paths, when Windows exposes them
 - TradingView Desktop CDP debug port `9222`
@@ -81,7 +82,7 @@ If PowerShell cannot find `TradingView.exe`, use the GoTrader launcher:
 npm.cmd run tradingview:start-desktop-debug
 ```
 
-The launcher uses the same discovery engine as diagnostics. It searches common install folders, ClickOnce-style local app folders, Start Menu shortcuts, Desktop and OneDrive Desktop shortcuts, Windows app aliases, PATH command aliases, running process paths, AppX package entries, and uninstall registry entries. If more than one executable is found, it prints all candidates and launches the highest-ranked executable path.
+The launcher uses the same discovery engine as diagnostics. It searches common install folders, ClickOnce-style local app folders, Start Menu shortcuts, Desktop and OneDrive Desktop shortcuts, Windows app aliases, `%LOCALAPPDATA%\Packages`, PATH command aliases, running process paths, AppX package entries, and uninstall registry entries. If more than one executable is found, it prints all candidates and launches the highest-ranked executable path.
 
 If TradingView is installed in a custom location, set:
 
