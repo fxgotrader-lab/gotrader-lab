@@ -602,7 +602,7 @@ export function WalkForwardView() {
                       <td className="px-3 py-3 text-right tabular-nums">{oos.grinchMetrics?.grinchScore ?? "n/a"}</td>
                       <td className="px-3 py-3 text-muted-foreground">
                         {oos.grinchMetrics
-                          ? `${oos.grinchMetrics.profileDetected.replace(/_/g, " ")} / SMT ${oos.grinchMetrics.smtState.replace(/_/g, " ")}`
+                          ? `${oos.grinchMetrics.profileDetected.replace(/_/g, " ")} / trade ${oos.grinchMetrics.profileProducedTrade.replace(/_/g, " ")} / SMT ${oos.grinchMetrics.smtState.replace(/_/g, " ")}`
                           : "Grinch metrics unavailable"}
                       </td>
                       <td className="px-3 py-3 text-right tabular-nums">{oos.readinessScore}</td>

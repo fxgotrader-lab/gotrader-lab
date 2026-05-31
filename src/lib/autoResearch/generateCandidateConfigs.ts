@@ -591,6 +591,93 @@ export function generateCandidateConfigs(
         },
         ["grinchProfilePlusEntry", "confluenceThreshold", "confidenceThreshold", "agentWeights"],
         "grinch_require_profile_plus_entry_confirmation"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch timing-valid only",
+        "Search only timing-valid Grinch profile windows instead of forcing early, late, or expired profile exposure.",
+        {
+          sessionFilter: "NY AM Kill Zone",
+          minimumConfluenceThreshold: round(clamp01(Math.max(0.52, baseline.minimumConfluenceThreshold + 0.07)), 2),
+          minimumConfidenceThreshold: round(clamp01(Math.max(0.52, baseline.minimumConfidenceThreshold + 0.07)), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-time-price-alignment-agent": 0.16,
+            "grinch-reversal-profile-agent": 0.04,
+            "grinch-consolidation-profile-agent": 0.04,
+            "grinch-model-one-power-three-agent": -0.02
+          })
+        },
+        ["grinchTimingValidOnly", "sessionFilter", "confluenceThreshold", "confidenceThreshold", "agentWeights"],
+        "grinch_timing_valid_only"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch NY 9:30-10:00 profile search",
+        "Focus research on the intended NY reversal/setup window where Grinch profiles should become actionable.",
+        {
+          sessionFilter: "NY AM Kill Zone",
+          decisionInterval: Math.max(1, Math.min(baseline.decisionInterval, 2)),
+          minimumConfidenceThreshold: round(clamp01(baseline.minimumConfidenceThreshold + 0.05), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-time-price-alignment-agent": 0.14,
+            "session-timing-agent": 0.08,
+            "grinch-opening-price-equilibrium-agent": 0.04
+          })
+        },
+        ["grinchNy9301000Only", "sessionFilter", "decisionInterval", "confidenceThreshold", "agentWeights"],
+        "grinch_ny_930_1000_only"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch 10:00-10:15 confirmation search",
+        "Emphasize confirmation after NY setup without letting entry confirmation override invalid profile state.",
+        {
+          sessionFilter: "NY AM Kill Zone",
+          minimumConfluenceThreshold: round(clamp01(Math.max(0.54, baseline.minimumConfluenceThreshold + 0.08)), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-entry-confirmation-agent": 0.08,
+            "grinch-time-price-alignment-agent": 0.1,
+            "grinch-model-one-power-three-agent": -0.02
+          })
+        },
+        ["grinch10001015ConfirmationOnly", "sessionFilter", "confluenceThreshold", "agentWeights"],
+        "grinch_1000_1015_confirmation_only"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch exclude expired timing",
+        "Keep expired profiles flat and let Reversal/Consolidation fallback search supply only timing-valid candidates.",
+        {
+          sessionFilter: "NY AM Kill Zone",
+          minimumConfidenceThreshold: round(clamp01(baseline.minimumConfidenceThreshold + 0.07), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-time-price-alignment-agent": 0.16,
+            "grinch-entry-confirmation-agent": -0.04
+          })
+        },
+        ["grinchExcludeExpiredTiming", "sessionFilter", "confidenceThreshold", "agentWeights"],
+        "grinch_exclude_expired_timing"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch no-trade without valid profile",
+        "Preserve no-trade when Model 1, Reversal, and Consolidation are invalid or mistimed; do not widen generic thresholds to force exposure.",
+        {
+          minimumConfidenceThreshold: round(clamp01(Math.max(0.54, baseline.minimumConfidenceThreshold + 0.07)), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-model-one-power-three-agent": 0.04,
+            "grinch-reversal-profile-agent": 0.04,
+            "grinch-consolidation-profile-agent": 0.04,
+            "grinch-entry-confirmation-agent": -0.04
+          })
+        },
+        ["grinchNoTradeWhenNoValidProfile", "confidenceThreshold", "agentWeights"],
+        "grinch_no_trade_when_no_valid_profile"
       )
     );
   }
@@ -630,6 +717,24 @@ export function generateCandidateConfigs(
       candidate(
         baseline,
         searchMode,
+        "Grinch Reversal fallback search",
+        "When Model 1 is blocked, search specifically for valid Reversal Profile timing around the NY setup window.",
+        {
+          sessionFilter: "NY AM Kill Zone",
+          minimumConfidenceThreshold: round(clamp01(baseline.minimumConfidenceThreshold + 0.05), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-reversal-profile-agent": 0.14,
+            "grinch-model-one-power-three-agent": -0.04,
+            "grinch-consolidation-profile-agent": -0.02,
+            "grinch-time-price-alignment-agent": 0.08
+          })
+        },
+        ["grinchReversalFallback", "sessionFilter", "confidenceThreshold", "agentWeights"],
+        "grinch_reversal_profile_only"
+      ),
+      candidate(
+        baseline,
+        searchMode,
         "Grinch consolidation profile only",
         "Test whether 12AM consolidation, side raid, and expansion profile evidence improves setup selection.",
         {
@@ -641,6 +746,24 @@ export function generateCandidateConfigs(
         },
         ["grinchConsolidationOnly", "agentWeights"],
         "grinch_model_consolidation_only"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Grinch Consolidation fallback search",
+        "When Model 1 and Reversal are not valid, search for 12AM consolidation, raid, and expansion opportunities with valid timing.",
+        {
+          sessionFilter: "NY AM Kill Zone",
+          minimumConfluenceThreshold: round(clamp01(baseline.minimumConfluenceThreshold + 0.05), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-consolidation-profile-agent": 0.14,
+            "grinch-model-one-power-three-agent": -0.04,
+            "grinch-reversal-profile-agent": -0.02,
+            "grinch-time-price-alignment-agent": 0.08
+          })
+        },
+        ["grinchConsolidationFallback", "sessionFilter", "confluenceThreshold", "agentWeights"],
+        "grinch_consolidation_profile_only"
       ),
       candidate(
         baseline,
@@ -706,9 +829,27 @@ export function generateCandidateConfigs(
 
   const maxCount = Math.max(1, Math.min(25, maxCandidateCount));
   const deduped = dedupeCandidates(candidates);
-  const grinchCandidates = deduped.filter((item) => item.candidateFamily?.startsWith("grinch_"));
+  const grinchPriority: AutoResearchCandidateFamily[] = [
+    "grinch_exclude_expired_timing",
+    "grinch_no_trade_when_no_valid_profile",
+    "grinch_timing_valid_only",
+    "grinch_reversal_profile_only",
+    "grinch_consolidation_profile_only",
+    "grinch_ny_930_1000_only",
+    "grinch_1000_1015_confirmation_only",
+    "grinch_require_valid_profile",
+    "grinch_require_profile_plus_entry_confirmation",
+    "grinch_block_expired_timing"
+  ];
+  const priorityFor = (family?: AutoResearchCandidateFamily) => {
+    const index = family ? grinchPriority.indexOf(family) : -1;
+    return index === -1 ? grinchPriority.length : index;
+  };
+  const grinchCandidates = deduped
+    .filter((item) => item.candidateFamily?.startsWith("grinch_"))
+    .sort((a, b) => priorityFor(a.candidateFamily) - priorityFor(b.candidateFamily));
   const otherCandidates = deduped.filter((item) => !item.candidateFamily?.startsWith("grinch_"));
-  const grinchQuota = Math.min(grinchCandidates.length, maxCount <= 5 ? Math.min(4, maxCount) : searchMode === "deep" ? 10 : Math.min(9, maxCount));
+  const grinchQuota = Math.min(grinchCandidates.length, maxCount <= 5 ? Math.min(4, maxCount) : searchMode === "deep" ? 12 : Math.min(10, maxCount));
   return [
     ...otherCandidates.slice(0, Math.max(0, maxCount - grinchQuota)),
     ...grinchCandidates.slice(0, grinchQuota)

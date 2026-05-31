@@ -111,6 +111,7 @@ export interface WalkForwardWindowMetrics {
 
 export interface WalkForwardGrinchMetrics {
   profileDetected: GrinchActiveProfile;
+  profileProducedTrade: GrinchActiveProfile;
   profileValidity: number;
   grinchScore: number;
   timeAlignment: number;

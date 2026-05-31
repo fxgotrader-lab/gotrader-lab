@@ -51,6 +51,12 @@ export type GrinchFalsePositiveBlocker =
   | "entry_confirmation_without_valid_profile"
   | "missing_intermarket_confirmation"
   | "grinch_score_conflict";
+export type GrinchProfileFallbackState =
+  | "none_required"
+  | "model_1_blocked_evaluating_fallback"
+  | "reversal_fallback_selected"
+  | "consolidation_fallback_selected"
+  | "no_valid_profile";
 
 export type GrinchPdArrayType =
   | "sunday_open"
@@ -352,7 +358,25 @@ export interface GrinchStrategyScore {
   timingGrade: GrinchTimingGrade;
   smtState: GrinchSmtState;
   setupQuality: GrinchSetupQuality;
-  hardGateReason?: "grinch_timing_expired" | "grinch_profile_invalid" | "grinch_profile_weak_without_confirmation";
+  hardGateReason?:
+    | "grinch_timing_expired"
+    | "grinch_profile_invalid"
+    | "grinch_profile_weak_without_confirmation"
+    | "grinch_no_valid_profile";
+  fallbackState: GrinchProfileFallbackState;
+  fallbackProfileUsed: "reversal" | "consolidation" | "none";
+  modelOneBlocked: boolean;
+  noValidProfile: boolean;
+  evaluatedProfiles: Array<{
+    profile: GrinchActiveProfile;
+    state: string;
+    timingGrade: GrinchTimingGrade;
+    entryIntent: string;
+    profileValid: boolean;
+    timingValid: boolean;
+    selectable: boolean;
+    blockReason?: string;
+  }>;
   falsePositiveBlockers: GrinchFalsePositiveBlocker[];
   ruleBlocks: string[];
   primaryRuleBlock?: string;

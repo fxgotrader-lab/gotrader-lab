@@ -3,6 +3,7 @@ export { analyzeGrinchPhase2Reversal, summarizeGrinchReversalProfile } from "@/l
 export { analyzeGrinchPhase3Consolidation, summarizeGrinchConsolidationProfile } from "@/lib/strategyLibrary/grinchPhase3ConsolidationModel";
 export { analyzeGrinchPhase4Smt, summarizeGrinchSmtIntermarket } from "@/lib/strategyLibrary/grinchPhase4SmtModel";
 export { calculateGrinchStrategyScore, summarizeGrinchStrategyScore } from "@/lib/strategyLibrary/grinchStrategyScore";
+export { resolveGrinchActiveProfile } from "@/lib/strategyLibrary/grinchProfileSelection";
 export type {
   GrinchActiveProfile,
   GrinchConsolidationEntryIntent,
@@ -15,6 +16,7 @@ export type {
   GrinchEntryConfirmationResult,
   GrinchExpectedExpansionDirection,
   GrinchFalsePositiveBlocker,
+  GrinchProfileFallbackState,
   GrinchLondonBehavior,
   GrinchLiquidityRaidState,
   GrinchHtfBias,

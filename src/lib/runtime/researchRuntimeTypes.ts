@@ -144,6 +144,9 @@ export interface RuntimeResearchCycleState {
     falsePositiveRisk?: number;
     setupQuality?: GrinchStrategyScore["setupQuality"];
     hardGateReason?: GrinchStrategyScore["hardGateReason"];
+    fallbackState?: GrinchStrategyScore["fallbackState"];
+    fallbackProfileUsed?: GrinchStrategyScore["fallbackProfileUsed"];
+    noValidProfile?: boolean;
     primaryRuleBlock?: string;
     improvedLatestRun?: boolean;
     detail: string;

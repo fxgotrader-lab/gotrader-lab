@@ -160,20 +160,18 @@ const desiredBiasFor = ({
   phase1: GrinchPhase1ModelOutput;
   reversal?: GrinchReversalProfileResult;
 }): { bias: DirectionalBias; activeProfile: "model_1" | "reversal" | "consolidation" | "none"; profileState: string } => {
-  if (
-    consolidation &&
-    (consolidation.consolidationProfileState === "valid" || consolidation.consolidationProfileState === "weak") &&
-    (consolidation.expectedExpansionDirection === "bullish" || consolidation.expectedExpansionDirection === "bearish")
-  ) {
+  const timingValid = (grade: string) => grade === "ideal" || grade === "acceptable";
+  if (phase1.modelOneState === "valid" && timingValid(phase1.timingGrade)) {
     return {
-      bias: consolidation.expectedExpansionDirection,
-      activeProfile: "consolidation",
-      profileState: consolidation.consolidationProfileState
+      bias: phase1.htfBias === "bullish" || phase1.htfBias === "bearish" ? phase1.htfBias : "unclear",
+      activeProfile: "model_1",
+      profileState: phase1.modelOneState
     };
   }
   if (
     reversal &&
-    (reversal.reversalProfileState === "valid" || reversal.reversalProfileState === "weak") &&
+    reversal.reversalProfileState === "valid" &&
+    timingValid(reversal.timingGrade) &&
     (reversal.reversalBias === "bullish" || reversal.reversalBias === "bearish")
   ) {
     return {
@@ -182,11 +180,16 @@ const desiredBiasFor = ({
       profileState: reversal.reversalProfileState
     };
   }
-  if (phase1.modelOneState === "valid" || phase1.modelOneState === "weak") {
+  if (
+    consolidation &&
+    consolidation.consolidationProfileState === "valid" &&
+    timingValid(consolidation.timingGrade) &&
+    (consolidation.expectedExpansionDirection === "bullish" || consolidation.expectedExpansionDirection === "bearish")
+  ) {
     return {
-      bias: phase1.htfBias === "bullish" || phase1.htfBias === "bearish" ? phase1.htfBias : "unclear",
-      activeProfile: "model_1",
-      profileState: phase1.modelOneState
+      bias: consolidation.expectedExpansionDirection,
+      activeProfile: "consolidation",
+      profileState: consolidation.consolidationProfileState
     };
   }
   return {

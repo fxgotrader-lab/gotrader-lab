@@ -327,7 +327,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
             [
               "Active Grinch profile",
               runtimeSnapshot?.latestResearchCycle.activeGrinchProfileSummary
-                ? `${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.profile.replace(/_/g, " ")} / ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.state} / ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.setupQuality ?? "research"} / score ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.grinchModelScore ?? "n/a"} / risk ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.falsePositiveRisk ?? "n/a"}${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.primaryRuleBlock ? ` / ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.primaryRuleBlock}` : ""}`
+                ? `${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.profile.replace(/_/g, " ")} / ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.state} / ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.setupQuality ?? "research"} / fallback ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.fallbackProfileUsed ?? "none"} / score ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.grinchModelScore ?? "n/a"} / risk ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.falsePositiveRisk ?? "n/a"}${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.primaryRuleBlock ? ` / ${runtimeSnapshot.latestResearchCycle.activeGrinchProfileSummary.primaryRuleBlock}` : ""}`
                 : "not available"
             ],
             [
@@ -740,6 +740,10 @@ function buildKeyMetrics(snapshot?: ResearchRuntimeSnapshot, run?: AutonomousRes
       detail: grinch
         ? grinch.hardGateReason
           ? `blocked: ${grinch.hardGateReason.replace(/_/g, " ")} / ${grinch.primaryRuleBlock ?? "treat as no-trade"}`
+          : grinch.fallbackProfileUsed && grinch.fallbackProfileUsed !== "none"
+            ? `Model 1 fallback -> ${grinch.fallbackProfileUsed} / ${grinch.setupQuality ?? "research"} / risk ${grinch.falsePositiveRisk ?? "n/a"}/100`
+            : grinch.noValidProfile
+              ? "No valid Grinch profile in this window."
           : `${grinch.profile.replace(/_/g, " ")} / ${grinch.setupQuality ?? "research"} / risk ${grinch.falsePositiveRisk ?? "n/a"}/100 / ${grinch.improvedLatestRun ? "improved latest run" : "not proven yet"}`
         : "Profile score pending"
     },

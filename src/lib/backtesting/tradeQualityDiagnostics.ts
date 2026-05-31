@@ -23,6 +23,8 @@ export type TradeQualityReasonCode =
   | "grinch_entry_confirmation_conflict"
   | "grinch_missing_intermarket_confirmation"
   | "grinch_score_conflict"
+  | "grinch_profile_fallback_search"
+  | "grinch_no_valid_profile_no_trade"
   | "conservative_scenario_unstable";
 
 export type TradeQualityDiagnosticSeverity = "info" | "warning" | "blocking";
@@ -155,6 +157,9 @@ export function diagnoseTradeQuality({
   const entryProfileConflictCount = grinchBlockers.entry_confirmation_without_valid_profile ?? 0;
   const missingIntermarketCount = grinchBlockers.missing_intermarket_confirmation ?? 0;
   const grinchScoreConflictCount = grinchBlockers.grinch_score_conflict ?? 0;
+  const reversalCandidates = summary.grinchSummary?.profileCandidateCounts.reversal ?? 0;
+  const consolidationCandidates = summary.grinchSummary?.profileCandidateCounts.consolidation ?? 0;
+  const noValidProfileSignals = summary.grinchSummary?.noValidProfileSignals ?? 0;
 
   if (totalTrades < 30) {
     diagnostics.push(
@@ -206,6 +211,40 @@ export function diagnoseTradeQuality({
         [
           hint("Block expired Grinch timing", { minimumConfidenceThreshold: Math.min(0.9, config.minimumConfidenceThreshold + 0.06) }, "Require stronger evidence while expired-timing hard gates remove no-trade profiles."),
           hint("NY AM timing-only check", { sessionFilter: "NY AM Kill Zone" }, "Retest only the intended NY timing window.")
+        ]
+      )
+    );
+  }
+
+  if (reversalCandidates > 0 || consolidationCandidates > 0) {
+    diagnostics.push(
+      diagnostic(
+        "grinch_profile_fallback_search",
+        `${reversalCandidates} reversal candidate(s), ${consolidationCandidates} consolidation candidate(s)`,
+        "Fallback profile candidates should be tested before forcing Model 1",
+        "info",
+        "Model 1 was not the only profile considered; valid Reversal and Consolidation opportunities are counted separately for follow-up search.",
+        "Prefer profile-specific Grinch candidates over forcing weak or expired Model 1 exposure.",
+        [
+          hint("Reversal profile only", { sessionFilter: "NY AM Kill Zone" }, "Search for valid failed London/12AM interaction and NY reversal timing."),
+          hint("Consolidation profile only", { sessionFilter: "NY AM Kill Zone" }, "Search for 12AM consolidation, raid, and expansion profiles.")
+        ]
+      )
+    );
+  }
+
+  if (noValidProfileSignals > 0 && summary.totalTrades <= 1) {
+    diagnostics.push(
+      diagnostic(
+        "grinch_no_valid_profile_no_trade",
+        `${noValidProfileSignals} no-valid-profile decision(s)`,
+        "No-trade is correct when Model 1, Reversal, and Consolidation are invalid or mistimed",
+        "info",
+        "The Grinch layer did not find a valid timing/profile combination, so suppressed exposure is a correct research outcome rather than a strategy failure by itself.",
+        "Use a timing-window or profile-specific search instead of widening generic thresholds.",
+        [
+          hint("Timing-valid only", { sessionFilter: "NY AM Kill Zone" }, "Retest the intended NY timing window without letting expired profiles through."),
+          hint("No trade when no valid profile", { minimumConfidenceThreshold: Math.min(0.9, config.minimumConfidenceThreshold + 0.05) }, "Keep no-profile windows flat.")
         ]
       )
     );

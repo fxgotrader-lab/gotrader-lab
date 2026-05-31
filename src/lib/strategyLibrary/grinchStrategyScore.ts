@@ -2,8 +2,8 @@ import { analyzeGrinchPhase1 } from "@/lib/strategyLibrary/grinchPhase1Model";
 import { analyzeGrinchPhase2Reversal } from "@/lib/strategyLibrary/grinchPhase2ReversalModel";
 import { analyzeGrinchPhase3Consolidation } from "@/lib/strategyLibrary/grinchPhase3ConsolidationModel";
 import { analyzeGrinchPhase4Smt } from "@/lib/strategyLibrary/grinchPhase4SmtModel";
+import { resolveGrinchActiveProfile } from "@/lib/strategyLibrary/grinchProfileSelection";
 import type {
-  GrinchActiveProfile,
   GrinchPhase1ContextInput,
   GrinchPhase1ModelOutput,
   GrinchPhase2ReversalModelOutput,
@@ -53,47 +53,6 @@ const timingScore = (grade: GrinchTimingGrade) => {
   return 8;
 };
 
-const activeProfileFor = ({
-  consolidation,
-  phase1,
-  reversal
-}: {
-  consolidation: GrinchPhase3ConsolidationModelOutput;
-  phase1: GrinchPhase1ModelOutput;
-  reversal: GrinchPhase2ReversalModelOutput;
-}): { activeProfile: GrinchActiveProfile; profileState: string; timingGrade: GrinchTimingGrade; entryIntent: string } => {
-  if (consolidation.consolidationProfileState === "valid" || consolidation.consolidationProfileState === "weak") {
-    return {
-      activeProfile: "consolidation",
-      profileState: consolidation.consolidationProfileState,
-      timingGrade: consolidation.timingGrade,
-      entryIntent: consolidation.entryIntent
-    };
-  }
-  if (reversal.reversalProfileState === "valid" || reversal.reversalProfileState === "weak") {
-    return {
-      activeProfile: "reversal",
-      profileState: reversal.reversalProfileState,
-      timingGrade: reversal.timingGrade,
-      entryIntent: reversal.entryIntent
-    };
-  }
-  if (phase1.modelOneState === "valid" || phase1.modelOneState === "weak") {
-    return {
-      activeProfile: "model_1",
-      profileState: phase1.modelOneState,
-      timingGrade: phase1.timingGrade,
-      entryIntent: phase1.tradeIntent
-    };
-  }
-  return {
-    activeProfile: "none",
-    profileState: "not_present",
-    timingGrade: phase1.timingGrade,
-    entryIntent: "no_trade"
-  };
-};
-
 const smtScore = (smt: GrinchPhase4SmtModelOutput) => {
   if (smt.smtState === "bullish_confirmation" || smt.smtState === "bearish_confirmation") {
     return smt.supportsActiveProfile === true ? 82 : 64;
@@ -119,7 +78,7 @@ export function calculateGrinchStrategyScore(input: GrinchStrategyScoreInput): G
   const reversal = input.reversal ?? analyzeGrinchPhase2Reversal({ ...input, phase1, options });
   const consolidation = input.consolidation ?? analyzeGrinchPhase3Consolidation({ ...input, phase1, options });
   const smt = input.smt ?? analyzeGrinchPhase4Smt({ ...input, phase1, reversal, consolidation, options });
-  const profile = activeProfileFor({ consolidation, phase1, reversal });
+  const profile = resolveGrinchActiveProfile({ consolidation, phase1, reversal });
 
   const htfBiasAlignment =
     phase1.htfBias === "bullish" || phase1.htfBias === "bearish"
@@ -144,7 +103,10 @@ export function calculateGrinchStrategyScore(input: GrinchStrategyScoreInput): G
   const validTiming = profile.timingGrade === "ideal" || profile.timingGrade === "acceptable";
   const activeProfileWeak = profile.profileState === "weak";
   const activeProfileInvalid =
-    profile.activeProfile === "none" || profile.profileState === "invalid" || profile.profileState === "not_present";
+    profile.noValidProfile ||
+    profile.activeProfile === "none" ||
+    profile.profileState === "invalid" ||
+    profile.profileState === "not_present";
   const strongPdArrayRespect =
     pdArrayHierarchyAlignment >= 80 && Boolean(phase1.activePdArrays[0]?.respected) && !phase1.activePdArrays[0]?.violated;
   const strongDisplacementConfirmation =
@@ -181,7 +143,11 @@ export function calculateGrinchStrategyScore(input: GrinchStrategyScoreInput): G
       profileValidity * 0.22 -
       falsePositiveRisk * 0.12
   );
-  const hardGateReason = timingExpired
+  const hardGateReason = profile.noValidProfile
+    ? phase1.timingGrade === "expired"
+      ? "grinch_timing_expired"
+      : "grinch_no_valid_profile"
+    : timingExpired
     ? "grinch_timing_expired"
     : activeProfileInvalid
       ? "grinch_profile_invalid"
@@ -206,6 +172,8 @@ export function calculateGrinchStrategyScore(input: GrinchStrategyScoreInput): G
     phase1.htfBias === "unclear" ? "HTF draw unclear." : undefined,
     !phase1.activePdArrays.length ? "No active ranked PD array." : undefined,
     openingPriceAlignment < 45 ? "Opening-price alignment weak." : undefined,
+    profile.modelOneBlocked && !profile.noValidProfile ? "Model 1 blocked. Evaluating Reversal/Consolidation fallback." : undefined,
+    profile.noValidProfile ? "No valid Grinch profile in this window." : undefined,
     timingExpired ? "Grinch profile is weak and timing is expired; this should be treated as no-trade or low-probability." : undefined,
     timingAlignment < 45 && !timingExpired ? `Timing ${profile.timingGrade}; setup is not in a clean model window.` : undefined,
     entryConfirmationScore < 45 ? "Entry confirmation incomplete." : undefined,
@@ -224,6 +192,7 @@ export function calculateGrinchStrategyScore(input: GrinchStrategyScoreInput): G
   ])).slice(0, 10);
   const reasons = Array.from(new Set([
     `Active profile: ${profile.activeProfile.replace(/_/g, " ")} (${profile.profileState}).`,
+    ...profile.reasons.slice(0, 3),
     `HTF bias ${phase1.htfBias}; draw ${phase1.htfDrawOnLiquidity}.`,
     phase1.activePdArrays[0] ? `Top PD array: ${phase1.activePdArrays[0].label}.` : "No active PD array.",
     setupQuality === "blocked"
@@ -250,6 +219,11 @@ export function calculateGrinchStrategyScore(input: GrinchStrategyScoreInput): G
     smtState: smt.smtState,
     setupQuality,
     hardGateReason,
+    fallbackState: profile.fallbackState,
+    fallbackProfileUsed: profile.fallbackProfileUsed,
+    modelOneBlocked: profile.modelOneBlocked,
+    noValidProfile: profile.noValidProfile,
+    evaluatedProfiles: profile.evaluatedProfiles,
     falsePositiveBlockers: Array.from(new Set(falsePositiveBlockers)),
     ruleBlocks,
     primaryRuleBlock: ruleBlocks[0],

@@ -562,61 +562,51 @@ export async function resolveResearchRuntimeSnapshot(
   const grinchHardGateDetail = grinchStrategyScore?.primaryRuleBlock
     ? ` ${grinchStrategyScore.primaryRuleBlock}`
     : "";
-  const activeGrinchProfileSummary = grinchPhase3ConsolidationSummary?.consolidationProfileState === "valid"
-    ? {
-        profile: "consolidation" as const,
-        state: grinchPhase3ConsolidationSummary.consolidationProfileState,
-        entryIntent: grinchPhase3ConsolidationSummary.entryIntent,
-        timingGrade: grinchPhase3ConsolidationSummary.timingGrade,
-        grinchModelScore: grinchStrategyScore?.grinchModelScore,
-        falsePositiveRisk: grinchStrategyScore?.falsePositiveRisk,
-        setupQuality: grinchStrategyScore?.setupQuality,
-        hardGateReason: grinchStrategyScore?.hardGateReason,
-        primaryRuleBlock: grinchStrategyScore?.primaryRuleBlock,
-        improvedLatestRun: latestCycle?.backtestSummary?.grinchSummary?.grinchImprovedLatestRun,
-        detail: `${summarizeGrinchConsolidationProfile(grinchPhase3ConsolidationSummary)}${grinchHardGateDetail}`
-      }
-    : grinchPhase2ReversalSummary?.reversalProfileState === "valid"
-      ? {
-          profile: "reversal" as const,
-          state: grinchPhase2ReversalSummary.reversalProfileState,
-          entryIntent: grinchPhase2ReversalSummary.entryIntent,
-          timingGrade: grinchPhase2ReversalSummary.timingGrade,
-          grinchModelScore: grinchStrategyScore?.grinchModelScore,
-          falsePositiveRisk: grinchStrategyScore?.falsePositiveRisk,
-          setupQuality: grinchStrategyScore?.setupQuality,
-          hardGateReason: grinchStrategyScore?.hardGateReason,
-          primaryRuleBlock: grinchStrategyScore?.primaryRuleBlock,
-          improvedLatestRun: latestCycle?.backtestSummary?.grinchSummary?.grinchImprovedLatestRun,
-          detail: `${summarizeGrinchReversalProfile(grinchPhase2ReversalSummary)}${grinchHardGateDetail}`
-        }
-      : grinchPhase1Summary
-        ? {
-            profile: "model_1" as const,
-            state: grinchPhase1Summary.modelOneState,
-            entryIntent: grinchPhase1Summary.tradeIntent,
-            timingGrade: grinchPhase1Summary.timingGrade,
-            grinchModelScore: grinchStrategyScore?.grinchModelScore,
-            falsePositiveRisk: grinchStrategyScore?.falsePositiveRisk,
-            setupQuality: grinchStrategyScore?.setupQuality,
-            hardGateReason: grinchStrategyScore?.hardGateReason,
-            primaryRuleBlock: grinchStrategyScore?.primaryRuleBlock,
-            improvedLatestRun: latestCycle?.backtestSummary?.grinchSummary?.grinchImprovedLatestRun,
-            detail: `${summarizeGrinchPhase1(grinchPhase1Summary)}${grinchHardGateDetail}`
-          }
-        : {
-            profile: "none" as const,
-            state: "not_available",
-            entryIntent: "no_trade",
-            timingGrade: "unknown",
-            grinchModelScore: grinchStrategyScore?.grinchModelScore,
-            falsePositiveRisk: grinchStrategyScore?.falsePositiveRisk,
-            setupQuality: grinchStrategyScore?.setupQuality,
-            hardGateReason: grinchStrategyScore?.hardGateReason,
-            primaryRuleBlock: grinchStrategyScore?.primaryRuleBlock,
-            improvedLatestRun: latestCycle?.backtestSummary?.grinchSummary?.grinchImprovedLatestRun,
-            detail: "No Grinch profile available."
-          };
+  const activeProfile = grinchStrategyScore?.activeProfile ?? (grinchPhase1Summary ? "model_1" : "none");
+  const activeGrinchProfileSummary = {
+    profile: activeProfile,
+    state:
+      activeProfile === "consolidation"
+        ? grinchPhase3ConsolidationSummary?.consolidationProfileState ?? "not_present"
+        : activeProfile === "reversal"
+          ? grinchPhase2ReversalSummary?.reversalProfileState ?? "not_present"
+          : activeProfile === "model_1"
+            ? grinchPhase1Summary?.modelOneState ?? "not_present"
+            : "not_present",
+    entryIntent:
+      activeProfile === "consolidation"
+        ? grinchPhase3ConsolidationSummary?.entryIntent ?? "no_trade"
+        : activeProfile === "reversal"
+          ? grinchPhase2ReversalSummary?.entryIntent ?? "no_trade"
+          : activeProfile === "model_1"
+            ? grinchPhase1Summary?.tradeIntent ?? "no_trade"
+            : "no_trade",
+    timingGrade:
+      activeProfile === "consolidation"
+        ? grinchPhase3ConsolidationSummary?.timingGrade ?? "unknown"
+        : activeProfile === "reversal"
+          ? grinchPhase2ReversalSummary?.timingGrade ?? "unknown"
+          : activeProfile === "model_1"
+            ? grinchPhase1Summary?.timingGrade ?? "unknown"
+            : "unknown",
+    grinchModelScore: grinchStrategyScore?.grinchModelScore,
+    falsePositiveRisk: grinchStrategyScore?.falsePositiveRisk,
+    setupQuality: grinchStrategyScore?.setupQuality,
+    hardGateReason: grinchStrategyScore?.hardGateReason,
+    fallbackState: grinchStrategyScore?.fallbackState,
+    fallbackProfileUsed: grinchStrategyScore?.fallbackProfileUsed,
+    noValidProfile: grinchStrategyScore?.noValidProfile,
+    primaryRuleBlock: grinchStrategyScore?.primaryRuleBlock,
+    improvedLatestRun: latestCycle?.backtestSummary?.grinchSummary?.grinchImprovedLatestRun,
+    detail:
+      activeProfile === "consolidation"
+        ? `${summarizeGrinchConsolidationProfile(grinchPhase3ConsolidationSummary)}${grinchHardGateDetail}`
+        : activeProfile === "reversal"
+          ? `${summarizeGrinchReversalProfile(grinchPhase2ReversalSummary)}${grinchHardGateDetail}`
+          : activeProfile === "model_1"
+            ? `${summarizeGrinchPhase1(grinchPhase1Summary)}${grinchHardGateDetail}`
+            : `${grinchStrategyScore?.primaryRuleBlock ?? "No valid Grinch profile in this window."}${grinchHardGateDetail}`
+  };
   const readinessSnapshot = evaluateReadinessGate({
     validation,
     quality: researchQuality,
@@ -696,6 +686,7 @@ export async function resolveResearchRuntimeSnapshot(
     `Grinch SMT: ${summarizeGrinchSmtIntermarket(grinchPhase4SmtSummary)}`,
     `Grinch Score: ${summarizeGrinchStrategyScore(grinchStrategyScore)}`,
     `Active Grinch Profile: ${activeGrinchProfileSummary.detail}`,
+    `Grinch Fallback: ${grinchStrategyScore?.fallbackState ?? "none"} / used ${grinchStrategyScore?.fallbackProfileUsed ?? "none"}`,
     `readiness: ${readinessSnapshot.state}`
   ];
   const staleStateWarnings = [

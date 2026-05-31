@@ -2,6 +2,7 @@ import { detectSmtIntermarketDivergence, normalizeSmtInstrument } from "@/lib/ic
 import { analyzeGrinchPhase1 } from "@/lib/strategyLibrary/grinchPhase1Model";
 import { analyzeGrinchPhase2Reversal } from "@/lib/strategyLibrary/grinchPhase2ReversalModel";
 import { analyzeGrinchPhase3Consolidation } from "@/lib/strategyLibrary/grinchPhase3ConsolidationModel";
+import { resolveGrinchActiveProfile } from "@/lib/strategyLibrary/grinchProfileSelection";
 import type {
   GrinchPhase4SmtContextInput,
   GrinchPhase4SmtModelOutput,
@@ -15,39 +16,6 @@ const filterCandles = (candles: Candle[], options?: GrinchPhase4SmtContextInput[
     .filter((candle) => !options?.timeframe || candle.timeframe === options.timeframe);
   const source = scoped.length ? scoped : candles;
   return source.slice(-Math.max(40, options?.lookbackCandles ?? 320));
-};
-
-const resolveActiveProfile = ({
-  consolidation,
-  phase1,
-  reversal
-}: {
-  consolidation?: GrinchPhase4SmtContextInput["consolidation"];
-  phase1: NonNullable<GrinchPhase4SmtContextInput["phase1"]>;
-  reversal?: GrinchPhase4SmtContextInput["reversal"];
-}): Pick<GrinchPhase4SmtModelOutput, "activeProfile" | "activeProfileState"> => {
-  if (consolidation?.consolidationProfileState === "valid" || consolidation?.consolidationProfileState === "weak") {
-    return {
-      activeProfile: "consolidation",
-      activeProfileState: consolidation.consolidationProfileState
-    };
-  }
-  if (reversal?.reversalProfileState === "valid" || reversal?.reversalProfileState === "weak") {
-    return {
-      activeProfile: "reversal",
-      activeProfileState: reversal.reversalProfileState
-    };
-  }
-  if (phase1.modelOneState === "valid" || phase1.modelOneState === "weak") {
-    return {
-      activeProfile: "model_1",
-      activeProfileState: phase1.modelOneState
-    };
-  }
-  return {
-    activeProfile: "none",
-    activeProfileState: "not_present"
-  };
 };
 
 export function analyzeGrinchPhase4Smt(input: GrinchPhase4SmtContextInput): GrinchPhase4SmtModelOutput {
@@ -81,7 +49,7 @@ export function analyzeGrinchPhase4Smt(input: GrinchPhase4SmtContextInput): Grin
     reversal,
     consolidation
   });
-  const activeProfile = resolveActiveProfile({ consolidation, phase1, reversal });
+  const activeProfile = resolveGrinchActiveProfile({ consolidation, phase1, reversal });
 
   return {
     modelId: "grinch_phase_4_smt_intermarket_confirmation",
@@ -91,7 +59,8 @@ export function analyzeGrinchPhase4Smt(input: GrinchPhase4SmtContextInput): Grin
     phase1ModelId: phase1.modelId,
     reversalModelId: reversal.modelId,
     consolidationModelId: consolidation.modelId,
-    ...activeProfile,
+    activeProfile: activeProfile.activeProfile,
+    activeProfileState: activeProfile.profileState,
     ...smt,
     safetyNotice: "Research-only SMT confirmation. No standalone signal, no broker execution, no order placement, no readiness override."
   };

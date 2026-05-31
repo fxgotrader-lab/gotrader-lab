@@ -181,6 +181,9 @@ export interface BacktestGrinchSummary {
   latestScore?: GrinchStrategyScore;
   activeProfile: GrinchActiveProfile;
   activeProfileCounts: Partial<Record<GrinchActiveProfile, number>>;
+  tradeProfileCounts: Partial<Record<GrinchActiveProfile, number>>;
+  profileCandidateCounts: Partial<Record<GrinchActiveProfile, number>>;
+  noValidProfileSignals: number;
   dominantRuleBlock?: string;
   ruleBlocks: string[];
   missingEvidence: string[];

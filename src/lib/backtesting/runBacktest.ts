@@ -143,11 +143,11 @@ const skipReasonFor = (decision: BacktestDecisionPoint, config: ResolvedBacktest
   if (decision.thesis.finalBias === "bearish" && !config.allowShort) {
     return "Short simulated theses disabled.";
   }
-  if (decision.thesis.finalBias === "neutral") {
-    return "CIO thesis was neutral.";
-  }
   if (decision.grinchScore?.hardGateReason) {
     return `Grinch hard gate blocked setup: ${decision.grinchScore.hardGateReason}.`;
+  }
+  if (decision.thesis.finalBias === "neutral") {
+    return "CIO thesis was neutral.";
   }
   return undefined;
 };
@@ -318,6 +318,19 @@ const grinchSummaryFor = (
     counts[score.activeProfile] = (counts[score.activeProfile] ?? 0) + 1;
     return counts;
   }, {});
+  const tradeProfileCounts = trades.reduce<BacktestGrinchSummary["tradeProfileCounts"]>((counts, trade) => {
+    const profile = trade.grinchScore?.activeProfile ?? "none";
+    counts[profile] = (counts[profile] ?? 0) + 1;
+    return counts;
+  }, {});
+  const profileCandidateCounts = scores.reduce<BacktestGrinchSummary["profileCandidateCounts"]>((counts, score) => {
+    for (const profile of score.evaluatedProfiles ?? []) {
+      if (profile.selectable) {
+        counts[profile.profile] = (counts[profile.profile] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }, {});
   const activeProfile = (Object.entries(activeProfileCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "none") as BacktestGrinchSummary["activeProfile"];
   const ruleBlocks = [
     ...scores.flatMap((score) => score.ruleBlocks),
@@ -348,6 +361,9 @@ const grinchSummaryFor = (
     latestScore,
     activeProfile,
     activeProfileCounts,
+    tradeProfileCounts,
+    profileCandidateCounts,
+    noValidProfileSignals: scores.filter((score) => score.noValidProfile).length,
     dominantRuleBlock: Object.entries(blockCounts).sort((a, b) => b[1] - a[1])[0]?.[0],
     ruleBlocks: Object.entries(blockCounts)
       .sort((a, b) => b[1] - a[1])

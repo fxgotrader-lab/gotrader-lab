@@ -5,6 +5,7 @@ import {
   loadPreparedWalkForwardCandleSource
 } from "@/lib/marketData";
 import { resolveActiveBacktestConfig } from "@/lib/selfImprovement";
+import type { GrinchActiveProfile } from "@/lib/strategyLibrary";
 import { uid } from "@/lib/utils";
 import {
   createWalkForwardWindows,
@@ -89,6 +90,9 @@ const metricsFromBacktest = (
   const readinessScore = readinessScoreFor(result, confidenceCalibration, evidenceQualityScore);
   const falsePositiveCount = result.summary.losses + result.trades.filter((trade) => trade.outcome === "expired").length;
   const latestGrinchScore = result.summary.grinchSummary?.latestScore;
+  const profileProducedTrade = result.summary.grinchSummary?.tradeProfileCounts
+    ? ((Object.entries(result.summary.grinchSummary.tradeProfileCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "none") as GrinchActiveProfile)
+    : "none";
   const base: WalkForwardWindowMetrics = {
     totalTrades: result.summary.totalTrades,
     winRate: round(result.summary.winRate, 3),
@@ -105,6 +109,7 @@ const metricsFromBacktest = (
     grinchMetrics: latestGrinchScore
       ? {
           profileDetected: latestGrinchScore.activeProfile,
+          profileProducedTrade,
           profileValidity: latestGrinchScore.profileValidity,
           grinchScore: result.summary.grinchSummary?.averageGrinchModelScore ?? latestGrinchScore.grinchModelScore,
           timeAlignment: latestGrinchScore.timingAlignment,
