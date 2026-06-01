@@ -65,14 +65,16 @@ export function buildLLMResearchContextPacket({
   const marketContext = sourceMarketContext
     ? summarizeMarketContext(sourceMarketContext)
     : undefined;
-  const regimeClassification = sourceMarketContext
-    ? classifyMarketRegime({
+  const regimeClassification =
+    thesis?.regimeClassification ??
+    (sourceMarketContext
+      ? classifyMarketRegime({
         candles: sourceMarketContext.priceVolume.ohlcv.candles,
         marketContext: sourceMarketContext,
         symbol: thesis?.symbol,
         timeframe: thesis?.timeframe
       })
-    : undefined;
+      : undefined);
   const tradingViewEvidence = loadLatestTradingViewEvidence();
   const tradingViewStatus = loadTradingViewMcpBridgeStatus();
   const grinchPhase1 = sourceMarketContext?.priceVolume.ohlcv.candles.length
