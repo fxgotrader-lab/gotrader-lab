@@ -29,6 +29,7 @@
     "test:multi-broker-contracts": "node scripts/test-multi-broker-contracts.mjs",
     "test:tradingview-mcp": "node scripts/test-tradingview-mcp-bridge.mjs",
     "test:mt5-readonly": "node scripts/test-mt5-readonly-bridge.mjs",
+    "test:mt5-readonly-safety": "node scripts/test-mt5-readonly-safety.mjs",
     "test:regime-classifier": "node scripts/test-regime-classifier.mjs"
   },
   "dependencies": {

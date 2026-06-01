@@ -10,10 +10,44 @@ Implemented now:
 - Local endpoint contract at `http://127.0.0.1:7341`.
 - Diagnostic/test scripts.
 - Optional contract stub: `npm.cmd run mt5:readonly-bridge`.
+- Optional upstream REST market-data bridge via `MT5_READONLY_UPSTREAM_BASE_URL`.
+- Hard read-only tool policy with explicit account/order/position/history blocking.
 - Canonical candle-source normalization for MT5 candles when a real read-only bridge returns data.
 - Dashboard and Market Data controls for fetch, chart activation, and guarded research-source activation.
 
 The included local wrapper is a contract stub. It returns `planned`/`disconnected` with empty candles until a real local MT5 read-only connector is provided.
+
+## Upstream MCP Inspection
+
+Reference inspected: `https://github.com/ariadng/metatrader-mcp-server`.
+
+The upstream project exposes both MCP and HTTP surfaces. Its documented MCP transport options include:
+
+- `stdio`
+- `sse`
+- `streamable-http`
+
+It also includes a REST/OpenAPI server and quote WebSocket path. GoTrader does not expose any upstream MCP transport directly to the frontend.
+
+Safe market-data tool families identified for this phase:
+
+- `get_symbols`
+- `get_symbol_price`
+- `get_candles_latest`
+- `get_candles_by_date`
+- `get_symbol_info`
+- status/health style checks
+
+Blocked tool families identified:
+
+- account: `get_account_info`
+- execution: `place_market_order`, `place_pending_order`
+- mutation: `modify_position`, `modify_pending_order`
+- positions: `get_all_positions`, `get_positions_by_symbol`, `get_positions_by_id`, `close_position`, `close_all_positions`
+- pending orders: `get_all_pending_orders`, `cancel_pending_order`, `cancel_all_pending_orders`
+- history/account-adjacent: `get_deals`, `get_orders`
+
+GoTrader treats even read-only account/order/position/history tools as out of scope for this phase. Only status, quote, candles/rates/OHLCV, symbol info, symbols, and spread are allowed.
 
 ## Endpoint Contract
 
@@ -31,6 +65,8 @@ Expected read-only endpoints:
 - `GET /candles?symbol=...&timeframe=...&limit=...`
 - `GET /snapshot?symbol=...&timeframe=...&limit=...`
 - `GET /symbols`
+- `GET /symbol-info?symbol=...`
+- `GET /tool-policy?tool=...`
 
 All responses must include:
 
@@ -43,6 +79,32 @@ All responses must include:
 ```
 
 The bridge must not expose buy, sell, close, modify, cancel, account mutation, position mutation, credentials, or broker handoff methods.
+
+## Optional Upstream HTTP Bridge
+
+The local GoTrader wrapper can call a separate local MT5 REST/OpenAPI service only through safe market-data routes:
+
+```powershell
+$env:MT5_READONLY_UPSTREAM_BASE_URL="http://127.0.0.1:8000"
+npm.cmd run mt5:readonly-bridge
+```
+
+Default upstream paths:
+
+- quote: `/api/v1/market/price`
+- candles: `/api/v1/market/candles/latest`
+- symbols: `/api/v1/market/symbols`
+- symbol info: `/api/v1/market/symbol/info`
+- status probe: `/api/v1/market/symbols`
+
+Override these only for a compatible local read-only server:
+
+```powershell
+$env:MT5_READONLY_UPSTREAM_QUOTE_PATH="/api/v1/market/price"
+$env:MT5_READONLY_UPSTREAM_CANDLES_PATH="/api/v1/market/candles/latest"
+```
+
+The wrapper has no arbitrary MCP tool-call endpoint. Unknown tools are not forwarded. Account, order, position, pending-order, and history paths are explicitly rejected.
 
 ## Quote Shape
 
@@ -134,9 +196,12 @@ Use the broker-symbol override when your MT5 broker uses custom suffixes.
 npm.cmd run mt5:readonly-diagnose
 npm.cmd run mt5:readonly-bridge
 npm.cmd run test:mt5-readonly
+npm.cmd run test:mt5-readonly-safety
 ```
 
 `test:mt5-readonly` exits successfully when the bridge is disconnected or planned. It is a diagnostic, not a live-trading test.
+
+`test:mt5-readonly-safety` proves GoTrader's allowlist rejects execution/account/order/position tool families. It can run with or without the local wrapper.
 
 ## Safety Boundary
 
