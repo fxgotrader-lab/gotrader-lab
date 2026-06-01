@@ -88,6 +88,7 @@ const tradingViewAutoRefreshCandleOptions = tradingViewMcpAutoRefreshCandleLimit
   label: `${value.toLocaleString()} candles`,
   value: String(value)
 }));
+const TRADINGVIEW_FEED_INACTIVE_MESSAGE = "TradingView MCP chart feed not active.";
 
 const formatCountdown = (timestamp?: string, nowMs = Date.now()) => {
   if (!timestamp) {
@@ -138,7 +139,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const [autoApplyPolicyEnabled, setAutoApplyPolicyEnabled] = useState(false);
   const [advancedFullResearchMode, setAdvancedFullResearchMode] = useState(false);
   const [tradingViewBusy, setTradingViewBusy] = useState(false);
-  const [tradingViewOperationMessage, setTradingViewOperationMessage] = useState("TradingView MCP chart feed not active.");
+  const [tradingViewOperationMessage, setTradingViewOperationMessage] = useState(TRADINGVIEW_FEED_INACTIVE_MESSAGE);
   const [tradingViewAutoRefresh, setTradingViewAutoRefresh] = useState<TradingViewMcpAutoRefreshState>(() =>
     loadTradingViewMcpAutoRefreshState()
   );
@@ -472,6 +473,40 @@ export function MissionControlShell({ state }: { state: LabState }) {
     window.addEventListener(TRADINGVIEW_MCP_AUTO_REFRESH_UPDATED_EVENT, handleAutoRefreshUpdate);
     return () => window.removeEventListener(TRADINGVIEW_MCP_AUTO_REFRESH_UPDATED_EVENT, handleAutoRefreshUpdate);
   }, []);
+
+  useEffect(() => {
+    if (!runtimeSnapshot) {
+      return;
+    }
+    setTradingViewOperationMessage((currentMessage) => {
+      if (
+        currentMessage !== TRADINGVIEW_FEED_INACTIVE_MESSAGE &&
+        currentMessage !== "TradingView MCP chart feed is not active."
+      ) {
+        return currentMessage;
+      }
+      if (runtimeSnapshot.tradingViewMcp.chartFeedAvailable) {
+        return [
+          `TradingView MCP chart source active with ${runtimeSnapshot.tradingViewMcp.chartFeedCandleCount.toLocaleString()} read-only candles.`,
+          runtimeSnapshot.marketData.researchUsesTradingViewMcp
+            ? "Research source is TradingView MCP; execution remains disabled."
+            : `Research remains guarded: ${
+                runtimeSnapshot.tradingViewMcp.eligibilityReasons[0] ?? "TradingView MCP is visual-only."
+              }`
+        ].join(" ");
+      }
+      if (runtimeSnapshot.tradingViewMcp.bridgeStatus === "connected_analysis_only") {
+        return "TradingView MCP bridge connected; fetch candles to activate the chart feed.";
+      }
+      return TRADINGVIEW_FEED_INACTIVE_MESSAGE;
+    });
+  }, [
+    runtimeSnapshot?.marketData.researchUsesTradingViewMcp,
+    runtimeSnapshot?.tradingViewMcp.bridgeStatus,
+    runtimeSnapshot?.tradingViewMcp.chartFeedAvailable,
+    runtimeSnapshot?.tradingViewMcp.chartFeedCandleCount,
+    runtimeSnapshot?.tradingViewMcp.eligibilityReasons
+  ]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setAutoRefreshClock(Date.now()), 1000);
