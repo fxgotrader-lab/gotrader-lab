@@ -25,7 +25,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { defaultBrokerRiskControls, routeBrokerForSymbol } from "@/lib/brokers";
-import { createMt5MarketDataAdapter, mt5ExecutionAdapterPlan } from "@/lib/brokers/mt5";
+import { mt5ExecutionAdapterPlan } from "@/lib/brokers/mt5";
 import { tradovateExecutionAdapterPlan } from "@/lib/brokers/tradovate";
 import {
   AUTO_RESEARCH_UPDATED_EVENT,
@@ -41,6 +41,12 @@ import {
 } from "@/lib/ict";
 import { brokerDemoBridgeSpec } from "@/lib/integrations/brokerDemoBridgeSpec";
 import { hermesNotificationHookSpec } from "@/lib/integrations/hermesNotificationHooks";
+import {
+  hydrateActiveMt5ReadOnlyCandleFeed,
+  loadActiveMt5ReadOnlyCandleFeed,
+  MT5_READ_ONLY_UPDATED_EVENT,
+  resolveMt5ReadOnlyRuntimeState
+} from "@/lib/integrations/mt5";
 import { openClawHermesBridgeSpec } from "@/lib/integrations/openclawHermesBridgeSpec";
 import { openClawHermesAdvisorySpec } from "@/lib/integrations/openclawHermesSpec";
 import { openClawMemoryHookSpec } from "@/lib/integrations/openclawMemoryHooks";
@@ -79,6 +85,7 @@ import {
   loadLatestResearchQualityReview,
   RESEARCH_QUALITY_UPDATED_EVENT
 } from "@/lib/researchQuality";
+import { resolveResearchRuntimeSnapshot, type ResearchRuntimeSnapshot } from "@/lib/runtime";
 import {
   countCompletedRunbookItems,
   loadSimulationRunbookState,
@@ -136,6 +143,8 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const [tradingViewRuntime, setTradingViewRuntime] = useState(() => resolveTradingViewMcpRuntimeState());
   const [tradingViewFeed, setTradingViewFeed] = useState(() => loadActiveTradingViewMcpChartFeed());
   const [tradingViewStatusMessage, setTradingViewStatusMessage] = useState("");
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
+  const [mt5Runtime, setMt5Runtime] = useState(() => resolveMt5ReadOnlyRuntimeState());
   const latestHandoffExport = state.handoffExports?.[0];
   const latestAdvisoryPacket = state.advisoryPackets?.[0];
   const latestAdvisoryResponse = state.advisoryResponses?.[0];
@@ -156,7 +165,6 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
   const brokerRouteExamples = ["MNQ", "EUR/USD", "XAU/USD", "US30", "BTC/USD", "UNKNOWN"].map((symbol) =>
     routeBrokerForSymbol({ accountMode: "research", symbol })
   );
-  const mt5MarketDataAdapter = createMt5MarketDataAdapter();
   const latestAutoResearch = latestAutoResearchCycle(autoResearchState);
   const communicationSummary = getCommunicationSummary(loadCommunicationMessages());
   const runbookCompleted = countCompletedRunbookItems(simulationRunbook);
@@ -170,6 +178,32 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
       }),
     [latestValidationReport, latestQualityReview, simulationRunbook]
   );
+  const activeMt5CanonicalSource =
+    runtimeSnapshot?.marketData.activeChartSource.provider === "mt5_read_only"
+      ? runtimeSnapshot.marketData.activeChartSource
+      : runtimeSnapshot?.marketData.activeResearchSource.provider === "mt5_read_only"
+        ? runtimeSnapshot.marketData.activeResearchSource
+        : runtimeSnapshot?.marketData.allAvailableSources.find((source) => source.provider === "mt5_read_only");
+  const mt5ReadOnlyConnected =
+    mt5Runtime.connectionStatus === "connected" ||
+    mt5Runtime.connectionStatus === "degraded" ||
+    mt5Runtime.candleFeedAvailable ||
+    Boolean(activeMt5CanonicalSource && activeMt5CanonicalSource.candleCount > 0);
+  const mt5RequestedSymbol =
+    activeMt5CanonicalSource?.symbol ??
+    runtimeSnapshot?.marketData.symbol ??
+    state.tradeTheses[0]?.symbol ??
+    "MNQ";
+  const mt5BrokerSymbol =
+    mt5Runtime.brokerSymbol ??
+    activeMt5CanonicalSource?.provenance.providerSymbol ??
+    "wrapper default";
+  const mt5CandleCount = mt5Runtime.candleCount || activeMt5CanonicalSource?.candleCount || 0;
+  const mt5ChartSourceActive =
+    runtimeSnapshot?.marketData.activeChartSource.provider === "mt5_read_only" || mt5Runtime.activeForChart;
+  const mt5ResearchSourceActive =
+    runtimeSnapshot?.marketData.activeResearchSource.provider === "mt5_read_only" || mt5Runtime.activeForResearch;
+  const mt5ReadOnlyStatusLabel = mt5ReadOnlyConnected ? "connected" : mt5Runtime.connectionStatus;
 
   useEffect(() => {
     const refreshValidationReport = () => setLatestValidationReport(loadLatestValidationReport());
@@ -270,6 +304,35 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
       window.removeEventListener("storage", refreshTradingView);
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshRuntimeSources = () => {
+      const cachedMt5Feed = loadActiveMt5ReadOnlyCandleFeed();
+      setMt5Runtime(resolveMt5ReadOnlyRuntimeState(cachedMt5Feed));
+
+      void (async () => {
+        const hydratedMt5Feed = await hydrateActiveMt5ReadOnlyCandleFeed().catch(() => cachedMt5Feed);
+        if (cancelled) return;
+        setMt5Runtime(resolveMt5ReadOnlyRuntimeState(hydratedMt5Feed));
+        const snapshot = await resolveResearchRuntimeSnapshot({ labState: state });
+        if (!cancelled) {
+          setRuntimeSnapshot(snapshot);
+        }
+      })().catch(() => undefined);
+    };
+
+    refreshRuntimeSources();
+    window.addEventListener(MT5_READ_ONLY_UPDATED_EVENT, refreshRuntimeSources);
+    window.addEventListener(AUTO_RESEARCH_UPDATED_EVENT, refreshRuntimeSources);
+    window.addEventListener("storage", refreshRuntimeSources);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(MT5_READ_ONLY_UPDATED_EVENT, refreshRuntimeSources);
+      window.removeEventListener(AUTO_RESEARCH_UPDATED_EVENT, refreshRuntimeSources);
+      window.removeEventListener("storage", refreshRuntimeSources);
+    };
+  }, [state]);
 
   const reset = () => {
     const approved = window.confirm("Reset local GoTrader AI Lab mock data and prompt history?");
@@ -521,11 +584,16 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
               <DatabaseZap className="h-4 w-4 text-primary" aria-hidden="true" />
               <CardTitle>Market Data Providers</CardTitle>
             </div>
-            <CardDescription>Future adapter roadmap for real market context. Current mode is mock/planning only.</CardDescription>
+            <CardDescription>Canonical chart and research sources. Broker execution remains disabled.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             {[
-              ["Current data mode", marketContext.mode],
+              ["Chart source", runtimeSnapshot?.marketData.activeChartSource.provider.replace(/_/g, " ") ?? marketContext.mode],
+              ["Research source", runtimeSnapshot?.marketData.activeResearchSource.provider.replace(/_/g, " ") ?? marketContext.mode],
+              ["MT5 read-only data", mt5ReadOnlyStatusLabel],
+              ["MT5 broker symbol", mt5BrokerSymbol],
+              ["MT5 requested symbol", mt5RequestedSymbol],
+              ["MT5 candles", String(mt5CandleCount)],
               ["Broker feed", "not connected"],
               ["Live trading", "disabled"],
               ["API keys in browser", "none"],
@@ -541,7 +609,8 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
               </div>
             ))}
             <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
-              Market data adapters are research inputs only. No broker execution or live trading.
+              Market data adapters are research inputs only. MT5 read-only candles can be active without enabling broker
+              execution, account mutation, or position management.
             </div>
             <Link
               to="/market-data"
@@ -627,7 +696,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
               <Lock className="h-4 w-4 text-amber-200" aria-hidden="true" />
               <CardTitle>Multi-Broker Architecture</CardTitle>
             </div>
-            <CardDescription>TradingView analysis, Tradovate futures routing, and MT5 forex/CFD routing are planned and locked.</CardDescription>
+            <CardDescription>Read-only data can connect through safe wrappers. Execution adapters remain planned and locked.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             {[
@@ -636,8 +705,14 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
               ["TradingView chart feed", tradingViewRuntime.chartFeedAvailable ? "active" : "not active"],
               ["TradingView live feed", "not connected"],
               ["Tradovate", tradovateExecutionAdapterPlan.status],
-              ["MT5", mt5ExecutionAdapterPlan.status],
-              ["MT5 read-only data", mt5MarketDataAdapter.status.connectionStatus],
+              ["MT5 execution", mt5ExecutionAdapterPlan.status],
+              ["MT5 read-only data", mt5ReadOnlyStatusLabel],
+              ["MT5 broker symbol", mt5BrokerSymbol],
+              ["MT5 requested symbol", mt5RequestedSymbol],
+              ["MT5 candle count", String(mt5CandleCount)],
+              ["MT5 chart source", mt5ChartSourceActive ? "active" : "not active"],
+              ["MT5 research source", mt5ResearchSourceActive ? "active" : "not active"],
+              ["MT5 authority", "none"],
               ["Current mode", "research"],
               ["Broker execution", "disabled"],
               ["Live trading", "disabled"],
@@ -655,11 +730,14 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
             </div>
             <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
               Live feed not connected.{" "}
-              {tradingViewRuntime.chartFeedAvailable
+              {mt5ReadOnlyConnected
+                ? `MT5 read-only candles are connected through the canonical source manager for ${mt5RequestedSymbol} via ${mt5BrokerSymbol}. This is read-only CFD/proxy market data, not CME futures broker truth.`
+                : tradingViewRuntime.chartFeedAvailable
                 ? "TradingView MCP read-only chart candles are available for visual display, but they are not broker truth."
                 : "Charts are using imported/mock/replay data until a read-only market-data bridge is explicitly configured."}
               <span className="mt-1 block text-xs text-amber-100/80">
-                Chart analysis adapter: {formatBridgeValue(tradingViewRuntime.bridgeStatus)}. MT5: broker adapter locked; read-only data disconnected. Execution authority: none.
+                Chart analysis adapter: {formatBridgeValue(tradingViewRuntime.bridgeStatus)}. MT5 execution adapter locked;
+                read-only data {formatBridgeValue(mt5ReadOnlyStatusLabel)}. Execution authority: none.
               </span>
             </div>
             <div className="grid gap-2 md:grid-cols-2">
