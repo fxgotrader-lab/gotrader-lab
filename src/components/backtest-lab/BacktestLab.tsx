@@ -88,6 +88,7 @@ const agentWeightLabels: Record<BacktestAgentWeightId, string> = {
   "session-levels-agent": "Session Levels",
   "auction-volume-profile-agent": "Auction/Profile",
   "macro-event-risk-agent": "Macro Event Risk",
+  "composite-regime-agent": "Composite Regime",
   "intermarket-confirmation-agent": "Intermarket",
   "positioning-gamma-agent": "Positioning/Gamma",
   "order-flow-agent": "Order Flow Later",

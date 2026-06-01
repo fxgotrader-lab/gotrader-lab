@@ -17,7 +17,9 @@ export type AutonomyBlockerCategory =
   | "maturity_degradation"
   | "regime_mismatch"
   | "regime_shift_detected"
-  | "regime_evidence_insufficient";
+  | "regime_evidence_insufficient"
+  | "regime_transition_pending"
+  | "regime_specific_sample_too_small";
 
 export type AutonomyScenarioFamily =
   | "trade_quality"

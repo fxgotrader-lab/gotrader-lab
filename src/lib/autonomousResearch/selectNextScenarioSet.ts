@@ -15,12 +15,18 @@ export const scenarioFamilyMapping: ScenarioFamilyMapping = {
   evidence_quality_focus: { searchMode: "conservative_only", maxCandidateCount: 3 },
   long_short_focus: { searchMode: "long_short_focus", maxCandidateCount: 5 },
   conservative_only: { searchMode: "conservative_only", maxCandidateCount: 5 },
-  walk_forward_followup: { searchMode: "standard", maxCandidateCount: 5 }
+  walk_forward_followup: { searchMode: "standard", maxCandidateCount: 5 },
+  regime_specific_testing: { searchMode: "standard", maxCandidateCount: 5 }
 };
 
 const scenarioForBlockers = (blockers: AutonomousResearchBlocker[]): AutonomousScenarioFamily => {
   const set = new Set(blockers);
-  if (set.has("regime_mismatch")) return "walk_forward_followup";
+  if (
+    set.has("regime_mismatch") ||
+    set.has("regime_evidence_insufficient") ||
+    set.has("regime_transition_pending") ||
+    set.has("regime_specific_sample_too_small")
+  ) return "regime_specific_testing";
   if (set.has("walk_forward_failed") || set.has("walk_forward_insufficient")) return "walk_forward_followup";
   if (set.has("evidence_quality_weak")) return "evidence_quality_focus";
   if (set.has("session_inconsistency")) return "session_focus";

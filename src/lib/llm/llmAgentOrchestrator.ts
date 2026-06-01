@@ -15,6 +15,7 @@ import type { ReadinessGateSnapshot } from "@/lib/readiness";
 import { buildMarketContext, summarizeMarketContext } from "@/lib/marketData";
 import type { MarketContext } from "@/lib/marketData";
 import { loadLatestTradingViewEvidence, loadTradingViewMcpBridgeStatus } from "@/lib/integrations/tradingview";
+import { classifyMarketRegime } from "@/lib/regime";
 import type { ResearchQualityReview } from "@/lib/researchQuality";
 import type { SimulationRunbookState } from "@/lib/simulationRunbook";
 import { analyzeGrinchPhase1, analyzeGrinchPhase2Reversal, analyzeGrinchPhase3Consolidation, analyzeGrinchPhase4Smt } from "@/lib/strategyLibrary";
@@ -63,6 +64,14 @@ export function buildLLMResearchContextPacket({
   const sourceMarketContext = thesis ? suppliedMarketContext ?? buildMarketContext({ symbol: thesis.symbol, timeframe: thesis.timeframe, mode: "mock" }) : undefined;
   const marketContext = sourceMarketContext
     ? summarizeMarketContext(sourceMarketContext)
+    : undefined;
+  const regimeClassification = sourceMarketContext
+    ? classifyMarketRegime({
+        candles: sourceMarketContext.priceVolume.ohlcv.candles,
+        marketContext: sourceMarketContext,
+        symbol: thesis?.symbol,
+        timeframe: thesis?.timeframe
+      })
     : undefined;
   const tradingViewEvidence = loadLatestTradingViewEvidence();
   const tradingViewStatus = loadTradingViewMcpBridgeStatus();
@@ -230,6 +239,18 @@ export function buildLLMResearchContextPacket({
         }
       : undefined,
     marketContextSummary: marketContext,
+    regimeSummary: regimeClassification
+      ? {
+          stableLabel: regimeClassification.stableLabel,
+          instantaneousLabel: regimeClassification.instantaneousLabel,
+          transitionPending: regimeClassification.transitionPending,
+          confidence: regimeClassification.confidence,
+          dataQuality: regimeClassification.dataQuality,
+          supportingFactors: regimeClassification.supportingFactors.slice(0, 6),
+          warnings: regimeClassification.warnings.slice(0, 6),
+          recommendedBehavior: regimeClassification.recommendedBehavior
+        }
+      : undefined,
     tradingViewEvidenceSummary: {
       evidenceAvailable: Boolean(tradingViewEvidence),
       connectionStatus: tradingViewStatus.connectionStatus,
@@ -258,6 +279,7 @@ export function buildLLMResearchContextPacket({
       `Liquidity sweeps: ${safeArray(ictContext?.liquiditySweeps).length}`,
       `Fair value gaps: ${safeArray(ictContext?.fairValueGaps).length}`,
       `Market context mode: ${marketContext?.mode ?? "missing"}`,
+      `Composite regime: ${regimeClassification ? `${regimeClassification.stableLabel}/${Math.round(regimeClassification.confidence * 100)}%/${regimeClassification.dataQuality}` : "missing"}`,
       `Market context missing modules: ${marketContext?.missingModules.join(", ") ?? "missing"}`,
       `TradingView chart evidence: ${tradingViewEvidence ? `${tradingViewEvidence.chartBias}/${tradingViewEvidence.confidence}` : `missing/${tradingViewStatus.connectionStatus}`}`,
       `Grinch Phase 1: ${grinchPhase1 ? `${grinchPhase1.htfBias}/${grinchPhase1.modelOneState}/${grinchPhase1.timingGrade}` : "missing"}`,

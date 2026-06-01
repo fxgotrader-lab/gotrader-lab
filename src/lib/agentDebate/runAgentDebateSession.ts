@@ -129,6 +129,9 @@ export function runAgentDebateSession({
       `timeframe ${thesis.timeframe}`,
       `ICT bias ${thesis.ictContext.bias}`,
       `CIO thesis bias ${thesis.finalBias}`,
+      thesis.regimeClassification
+        ? `composite regime ${thesis.regimeClassification.stableLabel} (${Math.round(thesis.regimeClassification.confidence * 100)}%)`
+        : "composite regime unavailable",
       `confluence ${(thesis.ictContext.confluenceScore * 100).toFixed(0)}%`,
       `invalidation ${thesis.invalidationLevel}`,
       `target ${thesis.targetLiquidity}`

@@ -17,6 +17,9 @@ export function createOpeningStatements(
     assumptions: [
       `Immutable ICT bias is ${thesis.ictContext.bias}.`,
       `Immutable CIO thesis bias is ${thesis.finalBias}.`,
+      thesis.regimeClassification
+        ? `Composite regime is ${thesis.regimeClassification.stableLabel} at ${Math.round(thesis.regimeClassification.confidence * 100)}% confidence.`
+        : "Composite regime is unavailable.",
       "Debate may update interpretation confidence only."
     ],
     confidence: message.confidence

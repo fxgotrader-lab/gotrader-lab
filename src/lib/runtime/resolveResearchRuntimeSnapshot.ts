@@ -22,6 +22,7 @@ import {
 } from "@/lib/integrations/tradingview";
 import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
+  buildMarketContext,
   getActiveImportedCandleSetId,
   getImportedDataPreset,
   LIVE_MARKET_DATA_STATUS_VERSION,
@@ -70,6 +71,12 @@ import {
   simulationRunbookChecklist
 } from "@/lib/simulationRunbook";
 import { labStorage } from "@/lib/storage";
+import {
+  appendRegimeClassificationHistory,
+  classifyMarketRegime,
+  loadRegimeClassificationHistory,
+  REGIME_HISTORY_STORAGE_KEY
+} from "@/lib/regime";
 import type { FuturesSymbol, LabState, Timeframe } from "@/lib/types";
 import { safeArray, safeTopN, uid } from "@/lib/utils";
 import { loadLatestValidationReport, VALIDATION_REPORT_STORAGE_KEY } from "@/lib/validation";
@@ -571,6 +578,36 @@ export async function resolveResearchRuntimeSnapshot(
     latestCycle?.researchTimeframe,
     tradingViewChartFeed
   );
+  const regimeMarketContext = buildMarketContext({
+    symbol: marketData.symbol,
+    timeframe: marketData.timeframe,
+    mode: source.mode === "imported" ? "imported" : "mock",
+    candles: source.candles
+  });
+  const regimeClassification = appendRegimeClassificationHistory(
+    classifyMarketRegime({
+      candles: source.candles,
+      history: loadRegimeClassificationHistory(),
+      marketContext: regimeMarketContext,
+      symbol: marketData.symbol,
+      timeframe: marketData.timeframe,
+      timestamp: source.candles[source.candles.length - 1]?.timestamp ?? snapshotGeneratedAt
+    })
+  );
+  const regimeRuntime = {
+    current: regimeClassification,
+    label: regimeClassification.stableLabel,
+    instantaneousLabel: regimeClassification.instantaneousLabel,
+    confidence: regimeClassification.confidence,
+    dataQuality: regimeClassification.dataQuality,
+    transitionPending: regimeClassification.transitionPending,
+    supportingFactors: regimeClassification.supportingFactors.slice(0, 5),
+    warnings: regimeClassification.warnings.slice(0, 6),
+    recommendedBehavior: regimeClassification.recommendedBehavior,
+    sourceFingerprint: regimeClassification.sourceFingerprint,
+    historyStorage: "browser_compact_history" as const,
+    jsonlHistoryPath: "state/regime_history.jsonl" as const
+  };
   const grinchPhase1Summary = source.candles.length
     ? analyzeGrinchPhase1({
         candles: source.candles,
@@ -771,6 +808,7 @@ export async function resolveResearchRuntimeSnapshot(
     `TradingView MCP chart feed: ${tradingViewMcp.chartFeedAvailable ? `${tradingViewMcp.chartFeedCandleCount} candles` : "not active"} / ${tradingViewMcp.chartFeedMatchState}`,
     `TradingView MCP auto-refresh: ${tradingViewMcp.autoRefresh.status} / interval ${tradingViewMcp.autoRefresh.refreshIntervalSeconds}s / count ${tradingViewMcp.autoRefresh.refreshCount}`,
     `TradingView MCP research eligibility: ${tradingViewMcp.researchEligibility} / symbol ${tradingViewMcp.symbolMatch ? "match" : "not matched"} / timeframe ${tradingViewMcp.timeframeMatch ? "match" : "not matched"}`,
+    `Composite regime: ${regimeRuntime.label} / ${Math.round(regimeRuntime.confidence * 100)}% / ${regimeRuntime.dataQuality} / transition ${regimeRuntime.transitionPending ? "pending" : "stable"}`,
     `imported data status: ${marketData.importedDataStatus}`,
     `active import id: ${marketData.activeImportId ?? "none"}`,
     `stored imports: ${marketData.importedDatasetCount}`,
@@ -921,6 +959,10 @@ export async function resolveResearchRuntimeSnapshot(
     ...researchMaturitySummary.maturityWarnings,
     ...walkForwardWarnings,
     marketData.chartDisplayWarning,
+    regimeRuntime.dataQuality !== "sufficient"
+      ? `Composite regime data quality is ${regimeRuntime.dataQuality}; do not use regime as strong evidence.`
+      : undefined,
+    regimeRuntime.transitionPending ? `Composite regime transition pending: ${regimeClassification.transitionState.reason}` : undefined,
     proposalCurrency.isHistorical && proposalCurrency.reason
       ? `Historical proposal available: ${proposalCurrency.reason}`
       : undefined
@@ -1049,6 +1091,7 @@ export async function resolveResearchRuntimeSnapshot(
       warnings: walkForwardWarnings
     },
     tradingViewMcp,
+    regime: regimeRuntime,
     fingerprints: {
       activeBaseline: activeBaselineFingerprint,
       latestCycle: latestCycleFingerprint,
@@ -1085,6 +1128,7 @@ export async function resolveResearchRuntimeSnapshot(
         TRADINGVIEW_MCP_EVIDENCE_STORAGE_KEY,
         TRADINGVIEW_MCP_AUTO_REFRESH_STORAGE_KEY,
         TRADINGVIEW_MCP_CHART_FEED_STORAGE_KEY,
+        REGIME_HISTORY_STORAGE_KEY,
         CANDLE_WINDOW_SETTINGS_UPDATED_EVENT
       ]
     }

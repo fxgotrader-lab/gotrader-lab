@@ -609,6 +609,22 @@ export function MissionControlShell({ state }: { state: LabState }) {
             tone={runtimeSnapshot?.tradingViewMcp.researchEligibility === "eligible_for_research_cycle" ? "good" : "warn"}
           />
           <CommandStatusTile
+            label="Market regime"
+            value={runtimeSnapshot?.regime.label.replace(/_/g, " ") ?? "classifying"}
+            detail={
+              runtimeSnapshot
+                ? `${Math.round(runtimeSnapshot.regime.confidence * 100)}% / ${runtimeSnapshot.regime.transitionPending ? "transition pending" : runtimeSnapshot.regime.dataQuality}`
+                : undefined
+            }
+            tone={
+              runtimeSnapshot?.regime.dataQuality === "insufficient" || runtimeSnapshot?.regime.transitionPending
+                ? "warn"
+                : runtimeSnapshot?.regime.label === "risk_off_crisis" || runtimeSnapshot?.regime.label === "event_high_vol"
+                  ? "warn"
+                  : "good"
+            }
+          />
+          <CommandStatusTile
             label="Symbol"
             value={runtimeSnapshot?.tradingViewMcp.chartFeedSymbol ?? commandCenterSymbol}
             detail={runtimeSnapshot?.tradingViewMcp.symbolMatch ? "matched" : "match pending"}

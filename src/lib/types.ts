@@ -1,3 +1,5 @@
+import type { RegimeClassification } from "@/lib/regime";
+
 export type FuturesSymbol = "ES" | "NQ" | "MES" | "MNQ";
 
 export type Timeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
@@ -324,6 +326,7 @@ export interface TradeThesis {
   timeframe: Timeframe;
   session: TradingSession;
   marketRegime: MarketRegime;
+  regimeClassification?: RegimeClassification;
   notes?: string;
   finalBias: MarketBias;
   confidence: number;
@@ -345,6 +348,7 @@ export interface DebateSession {
   timeframe: Timeframe;
   session: TradingSession;
   marketRegime: MarketRegime;
+  regimeClassification?: RegimeClassification;
   notes?: string;
   messages: AgentDebateMessage[];
   recommendationIds: string[];

@@ -186,7 +186,9 @@ export function selectScenarioFamilyFromBlockers(
   if (
     blockerSet.has("regime_mismatch") ||
     blockerSet.has("regime_shift_detected") ||
-    blockerSet.has("regime_evidence_insufficient")
+    blockerSet.has("regime_evidence_insufficient") ||
+    blockerSet.has("regime_transition_pending") ||
+    blockerSet.has("regime_specific_sample_too_small")
   ) {
     selectedScenarioFamily = "regime_specific_testing";
     reasoningSummary = "Selected regime-specific testing because window performance suggests calibration assumptions may not fit the current volatility or session regime.";
@@ -257,7 +259,8 @@ export function diagnoseAutonomySafety(
     snapshot?.walkForward.latestRunId ? `walk-forward ${snapshot.walkForward.latestRunId}` : undefined,
     snapshot?.proposal.latestProposalId ? `proposal ${snapshot.proposal.latestProposalId}` : undefined,
     `evidence quality ${snapshot?.evidence.evidenceQualityScore ?? 0}/100`,
-    `maturity ${snapshot?.maturity.maturityScore ?? 0}/100`
+    `maturity ${snapshot?.maturity.maturityScore ?? 0}/100`,
+    snapshot?.regime ? `regime ${snapshot.regime.label} ${Math.round(snapshot.regime.confidence * 100)}%` : undefined
   ].filter((item): item is string => Boolean(item));
 
   const walkForwardEvidenceSufficient = Boolean(
@@ -306,6 +309,15 @@ export function diagnoseAutonomySafety(
   ) {
     blockerCategories.push("regime_evidence_insufficient");
   }
+  if (snapshot?.regime.transitionPending) {
+    blockerCategories.push("regime_transition_pending");
+  }
+  if (snapshot?.regime.dataQuality !== "sufficient") {
+    blockerCategories.push("regime_evidence_insufficient");
+  }
+  if ((snapshot?.walkForward.latestRun?.stability?.regimeSegments ?? []).some((segment) => segment.windowCount < 2)) {
+    blockerCategories.push("regime_specific_sample_too_small");
+  }
 
   const maturityDropCheck = wouldMaturityDropBlock({
     beforeScore: maturity?.score,
@@ -323,7 +335,9 @@ export function diagnoseAutonomySafety(
   const regimeMismatchPaused =
     uniqueBlockers.includes("regime_mismatch") ||
     uniqueBlockers.includes("regime_shift_detected") ||
-    uniqueBlockers.includes("regime_evidence_insufficient");
+    uniqueBlockers.includes("regime_evidence_insufficient") ||
+    uniqueBlockers.includes("regime_transition_pending") ||
+    uniqueBlockers.includes("regime_specific_sample_too_small");
   const trendStatus = getMaturityTrendAvailability(maturity?.cyclesTested ?? 0, policy);
   const scenarioSelection =
     latestAutoResearch?.scenarioSelectionReasoning ??
@@ -337,7 +351,7 @@ export function diagnoseAutonomySafety(
       ? "Walk-forward evidence is insufficient or missing; default policy blocks auto-apply."
       : undefined,
     regimeMismatchPaused
-      ? "Regime mismatch or regime evidence gap detected; pause autonomous loop and run regime-specific testing."
+      ? "Regime mismatch, transition, sample-size, or evidence gap detected; pause autonomous loop and run regime-specific testing."
       : undefined,
     !trendStatus.basicTrendAvailable ? trendStatus.message : undefined,
     (snapshot?.evidence.evidenceQualityScore ?? 0) < policy.minimumEvidenceQualityScore

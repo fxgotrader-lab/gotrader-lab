@@ -2,6 +2,7 @@ import type { BacktestSessionFilter, BacktestStopModel, ResolvedBacktestConfig }
 import type { WalkForwardDataPreset } from "@/lib/marketData";
 import type { RuntimeDataPreset } from "@/lib/runtime/researchRuntimeTypes";
 import type { GrinchActiveProfile, GrinchSmtState } from "@/lib/strategyLibrary";
+import type { CompositeRegimeLabel } from "@/lib/regime";
 import type { Candle, FuturesSymbol, Timeframe } from "@/lib/types";
 
 export type WalkForwardSplitLabel = "in_sample" | "validation" | "out_of_sample";
@@ -107,6 +108,17 @@ export interface WalkForwardWindowMetrics {
   pass: boolean;
   failReasons: string[];
   grinchMetrics?: WalkForwardGrinchMetrics;
+  regimeMetrics?: WalkForwardRegimeMetrics;
+}
+
+export interface WalkForwardRegimeMetrics {
+  label: CompositeRegimeLabel;
+  instantaneousLabel: CompositeRegimeLabel;
+  confidence: number;
+  dataQuality: string;
+  transitionPending: boolean;
+  conflictScore: number;
+  topFactors: string[];
 }
 
 export interface WalkForwardGrinchMetrics {
@@ -202,6 +214,13 @@ export interface WalkForwardStabilitySummary {
   recommendedNextAction: string;
   summary: string;
   failReasons: string[];
+  regimeSegments?: Array<{
+    label: CompositeRegimeLabel;
+    windowCount: number;
+    oosTrades: number;
+    averageOosWinRate: number;
+    outOfSampleWindowsPassed: number;
+  }>;
   evidenceSummary?: WalkForwardEvidenceSummary;
   diagnostics?: WalkForwardFailureDiagnostics;
   followUpPlan?: WalkForwardFollowUpSearchPlan;

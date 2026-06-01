@@ -1,9 +1,12 @@
 import { runBacktest, type BacktestResult, type ResolvedBacktestConfig } from "@/lib/backtesting";
 import {
+  buildMarketContext,
   getImportedDataPreset,
   getWalkForwardDataPreset,
   loadPreparedWalkForwardCandleSource
 } from "@/lib/marketData";
+import { classifyMarketRegime } from "@/lib/regime";
+import type { RegimeClassification } from "@/lib/regime";
 import { resolveActiveBacktestConfig } from "@/lib/selfImprovement";
 import type { GrinchActiveProfile } from "@/lib/strategyLibrary";
 import { uid } from "@/lib/utils";
@@ -84,7 +87,8 @@ const readinessScoreFor = (
 const metricsFromBacktest = (
   result: BacktestResult,
   evidenceQualityScore: number,
-  split: WalkForwardSplitLabel
+  split: WalkForwardSplitLabel,
+  regime?: RegimeClassification
 ): WalkForwardWindowMetrics => {
   const confidenceCalibration = confidenceCalibrationFor(result);
   const readinessScore = readinessScoreFor(result, confidenceCalibration, evidenceQualityScore);
@@ -106,6 +110,17 @@ const metricsFromBacktest = (
     evidenceQualityScore,
     pass: false,
     failReasons: [],
+    regimeMetrics: regime
+      ? {
+          label: regime.stableLabel,
+          instantaneousLabel: regime.instantaneousLabel,
+          confidence: regime.confidence,
+          dataQuality: regime.dataQuality,
+          transitionPending: regime.transitionPending,
+          conflictScore: regime.conflictScore,
+          topFactors: regime.supportingFactors.slice(0, 4)
+        }
+      : undefined,
     grinchMetrics: latestGrinchScore
       ? {
           profileDetected: latestGrinchScore.activeProfile,
@@ -126,6 +141,28 @@ const metricsFromBacktest = (
     pass: failReasons.length === 0,
     failReasons
   };
+};
+
+const regimeSegmentsFor = (windows: WalkForwardWindowResult[]) => {
+  const byLabel = new Map<string, { oosTrades: number; outOfSampleWindowsPassed: number; winRateSum: number; windowCount: number }>();
+  windows.forEach((window) => {
+    const oos = window.metricsBySplit.out_of_sample;
+    const label = oos.regimeMetrics?.label ?? "insufficient_data";
+    const current = byLabel.get(label) ?? { oosTrades: 0, outOfSampleWindowsPassed: 0, winRateSum: 0, windowCount: 0 };
+    byLabel.set(label, {
+      oosTrades: current.oosTrades + oos.totalTrades,
+      outOfSampleWindowsPassed: current.outOfSampleWindowsPassed + (oos.pass ? 1 : 0),
+      winRateSum: current.winRateSum + oos.winRate,
+      windowCount: current.windowCount + 1
+    });
+  });
+  return Array.from(byLabel.entries()).map(([label, item]) => ({
+    label: label as ReturnType<typeof classifyMarketRegime>["stableLabel"],
+    windowCount: item.windowCount,
+    oosTrades: item.oosTrades,
+    averageOosWinRate: round(item.winRateSum / Math.max(1, item.windowCount), 3),
+    outOfSampleWindowsPassed: item.outOfSampleWindowsPassed
+  }));
 };
 
 const attachOosVerdict = (
@@ -255,8 +292,20 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
         }
         publishProgress(`Backtesting ${split.displayLabel.toLowerCase()} split.`, windowDefinition.windowIndex, split.label);
         await sleepFrame();
+        const splitMarketContext = buildMarketContext({
+          symbol: split.symbol,
+          timeframe: split.aggregateTimeframe,
+          mode: source.mode === "imported" ? "imported" : "mock",
+          candles: split.candles
+        });
+        const splitRegime = classifyMarketRegime({
+          candles: split.candles,
+          marketContext: splitMarketContext,
+          symbol: split.symbol,
+          timeframe: split.aggregateTimeframe
+        });
         const result = runBacktest(split.candles, activeConfig.config);
-        metricsBySplit[split.label] = metricsFromBacktest(result, evidenceQualityScore, split.label);
+        metricsBySplit[split.label] = metricsFromBacktest(result, evidenceQualityScore, split.label, splitRegime);
       }
 
       const splitSummaries = windowDefinition.splits.map(({ candles, ...summary }) => summary);
@@ -302,11 +351,15 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
       minimumTotalOosTrades: options.minimumTotalOosTrades ?? DEFAULT_MINIMUM_TOTAL_OOS_TRADES,
       windowGenerationNotes
     });
+    const regimeSegments = regimeSegmentsFor(run.windows);
     run = {
       ...run,
       status: stability.verdict === "fail" || stability.verdict === "insufficient_evidence" || run.warnings.length ? "completed_with_warnings" : "completed",
       completedAt: now(),
-      stability,
+      stability: {
+        ...stability,
+        regimeSegments
+      },
       failureDiagnostics: stability.diagnostics,
       followUpPlan: stability.followUpPlan,
       progress: {

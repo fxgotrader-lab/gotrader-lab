@@ -37,7 +37,10 @@ export type AutonomousResearchBlocker =
   | "walk_forward_insufficient"
   | "walk_forward_failed"
   | "maturity_too_low"
-  | "regime_mismatch";
+  | "regime_mismatch"
+  | "regime_evidence_insufficient"
+  | "regime_transition_pending"
+  | "regime_specific_sample_too_small";
 
 export type AutonomousScenarioFamily =
   | "session_focus"
@@ -47,7 +50,8 @@ export type AutonomousScenarioFamily =
   | "evidence_quality_focus"
   | "long_short_focus"
   | "conservative_only"
-  | "walk_forward_followup";
+  | "walk_forward_followup"
+  | "regime_specific_testing";
 
 export type AutonomousLoopStage =
   | "idle"
@@ -214,5 +218,8 @@ export const autonomousToSafetyBlockers: Record<AutonomousResearchBlocker, Auton
   walk_forward_insufficient: "insufficient_walk_forward_evidence",
   walk_forward_failed: "overfitting_risk",
   maturity_too_low: "weak_maturity_history",
-  regime_mismatch: "regime_mismatch"
+  regime_mismatch: "regime_mismatch",
+  regime_evidence_insufficient: "regime_evidence_insufficient",
+  regime_transition_pending: "regime_transition_pending",
+  regime_specific_sample_too_small: "regime_specific_sample_too_small"
 };

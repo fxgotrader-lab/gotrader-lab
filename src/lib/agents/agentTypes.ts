@@ -1,5 +1,6 @@
 import type { AgentLayer, ICTConcept, ICTContext, MarketBias, ThesisInput } from "@/lib/types";
 import type { MarketContext } from "@/lib/marketData";
+import type { RegimeClassification } from "@/lib/regime";
 
 export type InternalAgentId =
   | "ict-liquidity-agent"
@@ -20,6 +21,7 @@ export type InternalAgentId =
   | "session-levels-agent"
   | "auction-volume-profile-agent"
   | "macro-event-risk-agent"
+  | "composite-regime-agent"
   | "intermarket-confirmation-agent"
   | "positioning-gamma-agent"
   | "volatility-regime-agent"
@@ -30,6 +32,7 @@ export interface InternalAgentRunContext {
   input: ThesisInput;
   ictContext: ICTContext;
   marketContext: MarketContext;
+  regimeClassification?: RegimeClassification;
 }
 
 export interface InternalAgentOpinion {

@@ -5,6 +5,7 @@ import {
   analyzeGrinchPhase3Consolidation,
   analyzeGrinchPhase4Smt
 } from "@/lib/strategyLibrary";
+import { summarizeRegimeClassification } from "@/lib/regime";
 import type { MarketBias, MarketRegime } from "@/lib/types";
 import { clamp } from "@/lib/utils";
 
@@ -661,6 +662,41 @@ export const researchAgentRegistry: InternalAgentDefinition[] = [
     }
   },
   {
+    agentId: "composite-regime-agent",
+    name: "Composite Regime Agent",
+    layer: "market_context",
+    weight: 0.07,
+    run({ regimeClassification }) {
+      const regime = regimeClassification;
+      const bullish = regime?.stableLabel === "trend_bull";
+      const bearish = regime?.stableLabel === "trend_bear" || regime?.stableLabel === "risk_off_crisis";
+      const bias: MarketBias = bullish ? "bullish" : bearish ? "bearish" : "neutral";
+      const confidence = regime ? clamp(0.3 + regime.confidence * 0.5 - regime.conflictScore * 0.18, 0.25, 0.82) : 0.28;
+
+      return {
+        agentId: "composite-regime-agent",
+        name: "Composite Regime Agent",
+        layer: "market_context",
+        bias,
+        confidence,
+        weight: 0.07,
+        reasoning: regime
+          ? `Composite deterministic regime is ${summarizeRegimeClassification(regime)}.`
+          : "Composite regime classifier did not receive enough market data.",
+        supportingFactors: regime?.supportingFactors.slice(0, 5) ?? ["Regime output unavailable."],
+        warningFactors: [
+          ...(regime?.warnings.slice(0, 4) ?? []),
+          regime?.transitionPending ? "Regime transition is pending; do not over-weight new candidate families yet." : undefined,
+          regime?.dataQuality !== "sufficient" ? "Regime data quality is not sufficient; degrade confidence." : undefined
+        ].filter((item): item is string => Boolean(item)),
+        recommendation: regime
+          ? regime.recommendedBehavior
+          : "Do not use regime as confirmation until sufficient data exists.",
+        ictTags: ["higher-timeframe bias", "session timing", "displacement"]
+      };
+    }
+  },
+  {
     agentId: "intermarket-confirmation-agent",
     name: "Intermarket Confirmation Agent",
     layer: "market_context",
@@ -729,17 +765,27 @@ export const researchAgentRegistry: InternalAgentDefinition[] = [
     name: "Volatility Regime Agent 2.0",
     layer: "market_context",
     weight: 0.08,
-    run({ input, ictContext, marketContext }) {
+    run({ input, ictContext, marketContext, regimeClassification }) {
       const regimeDrivenBias = regimeBias[input.marketRegime];
-      const highVol = (marketContext.macro.vix ?? 0) >= 20 || input.marketRegime === "volatile" || input.marketRegime === "news-driven";
+      const highVol =
+        (marketContext.macro.vix ?? 0) >= 20 ||
+        input.marketRegime === "volatile" ||
+        input.marketRegime === "news-driven" ||
+        regimeClassification?.stableLabel === "event_high_vol" ||
+        regimeClassification?.stableLabel === "risk_off_crisis";
       const bias = highVol ? "neutral" : regimeDrivenBias;
       const confidence = clamp((highVol ? 0.5 : 0.55) + ictContext.confluenceBreakdown.confidence * 0.14, 0.32, 0.84);
       const supportingFactors = [
         `Market regime: ${input.marketRegime}`,
+        `Composite regime: ${regimeClassification?.stableLabel ?? "unavailable"}`,
         `VIX: ${marketContext.macro.vix ?? "n/a"}`,
         `ICT confidence: ${Math.round(ictContext.confluenceBreakdown.confidence * 100)}%`
       ];
-      const warningFactors = highVol ? ["High volatility regime lowers directional conviction and widens stop/target assumptions."] : [];
+      const warningFactors = [
+        highVol ? "High volatility regime lowers directional conviction and widens stop/target assumptions." : undefined,
+        regimeClassification?.transitionPending ? "Composite regime transition pending; reduce CIO certainty." : undefined,
+        ...(regimeClassification?.missingInputs.slice(0, 2) ?? [])
+      ].filter((item): item is string => Boolean(item));
 
       return {
         agentId: "volatility-regime-agent",

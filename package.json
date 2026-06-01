@@ -22,7 +22,8 @@
     "test:strategy-risk-context": "node scripts/test-strategy-risk-context.mjs",
     "test:local-journal": "node scripts/test-local-journal.mjs",
     "test:multi-broker-contracts": "node scripts/test-multi-broker-contracts.mjs",
-    "test:tradingview-mcp": "node scripts/test-tradingview-mcp-bridge.mjs"
+    "test:tradingview-mcp": "node scripts/test-tradingview-mcp-bridge.mjs",
+    "test:regime-classifier": "node scripts/test-regime-classifier.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.1.1",

@@ -2,6 +2,7 @@ import type { ResolvedBacktestConfig } from "@/lib/backtesting";
 import type { EvidenceCategory, EvidenceLedgerSummary } from "@/lib/evidence";
 import type { LLMAdvisoryRun, LLMProviderStatus } from "@/lib/llm";
 import type { ResearchMaturitySummary } from "@/lib/maturity";
+import type { RegimeClassification } from "@/lib/regime";
 import type {
   TradingViewMcpStatus,
   TradingViewEvidence,
@@ -300,6 +301,21 @@ export interface RuntimeTradingViewMcpState {
   warnings: string[];
 }
 
+export interface RuntimeRegimeState {
+  current: RegimeClassification;
+  label: RegimeClassification["stableLabel"];
+  instantaneousLabel: RegimeClassification["instantaneousLabel"];
+  confidence: number;
+  dataQuality: RegimeClassification["dataQuality"];
+  transitionPending: boolean;
+  supportingFactors: string[];
+  warnings: string[];
+  recommendedBehavior: string;
+  sourceFingerprint: string;
+  historyStorage: "browser_compact_history";
+  jsonlHistoryPath: "state/regime_history.jsonl";
+}
+
 export interface RuntimeDiagnosticsState {
   sourceTrace: string[];
   staleStateWarnings: string[];
@@ -321,6 +337,7 @@ export interface ResearchRuntimeSnapshot {
   maturity: RuntimeMaturityState;
   walkForward: RuntimeWalkForwardState;
   tradingViewMcp: RuntimeTradingViewMcpState;
+  regime: RuntimeRegimeState;
   fingerprints: RuntimeFingerprintState;
   metricProvenance: RuntimeMetricProvenanceState;
   diagnostics: RuntimeDiagnosticsState;

@@ -43,6 +43,7 @@ export const defaultBacktestAgentWeights: BacktestAgentWeights = {
   "session-levels-agent": 0.1,
   "auction-volume-profile-agent": 0.1,
   "macro-event-risk-agent": 0.08,
+  "composite-regime-agent": 0.07,
   "intermarket-confirmation-agent": 0.08,
   "positioning-gamma-agent": 0.05,
   "volatility-regime-agent": 0.08,

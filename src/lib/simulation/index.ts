@@ -5,7 +5,9 @@ import {
 } from "@/lib/scoring";
 import { runAgents, synthesizeCIO } from "@/lib/agents";
 import { buildICTContext } from "@/lib/ict";
+import { buildMarketContext } from "@/lib/marketData";
 import { mockCandles } from "@/lib/mockData/mockCandles";
+import { classifyMarketRegime } from "@/lib/regime";
 import type {
   AgentDebateMessage,
   DebateSession,
@@ -22,6 +24,18 @@ import { clamp, uid } from "@/lib/utils";
 
 export function generateThesis(input: ThesisInput, state: LabState, candles: Candle[] = mockCandles) {
   const ictContext = buildICTContext(candles, input);
+  const marketContext = buildMarketContext({
+    symbol: input.symbol,
+    timeframe: input.timeframe,
+    mode: candles?.length ? "imported" : "mock",
+    candles
+  });
+  const regimeClassification = classifyMarketRegime({
+    candles,
+    marketContext,
+    symbol: input.symbol,
+    timeframe: input.timeframe
+  });
   const researchAgentOpinions = runAgents(input, ictContext, candles);
   const cioSynthesis = synthesizeCIO(input, ictContext, researchAgentOpinions);
   const agentOpinions = [...researchAgentOpinions, cioSynthesis.cioOpinion];
@@ -78,6 +92,7 @@ export function generateThesis(input: ThesisInput, state: LabState, candles: Can
     timeframe: input.timeframe,
     session: input.session,
     marketRegime: input.marketRegime,
+    regimeClassification,
     notes: input.notes,
     finalBias: cioSynthesis.finalBias,
     confidence: cioSynthesis.confidence,
@@ -99,6 +114,7 @@ export function generateThesis(input: ThesisInput, state: LabState, candles: Can
     timeframe: input.timeframe,
     session: input.session,
     marketRegime: input.marketRegime,
+    regimeClassification,
     notes: input.notes,
     messages,
     recommendationIds: recommendations.map((recommendation) => recommendation.id),
