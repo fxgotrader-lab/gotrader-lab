@@ -155,14 +155,47 @@ const upstreamUrl = (path, params = {}) => {
   });
   return url.toString();
 };
+const upstreamRequestFor = (path, params = {}) => {
+  const brokerSymbol = params.symbol_name ?? params.symbol;
+
+  if (path === "/api/v1/market/candles/latest") {
+    return {
+      path,
+      params: {
+        symbol_name: brokerSymbol,
+        timeframe: params.mt5_timeframe ?? params.mt5Timeframe ?? mt5TimeframeFor(params.timeframe),
+        count: params.count ?? params.limit
+      }
+    };
+  }
+
+  if (path === "/api/v1/market/price") {
+    return {
+      path,
+      params: {
+        symbol_name: brokerSymbol
+      }
+    };
+  }
+
+  if (path === "/api/v1/market/symbol/info") {
+    return {
+      path: `${path}/${encodeURIComponent(brokerSymbol)}`,
+      params: {}
+    };
+  }
+
+  return { path, params };
+};
 const fetchUpstreamPath = async (path, params) => {
   if (!upstreamBaseUrl) {
     throw new Error("MT5_READONLY_UPSTREAM_BASE_URL is not configured.");
   }
+  const request = upstreamRequestFor(path, params);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), upstreamTimeoutMs);
   try {
-    const response = await fetch(upstreamUrl(path, params), {
+    const response = await fetch(upstreamUrl(request.path, request.params), {
       cache: "no-store",
       signal: controller.signal
     });

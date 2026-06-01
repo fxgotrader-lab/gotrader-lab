@@ -90,12 +90,32 @@ $env:MT5_READONLY_UPSTREAM_BASE_URL="http://127.0.0.1:8000"
 npm.cmd run mt5:readonly-bridge
 ```
 
+For the inspected `ariadng/metatrader-mcp-server` clone, install and start the upstream OpenAPI server locally outside the GoTrader frontend:
+
+```powershell
+cd C:\Users\andre\metatrader-mcp-server
+python -m pip install -e .
+$env:LOGIN="YOUR_MT5_LOGIN"
+$env:PASSWORD="YOUR_MT5_PASSWORD"
+$env:SERVER="YOUR_MT5_SERVER"
+python -m metatrader_openapi.main --login $env:LOGIN --password $env:PASSWORD --server $env:SERVER --host 127.0.0.1 --port 8000
+```
+
+If your MT5 terminal is not auto-detected, add the terminal path locally:
+
+```powershell
+$env:MT5_PATH="C:\Path\To\terminal64.exe"
+python -m metatrader_openapi.main --login $env:LOGIN --password $env:PASSWORD --server $env:SERVER --path $env:MT5_PATH --host 127.0.0.1 --port 8000
+```
+
+Do not expose this upstream server directly to the browser UI. GoTrader should talk to `http://127.0.0.1:7341`, and the 7341 wrapper should be the only component that calls the upstream market-data routes.
+
 Default upstream paths:
 
 - quote: `/api/v1/market/price`
 - candles: `/api/v1/market/candles/latest`
 - symbols: `/api/v1/market/symbols`
-- symbol info: `/api/v1/market/symbol/info`
+- symbol info: `/api/v1/market/symbol/info/{symbol_name}`
 - status probe: `/api/v1/market/symbols`
 
 Discovery candidates:
@@ -104,7 +124,7 @@ Discovery candidates:
 - quote: `/quote`, `/price`, `/tick`, `/api/v1/market/price`
 - candles: `/candles`, `/rates`, `/ohlcv`, `/api/v1/market/candles/latest`
 - symbols: `/symbols`, `/api/v1/market/symbols`
-- symbol info: `/symbol-info`, `/symbol_info`, `/api/v1/market/symbol/info`
+- symbol info: `/symbol-info`, `/symbol_info`, `/api/v1/market/symbol/info/{symbol_name}`
 
 Override these only for a compatible local read-only server:
 
@@ -123,6 +143,18 @@ $env:MT5_READONLY_UPSTREAM_TRANSPORT="rest"
 ```
 
 REST is the default and only implemented upstream transport for this phase. MCP `stdio`, `sse`, and `streamable-http` remain documented upstream capabilities, but GoTrader does not expose or call them directly from the frontend.
+
+The inspected `ariadng/metatrader-mcp-server` OpenAPI router expects latest candles as:
+
+```text
+GET /api/v1/market/candles/latest?symbol_name=EURUSD&timeframe=M5&count=400
+```
+
+GoTrader maps app timeframes such as `5m` to MT5 values such as `M5` before calling that upstream route. Symbol info is path-based:
+
+```text
+GET /api/v1/market/symbol/info/EURUSD
+```
 
 ## Quote Shape
 
