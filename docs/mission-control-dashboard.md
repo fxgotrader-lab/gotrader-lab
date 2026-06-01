@@ -1,36 +1,42 @@
 # Mission-Control Dashboard
 
-The Dashboard is now the primary command center for supervising GoTrader AI Lab. It is intentionally less like a feature catalog and more like a mission-control surface: start or stop the autonomous research loop, watch where the system is in the pipeline, and respond only when a gate or review item needs attention.
+The Dashboard is the primary operating surface for GoTrader AI Lab. It should feel like a clean trading research dashboard: direct status, the active chart, a small set of operational controls, current market/research state, and one action queue.
 
 ## Purpose
 
 The Command Center answers three questions:
 
-- Is the research system healthy and running?
-- Where is the system in the research pipeline?
-- Does anything require human attention?
+- Is the system connected?
+- What chart and research data source is active?
+- What action, if any, is required?
 
-Detailed tables, diagnostics, and tuning controls remain available on drill-down pages or inside Advanced details.
+Detailed tables, raw diagnostics, proposal history, runtime fingerprints, pipeline internals, and one-cycle research controls remain on drill-down pages or inside Advanced details.
 
-## Pipeline Stages
+## Default Layout
 
-1. Lab / Market Data: confirms whether mock or imported historical data is active.
-2. AI Research: runs thesis refresh, backtest, LLM advisory, Auto Research, validation, research quality, and readiness updates.
-3. Agent Debate / CIO: shows whether the debate layer produced a CIO consensus or no-consensus state.
-4. Backtest / Validation: confirms simulated trades and validation evidence.
-5. Walk-Forward: checks whether candidate behavior survives multiple imported-data windows.
-6. Self-Improvement: surfaces calibration proposals, manual review, or policy-gated auto-apply decisions.
-7. Go-Trader Review Gate: locked review-only state. It does not send execution handoffs.
-8. Tradovate Future Gate: locked future placeholder. No broker connection exists.
+1. Top status bar: TradingView MCP, chart source, research source, regime, readiness, and execution lock.
+2. Main chart panel: Lightweight Chart, source badge, symbol/timeframe, candle count, and latest candle timestamp.
+3. Primary action panel: connect TradingView MCP, refresh candles, start/stop auto-refresh, guarded research-source activation, and start/stop autonomous research.
+4. Market state card: regime, Grinch/ICT profile, volatility/chop summary, and top blocker.
+5. Research status card: latest cycle status, trades, win rate, average R, drawdown, walk-forward, maturity, and evidence.
+6. Action Required panel: current actionable blockers with one clear route.
+7. Research Flow Tape: compact high-signal events only.
 
-## Status Meanings
+## Advanced Details
 
-- Active: the supervisor is currently working in that stage.
-- Waiting: no current evidence or run has reached the stage yet.
-- Complete: the stage has current evidence.
-- Warning: the stage has evidence but needs review or more data.
-- Blocked: human action or a failed gate prevents advancement.
-- Locked: the stage is intentionally unavailable for execution authority.
+The Advanced Details drawer is closed by default. It contains:
+
+- readiness explanation
+- loop settings
+- autonomous loop progress
+- pipeline stage diagnostics
+- raw runtime/source fingerprints
+- TradingView MCP runtime details
+- Grinch score breakdown
+- proposal mismatch warnings
+- Paperclip and multi-broker planned states
+- direct links to detail pages
+- one-cycle Research Cycle control
 
 ## Action Required
 
@@ -46,6 +52,10 @@ The Action Required panel shows only meaningful items such as:
 - regime mismatch pause
 
 If the panel is clear, the user can keep supervising without visiting detail pages.
+
+## Detail Pages
+
+Market Data, ICT Lab, Walk-Forward, Self-Improvement, Evidence Quality, Research Maturity, Communications, and Settings remain the detail pages. Normal TradingView MCP connection and chart activation should happen from the Dashboard, not from Market Data or Settings.
 
 ## What Is Automated
 
@@ -68,7 +78,7 @@ Broker execution remains disabled on the dashboard at all times.
 
 ## Drill-Down Workflow
 
-Use the dashboard for supervision. Click a pipeline stage or Advanced detail link when the system asks for action:
+Use the dashboard for operation. Open detail pages only when the Action Required panel or Advanced Details asks for deeper inspection:
 
 - Market Data for imported candle state and presets
 - Agent Debate for consensus reasoning

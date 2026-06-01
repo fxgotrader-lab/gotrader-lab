@@ -39,11 +39,11 @@ export function MissionControlDataFeed({ items }: { items: MissionFeedItem[] }) 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Research flow tape</p>
-          <h3 className="mt-1 text-lg font-semibold text-slate-50">Live Research Ledger</h3>
+          <h3 className="mt-1 text-lg font-semibold text-slate-50">Latest Events</h3>
         </div>
         <Badge variant="secondary">{items.length} latest</Badge>
       </div>
-      <div className="mt-4 max-h-[520px] space-y-2 overflow-y-auto pr-1">
+      <div className="mt-4 max-h-[380px] space-y-2 overflow-y-auto pr-1">
         {items.length ? (
           items.map((item) => {
             const row = (
@@ -98,9 +98,6 @@ export function MissionControlDataFeed({ items }: { items: MissionFeedItem[] }) 
             No research events yet. Connect data or start the autonomous research loop to populate the tape.
           </div>
         )}
-      </div>
-      <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-300/5 p-3 text-xs text-cyan-100/75">
-        Future OpenClaw memory and Hermes notification hooks can mirror these research events, but they remain advisory/notification only with no execution authority.
       </div>
     </section>
   );

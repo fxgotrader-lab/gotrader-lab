@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import {
   AUTONOMOUS_RESEARCH_UPDATED_EVENT,
-  discardAutonomousResearchCheckpoint,
   latestAutonomousResearchRun,
   loadAutonomousResearchState,
   runAutonomousResearchLoop,
@@ -62,7 +61,6 @@ import {
 } from "@/lib/selfImprovement";
 import {
   resolveResearchRuntimeSnapshot,
-  selectRuntimeFingerprintLabel,
   selectRuntimeProvenanceRows,
   selectRuntimeWarnings,
   type ResearchRuntimeSnapshot
@@ -72,18 +70,10 @@ import { safeArray, safeTopN, uid } from "@/lib/utils";
 import { WALK_FORWARD_UPDATED_EVENT } from "@/lib/walkForward";
 
 import { formatDateTime } from "./dashboardFormatters";
-import { AutonomousLoopProgress } from "./AutonomousLoopProgress";
-import { MissionControlActionPanel, type MissionActionItem } from "./MissionControlActionPanel";
+import type { MissionActionItem } from "./MissionControlActionPanel";
 import { MissionControlDataFeed, type MissionFeedItem } from "./MissionControlDataFeed";
 import { MissionControlPipeline, type MissionPipelineStage } from "./MissionControlPipeline";
-import { MissionControlStatusStrip } from "./MissionControlStatusStrip";
 import { ResearchCycleControl } from "./ResearchCycleControl";
-
-const currency = new Intl.NumberFormat(undefined, {
-  currency: "USD",
-  maximumFractionDigits: 0,
-  style: "currency"
-});
 
 const pct = (value?: number) =>
   typeof value === "number" && Number.isFinite(value) ? `${(value * 100).toFixed(0)}%` : "n/a";
@@ -520,11 +510,6 @@ export function MissionControlShell({ state }: { state: LabState }) {
     abortController?.abort();
   };
 
-  const discardRecovery = () => {
-    setAutonomyState(discardAutonomousResearchCheckpoint());
-    setLiveRun(undefined);
-  };
-
   const pipelineStages = useMemo(
     () => buildPipelineStages(runtimeSnapshot, latestRun, busy, currentIteration?.startedAt),
     [busy, currentIteration?.startedAt, latestRun, runtimeSnapshot]
@@ -532,440 +517,390 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const actionItems = useMemo(() => buildActionItems(runtimeSnapshot, latestRun), [runtimeSnapshot, latestRun]);
   const feedItems = useMemo(() => buildFeedItems(runtimeSnapshot, latestRun, dataConnectionEvents), [dataConnectionEvents, latestRun, runtimeSnapshot]);
   const commandCenterChart = useMemo(() => buildCommandCenterChartData(runtimeSnapshot), [runtimeSnapshot]);
-  const keyMetrics = buildKeyMetrics(runtimeSnapshot, latestRun);
-  const simulatedAccount = runtimeSnapshot?.performance.simulatedAccountSummary;
   const warnings = selectRuntimeWarnings(runtimeSnapshot);
   const autoRefreshRunning = tradingViewAutoRefresh.status === "running" && tradingViewAutoRefresh.enabled;
   const autoRefreshPaused = tradingViewAutoRefresh.status === "paused" || tradingViewAutoRefresh.status === "failed";
   const autoRefreshCountdown = formatCountdown(tradingViewAutoRefresh.nextRefreshAt, autoRefreshClock);
+  const latestBacktest = runtimeSnapshot?.latestResearchCycle.latestBacktestSummary;
+  const grinch = runtimeSnapshot?.latestResearchCycle.activeGrinchProfileSummary;
+  const primaryBlocker =
+    actionItems[0]?.title ??
+    runtimeSnapshot?.readiness.actualBlockers[0] ??
+    runtimeSnapshot?.walkForward.recommendedNextAction ??
+    "No action required";
+  const primaryBlockerDetail =
+    actionItems[0]?.detail ??
+    runtimeSnapshot?.readiness.nextAction ??
+    "Keep the system supervised; execution remains disabled.";
+  const chartSourceShortLabel = getChartSourceShortLabel(runtimeSnapshot);
+  const chartSourceBadgeTone = runtimeSnapshot?.marketData.chartDisplayUsesTradingViewMcp
+    ? "success"
+    : runtimeSnapshot?.marketData.fallbackToMock
+      ? "warning"
+      : "secondary";
+  const statusChips = [
+    {
+      label: "TradingView MCP",
+      value: runtimeSnapshot?.tradingViewMcp.bridgeStatus.replace(/_/g, " ") ?? "checking",
+      tone: runtimeSnapshot?.tradingViewMcp.bridgeStatus === "connected_analysis_only" ? "success" : "warning"
+    },
+    {
+      label: "Chart",
+      value: chartSourceShortLabel,
+      tone: chartSourceBadgeTone
+    },
+    {
+      label: "Research",
+      value: getResearchSourceShortLabel(runtimeSnapshot),
+      tone: runtimeSnapshot?.marketData.researchUsesTradingViewMcp ? "success" : "secondary"
+    },
+    {
+      label: "Regime",
+      value: runtimeSnapshot
+        ? `${runtimeSnapshot.regime.label.replace(/_/g, " ")} ${Math.round(runtimeSnapshot.regime.confidence * 100)}%`
+        : "loading",
+      tone:
+        runtimeSnapshot?.regime.dataQuality === "insufficient" || runtimeSnapshot?.regime.transitionPending
+          ? "warning"
+          : runtimeSnapshot?.regime.label === "risk_off_crisis" || runtimeSnapshot?.regime.label === "event_high_vol"
+            ? "warning"
+            : "success"
+    },
+    {
+      label: "Readiness",
+      value: runtimeSnapshot?.readiness.readinessState ?? "loading",
+      tone:
+        runtimeSnapshot?.readiness.readinessState === "Paper-Demo Candidate"
+          ? "success"
+          : runtimeSnapshot?.readiness.readinessState === "Research Ready"
+            ? "warning"
+            : "danger"
+    },
+    {
+      label: "Execution",
+      value: "disabled",
+      tone: "danger"
+    }
+  ] as const;
 
   return (
     <div className="space-y-5">
-      <section className="relative overflow-hidden rounded-2xl border border-cyan-300/20 bg-slate-950 px-5 py-6 shadow-[0_0_70px_rgba(8,145,178,0.12)]">
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/70 to-transparent" aria-hidden="true" />
-        <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+      <section className="rounded-2xl border border-cyan-300/15 bg-slate-950 p-4 shadow-[0_0_60px_rgba(8,145,178,0.10)]">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">Autonomous mission control</p>
-            <h2 className="mt-2 text-3xl font-semibold tracking-normal text-slate-50">GoTrader AI Lab Command Center</h2>
-            <p className="mt-2 max-w-3xl text-sm text-slate-400">
-              Supervise the research loop, watch pipeline health, and respond only when a gate, proposal, or evidence issue needs review.
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">Command Center</p>
+            <h2 className="mt-1 text-2xl font-semibold tracking-normal text-slate-50">GoTrader Research Dashboard</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Command Center can start research loops only. Broker, go-trader, and readiness override gates stay locked.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Badge variant="danger" className="text-sm">
-              Broker execution disabled
-            </Badge>
-            <Badge variant="secondary" className="text-sm">
-              Readiness override none
-            </Badge>
+            <Badge variant="danger">Broker execution disabled</Badge>
+            <Badge variant="warning">Go-Trader gate locked</Badge>
+            <Badge variant="warning">Tradovate gate locked</Badge>
+            {statusChips.map((chip) => (
+              <StatusChip key={chip.label} label={chip.label} value={chip.value} tone={chip.tone} />
+            ))}
           </div>
         </div>
       </section>
 
-      <MissionControlStatusStrip
-        autoApplyPolicyEnabled={autoApplyPolicyEnabled}
-        loopStatus={latestRun?.status}
-        snapshot={runtimeSnapshot}
-      />
-
-      <section className="rounded-xl border border-cyan-300/20 bg-slate-950/85 p-4 shadow-[0_0_55px_rgba(8,145,178,0.10)]">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="max-w-3xl">
-            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">
-              <RadioTower className="h-4 w-4" aria-hidden="true" />
-              Data Connection
-            </p>
-            <h3 className="mt-2 text-xl font-semibold text-slate-50">TradingView MCP chart control</h3>
-            <p className="mt-1 text-sm text-slate-400">
-              Connect the local read-only bridge, activate chart candles, confirm research eligibility, then start autonomous research from this Command Center.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="danger">Execution disabled</Badge>
-            <Badge variant="secondary">TradingView is not broker truth</Badge>
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <CommandStatusTile
-            label="TradingView MCP"
-            value={runtimeSnapshot?.tradingViewMcp.bridgeStatus.replace(/_/g, " ") ?? "checking"}
-            tone={runtimeSnapshot?.tradingViewMcp.bridgeStatus === "connected_analysis_only" ? "good" : "warn"}
-          />
-          <CommandStatusTile
-            label="TradingView Desktop CDP"
-            value={formatBool(runtimeSnapshot?.tradingViewMcp.runtime.tradingViewDesktopCdpConnected)}
-            tone={runtimeSnapshot?.tradingViewMcp.runtime.tradingViewDesktopCdpConnected ? "good" : "neutral"}
-          />
-          <CommandStatusTile
-            label="Chart feed"
-            value={runtimeSnapshot?.tradingViewMcp.chartFeedAvailable ? "active" : "inactive"}
-            detail={`${runtimeSnapshot?.tradingViewMcp.chartFeedCandleCount.toLocaleString() ?? "0"} candles`}
-            tone={runtimeSnapshot?.tradingViewMcp.chartFeedAvailable ? "good" : "warn"}
-          />
-          <CommandStatusTile
-            label="Research eligibility"
-            value={runtimeSnapshot?.tradingViewMcp.researchEligibility.replace(/_/g, " ") ?? "not checked"}
-            tone={runtimeSnapshot?.tradingViewMcp.researchEligibility === "eligible_for_research_cycle" ? "good" : "warn"}
-          />
-          <CommandStatusTile
-            label="Market regime"
-            value={runtimeSnapshot?.regime.label.replace(/_/g, " ") ?? "classifying"}
-            detail={
-              runtimeSnapshot
-                ? `${Math.round(runtimeSnapshot.regime.confidence * 100)}% / ${runtimeSnapshot.regime.transitionPending ? "transition pending" : runtimeSnapshot.regime.dataQuality}`
-                : undefined
-            }
-            tone={
-              runtimeSnapshot?.regime.dataQuality === "insufficient" || runtimeSnapshot?.regime.transitionPending
-                ? "warn"
-                : runtimeSnapshot?.regime.label === "risk_off_crisis" || runtimeSnapshot?.regime.label === "event_high_vol"
-                  ? "warn"
-                  : "good"
-            }
-          />
-          <CommandStatusTile
-            label="Symbol"
-            value={runtimeSnapshot?.tradingViewMcp.chartFeedSymbol ?? commandCenterSymbol}
-            detail={runtimeSnapshot?.tradingViewMcp.symbolMatch ? "matched" : "match pending"}
-          />
-          <CommandStatusTile
-            label="Timeframe"
-            value={runtimeSnapshot?.tradingViewMcp.chartFeedTimeframe ?? commandCenterTimeframe}
-            detail={runtimeSnapshot?.tradingViewMcp.timeframeMatch ? "matched" : "guarded"}
-          />
-          <CommandStatusTile
-            label="Chart source"
-            value={runtimeSnapshot?.marketData.activeChartDisplaySourceLabel ?? "loading"}
-            tone={runtimeSnapshot?.marketData.chartDisplayUsesTradingViewMcp ? "good" : "neutral"}
-          />
-          <CommandStatusTile
-            label="Research source"
-            value={runtimeSnapshot?.marketData.activeResearchSourceLabel ?? "loading"}
-            tone={runtimeSnapshot?.marketData.researchUsesTradingViewMcp ? "good" : "neutral"}
-          />
-          <CommandStatusTile
-            label="MCP storage"
-            value={runtimeSnapshot?.tradingViewMcp.chartFeedStorageBackend ?? "none"}
-            detail={runtimeSnapshot?.tradingViewMcp.chartFeedCandlesPersisted ? "IndexedDB persisted" : "metadata/session only"}
-            tone={runtimeSnapshot?.tradingViewMcp.chartFeedCandlesPersisted ? "good" : "neutral"}
-          />
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button onClick={() => void connectTradingViewChart()} disabled={tradingViewBusy}>
-            <Zap className="h-4 w-4" aria-hidden="true" />
-            {tradingViewBusy ? "Connecting..." : "Connect + Activate TradingView Chart"}
-          </Button>
-          <Button variant="secondary" onClick={() => void connectTradingViewChart()} disabled={tradingViewBusy}>
-            Refresh TradingView candles
-          </Button>
-          <Button variant="outline" onClick={() => void connectTradingViewChart()} disabled={tradingViewBusy}>
-            Use TradingView for chart
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => void useExistingTradingViewForResearch()}
-            disabled={tradingViewBusy || runtimeSnapshot?.tradingViewMcp.researchEligibility !== "eligible_for_research_cycle"}
-            title={
-              runtimeSnapshot?.tradingViewMcp.researchEligibility === "eligible_for_research_cycle"
-                ? "TradingView MCP candles passed the research-source gate."
-                : runtimeSnapshot?.tradingViewMcp.eligibilityReasons[0] ?? "TradingView MCP is not eligible for research yet."
-            }
-          >
-            Use TradingView for research
-          </Button>
-          <Button variant="secondary" onClick={() => void startLoop()} disabled={busy}>
-            <Activity className="h-4 w-4" aria-hidden="true" />
-            {busy ? "Loop running" : "Start Autonomous Research Loop"}
-          </Button>
-        </div>
-
-        <div className="mt-4 rounded-xl border border-cyan-300/15 bg-black/20 p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <section className="grid gap-4 xl:grid-cols-[1.45fr_0.9fr]">
+        <div className="rounded-xl border border-cyan-300/15 bg-slate-950/85 p-4 shadow-[0_0_45px_rgba(8,145,178,0.08)]">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-slate-50">Auto-refresh TradingView chart data</p>
-              <p className="mt-1 max-w-3xl text-xs text-slate-400">
-                Polls the local read-only wrapper for quote and candles, stores candles in IndexedDB, and refreshes
-                the chart source. This is not broker truth and cannot execute orders.
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Chart</p>
+              <h3 className="mt-1 text-lg font-semibold text-slate-50">
+                {runtimeSnapshot?.marketData.symbol ?? commandCenterSymbol} / {runtimeSnapshot?.marketData.timeframe ?? commandCenterTimeframe}
+              </h3>
+              <p className="mt-1 text-xs text-slate-400">
+                {runtimeSnapshot?.marketData.chartDisplayCandleCount.toLocaleString() ?? "0"} candles
+                {runtimeSnapshot?.marketData.chartDisplayLastTimestamp ? ` / last ${formatDateTime(runtimeSnapshot.marketData.chartDisplayLastTimestamp)}` : ""}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Badge variant={autoRefreshRunning ? "success" : autoRefreshPaused ? "warning" : "secondary"}>
-                {formatToken(tradingViewAutoRefresh.status)}
+              <Badge variant={chartSourceBadgeTone} className="text-sm">
+                {chartSourceShortLabel}
               </Badge>
-              <Badge variant="danger">Execution none</Badge>
+              {runtimeSnapshot?.marketData.chartDisplayUsesTradingViewMcp ? (
+                <>
+                  <Badge variant="secondary">Read-only</Badge>
+                  <Badge variant="warning">Not broker truth</Badge>
+                </>
+              ) : null}
+              <Badge variant="danger">Execution disabled</Badge>
             </div>
           </div>
-          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <label className="space-y-1 text-xs text-slate-300">
-              Interval
-              <Select
-                value={autoRefreshIntervalSeconds}
-                options={tradingViewAutoRefreshIntervalOptions}
-                onChange={(event) => {
-                  setAutoRefreshIntervalSeconds(event.target.value);
-                  persistAutoRefreshSettings(event.target.value, autoRefreshCandleLimit);
-                }}
-              />
-            </label>
-            <label className="space-y-1 text-xs text-slate-300">
-              Candle limit
-              <Select
-                value={autoRefreshCandleLimit}
-                options={tradingViewAutoRefreshCandleOptions}
-                onChange={(event) => {
-                  setAutoRefreshCandleLimit(event.target.value);
-                  persistAutoRefreshSettings(autoRefreshIntervalSeconds, event.target.value);
-                }}
-              />
-            </label>
-            <CommandStatusTile
-              label="Last refresh"
-              value={tradingViewAutoRefresh.lastRefreshAt ? formatDateTime(tradingViewAutoRefresh.lastRefreshAt) : "none"}
-              detail={`${tradingViewAutoRefresh.refreshCount.toLocaleString()} completed`}
-              tone={tradingViewAutoRefresh.refreshCount ? "good" : "neutral"}
-            />
-            <CommandStatusTile
-              label="Refresh in progress"
-              value={tradingViewAutoRefresh.refreshInProgress ? "yes" : "no"}
-              detail={`${tradingViewAutoRefresh.skippedRefreshCount.toLocaleString()} overlap skips`}
-              tone={tradingViewAutoRefresh.refreshInProgress ? "warn" : "good"}
-            />
-            <CommandStatusTile
-              label="Last checked"
-              value={tradingViewAutoRefresh.lastCheckedAt ? formatDateTime(tradingViewAutoRefresh.lastCheckedAt) : "none"}
-              detail={tradingViewAutoRefresh.lastStorageWriteSkipped ? "unchanged candles" : "waiting for check"}
-              tone={tradingViewAutoRefresh.lastCheckedAt ? "good" : "neutral"}
-            />
-            <CommandStatusTile
-              label="Last candle update"
-              value={tradingViewAutoRefresh.lastCandleUpdateAt ? formatDateTime(tradingViewAutoRefresh.lastCandleUpdateAt) : "none"}
-              detail={tradingViewAutoRefresh.lastCandleFingerprint ? "fingerprint tracked" : undefined}
-              tone={tradingViewAutoRefresh.lastCandleUpdateAt ? "good" : "neutral"}
-            />
-            <CommandStatusTile
-              label="Next refresh"
-              value={autoRefreshRunning ? autoRefreshCountdown : "stopped"}
-              detail={tradingViewAutoRefresh.nextRefreshAt ? formatDateTime(tradingViewAutoRefresh.nextRefreshAt) : undefined}
-              tone={autoRefreshRunning ? "good" : "neutral"}
-            />
-            <CommandStatusTile
-              label="Latest price"
-              value={tradingViewAutoRefresh.lastPrice !== undefined ? String(tradingViewAutoRefresh.lastPrice) : "n/a"}
-              detail={tradingViewAutoRefresh.lastSymbol}
-              tone={tradingViewAutoRefresh.lastPrice !== undefined ? "good" : "neutral"}
-            />
-            <CommandStatusTile
-              label="Latest candle"
-              value={tradingViewAutoRefresh.lastCandleTimestamp ? formatDateTime(tradingViewAutoRefresh.lastCandleTimestamp) : "n/a"}
-              detail={`${tradingViewAutoRefresh.lastCandleCount.toLocaleString()} candles`}
-              tone={tradingViewAutoRefresh.lastCandleCount ? "good" : "neutral"}
-            />
-            <CommandStatusTile
-              label="Failures"
-              value={String(tradingViewAutoRefresh.consecutiveFailures)}
-              detail={tradingViewAutoRefresh.lastError}
-              tone={tradingViewAutoRefresh.consecutiveFailures ? "warn" : "good"}
-            />
-            <CommandStatusTile
-              label="Storage"
-              value={tradingViewAutoRefresh.lastStorageBackend ?? runtimeSnapshot?.tradingViewMcp.chartFeedStorageBackend ?? "none"}
-              detail={
-                tradingViewAutoRefresh.lastStorageWriteSkipped
-                  ? `write skipped ${tradingViewAutoRefresh.lastStorageWriteSkippedAt ? formatDateTime(tradingViewAutoRefresh.lastStorageWriteSkippedAt) : ""}`
-                  : tradingViewAutoRefresh.lastFeedId ?? runtimeSnapshot?.tradingViewMcp.chartFeedId
-              }
-              tone={tradingViewAutoRefresh.lastStorageBackend === "indexeddb" ? "good" : "neutral"}
-            />
+          <div className="mt-3 overflow-hidden rounded-lg border border-white/10 bg-black/25">
+            {commandCenterChart ? (
+              <TradingChart key={commandCenterChart.source.sourceKey} {...commandCenterChart} heightClassName="h-[360px]" />
+            ) : (
+              <div className="flex h-[360px] items-center justify-center text-sm text-slate-500">
+                Chart data is loading. Connect TradingView MCP or activate imported candles.
+              </div>
+            )}
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={() => void startTradingViewAutoRefresh()} disabled={autoRefreshBusy || autoRefreshRunning}>
-              {autoRefreshBusy && !autoRefreshRunning ? "Starting..." : "Start Auto-refresh"}
-            </Button>
-            <Button variant="outline" onClick={() => void stopTradingViewAutoRefresh()} disabled={!autoRefreshRunning && tradingViewAutoRefresh.status !== "failed" && tradingViewAutoRefresh.status !== "paused"}>
-              Stop Auto-refresh
-            </Button>
-            <Button variant="outline" onClick={() => void refreshTradingViewNow()} disabled={autoRefreshBusy}>
-              {autoRefreshBusy ? "Refreshing..." : "Refresh Now"}
-            </Button>
-          </div>
-          {tradingViewAutoRefresh.lastError ? (
-            <div className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-xs text-amber-100">
-              {tradingViewAutoRefresh.lastError}
+          {runtimeSnapshot?.marketData.chartDisplayWarning ? (
+            <div className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
+              {runtimeSnapshot.marketData.chartDisplayWarning}
             </div>
           ) : null}
         </div>
 
-        <div
-          className={`mt-4 rounded-lg border p-3 text-sm ${
-            tradingViewOperationMessage.toLowerCase().includes("failed") ||
-            tradingViewOperationMessage.toLowerCase().includes("not running") ||
-            tradingViewOperationMessage.toLowerCase().includes("unavailable")
-              ? "border-rose-300/25 bg-rose-300/10 text-rose-100"
-              : runtimeSnapshot?.tradingViewMcp.chartFeedAvailable
-                ? "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
-                : "border-cyan-300/20 bg-cyan-300/10 text-cyan-100"
-          }`}
-        >
-          <p className="font-semibold">{tradingViewBusy ? "Working..." : "Command Center feedback"}</p>
-          <p className="mt-1">{tradingViewOperationMessage}</p>
-          {runtimeSnapshot?.tradingViewMcp.eligibilityReasons.length ? (
-            <p className="mt-1 text-xs opacity-80">Gate: {runtimeSnapshot.tradingViewMcp.eligibilityReasons[0]}</p>
-          ) : null}
+        <div className="space-y-4">
+          <section className="rounded-xl border border-cyan-300/15 bg-slate-950/85 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Operate</p>
+                <h3 className="mt-1 text-lg font-semibold text-slate-50">Primary Actions</h3>
+              </div>
+              <Badge variant="danger">Authority none</Badge>
+            </div>
+            <div className="mt-4 grid gap-2">
+              <Button onClick={() => void connectTradingViewChart()} disabled={tradingViewBusy} className="h-11 justify-start">
+                <Zap className="h-4 w-4" aria-hidden="true" />
+                {tradingViewBusy ? "Connecting..." : "Connect + Activate TradingView Chart"}
+              </Button>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button variant="secondary" onClick={() => void refreshTradingViewNow()} disabled={autoRefreshBusy}>
+                  {autoRefreshBusy ? "Refreshing..." : "Refresh Candles"}
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => void useExistingTradingViewForResearch()}
+                  disabled={tradingViewBusy || runtimeSnapshot?.tradingViewMcp.researchEligibility !== "eligible_for_research_cycle"}
+                  title={
+                    runtimeSnapshot?.tradingViewMcp.researchEligibility === "eligible_for_research_cycle"
+                      ? "TradingView MCP candles passed the research-source gate."
+                      : runtimeSnapshot?.tradingViewMcp.eligibilityReasons[0] ?? "TradingView MCP is not eligible for research yet."
+                  }
+                >
+                  Use TV for Research
+                </Button>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button variant="secondary" onClick={() => void startTradingViewAutoRefresh()} disabled={autoRefreshBusy || autoRefreshRunning}>
+                  {autoRefreshRunning ? "Auto-refresh Active" : "Start Auto-refresh"}
+                </Button>
+                <Button variant="outline" onClick={() => void stopTradingViewAutoRefresh()} disabled={!autoRefreshRunning && tradingViewAutoRefresh.status !== "failed" && tradingViewAutoRefresh.status !== "paused"}>
+                  Stop Auto-refresh
+                </Button>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button variant="secondary" onClick={() => void startLoop()} disabled={busy}>
+                  <Activity className="h-4 w-4" aria-hidden="true" />
+                  {busy ? "Research Running" : "Start Autonomous Research"}
+                </Button>
+                <Button variant="outline" onClick={stopLoop} disabled={!busy}>
+                  Stop Research
+                </Button>
+              </div>
+            </div>
+            <div
+              className={`mt-4 rounded-lg border p-3 text-sm ${
+                tradingViewOperationMessage.toLowerCase().includes("failed") ||
+                tradingViewOperationMessage.toLowerCase().includes("not running") ||
+                tradingViewOperationMessage.toLowerCase().includes("unavailable")
+                  ? "border-rose-300/25 bg-rose-300/10 text-rose-100"
+                  : runtimeSnapshot?.tradingViewMcp.chartFeedAvailable
+                    ? "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
+                    : "border-cyan-300/20 bg-cyan-300/10 text-cyan-100"
+              }`}
+            >
+              <p className="font-semibold">{tradingViewBusy || autoRefreshBusy ? "Working..." : "Feedback"}</p>
+              <p className="mt-1">{tradingViewOperationMessage}</p>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <label className="space-y-1 text-xs text-slate-300">
+                Refresh interval
+                <Select
+                  value={autoRefreshIntervalSeconds}
+                  options={tradingViewAutoRefreshIntervalOptions}
+                  onChange={(event) => {
+                    setAutoRefreshIntervalSeconds(event.target.value);
+                    persistAutoRefreshSettings(event.target.value, autoRefreshCandleLimit);
+                  }}
+                />
+              </label>
+              <label className="space-y-1 text-xs text-slate-300">
+                Candle limit
+                <Select
+                  value={autoRefreshCandleLimit}
+                  options={tradingViewAutoRefreshCandleOptions}
+                  onChange={(event) => {
+                    setAutoRefreshCandleLimit(event.target.value);
+                    persistAutoRefreshSettings(autoRefreshIntervalSeconds, event.target.value);
+                  }}
+                />
+              </label>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <MiniReadout label="Auto-refresh" value={formatToken(tradingViewAutoRefresh.status)} detail={autoRefreshRunning ? `next ${autoRefreshCountdown}` : "stopped"} />
+              <MiniReadout label="Latest price" value={tradingViewAutoRefresh.lastPrice !== undefined ? String(tradingViewAutoRefresh.lastPrice) : "n/a"} detail={tradingViewAutoRefresh.lastCandleTimestamp ? formatDateTime(tradingViewAutoRefresh.lastCandleTimestamp) : "no candle yet"} />
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-white/10 bg-slate-950/85 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-300">Action Required</p>
+            <h3 className="mt-1 text-lg font-semibold text-slate-50">{primaryBlocker}</h3>
+            <p className="mt-2 text-sm text-slate-400">{primaryBlockerDetail}</p>
+            <div className="mt-4 space-y-2">
+              {actionItems.length ? (
+                actionItems.slice(0, 4).map((item) => (
+                  <Link
+                    key={item.id}
+                    to={item.href ?? "/dashboard"}
+                    className="flex items-start justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 transition hover:border-amber-300/30"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-slate-100">{item.title}</p>
+                      <p className="mt-1 text-xs text-slate-500">{item.detail}</p>
+                    </div>
+                    <Badge variant={item.severity === "critical" ? "danger" : item.severity === "action_required" || item.severity === "warning" ? "warning" : "secondary"}>
+                      {item.severity.replace(/_/g, " ")}
+                    </Badge>
+                  </Link>
+                ))
+              ) : (
+                <div className="rounded-lg border border-emerald-300/25 bg-emerald-300/10 p-3 text-sm text-emerald-100">
+                  No action required. Keep supervising; execution remains disabled.
+                </div>
+              )}
+            </div>
+          </section>
         </div>
       </section>
 
-      <WhyNotReadyCard context="command_center" snapshot={runtimeSnapshot} />
-
-      {runtimeSnapshot ? (
-        <section
-          className={`rounded-xl border p-4 text-sm ${
-            runtimeSnapshot.marketData.isImportedDataActive
-              ? "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
-              : "border-amber-300/25 bg-amber-300/10 text-amber-100"
-          }`}
-        >
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+      <section className="grid gap-4 xl:grid-cols-2">
+        <div className="rounded-xl border border-white/10 bg-slate-950/85 p-4">
+          <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="font-semibold">
-                Current data source: {runtimeSnapshot.marketData.isImportedDataActive ? "Imported historical data" : "Mock candles"}
-              </p>
-              <p className="mt-1">
-                {runtimeSnapshot.marketData.isImportedDataActive
-                  ? `${runtimeSnapshot.marketData.sourceLabel}; ${runtimeSnapshot.marketData.processedCandleCount.toLocaleString()} processed candles.`
-                  : `Not valid for imported MNQ comparison. ${runtimeSnapshot.marketData.importedDataMessage}`}
-              </p>
-              <p className="mt-1 text-xs opacity-80">
-                Chart: {runtimeSnapshot.marketData.activeChartDisplaySourceLabel}. Research:{" "}
-                {runtimeSnapshot.marketData.activeResearchSourceLabel}.{" "}
-                {runtimeSnapshot.marketData.liveMarketDataStatus.liveFeedAvailable
-                  ? runtimeSnapshot.marketData.liveMarketDataStatus.liveFeedSourceLabel
-                  : runtimeSnapshot.marketData.chartDisplayUsesTradingViewMcp
-                    ? "Live feed not connected. Chart display uses TradingView MCP read-only candles."
-                    : "Live feed not connected. Charts are using imported/mock/replay data."}
-              </p>
-              <p className="mt-1 text-xs opacity-80">
-                Chart candles: {runtimeSnapshot.marketData.chartDisplayCandleCount.toLocaleString()} / first{" "}
-                {runtimeSnapshot.marketData.chartDisplayFirstTimestamp ?? "n/a"} close{" "}
-                {runtimeSnapshot.marketData.chartDisplayFirstClose ?? "n/a"} / last{" "}
-                {runtimeSnapshot.marketData.chartDisplayLastTimestamp ?? "n/a"} close{" "}
-                {runtimeSnapshot.marketData.chartDisplayLastClose ?? "n/a"}.
-              </p>
-              {runtimeSnapshot.marketData.chartDisplayWarning ? (
-                <p className="mt-1 text-xs font-semibold opacity-90">{runtimeSnapshot.marketData.chartDisplayWarning}</p>
-              ) : null}
-              <p className="mt-1 text-xs opacity-80">
-                Stored imports: {runtimeSnapshot.marketData.importedDatasetCount}; active import: {runtimeSnapshot.marketData.activeImportId ?? "none"}.
-              </p>
-              <p className="mt-1 text-xs opacity-80">
-                TradingView MCP: {runtimeSnapshot.tradingViewMcp.bridgeStatus.replace(/_/g, " ")}; evidence{" "}
-                {runtimeSnapshot.tradingViewMcp.evidenceAvailable ? "available" : "not fetched"}; latest{" "}
-                {runtimeSnapshot.tradingViewMcp.latestEvidenceTimestamp ?? "none"}; bias {runtimeSnapshot.tradingViewMcp.chartBias}; authority analysis only.
-              </p>
-              <p className="mt-1 text-xs opacity-80">
-                TradingView MCP chart feed: {runtimeSnapshot.tradingViewMcp.chartFeedAvailable ? "active" : "not active"};{" "}
-                {runtimeSnapshot.tradingViewMcp.chartFeedCandleCount.toLocaleString()} candles; match{" "}
-                {runtimeSnapshot.tradingViewMcp.chartFeedMatchState.replace(/_/g, " ")}; eligibility{" "}
-                {runtimeSnapshot.tradingViewMcp.researchEligibility.replace(/_/g, " ")}.
-              </p>
-              {!runtimeSnapshot.tradingViewMcp.chartFeedAvailable ? (
-                <p className="mt-1 text-xs font-semibold opacity-90">
-                  TradingView MCP chart feed not active. Use the Data Connection panel above to connect and activate it.
-                </p>
-              ) : null}
-              {runtimeSnapshot.tradingViewMcp.chartFeedAvailable && !runtimeSnapshot.tradingViewMcp.activeForResearch ? (
-                <p className="mt-1 text-xs font-semibold opacity-90">
-                  TradingView MCP candles are visual-only and not used for research.
-                </p>
-              ) : null}
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Market State</p>
+              <h3 className="mt-1 text-lg font-semibold text-slate-50">
+                {runtimeSnapshot?.regime.label.replace(/_/g, " ") ?? "Classifying"}
+              </h3>
             </div>
-            <Link to="/market-data">
-              <Button variant="secondary" className="w-full md:w-auto">
-                {runtimeSnapshot.marketData.isImportedDataActive ? "Advanced market data details" : "Advanced re-import tools"}
-              </Button>
-            </Link>
-          </div>
-        </section>
-      ) : null}
-
-      <MissionControlActionPanel
-        actionItems={actionItems}
-        advancedFullResearchMode={advancedFullResearchMode}
-        autoApplyPolicyEnabled={autoApplyPolicyEnabled}
-        busy={busy}
-        dataPresetLabel={runtimeSnapshot?.marketData.dataPreset ?? "loading"}
-        maxIterations={maxIterations}
-        noImprovementStop={noImprovementStop}
-        onAdvancedFullResearchModeChange={setAdvancedFullResearchMode}
-        onAutoApplyPolicyEnabledChange={setAutoApplyPolicyEnabled}
-        onMaxIterationsChange={setMaxIterations}
-        onNoImprovementStopChange={setNoImprovementStop}
-        onStart={startLoop}
-        onStop={stopLoop}
-        searchDepthLabel={latestRun?.latestScenarioFamily ? formatToken(latestRun.latestScenarioFamily) : "auto-selected"}
-        selectedScenarioFamily={formatToken(latestRun?.latestScenarioFamily)}
-      />
-
-      <AutonomousLoopProgress
-        busy={busy}
-        onDiscardRecovery={discardRecovery}
-        recoveryRun={recoveryRun}
-        run={latestRun}
-      />
-
-      {commandCenterChart ? (
-        <section className="rounded-xl border border-cyan-300/15 bg-slate-950/70 p-3">
-          <TradingChart key={commandCenterChart.source.sourceKey} {...commandCenterChart} heightClassName="h-[260px]" />
-        </section>
-      ) : null}
-
-      <MissionControlPipeline stages={pipelineStages} />
-
-      <section className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
-        <div className="rounded-xl border border-white/10 bg-slate-950/80 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Key readouts</p>
-              <h3 className="mt-1 text-lg font-semibold text-slate-50">Minimal Metrics</h3>
-            </div>
-            <Badge variant="secondary">{selectRuntimeFingerprintLabel(runtimeSnapshot)}</Badge>
+            <Badge variant={runtimeSnapshot?.regime.dataQuality === "sufficient" ? "success" : "warning"}>
+              {runtimeSnapshot ? `${Math.round(runtimeSnapshot.regime.confidence * 100)}%` : "loading"}
+            </Badge>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {keyMetrics.map((metric) => (
-              <div key={metric.label} className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
-                <div className="text-[0.65rem] uppercase tracking-[0.16em] text-slate-500">{metric.label}</div>
-                <div className="mt-1 truncate font-mono text-sm text-slate-100">{metric.value}</div>
-                <div className="mt-1 truncate text-xs text-slate-500">{metric.detail}</div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-3 text-sm text-cyan-100">
-            {simulatedAccount
-              ? `Simulated balance ${currency.format(simulatedAccount.currentBalance)}; P&L ${currency.format(simulatedAccount.realizedPnL)}. Simulation only.`
-              : "Run AI Research Cycle to generate simulated account results. Simulation only."}
+            <MiniReadout
+              label="Grinch / ICT"
+              value={grinch ? `${grinch.profile.replace(/_/g, " ")} / ${grinch.state}` : "pending"}
+              detail={grinch?.hardGateReason ? `blocked: ${grinch.hardGateReason.replace(/_/g, " ")}` : grinch?.detail ?? "Profile summary pending"}
+            />
+            <MiniReadout
+              label="Volatility / chop"
+              value={
+                runtimeSnapshot
+                  ? `${Math.round(runtimeSnapshot.regime.current.scores.volatility * 100)} vol / ${Math.round(runtimeSnapshot.regime.current.scores.chop * 100)} chop`
+                  : "loading"
+              }
+              detail={runtimeSnapshot?.regime.supportingFactors[0] ?? "Regime factors pending"}
+            />
+            <MiniReadout
+              label="Trend strength"
+              value={runtimeSnapshot ? `${Math.round(runtimeSnapshot.regime.current.scores.trend_strength * 100)}%` : "loading"}
+              detail={runtimeSnapshot?.regime.supportingFactors[1] ?? "Trend evidence pending"}
+            />
+            <MiniReadout
+              label="Top blocker"
+              value={runtimeSnapshot?.readiness.actualBlockers[0] ? "blocked" : "clear"}
+              detail={runtimeSnapshot?.readiness.actualBlockers[0] ?? "No readiness blocker in current snapshot"}
+            />
           </div>
         </div>
-        <MissionControlDataFeed items={feedItems} />
+
+        <div className="rounded-xl border border-white/10 bg-slate-950/85 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Research Status</p>
+              <h3 className="mt-1 text-lg font-semibold text-slate-50">
+                {formatToken(runtimeSnapshot?.latestResearchCycle.latestCycleStatus)}
+              </h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Loop progress: {latestRun?.progress?.activeStageLabel ?? formatToken(latestRun?.status)}
+              </p>
+            </div>
+            <Badge variant={runtimeSnapshot?.walkForward.verdict === "robust_research" || runtimeSnapshot?.walkForward.verdict === "paper_demo_review_candidate" ? "success" : runtimeSnapshot?.walkForward.verdict ? "warning" : "secondary"}>
+              WF {formatToken(runtimeSnapshot?.walkForward.verdict)}
+            </Badge>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <MiniReadout label="Trades" value={String(latestBacktest?.totalTrades ?? 0)} detail={`Win ${pct(latestBacktest?.winRate)}`} />
+            <MiniReadout label="Average R" value={latestBacktest ? latestBacktest.averageR.toFixed(2) : "n/a"} detail={`DD ${latestBacktest ? `${latestBacktest.maxDrawdown.toFixed(2)}R` : "n/a"}`} />
+            <MiniReadout label="Profit factor" value={latestBacktest?.profitFactor !== null && latestBacktest?.profitFactor !== undefined ? latestBacktest.profitFactor.toFixed(2) : "n/a"} detail={runtimeSnapshot?.latestResearchCycle.latestCycleId ?? "No cycle"} />
+            <MiniReadout label="Maturity" value={`${runtimeSnapshot?.maturity.maturityScore ?? 0}/100`} detail={runtimeSnapshot?.maturity.maturityGrade.replace(/_/g, " ") ?? "untested"} />
+            <MiniReadout label="Evidence" value={`${runtimeSnapshot?.evidence.evidenceQualityScore ?? 0}/100`} detail={runtimeSnapshot?.evidence.weakestEvidenceCategories[0]?.replace(/_/g, " ") ?? "ledger pending"} />
+            <MiniReadout label="Walk-forward" value={`${runtimeSnapshot?.walkForward.outOfSampleWindowsPassed ?? 0}/${runtimeSnapshot?.walkForward.windowsTested ?? 0}`} detail={runtimeSnapshot?.walkForward.recommendedNextAction ?? "pending"} />
+          </div>
+          {runtimeSnapshot?.readiness.actualBlockers.length ? (
+            <div className="mt-4 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
+              Insufficient evidence. More valid profile windows needed.
+            </div>
+          ) : null}
+        </div>
       </section>
 
-      <section className="rounded-xl border border-rose-300/25 bg-rose-950/20 p-4 text-sm text-rose-100">
-        <div className="flex items-start gap-3">
-          <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          <div>
-            <p className="font-semibold">Safety locks are always on.</p>
-            <p className="mt-1 text-rose-100/80">
-              Command Center can start research loops only. It cannot execute trades, approve Paper-Demo Candidate, send go-trader handoffs,
-              connect Tradovate, or override readiness gates.
-            </p>
-          </div>
-        </div>
-      </section>
+      <MissionControlDataFeed items={safeTopN(feedItems, 10)} />
 
       <TechnicalDetails
         title="Advanced details and drill-down controls"
         description="Open for the one-cycle research control, runtime diagnostics, source trace, and direct links to detail pages."
       >
+        <div className="space-y-4">
+          <WhyNotReadyCard context="command_center" snapshot={runtimeSnapshot} />
+          <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Secondary controls</p>
+                <h3 className="mt-1 text-base font-semibold text-slate-50">Loop Settings</h3>
+                <p className="mt-1 text-sm text-slate-400">
+                  These controls stay out of the default dashboard so the operating surface remains focused.
+                </p>
+              </div>
+              <Badge variant={autoApplyPolicyEnabled ? "warning" : "secondary"}>
+                {autoApplyPolicyEnabled ? "policy-gated auto-apply" : "proposal-only"}
+              </Badge>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <label className="space-y-1 text-xs text-slate-300">
+                Max iterations
+                <Select
+                  value={maxIterations}
+                  options={[1, 2, 3, 4, 5].map((value) => ({ label: String(value), value: String(value) }))}
+                  onChange={(event) => setMaxIterations(event.target.value)}
+                />
+              </label>
+              <label className="space-y-1 text-xs text-slate-300">
+                No improvement stop
+                <Select
+                  value={noImprovementStop}
+                  options={[1, 2, 3].map((value) => ({ label: `${value} cycle${value === 1 ? "" : "s"}`, value: String(value) }))}
+                  onChange={(event) => setNoImprovementStop(event.target.value)}
+                />
+              </label>
+              <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-slate-950/45 p-3 text-sm text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={autoApplyPolicyEnabled}
+                  onChange={(event) => setAutoApplyPolicyEnabled(event.target.checked)}
+                />
+                Policy-gated auto-apply
+              </label>
+              <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-slate-950/45 p-3 text-sm text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={advancedFullResearchMode}
+                  onChange={(event) => setAdvancedFullResearchMode(event.target.checked)}
+                />
+                Advanced full research
+              </label>
+            </div>
+          </section>
+          <MissionControlPipeline stages={pipelineStages} />
+        </div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {[
             ["Data source", runtimeSnapshot?.marketData.sourceLabel ?? "loading"],
@@ -1349,6 +1284,60 @@ function buildActionItems(snapshot?: ResearchRuntimeSnapshot, run?: AutonomousRe
       severity: "warning"
     });
   }
+  if (snapshot.tradingViewMcp.bridgeStatus !== "connected_analysis_only") {
+    items.push({
+      id: "tradingview-disconnected",
+      title: "TradingView MCP disconnected",
+      detail: "Start the local wrapper, then use Connect + Activate TradingView Chart from Command Center.",
+      severity: "action_required"
+    });
+  } else if (!snapshot.tradingViewMcp.chartFeedAvailable) {
+    items.push({
+      id: "tradingview-no-candles",
+      title: "Chart feed inactive",
+      detail: "Fetch TradingView MCP candles before using the chart feed.",
+      severity: "action_required"
+    });
+  }
+  if (
+    snapshot.tradingViewMcp.chartFeedAvailable &&
+    snapshot.tradingViewMcp.researchEligibility !== "eligible_for_research_cycle"
+  ) {
+    items.push({
+      id: "tradingview-research-guarded",
+      title: "Research source not eligible",
+      detail: snapshot.tradingViewMcp.eligibilityReasons[0] ?? "TradingView MCP is visual-only until source gates pass.",
+      href: "/market-data",
+      severity: "warning"
+    });
+  }
+  if (snapshot.walkForward.verdict === "insufficient_evidence") {
+    items.push({
+      id: "walk-forward-insufficient",
+      title: "Walk-forward insufficient",
+      detail: snapshot.walkForward.recommendedNextAction ?? "Run or extend walk-forward validation before trusting a calibration.",
+      href: "/walk-forward",
+      severity: "warning"
+    });
+  }
+  if (snapshot.evidence.evidenceQualityScore < 50) {
+    items.push({
+      id: "evidence-quality-weak",
+      title: "Evidence quality weak",
+      detail: snapshot.evidence.weakestEvidenceCategories[0]?.replace(/_/g, " ") ?? "Open Evidence Quality for the current blocker.",
+      href: "/evidence-quality",
+      severity: "warning"
+    });
+  }
+  if (!snapshot.llm.advisoryPassed) {
+    items.push({
+      id: "llm-advisory-missing",
+      title: "LLM advisory missing",
+      detail: snapshot.llm.readinessImpact,
+      href: "/llm-agents",
+      severity: "info"
+    });
+  }
   items.push(...snapshot.proposal.currentActionItems);
   if (run?.status === "paused" && run.stopReason === "regime_mismatch_detected") {
     items.unshift({
@@ -1526,86 +1515,55 @@ function buildFeedItems(
   }), 18);
 }
 
-function buildKeyMetrics(snapshot?: ResearchRuntimeSnapshot, run?: AutonomousResearchRun) {
-  const account = snapshot?.performance.simulatedAccountSummary;
-  const grinch = snapshot?.latestResearchCycle.activeGrinchProfileSummary;
-  return [
-    {
-      label: "Readiness",
-      value: snapshot?.readiness.readinessState ?? "loading",
-      detail: snapshot?.readiness.actualBlockers[0] ?? "No current blocker"
-    },
-    {
-      label: "Grinch model",
-      value: grinch?.grinchModelScore !== undefined ? `${grinch.grinchModelScore}/100` : "n/a",
-      detail: grinch
-        ? grinch.hardGateReason
-          ? `blocked: ${grinch.hardGateReason.replace(/_/g, " ")} / ${grinch.primaryRuleBlock ?? "treat as no-trade"}`
-          : grinch.fallbackProfileUsed && grinch.fallbackProfileUsed !== "none"
-            ? `Model 1 fallback -> ${grinch.fallbackProfileUsed} / ${grinch.setupQuality ?? "research"} / risk ${grinch.falsePositiveRisk ?? "n/a"}/100`
-            : grinch.noValidProfile
-              ? "No valid Grinch profile in this window."
-          : `${grinch.profile.replace(/_/g, " ")} / ${grinch.setupQuality ?? "research"} / risk ${grinch.falsePositiveRisk ?? "n/a"}/100 / ${grinch.improvedLatestRun ? "improved latest run" : "not proven yet"}`
-        : "Profile score pending"
-    },
-    {
-      label: "Last auto-apply",
-      value: run?.latestAutoAppliedCalibrationId ?? "none",
-      detail: run?.latestAutoApplyEligibility?.reasons[0] ?? "Auto-apply disabled or blocked"
-    },
-    {
-      label: "Walk-forward",
-      value: formatToken(snapshot?.walkForward.verdict),
-      detail: `${snapshot?.walkForward.outOfSampleWindowsPassed ?? 0}/${snapshot?.walkForward.windowsTested ?? 0} OOS windows`
-    },
-    {
-      label: "Maturity",
-      value: `${snapshot?.maturity.maturityScore ?? 0}/100`,
-      detail: snapshot?.maturity.maturityGrade.replace(/_/g, " ") ?? "untested"
-    },
-    {
-      label: "Evidence",
-      value: `${snapshot?.evidence.evidenceQualityScore ?? 0}/100`,
-      detail:
-        snapshot?.latestResearchCycle.smtSummary?.smtState === "unavailable"
-          ? "SMT unavailable: correlated instruments missing"
-          : snapshot?.evidence.weakestEvidenceCategories[0]?.replace(/_/g, " ") ?? "ledger pending"
-    },
-    {
-      label: "Handoff gate",
-      value: run?.goTraderHandoffGate.eligibleForReview ? "review eligible" : "locked",
-      detail: run?.goTraderHandoffGate.reasons[0] ?? "No execution handoff authority"
-    },
-    {
-      label: "Sim P&L",
-      value: account ? currency.format(account.realizedPnL) : "n/a",
-      detail: account ? `${pct(account.winRate)} win rate / ${account.totalTrades} trades` : "Run cycle first"
-    }
-  ];
+function getChartSourceShortLabel(snapshot?: ResearchRuntimeSnapshot) {
+  if (!snapshot) return "loading";
+  if (snapshot.marketData.chartDisplayUsesTradingViewMcp) return "TradingView MCP";
+  if (snapshot.marketData.activeChartDisplaySourceLabel.toLowerCase().includes("import")) return "Imported";
+  if (snapshot.marketData.activeChartDisplaySourceLabel.toLowerCase().includes("mock")) return "Mock";
+  return snapshot.marketData.activeChartDisplaySourceLabel;
 }
 
-function CommandStatusTile({
+function getResearchSourceShortLabel(snapshot?: ResearchRuntimeSnapshot) {
+  if (!snapshot) return "loading";
+  if (snapshot.marketData.researchUsesTradingViewMcp) return "TradingView MCP";
+  if (snapshot.marketData.activeResearchSourceLabel.toLowerCase().includes("import")) return "Imported";
+  if (snapshot.marketData.activeResearchSourceLabel.toLowerCase().includes("mock")) return "Mock";
+  return snapshot.marketData.activeResearchSourceLabel;
+}
+
+function StatusChip({
+  label,
+  tone,
+  value
+}: {
+  label: string;
+  tone: "success" | "warning" | "danger" | "secondary";
+  value: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.035] px-3 py-2">
+      <span className="text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">{label}</span>
+      <Badge variant={tone} className="capitalize">
+        {value}
+      </Badge>
+    </div>
+  );
+}
+
+function MiniReadout({
   detail,
   label,
-  tone = "neutral",
   value
 }: {
   detail?: string;
   label: string;
-  tone?: "good" | "warn" | "neutral";
   value: string;
 }) {
-  const toneClass =
-    tone === "good"
-      ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-100"
-      : tone === "warn"
-        ? "border-amber-300/20 bg-amber-300/10 text-amber-100"
-        : "border-white/10 bg-white/[0.035] text-slate-100";
   return (
-    <div className={`rounded-lg border p-3 ${toneClass}`}>
-      <div className="text-[0.65rem] uppercase tracking-[0.16em] opacity-70">{label}</div>
-      <div className="mt-1 truncate font-mono text-sm">{value}</div>
-      {detail ? <div className="mt-1 truncate text-xs opacity-75">{detail}</div> : null}
+    <div className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
+      <div className="text-[0.65rem] uppercase tracking-[0.16em] text-slate-500">{label}</div>
+      <div className="mt-1 truncate font-mono text-sm text-slate-100">{value}</div>
+      {detail ? <div className="mt-1 text-xs text-slate-500">{detail}</div> : null}
     </div>
   );
 }
