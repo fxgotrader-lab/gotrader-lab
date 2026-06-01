@@ -235,9 +235,17 @@ export function MissionControlShell({ state }: { state: LabState }) {
         quote.timestamp
       );
 
+      const selectedCandleLimit = Number(autoRefreshCandleLimit);
       setTradingViewOperationMessage(`Fetching TradingView MCP candles for ${commandCenterSymbol} ${commandCenterTimeframe}...`);
-      addDataConnectionEvent("Candle fetch started", "Requesting 240 read-only candles for chart display.", "running");
-      const candles = await fetchTradingViewMcpCandles({ symbol: commandCenterSymbol, timeframe: commandCenterTimeframe, limit: 240 }, settings);
+      addDataConnectionEvent(
+        "Candle fetch started",
+        `Requesting ${selectedCandleLimit.toLocaleString()} read-only candles for chart display.`,
+        "running"
+      );
+      const candles = await fetchTradingViewMcpCandles(
+        { symbol: commandCenterSymbol, timeframe: commandCenterTimeframe, limit: selectedCandleLimit },
+        settings
+      );
       if (!candles.candleCount) {
         const message =
           candles.missingEvidence.join(" ") ||
