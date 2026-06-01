@@ -37,13 +37,13 @@ export function MissionControlDataFeed({ items }: { items: MissionFeedItem[] }) 
   return (
     <section className="rounded-xl border border-cyan-300/15 bg-slate-950/90 p-4 shadow-[0_0_40px_rgba(8,145,178,0.08)]">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Research flow tape</p>
           <h3 className="mt-1 text-lg font-semibold text-slate-50">Latest Events</h3>
         </div>
         <Badge variant="secondary">{items.length} latest</Badge>
       </div>
-      <div className="mt-4 max-h-[380px] space-y-2 overflow-y-auto pr-1">
+      <div className="mt-4 max-h-[320px] space-y-2 overflow-y-auto pr-1">
         {items.length ? (
           items.map((item) => {
             const row = (
@@ -68,17 +68,17 @@ export function MissionControlDataFeed({ items }: { items: MissionFeedItem[] }) 
                   }`}
                   aria-hidden="true"
                 />
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-100">{item.title}</p>
-                    <p className="mt-1 text-xs text-slate-400">{item.detail}</p>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-100">{item.title}</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">{item.detail}</p>
                     {item.sourceFingerprint ? (
                       <p className="mt-1 break-all font-mono text-[0.65rem] uppercase tracking-[0.08em] text-slate-500">
                         {item.sourceFingerprint}
                       </p>
                     ) : null}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-2">
                     <span className="font-mono text-[0.65rem] uppercase tracking-[0.12em] text-slate-500">{formatTime(item.timestamp)}</span>
                     <Badge variant={severityVariant(item.severity)}>{item.severity.replace(/_/g, " ")}</Badge>
                   </div>

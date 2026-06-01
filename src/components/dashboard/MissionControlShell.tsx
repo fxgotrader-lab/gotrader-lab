@@ -620,30 +620,33 @@ export function MissionControlShell({ state }: { state: LabState }) {
 
   return (
     <div className="space-y-5">
-      <section className="rounded-2xl border border-cyan-300/15 bg-slate-950 p-4 shadow-[0_0_60px_rgba(8,145,178,0.10)]">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
+      <section className="rounded-2xl border border-cyan-300/15 bg-slate-950 p-4 shadow-[0_0_60px_rgba(8,145,178,0.10)] lg:p-5">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">Command Center</p>
             <h2 className="mt-1 text-2xl font-semibold tracking-normal text-slate-50">GoTrader Research Dashboard</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Command Center can start research loops only. Broker, go-trader, and readiness override gates stay locked.
+            <p className="mt-1 max-w-3xl text-sm text-slate-400">
+              Command Center can start research loops only. Chart data and safety gates stay supervised from this surface.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
             <Badge variant="danger">Broker execution disabled</Badge>
             <Badge variant="warning">Go-Trader gate locked</Badge>
             <Badge variant="warning">Tradovate gate locked</Badge>
-            {statusChips.map((chip) => (
-              <StatusChip key={chip.label} label={chip.label} value={chip.value} tone={chip.tone} />
-            ))}
+            <Badge variant="secondary">Readiness override none</Badge>
           </div>
+        </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+          {statusChips.map((chip) => (
+            <StatusChip key={chip.label} label={chip.label} value={chip.value} tone={chip.tone} />
+          ))}
         </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1.45fr_0.9fr]">
+      <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.8fr)]">
         <div className="rounded-xl border border-cyan-300/15 bg-slate-950/85 p-4 shadow-[0_0_45px_rgba(8,145,178,0.08)]">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Chart</p>
               <h3 className="mt-1 text-lg font-semibold text-slate-50">
                 {runtimeSnapshot?.marketData.symbol ?? commandCenterSymbol} / {runtimeSnapshot?.marketData.timeframe ?? commandCenterTimeframe}
@@ -685,7 +688,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
         <div className="space-y-4">
           <section className="rounded-xl border border-cyan-300/15 bg-slate-950/85 p-4">
             <div className="flex items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Operate</p>
                 <h3 className="mt-1 text-lg font-semibold text-slate-50">Primary Actions</h3>
               </div>
@@ -743,7 +746,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
               }`}
             >
               <p className="font-semibold">{tradingViewBusy || autoRefreshBusy ? "Working..." : "Feedback"}</p>
-              <p className="mt-1">{tradingViewOperationMessage}</p>
+              <p className="mt-1 leading-5">{tradingViewOperationMessage}</p>
             </div>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <label className="space-y-1 text-xs text-slate-300">
@@ -785,13 +788,16 @@ export function MissionControlShell({ state }: { state: LabState }) {
                   <Link
                     key={item.id}
                     to={item.href ?? "/dashboard"}
-                    className="flex items-start justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 transition hover:border-amber-300/30"
+                    className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 transition hover:border-amber-300/30"
                   >
-                    <div>
-                      <p className="text-sm font-semibold text-slate-100">{item.title}</p>
-                      <p className="mt-1 text-xs text-slate-500">{item.detail}</p>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-100">{item.title}</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">{item.detail}</p>
                     </div>
-                    <Badge variant={item.severity === "critical" ? "danger" : item.severity === "action_required" || item.severity === "warning" ? "warning" : "secondary"}>
+                    <Badge
+                      variant={item.severity === "critical" ? "danger" : item.severity === "action_required" || item.severity === "warning" ? "warning" : "secondary"}
+                      className="shrink-0"
+                    >
                       {item.severity.replace(/_/g, " ")}
                     </Badge>
                   </Link>
@@ -809,7 +815,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
       <section className="grid gap-4 xl:grid-cols-2">
         <div className="rounded-xl border border-white/10 bg-slate-950/85 p-4">
           <div className="flex items-start justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Market State</p>
               <h3 className="mt-1 text-lg font-semibold text-slate-50">
                 {runtimeSnapshot?.regime.label.replace(/_/g, " ") ?? "Classifying"}
@@ -849,7 +855,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
 
         <div className="rounded-xl border border-white/10 bg-slate-950/85 p-4">
           <div className="flex items-start justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Research Status</p>
               <h3 className="mt-1 text-lg font-semibold text-slate-50">
                 {formatToken(runtimeSnapshot?.latestResearchCycle.latestCycleStatus)}
@@ -1576,9 +1582,9 @@ function StatusChip({
   value: string;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.035] px-3 py-2">
-      <span className="text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">{label}</span>
-      <Badge variant={tone} className="capitalize">
+    <div className="flex min-w-0 items-center justify-between gap-2 rounded-full border border-white/10 bg-white/[0.035] px-3 py-2">
+      <span className="truncate text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">{label}</span>
+      <Badge variant={tone} className="min-w-0 shrink-0 capitalize">
         {value}
       </Badge>
     </div>
@@ -1595,10 +1601,10 @@ function MiniReadout({
   value: string;
 }) {
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
+    <div className="min-w-0 rounded-lg border border-white/10 bg-white/[0.035] p-3">
       <div className="text-[0.65rem] uppercase tracking-[0.16em] text-slate-500">{label}</div>
       <div className="mt-1 truncate font-mono text-sm text-slate-100">{value}</div>
-      {detail ? <div className="mt-1 text-xs text-slate-500">{detail}</div> : null}
+      {detail ? <div className="mt-1 text-xs leading-5 text-slate-500">{detail}</div> : null}
     </div>
   );
 }
