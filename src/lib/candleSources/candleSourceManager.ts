@@ -37,6 +37,8 @@ export function createCanonicalCandleSource({
   storageBackend,
   symbol,
   timeframe,
+  symbolMatches: symbolMatchesOverride,
+  timeframeMatches: timeframeMatchesOverride,
   userSelectedForResearch = false,
   userSelectedForWalkForward = false,
   warnings = [],
@@ -53,6 +55,8 @@ export function createCanonicalCandleSource({
   storageBackend: CanonicalCandleStorageBackend;
   symbol: string;
   timeframe: string;
+  symbolMatches?: boolean;
+  timeframeMatches?: boolean;
   userSelectedForResearch?: boolean;
   userSelectedForWalkForward?: boolean;
   warnings?: string[];
@@ -62,11 +66,12 @@ export function createCanonicalCandleSource({
 }): CanonicalCandleSource {
   const normalizedSymbol = normalizeCandleSourceSymbol(symbol);
   const normalizedProviderSymbol = providerSymbol ? normalizeCandleSourceSymbol(providerSymbol) : normalizedSymbol;
-  const symbolMatches = normalizedSymbol === normalizedProviderSymbol || normalizedProviderSymbol.includes(normalizedSymbol);
+  const symbolMatches =
+    symbolMatchesOverride ?? (normalizedSymbol === normalizedProviderSymbol || normalizedProviderSymbol.includes(normalizedSymbol));
   const { dataQuality, eligibility, reasons } = evaluateCanonicalCandleSourceEligibility({
     candles,
     symbolMatches,
-    timeframeMatches: true,
+    timeframeMatches: timeframeMatchesOverride ?? true,
     userSelectedForResearch,
     userSelectedForWalkForward
   });
@@ -197,6 +202,8 @@ export function canonicalSourceFromMt5ReadOnlyFeed(feed?: ActiveMt5ReadOnlyCandl
     sourceId: feed.feedId,
     sourceLabel: feed.sourceLabel,
     storageBackend: feed.storageBackend === "indexeddb" ? "indexeddb" : feed.storageBackend === "session" ? "session" : "memory",
+    symbolMatches: feed.researchEligibility.symbolMatch,
+    timeframeMatches: feed.researchEligibility.timeframeMatch,
     symbol: feed.symbol,
     timeframe: feed.timeframe,
     userSelectedForResearch: feed.activeForResearch,

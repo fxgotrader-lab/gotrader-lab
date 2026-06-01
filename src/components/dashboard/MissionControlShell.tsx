@@ -111,6 +111,26 @@ const formatCountdown = (timestamp?: string, nowMs = Date.now()) => {
   return `${seconds}s`;
 };
 
+const canonicalMt5SourceFrom = (snapshot?: ResearchRuntimeSnapshot) =>
+  snapshot?.marketData.allAvailableSources.find((source) => source.provider === "mt5_read_only" && source.candleCount > 0);
+
+const mt5ResearchEligibleFrom = (snapshot?: ResearchRuntimeSnapshot) => {
+  const canonicalMt5Source = canonicalMt5SourceFrom(snapshot);
+  return (
+    snapshot?.mt5ReadOnly.researchEligibility === "eligible_for_research_cycle" ||
+    Boolean(canonicalMt5Source?.eligibility.researchCycle)
+  );
+};
+
+const mt5ResearchEligibilityReasonFrom = (snapshot?: ResearchRuntimeSnapshot) => {
+  const canonicalMt5Source = canonicalMt5SourceFrom(snapshot);
+  return (
+    snapshot?.mt5ReadOnly.eligibilityReasons[0] ??
+    canonicalMt5Source?.eligibilityReasons[0] ??
+    "MT5 read-only is not eligible for research yet."
+  );
+};
+
 type CommandCenterDataEvent = {
   detail: string;
   id: string;
@@ -697,6 +717,36 @@ export function MissionControlShell({ state }: { state: LabState }) {
     abortController?.abort();
   };
 
+  const useExistingMt5ForChart = async () => {
+    setMt5Busy(true);
+    try {
+      const feed = await hydrateActiveMt5ReadOnlyCandleFeed().catch(() => loadActiveMt5ReadOnlyCandleFeed());
+      if (!feed?.candleCount) {
+        setMt5OperationMessage("No MT5 candles are loaded. Connect MT5 Read-Only first.");
+        addDataConnectionEvent("MT5 chart source blocked", "No cached MT5 candles are available for chart display.", "warning");
+        return;
+      }
+      const usageMode = feed.usageMode === "research_source" ? "research_source" : "chart_only";
+      const chartFeed = updateActiveMt5ReadOnlyCandleFeedMetadata(feed, { usageMode });
+      await resolveAndStoreRuntime().catch(() => undefined);
+      if (chartFeed.activeForChart) {
+        const message = `MT5 read-only chart source active with ${chartFeed.candleCount.toLocaleString()} ${chartFeed.timeframe} candles from ${chartFeed.brokerSymbol ?? chartFeed.symbol}.`;
+        setMt5OperationMessage(message);
+        addDataConnectionEvent("MT5 chart source active", message, "success", chartFeed.feedId);
+      } else {
+        const message = "MT5 candles are loaded, but chart eligibility did not pass.";
+        setMt5OperationMessage(message);
+        addDataConnectionEvent("MT5 chart source blocked", message, "warning", chartFeed.feedId);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "MT5 chart activation failed.";
+      setMt5OperationMessage(message);
+      addDataConnectionEvent("MT5 chart source failed", message, "failed");
+    } finally {
+      setMt5Busy(false);
+    }
+  };
+
   const pipelineStages = useMemo(
     () => buildPipelineStages(runtimeSnapshot, latestRun, busy, currentIteration?.startedAt),
     [busy, currentIteration?.startedAt, latestRun, runtimeSnapshot]
@@ -722,9 +772,11 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const chartSourceShortLabel = getChartSourceShortLabel(runtimeSnapshot);
   const chartSourceBadgeTone = runtimeSnapshot?.marketData.chartDisplayUsesTradingViewMcp
     ? "success"
-    : runtimeSnapshot?.marketData.fallbackToMock
-      ? "warning"
-      : "secondary";
+    : runtimeSnapshot?.marketData.chartDisplayUsesMt5ReadOnly
+      ? "success"
+      : runtimeSnapshot?.marketData.fallbackToMock
+        ? "warning"
+        : "secondary";
   const canonicalChartSourceLabel = runtimeSnapshot
     ? runtimeSnapshot.marketData.activeChartSource.provider.replace(/_/g, " ")
     : "loading";
@@ -737,13 +789,24 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const canonicalResearchSourceDetail = runtimeSnapshot
     ? `${runtimeSnapshot.marketData.activeResearchSource.candleCount.toLocaleString()} candles`
     : "Resolving guarded research source";
-  const mt5ReadOnlyRegistered = runtimeSnapshot?.marketData.allAvailableSources.some((source) => source.provider === "mt5_read_only") ?? false;
-  const mt5ReadOnlyStatusLabel = runtimeSnapshot?.mt5ReadOnly.connectionStatus ?? "disconnected";
+  const canonicalMt5Source = canonicalMt5SourceFrom(runtimeSnapshot);
+  const mt5ReadOnlyRegistered = Boolean(canonicalMt5Source || runtimeSnapshot?.mt5ReadOnly.candleFeedAvailable);
+  const mt5ReadOnlyStatusLabel = mt5ReadOnlyRegistered
+    ? "connected"
+    : runtimeSnapshot?.mt5ReadOnly.connectionStatus ?? "disconnected";
+  const mt5ReadOnlyCandleCount = runtimeSnapshot?.mt5ReadOnly.candleCount || canonicalMt5Source?.candleCount || 0;
+  const mt5ReadOnlyBrokerSymbol =
+    mt5BrokerSymbol.trim() ||
+    runtimeSnapshot?.mt5ReadOnly.brokerSymbol ||
+    canonicalMt5Source?.provenance.providerSymbol ||
+    "wrapper default";
+  const mt5ResearchEligible = mt5ResearchEligibleFrom(runtimeSnapshot);
+  const mt5ResearchEligibilityReason = mt5ResearchEligibilityReasonFrom(runtimeSnapshot);
   const statusChips = [
     {
-      label: "TradingView MCP",
-      value: runtimeSnapshot?.tradingViewMcp.bridgeStatus.replace(/_/g, " ") ?? "checking",
-      tone: runtimeSnapshot?.tradingViewMcp.bridgeStatus === "connected_analysis_only" ? "success" : "warning"
+      label: "MT5 Read-Only",
+      value: mt5ReadOnlyStatusLabel.replace(/_/g, " "),
+      tone: mt5ReadOnlyRegistered ? "success" : "warning"
     },
     {
       label: "Chart",
@@ -753,7 +816,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
     {
       label: "Research",
       value: getResearchSourceShortLabel(runtimeSnapshot),
-      tone: runtimeSnapshot?.marketData.researchUsesTradingViewMcp ? "success" : "secondary"
+      tone: runtimeSnapshot?.marketData.researchUsesTradingViewMcp || runtimeSnapshot?.marketData.researchUsesMt5ReadOnly ? "success" : "secondary"
     },
     {
       label: "Regime",
@@ -826,12 +889,13 @@ export function MissionControlShell({ state }: { state: LabState }) {
               <Badge variant={chartSourceBadgeTone} className="text-sm">
                 {chartSourceShortLabel}
               </Badge>
-              {runtimeSnapshot?.marketData.chartDisplayUsesTradingViewMcp ? (
+              {runtimeSnapshot?.marketData.chartDisplayUsesTradingViewMcp || runtimeSnapshot?.marketData.chartDisplayUsesMt5ReadOnly ? (
                 <>
                   <Badge variant="secondary">Read-only</Badge>
                   <Badge variant="warning">Not broker truth</Badge>
                 </>
               ) : null}
+              {runtimeSnapshot?.marketData.chartDisplayUsesMt5ReadOnly ? <Badge variant="warning">CFD proxy</Badge> : null}
               <Badge variant="danger">Execution disabled</Badge>
             </div>
           </div>
@@ -855,7 +919,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
             <MiniReadout
               label="MT5 read-only"
               value={mt5ReadOnlyRegistered ? mt5ReadOnlyStatusLabel : "pending registration"}
-              detail={`${runtimeSnapshot?.mt5ReadOnly.candleCount ?? 0} candles; execution none`}
+              detail={`${mt5ReadOnlyCandleCount.toLocaleString()} candles; execution none`}
             />
           </div>
         </div>
@@ -870,28 +934,16 @@ export function MissionControlShell({ state }: { state: LabState }) {
               <Badge variant="danger">Authority none</Badge>
             </div>
             <div className="mt-4 grid gap-2">
-              <Button onClick={() => void connectTradingViewChart()} disabled={tradingViewBusy} className="h-11 justify-start">
-                <Zap className="h-4 w-4" aria-hidden="true" />
-                {tradingViewBusy ? "Connecting..." : "Connect + Activate TradingView Chart"}
-              </Button>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <Button variant="secondary" onClick={() => void refreshTradingViewNow()} disabled={autoRefreshBusy}>
-                  {autoRefreshBusy ? "Refreshing..." : "Refresh Candles"}
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() => void useExistingTradingViewForResearch()}
-                  disabled={tradingViewBusy || runtimeSnapshot?.tradingViewMcp.researchEligibility !== "eligible_for_research_cycle"}
-                  title={
-                    runtimeSnapshot?.tradingViewMcp.researchEligibility === "eligible_for_research_cycle"
-                      ? "TradingView MCP candles passed the research-source gate."
-                      : runtimeSnapshot?.tradingViewMcp.eligibilityReasons[0] ?? "TradingView MCP is not eligible for research yet."
-                  }
-                >
-                  Use TV for Research
-                </Button>
-              </div>
               <div className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-300">Primary data path</p>
+                    <h4 className="mt-1 text-sm font-semibold text-slate-100">MT5 read-only market data</h4>
+                  </div>
+                  <Badge variant={mt5ResearchEligible ? "success" : "warning"}>
+                    {mt5ResearchEligible ? "research eligible" : "guarded"}
+                  </Badge>
+                </div>
                 <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
                   <label className="space-y-1 text-xs text-slate-300">
                     MT5 broker symbol override
@@ -915,24 +967,44 @@ export function MissionControlShell({ state }: { state: LabState }) {
                 </div>
                 <p className="mt-2 text-[11px] leading-4 text-slate-400">
                   GoTrader requested symbol: <span className="font-mono text-slate-200">{commandCenterSymbol}</span>. MT5 broker symbol:{" "}
-                  <span className="font-mono text-slate-200">{mt5BrokerSymbol.trim() || runtimeSnapshot?.mt5ReadOnly.brokerSymbol || "wrapper default"}</span>.
-                  {mt5BrokerSymbol.trim() || runtimeSnapshot?.mt5ReadOnly.brokerSymbol
+                  <span className="font-mono text-slate-200">{mt5ReadOnlyBrokerSymbol}</span>.
+                  {mt5ReadOnlyBrokerSymbol !== "wrapper default"
                     ? " Broker CFD/proxy data is read-only and not CME futures broker truth."
                     : " Leave blank to use MT5_READONLY_DEFAULT_SYMBOL from the local wrapper."}
                 </p>
-                <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                  <Button variant="secondary" onClick={() => void connectMt5ReadOnly({ usageMode: "chart_only" })} disabled={mt5Busy}>
+                <p className="mt-1 text-[11px] leading-4 text-slate-500">
+                  USTECH is MT5 CFD/proxy data for MNQ/NQ-style research, not CME MNQ futures truth. MT5 read-only has no execution authority.
+                  Broker authority: none.
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <Button onClick={() => void connectMt5ReadOnly({ usageMode: "chart_only" })} disabled={mt5Busy} className="justify-start">
+                    <RadioTower className="h-4 w-4" aria-hidden="true" />
                     {mt5Busy ? "Checking MT5..." : "Connect MT5 Read-Only"}
                   </Button>
                   <Button
                     variant="secondary"
-                    onClick={() => void useExistingMt5ForResearch()}
-                    disabled={mt5Busy || runtimeSnapshot?.mt5ReadOnly.researchEligibility !== "eligible_for_research_cycle"}
-                    title={
-                      runtimeSnapshot?.mt5ReadOnly.researchEligibility === "eligible_for_research_cycle"
-                        ? "MT5 read-only candles passed the research-source gate."
-                        : runtimeSnapshot?.mt5ReadOnly.eligibilityReasons[0] ?? "MT5 read-only is not eligible for research yet."
+                    onClick={() =>
+                      void connectMt5ReadOnly({
+                        usageMode: runtimeSnapshot?.mt5ReadOnly.activeForResearch ? "research_source" : "chart_only"
+                      })
                     }
+                    disabled={mt5Busy}
+                  >
+                    Refresh MT5 Candles
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => void useExistingMt5ForChart()}
+                    disabled={mt5Busy || !mt5ReadOnlyRegistered}
+                    title={mt5ReadOnlyRegistered ? "MT5 read-only candles can be used for chart display." : "Load MT5 candles first."}
+                  >
+                    Use MT5 for Chart
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => void useExistingMt5ForResearch()}
+                    disabled={mt5Busy || !mt5ResearchEligible}
+                    title={mt5ResearchEligible ? "MT5 read-only candles passed the research-source gate." : mt5ResearchEligibilityReason}
                   >
                     Use MT5 for Research
                   </Button>
@@ -944,6 +1016,34 @@ export function MissionControlShell({ state }: { state: LabState }) {
                   {mt5OperationMessage}
                 </div>
               </div>
+              <TechnicalDetails
+                title="Alternative chart evidence source"
+                description="TradingView MCP remains available as read-only chart evidence, but MT5 read-only is the primary dashboard data workflow."
+              >
+                <div className="grid gap-2">
+                  <Button onClick={() => void connectTradingViewChart()} disabled={tradingViewBusy} className="h-11 justify-start">
+                    <Zap className="h-4 w-4" aria-hidden="true" />
+                    {tradingViewBusy ? "Connecting..." : "Connect + Activate TradingView Chart"}
+                  </Button>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Button variant="secondary" onClick={() => void refreshTradingViewNow()} disabled={autoRefreshBusy}>
+                      {autoRefreshBusy ? "Refreshing..." : "Refresh TradingView Candles"}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => void useExistingTradingViewForResearch()}
+                      disabled={tradingViewBusy || runtimeSnapshot?.tradingViewMcp.researchEligibility !== "eligible_for_research_cycle"}
+                      title={
+                        runtimeSnapshot?.tradingViewMcp.researchEligibility === "eligible_for_research_cycle"
+                          ? "TradingView MCP candles passed the research-source gate."
+                          : runtimeSnapshot?.tradingViewMcp.eligibilityReasons[0] ?? "TradingView MCP is not eligible for research yet."
+                      }
+                    >
+                      Use TV for Research
+                    </Button>
+                  </div>
+                </div>
+              </TechnicalDetails>
               <div className="grid gap-2 sm:grid-cols-2">
                 <Button variant="secondary" onClick={() => void startTradingViewAutoRefresh()} disabled={autoRefreshBusy || autoRefreshRunning}>
                   {autoRefreshRunning ? "Auto-refresh Active" : "Start Auto-refresh"}
@@ -1551,6 +1651,10 @@ function buildActionItems(snapshot?: ResearchRuntimeSnapshot, run?: AutonomousRe
       }
     ];
   }
+  const canonicalMt5Source = canonicalMt5SourceFrom(snapshot);
+  const mt5ResearchEligible = mt5ResearchEligibleFrom(snapshot);
+  const tradingViewIsSelected =
+    snapshot.marketData.chartDisplayUsesTradingViewMcp || snapshot.marketData.researchUsesTradingViewMcp;
   if (!snapshot.marketData.isImportedDataActive) {
     items.push({
       id: "imported-data",
@@ -1560,14 +1664,31 @@ function buildActionItems(snapshot?: ResearchRuntimeSnapshot, run?: AutonomousRe
       severity: "warning"
     });
   }
-  if (snapshot.tradingViewMcp.bridgeStatus !== "connected_analysis_only") {
+  if (!canonicalMt5Source && snapshot.marketData.activeDataSource === "mock") {
+    items.push({
+      id: "mt5-readonly-inactive",
+      title: "MT5 read-only inactive",
+      detail: "Connect MT5 Read-Only from Command Center to load broker CFD/proxy candles for chart and guarded research use.",
+      severity: "action_required"
+    });
+  }
+  if (snapshot.marketData.researchUsesMt5ReadOnly && !mt5ResearchEligible) {
+    items.push({
+      id: "mt5-research-guarded",
+      title: "MT5 research source guarded",
+      detail: mt5ResearchEligibilityReasonFrom(snapshot),
+      href: "/market-data",
+      severity: "warning"
+    });
+  }
+  if (tradingViewIsSelected && snapshot.tradingViewMcp.bridgeStatus !== "connected_analysis_only") {
     items.push({
       id: "tradingview-disconnected",
       title: "TradingView MCP disconnected",
       detail: "Start the local wrapper, then use Connect + Activate TradingView Chart from Command Center.",
       severity: "action_required"
     });
-  } else if (!snapshot.tradingViewMcp.chartFeedAvailable) {
+  } else if (tradingViewIsSelected && !snapshot.tradingViewMcp.chartFeedAvailable) {
     items.push({
       id: "tradingview-no-candles",
       title: "Chart feed inactive",
@@ -1576,6 +1697,7 @@ function buildActionItems(snapshot?: ResearchRuntimeSnapshot, run?: AutonomousRe
     });
   }
   if (
+    tradingViewIsSelected &&
     snapshot.tradingViewMcp.chartFeedAvailable &&
     snapshot.tradingViewMcp.researchEligibility !== "eligible_for_research_cycle"
   ) {
@@ -1640,6 +1762,16 @@ function buildFeedItems(
   const runtimeItems: MissionFeedItem[] = snapshot
     ? [
         {
+          id: "runtime-mt5-status",
+          title: `MT5 read-only ${snapshot.mt5ReadOnly.connectionStatus.replace(/_/g, " ")}`,
+          detail: snapshot.mt5ReadOnly.candleFeedAvailable
+            ? `${snapshot.mt5ReadOnly.candleCount.toLocaleString()} ${snapshot.mt5ReadOnly.timeframe ?? ""} candles from ${snapshot.mt5ReadOnly.brokerSymbol ?? snapshot.mt5ReadOnly.feedSymbol ?? "broker symbol"} for requested ${snapshot.marketData.symbol}.`
+            : "MT5 read-only candle feed is not active.",
+          timestamp: snapshot.generatedAt,
+          severity: snapshot.mt5ReadOnly.candleFeedAvailable ? "success" : "warning",
+          sourceFingerprint: snapshot.mt5ReadOnly.feedId ?? snapshot.mt5ReadOnly.brokerSymbol ?? snapshot.mt5ReadOnly.bridgeUrl
+        },
+        {
           id: "runtime-tv-status",
           title: `TradingView MCP ${snapshot.tradingViewMcp.bridgeStatus.replace(/_/g, " ")}`,
           detail: snapshot.tradingViewMcp.chartFeedAvailable
@@ -1658,19 +1790,33 @@ function buildFeedItems(
           title: "Chart source status",
           detail: `${snapshot.marketData.activeChartDisplaySourceLabel}. Research source: ${snapshot.marketData.activeResearchSourceLabel}.`,
           timestamp: snapshot.generatedAt,
-          severity: snapshot.marketData.chartDisplayUsesTradingViewMcp ? "success" : "info",
+          severity: snapshot.marketData.chartDisplayUsesTradingViewMcp || snapshot.marketData.chartDisplayUsesMt5ReadOnly ? "success" : "info",
           sourceFingerprint: snapshot.marketData.chartDisplayDataFingerprint.slice(0, 96)
         },
         {
           id: "runtime-research-eligibility",
           title:
-            snapshot.tradingViewMcp.researchEligibility === "eligible_for_research_cycle"
-              ? "Research eligibility passed"
-              : "Research eligibility guarded",
-          detail: snapshot.tradingViewMcp.eligibilityReasons[0] ?? "TradingView MCP source gate is pending.",
+            snapshot.marketData.researchUsesMt5ReadOnly || snapshot.mt5ReadOnly.researchEligibility === "eligible_for_research_cycle"
+              ? snapshot.mt5ReadOnly.researchEligibility === "eligible_for_research_cycle"
+                ? "MT5 research eligibility passed"
+                : "MT5 research eligibility guarded"
+              : snapshot.tradingViewMcp.researchEligibility === "eligible_for_research_cycle"
+                ? "TradingView research eligibility passed"
+                : "Research eligibility guarded",
+          detail:
+            snapshot.marketData.researchUsesMt5ReadOnly || snapshot.mt5ReadOnly.researchEligibility === "eligible_for_research_cycle"
+              ? snapshot.mt5ReadOnly.eligibilityReasons[0] ?? "MT5 read-only source gate is pending."
+              : snapshot.tradingViewMcp.eligibilityReasons[0] ?? "TradingView MCP source gate is pending.",
           timestamp: snapshot.generatedAt,
-          severity: snapshot.tradingViewMcp.researchEligibility === "eligible_for_research_cycle" ? "success" : "warning",
-          sourceFingerprint: snapshot.tradingViewMcp.researchEligibility
+          severity:
+            snapshot.mt5ReadOnly.researchEligibility === "eligible_for_research_cycle" ||
+            snapshot.tradingViewMcp.researchEligibility === "eligible_for_research_cycle"
+              ? "success"
+              : "warning",
+          sourceFingerprint:
+            snapshot.marketData.researchUsesMt5ReadOnly || snapshot.mt5ReadOnly.researchEligibility === "eligible_for_research_cycle"
+              ? snapshot.mt5ReadOnly.researchEligibility
+              : snapshot.tradingViewMcp.researchEligibility
         },
         {
           id: "runtime-cycle-status",
@@ -1800,6 +1946,7 @@ function buildFeedItems(
 
 function getChartSourceShortLabel(snapshot?: ResearchRuntimeSnapshot) {
   if (!snapshot) return "loading";
+  if (snapshot.marketData.chartDisplayUsesMt5ReadOnly || snapshot.marketData.activeChartSource.provider === "mt5_read_only") return "MT5 Read-Only";
   if (snapshot.marketData.chartDisplayUsesTradingViewMcp) return "TradingView MCP";
   if (snapshot.marketData.activeChartDisplaySourceLabel.toLowerCase().includes("import")) return "Imported";
   if (snapshot.marketData.activeChartDisplaySourceLabel.toLowerCase().includes("mock")) return "Mock";
@@ -1808,6 +1955,7 @@ function getChartSourceShortLabel(snapshot?: ResearchRuntimeSnapshot) {
 
 function getResearchSourceShortLabel(snapshot?: ResearchRuntimeSnapshot) {
   if (!snapshot) return "loading";
+  if (snapshot.marketData.researchUsesMt5ReadOnly || snapshot.marketData.activeResearchSource.provider === "mt5_read_only") return "MT5 Read-Only";
   if (snapshot.marketData.researchUsesTradingViewMcp) return "TradingView MCP";
   if (snapshot.marketData.activeResearchSourceLabel.toLowerCase().includes("import")) return "Imported";
   if (snapshot.marketData.activeResearchSourceLabel.toLowerCase().includes("mock")) return "Mock";
