@@ -84,9 +84,9 @@ source without requiring repeated Market Data clicks.
 
 Supported intervals:
 
-- 5 seconds, default
 - 10 seconds
-- 15 seconds
+- 15 seconds, default
+- 25 seconds
 
 Supported candle limits:
 
@@ -98,13 +98,24 @@ Supported candle limits:
 The loop state tracks:
 
 - status: `idle`, `starting`, `running`, `paused`, `failed`, or `stopped`
+- whether a refresh is currently in progress
 - last refresh time
+- last checked time
+- last candle update time
 - next refresh time / countdown
 - refresh count
+- skipped overlap count
 - consecutive failures
 - latest price
 - latest candle timestamp
 - candle count and storage backend
+- whether the latest IndexedDB candle write was skipped because the candle fingerprint was unchanged
+
+To keep the Dashboard responsive, auto-refresh does not queue overlapping requests. If the local wrapper/CLI/CDP path is
+still working when the next action fires, GoTrader skips that tick and increments the skipped overlap count. It also
+fingerprints each candle series using candle count, first/last timestamp, and first/last close. If the fingerprint is
+unchanged, GoTrader updates lightweight metadata such as `lastCheckedAt` and avoids rewriting the full candle array to
+IndexedDB.
 
 On full reload, the selected interval and candle limit are remembered, but the interval itself is not restarted
 automatically. The user must start auto-refresh again from Command Center.
@@ -114,10 +125,12 @@ Failure behavior:
 - If the wrapper is disconnected, GoTrader keeps the last visible candles and shows a reconnect message.
 - If a candle fetch returns zero candles, GoTrader keeps the previous chart feed visible.
 - After 3 consecutive failures, auto-refresh pauses and asks the user to restart the local wrapper.
-- When the browser tab is hidden, the loop pauses refresh work and resumes on a later visible interval.
+- When the browser tab is hidden, the loop pauses refresh work and slows visibility checks to 25 seconds. When the tab
+  becomes visible, it resumes the selected normal interval.
 
-The Research Flow Tape receives compact auto-refresh events. Repeated success events are collapsed in the UI, and the
-IndexedDB-backed communication audit remains best-effort so logging cannot block data activation.
+The Research Flow Tape receives compact auto-refresh events only for first success, status changes, candle fingerprint
+changes, failures, and recovery after failure. Repeated unchanged refreshes update state without filling the tape, and
+the IndexedDB-backed communication audit remains best-effort so logging cannot block data activation.
 
 ## Research-Source Eligibility Gate
 

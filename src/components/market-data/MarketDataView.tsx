@@ -545,6 +545,10 @@ export function MarketDataView() {
             <StatusTile label="Auto interval" value={`${tradingViewAutoRefresh.refreshIntervalSeconds}s`} />
             <StatusTile label="Auto limit" value={`${tradingViewAutoRefresh.candleLimit.toLocaleString()} candles`} />
             <StatusTile label="Auto last refresh" value={formatDate(tradingViewAutoRefresh.lastRefreshAt)} />
+            <StatusTile label="Auto in progress" value={tradingViewAutoRefresh.refreshInProgress ? "yes" : "no"} />
+            <StatusTile label="Auto skipped overlaps" value={String(tradingViewAutoRefresh.skippedRefreshCount)} />
+            <StatusTile label="Auto last checked" value={formatDate(tradingViewAutoRefresh.lastCheckedAt)} />
+            <StatusTile label="Auto candle update" value={formatDate(tradingViewAutoRefresh.lastCandleUpdateAt)} />
             <StatusTile label="Auto latest price" value={String(tradingViewAutoRefresh.lastPrice ?? "n/a")} />
             <StatusTile label="Auto failures" value={String(tradingViewAutoRefresh.consecutiveFailures)} />
           </div>
@@ -716,6 +720,9 @@ export function MarketDataView() {
             <StatusTile label="Auto-refresh interval" value={`${tradingViewAutoRefresh.refreshIntervalSeconds}s`} />
             <StatusTile label="Auto-refresh count" value={String(tradingViewAutoRefresh.refreshCount)} />
             <StatusTile label="Auto latest candle" value={formatDate(tradingViewAutoRefresh.lastCandleTimestamp)} />
+            <StatusTile label="Auto last checked" value={formatDate(tradingViewAutoRefresh.lastCheckedAt)} />
+            <StatusTile label="Auto skipped overlaps" value={String(tradingViewAutoRefresh.skippedRefreshCount)} />
+            <StatusTile label="Auto storage write" value={tradingViewAutoRefresh.lastStorageWriteSkipped ? "skipped unchanged" : "write allowed"} />
           </div>
           <div
             className={`rounded-md border p-3 text-sm ${

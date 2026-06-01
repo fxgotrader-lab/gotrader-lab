@@ -138,6 +138,11 @@ export interface ActiveTradingViewMcpChartFeed extends TradingViewMcpFeedAuthori
   matchReason: string;
   firstClose?: number;
   lastClose?: number;
+  candleFingerprint?: string;
+  lastCheckedAt?: string;
+  lastStorageWriteAt?: string;
+  storageWriteSkipped?: boolean;
+  storageWriteSkippedAt?: string;
   fetchedAt: string;
   storageBackend: TradingViewMcpFeedStorageBackend;
   candlesPersisted: boolean;

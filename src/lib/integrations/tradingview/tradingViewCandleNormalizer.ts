@@ -143,6 +143,23 @@ export const normalizeTradingViewMcpCandles = (
 const hasMonotonicTimestamps = (candles: TradingViewMcpFeedCandle[]) =>
   candles.every((candle, index) => index === 0 || candle.time > candles[index - 1].time);
 
+export const buildTradingViewMcpCandleFingerprint = (
+  candles: Pick<TradingViewMcpFeedCandle, "close" | "timestamp">[]
+) => {
+  const first = candles[0];
+  const last = candles[candles.length - 1];
+  if (!first || !last) {
+    return "empty";
+  }
+  return [
+    candles.length,
+    first.timestamp,
+    Number(first.close).toFixed(8),
+    last.timestamp,
+    Number(last.close).toFixed(8)
+  ].join("|");
+};
+
 export const evaluateTradingViewMcpResearchEligibility = ({
   candles,
   connectionStatus,
@@ -272,6 +289,7 @@ export const createActiveTradingViewMcpChartFeed = ({
   const candles = normalizeTradingViewMcpCandles(candlesResponse);
   const latest = candles[candles.length - 1];
   const fetchedAt = new Date().toISOString();
+  const candleFingerprint = buildTradingViewMcpCandleFingerprint(candles);
   const match = resolveTradingViewMcpSymbolMatch({
     gotraderSymbol,
     gotraderTimeframe,
@@ -317,6 +335,8 @@ export const createActiveTradingViewMcpChartFeed = ({
     matchReason: match.reason,
     firstClose: candles[0]?.close,
     lastClose: latest?.close,
+    candleFingerprint,
+    lastCheckedAt: fetchedAt,
     fetchedAt,
     storageBackend: "session",
     candlesPersisted: false,

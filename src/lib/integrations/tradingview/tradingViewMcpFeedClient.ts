@@ -232,9 +232,13 @@ const migrateOrLoadMetadataFromLocalStorage = (): TradingViewMcpChartFeedMetadat
 };
 
 async function persistTradingViewMcpFeedToIndexedDb(feed: ActiveTradingViewMcpChartFeed): Promise<ActiveTradingViewMcpChartFeed> {
+  const persistedAt = new Date().toISOString();
   const metadata = metadataFromFeed(feed, {
     storageBackend: "indexeddb",
     candlesPersisted: true,
+    lastStorageWriteAt: persistedAt,
+    storageWriteSkipped: false,
+    storageWriteSkippedAt: undefined,
     storageWarnings: feed.storageWarnings.filter((warning) => !warning.includes("could not be persisted"))
   });
   const record: TradingViewMcpChartFeedRecord = {
@@ -374,7 +378,7 @@ export async function hydrateActiveTradingViewMcpChartFeed(): Promise<ActiveTrad
     if (!record?.candles?.length) {
       return feedFromMetadata(metadata);
     }
-    const feed = feedFromMetadata(record.metadata, record.candles);
+    const feed = feedFromMetadata({ ...record.metadata, ...metadata }, record.candles);
     activeFeedSessionCache = feed;
     publishFeedEvent(feed);
     return feed;
@@ -420,6 +424,20 @@ export function saveActiveTradingViewMcpChartFeed(feed: ActiveTradingViewMcpChar
     });
   publishFeedEvent(sessionFeed);
   return sessionFeed;
+}
+
+export function updateActiveTradingViewMcpChartFeedMetadata(
+  feed: ActiveTradingViewMcpChartFeed,
+  patch: Partial<TradingViewMcpChartFeedMetadata>
+) {
+  if (!isBrowser()) {
+    return feedFromMetadata(metadataFromFeed(feed, patch), feed.candles);
+  }
+  const updatedFeed = feedFromMetadata(metadataFromFeed(feed, patch), feed.candles);
+  activeFeedSessionCache = updatedFeed;
+  writeMetadataToLocalStorage(metadataFromFeed(updatedFeed));
+  publishFeedEvent(updatedFeed);
+  return updatedFeed;
 }
 
 export async function storeActiveTradingViewMcpChartFeed(feed: ActiveTradingViewMcpChartFeed) {

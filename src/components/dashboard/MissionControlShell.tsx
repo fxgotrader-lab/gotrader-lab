@@ -711,6 +711,24 @@ export function MissionControlShell({ state }: { state: LabState }) {
               tone={tradingViewAutoRefresh.refreshCount ? "good" : "neutral"}
             />
             <CommandStatusTile
+              label="Refresh in progress"
+              value={tradingViewAutoRefresh.refreshInProgress ? "yes" : "no"}
+              detail={`${tradingViewAutoRefresh.skippedRefreshCount.toLocaleString()} overlap skips`}
+              tone={tradingViewAutoRefresh.refreshInProgress ? "warn" : "good"}
+            />
+            <CommandStatusTile
+              label="Last checked"
+              value={tradingViewAutoRefresh.lastCheckedAt ? formatDateTime(tradingViewAutoRefresh.lastCheckedAt) : "none"}
+              detail={tradingViewAutoRefresh.lastStorageWriteSkipped ? "unchanged candles" : "waiting for check"}
+              tone={tradingViewAutoRefresh.lastCheckedAt ? "good" : "neutral"}
+            />
+            <CommandStatusTile
+              label="Last candle update"
+              value={tradingViewAutoRefresh.lastCandleUpdateAt ? formatDateTime(tradingViewAutoRefresh.lastCandleUpdateAt) : "none"}
+              detail={tradingViewAutoRefresh.lastCandleFingerprint ? "fingerprint tracked" : undefined}
+              tone={tradingViewAutoRefresh.lastCandleUpdateAt ? "good" : "neutral"}
+            />
+            <CommandStatusTile
               label="Next refresh"
               value={autoRefreshRunning ? autoRefreshCountdown : "stopped"}
               detail={tradingViewAutoRefresh.nextRefreshAt ? formatDateTime(tradingViewAutoRefresh.nextRefreshAt) : undefined}
@@ -737,7 +755,11 @@ export function MissionControlShell({ state }: { state: LabState }) {
             <CommandStatusTile
               label="Storage"
               value={tradingViewAutoRefresh.lastStorageBackend ?? runtimeSnapshot?.tradingViewMcp.chartFeedStorageBackend ?? "none"}
-              detail={tradingViewAutoRefresh.lastFeedId ?? runtimeSnapshot?.tradingViewMcp.chartFeedId}
+              detail={
+                tradingViewAutoRefresh.lastStorageWriteSkipped
+                  ? `write skipped ${tradingViewAutoRefresh.lastStorageWriteSkippedAt ? formatDateTime(tradingViewAutoRefresh.lastStorageWriteSkippedAt) : ""}`
+                  : tradingViewAutoRefresh.lastFeedId ?? runtimeSnapshot?.tradingViewMcp.chartFeedId
+              }
               tone={tradingViewAutoRefresh.lastStorageBackend === "indexeddb" ? "good" : "neutral"}
             />
           </div>

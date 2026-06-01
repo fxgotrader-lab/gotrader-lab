@@ -3,12 +3,16 @@ import type {
   ActiveTradingViewMcpChartFeed,
   TradingViewMcpFeedUsageMode
 } from "@/lib/integrations/tradingview/tradingViewCandleFeedTypes";
-import { createActiveTradingViewMcpChartFeed } from "@/lib/integrations/tradingview/tradingViewCandleNormalizer";
+import {
+  buildTradingViewMcpCandleFingerprint,
+  createActiveTradingViewMcpChartFeed
+} from "@/lib/integrations/tradingview/tradingViewCandleNormalizer";
 import {
   fetchTradingViewMcpCandles,
   fetchTradingViewMcpQuote,
   loadActiveTradingViewMcpChartFeed,
-  storeActiveTradingViewMcpChartFeed
+  storeActiveTradingViewMcpChartFeed,
+  updateActiveTradingViewMcpChartFeedMetadata
 } from "@/lib/integrations/tradingview/tradingViewMcpFeedClient";
 import { checkTradingViewMcpBridgeStatus } from "@/lib/integrations/tradingview/tradingViewMcpClient";
 import { saveTradingViewMcpBridgeStatus } from "@/lib/integrations/tradingview/tradingViewEvidenceService";
@@ -21,7 +25,7 @@ export const TRADINGVIEW_MCP_AUTO_REFRESH_STORAGE_KEY = "gotrader-ai-lab-trading
 export const TRADINGVIEW_MCP_AUTO_REFRESH_UPDATED_EVENT =
   "gotrader-ai-lab-tradingview-mcp-auto-refresh-updated";
 
-export const tradingViewMcpAutoRefreshIntervalOptions = [5, 10, 15] as const;
+export const tradingViewMcpAutoRefreshIntervalOptions = [10, 15, 25] as const;
 export const tradingViewMcpAutoRefreshCandleLimitOptions = [100, 240, 400, 1000] as const;
 
 export type TradingViewMcpAutoRefreshStatus =
@@ -46,16 +50,23 @@ export interface TradingViewMcpAutoRefreshEvent {
 export interface TradingViewMcpAutoRefreshState {
   enabled: boolean;
   status: TradingViewMcpAutoRefreshStatus;
-  refreshIntervalSeconds: 5 | 10 | 15;
+  refreshInProgress: boolean;
+  refreshIntervalSeconds: 10 | 15 | 25;
   candleLimit: 100 | 240 | 400 | 1000;
   lastRefreshAt?: string;
+  lastCheckedAt?: string;
+  lastCandleUpdateAt?: string;
   nextRefreshAt?: string;
   refreshCount: number;
+  skippedRefreshCount: number;
   consecutiveFailures: number;
   lastError?: string;
   lastCandleCount: number;
   lastPrice?: number;
   lastCandleTimestamp?: string;
+  lastCandleFingerprint?: string;
+  lastStorageWriteSkipped: boolean;
+  lastStorageWriteSkippedAt?: string;
   lastSymbol?: string;
   lastTimeframe?: string;
   lastStorageBackend?: string;
@@ -72,6 +83,7 @@ export interface TradingViewMcpAutoRefreshRequest {
   refreshIntervalSeconds?: number;
   candleLimit?: number;
   activateLoop?: boolean;
+  emitStartEvent?: boolean;
 }
 
 const isBrowser = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
@@ -82,14 +94,16 @@ let autoRefreshTimer: number | undefined;
 let activeRequest: TradingViewMcpAutoRefreshRequest | undefined;
 let currentState: TradingViewMcpAutoRefreshState | undefined;
 let inFlight = false;
+let visibilityHandler: (() => void) | undefined;
 
 const authoritySummary = "TradingView MCP remains read-only chart data. Execution, broker, and readiness authority are none.";
+const hiddenRefreshIntervalSeconds = 25;
 
 const sanitizeInterval = (value?: number): TradingViewMcpAutoRefreshState["refreshIntervalSeconds"] => {
-  if (value === 10 || value === 15) {
+  if (value === 10 || value === 15 || value === 25) {
     return value;
   }
-  return 5;
+  return 15;
 };
 
 const sanitizeCandleLimit = (value?: number): TradingViewMcpAutoRefreshState["candleLimit"] => {
@@ -102,11 +116,14 @@ const sanitizeCandleLimit = (value?: number): TradingViewMcpAutoRefreshState["ca
 const defaultState = (): TradingViewMcpAutoRefreshState => ({
   enabled: false,
   status: "idle",
-  refreshIntervalSeconds: 5,
+  refreshInProgress: false,
+  refreshIntervalSeconds: 15,
   candleLimit: 240,
   refreshCount: 0,
+  skippedRefreshCount: 0,
   consecutiveFailures: 0,
   lastCandleCount: 0,
+  lastStorageWriteSkipped: false,
   updatedAt: now()
 });
 
@@ -123,11 +140,14 @@ const sanitizeState = (
     ...state,
     enabled: resetRuntime ? false : Boolean(state.enabled),
     status: runtimeStatus ?? "idle",
+    refreshInProgress: resetRuntime ? false : Boolean(state.refreshInProgress),
     refreshIntervalSeconds: sanitizeInterval(state.refreshIntervalSeconds),
     candleLimit: sanitizeCandleLimit(state.candleLimit),
     refreshCount: Math.max(0, Number(state.refreshCount ?? 0)),
+    skippedRefreshCount: Math.max(0, Number(state.skippedRefreshCount ?? 0)),
     consecutiveFailures: Math.max(0, Number(state.consecutiveFailures ?? 0)),
     lastCandleCount: Math.max(0, Number(state.lastCandleCount ?? 0)),
+    lastStorageWriteSkipped: Boolean(state.lastStorageWriteSkipped),
     updatedAt: state.updatedAt ?? now()
   };
 };
@@ -254,8 +274,10 @@ const emitFailureState = ({
       ...loadTradingViewMcpAutoRefreshState(),
       enabled: state.enabled && !autoPaused,
       status: autoPaused ? "paused" : "failed",
+      refreshInProgress: false,
       consecutiveFailures: failures,
       lastError: detail,
+      lastCheckedAt: now(),
       nextRefreshAt: autoPaused ? undefined : nextRefreshAtFor(state.refreshIntervalSeconds),
       updatedAt: now()
     },
@@ -266,6 +288,7 @@ const emitFailureState = ({
 export async function refreshTradingViewMcpChartDataNow({
   activateLoop,
   candleLimit,
+  emitStartEvent = true,
   refreshIntervalSeconds,
   symbol,
   timeframe,
@@ -274,15 +297,21 @@ export async function refreshTradingViewMcpChartDataNow({
   const baseState = saveTradingViewMcpAutoRefreshSettings({ candleLimit, refreshIntervalSeconds });
   const loopEnabled = Boolean(activateLoop ?? baseState.enabled);
   if (inFlight) {
+    const skippedState = loadTradingViewMcpAutoRefreshState();
+    const skippedCount = skippedState.skippedRefreshCount + 1;
     return publishAutoRefreshState(
       {
-        ...baseState,
+        ...skippedState,
         enabled: loopEnabled,
         status: loopEnabled ? "running" : "starting",
+        refreshInProgress: true,
+        skippedRefreshCount: skippedCount,
         lastError: "Previous TradingView MCP refresh is still running.",
         updatedAt: now()
       },
-      buildEvent("TradingView refresh skipped", "Previous refresh is still running.", "warning", symbol)
+      skippedCount === 1
+        ? buildEvent("TradingView refresh skipped", "Previous refresh is still running; the next tick was not queued.", "warning", symbol)
+        : undefined
     );
   }
 
@@ -292,12 +321,15 @@ export async function refreshTradingViewMcpChartDataNow({
       ...baseState,
       enabled: loopEnabled,
       status: loopEnabled ? "running" : "starting",
+      refreshInProgress: true,
       lastError: undefined,
       lastSymbol: symbol,
       lastTimeframe: timeframe,
       updatedAt: now()
     },
-    buildEvent("TradingView refresh started", `Refreshing ${symbol} ${timeframe} read-only chart data.`, "running")
+    emitStartEvent
+      ? buildEvent("TradingView refresh started", `Refreshing ${symbol} ${timeframe} read-only chart data.`, "running")
+      : undefined
   );
 
   try {
@@ -319,14 +351,9 @@ export async function refreshTradingViewMcpChartDataNow({
         ...loadTradingViewMcpAutoRefreshState(),
         lastBridgeStatus: status.connectionStatus,
         lastPrice: quote.latestPrice,
+        lastCheckedAt: now(),
         updatedAt: now()
-      },
-      buildEvent(
-        "TradingView quote updated",
-        quote.latestPrice ? `Latest read-only price ${quote.latestPrice}.` : quote.missingEvidence.join(" ") || "No quote returned.",
-        quote.latestPrice ? "success" : "warning",
-        quote.timestamp
-      )
+      }
     );
 
     const candles = await fetchTradingViewMcpCandles(
@@ -344,52 +371,77 @@ export async function refreshTradingViewMcpChartDataNow({
       });
     }
 
-    const feed: ActiveTradingViewMcpChartFeed = await storeActiveTradingViewMcpChartFeed(
-      createActiveTradingViewMcpChartFeed({
-        candlesResponse: candles,
-        gotraderSymbol: symbol,
-        gotraderTimeframe: timeframe,
-        usageMode: selectedUsageMode(usageMode)
-      })
-    );
+    const checkedAt = now();
+    const candidateFeed = createActiveTradingViewMcpChartFeed({
+      candlesResponse: candles,
+      gotraderSymbol: symbol,
+      gotraderTimeframe: timeframe,
+      usageMode: selectedUsageMode(usageMode)
+    });
+    const candleFingerprint =
+      candidateFeed.candleFingerprint ?? buildTradingViewMcpCandleFingerprint(candidateFeed.candles);
+    const existingFeed = loadActiveTradingViewMcpChartFeed();
+    const existingFingerprint =
+      existingFeed?.candleFingerprint ??
+      (existingFeed?.candles.length ? buildTradingViewMcpCandleFingerprint(existingFeed.candles) : undefined);
+    const fingerprintChanged = candleFingerprint !== existingFingerprint;
+    const canSkipCandleWrite = Boolean(existingFeed?.candles.length && !fingerprintChanged);
+    const feed: ActiveTradingViewMcpChartFeed = canSkipCandleWrite
+      ? updateActiveTradingViewMcpChartFeedMetadata(existingFeed as ActiveTradingViewMcpChartFeed, {
+          candleFingerprint,
+          fetchedAt: checkedAt,
+          lastCheckedAt: checkedAt,
+          latestClose: candidateFeed.latestClose,
+          storageWriteSkipped: true,
+          storageWriteSkippedAt: checkedAt,
+          usageMode: candidateFeed.usageMode
+        })
+      : await storeActiveTradingViewMcpChartFeed({
+          ...candidateFeed,
+          candleFingerprint,
+          lastCheckedAt: checkedAt,
+          storageWriteSkipped: false,
+          storageWriteSkippedAt: undefined
+        });
+    const latestState = loadTradingViewMcpAutoRefreshState();
+    const recoveredFromFailure =
+      baseState.consecutiveFailures > 0 || baseState.status === "failed" || baseState.status === "paused";
+    const firstSuccess = !baseState.refreshCount && !baseState.lastRefreshAt;
+    const shouldEmitSuccessEvent = firstSuccess || recoveredFromFailure || fingerprintChanged;
+    const successTitle = recoveredFromFailure
+      ? "TradingView auto-refresh recovered"
+      : fingerprintChanged
+        ? "TradingView candles changed"
+        : "TradingView refresh checked";
+    const successDetail = canSkipCandleWrite
+      ? `${feed.candleCount.toLocaleString()} candles unchanged; IndexedDB candle write skipped. ${authoritySummary}`
+      : `${feed.candleCount.toLocaleString()} read-only candles refreshed. Storage ${feed.candlesPersisted ? "IndexedDB" : "session-only"}.`;
 
-    publishAutoRefreshState(
+    return publishAutoRefreshState(
       {
-        ...loadTradingViewMcpAutoRefreshState(),
+        ...latestState,
+        enabled: loopEnabled,
+        status: loopEnabled ? "running" : "stopped",
+        refreshInProgress: false,
         lastBridgeStatus: status.connectionStatus,
         lastPrice: quote.latestPrice ?? feed.latestClose,
         lastCandleCount: feed.candleCount,
         lastCandleTimestamp: feed.lastTimestamp,
+        lastCandleFingerprint: candleFingerprint,
+        lastCandleUpdateAt: fingerprintChanged || !latestState.lastCandleUpdateAt ? checkedAt : latestState.lastCandleUpdateAt,
+        lastCheckedAt: checkedAt,
         lastStorageBackend: feed.storageBackend,
+        lastStorageWriteSkipped: canSkipCandleWrite,
+        lastStorageWriteSkippedAt: canSkipCandleWrite ? checkedAt : latestState.lastStorageWriteSkippedAt,
         lastFeedId: feed.feedId,
-        updatedAt: now()
-      },
-      buildEvent(
-        "TradingView candles updated",
-        `${feed.candleCount.toLocaleString()} read-only candles refreshed. Storage ${feed.candlesPersisted ? "IndexedDB" : "session-only"}.`,
-        "success",
-        feed.providerSymbol
-      )
-    );
-
-    return publishAutoRefreshState(
-      {
-        ...loadTradingViewMcpAutoRefreshState(),
-        enabled: loopEnabled,
-        status: loopEnabled ? "running" : "stopped",
-        lastRefreshAt: now(),
+        lastRefreshAt: checkedAt,
         nextRefreshAt: loopEnabled ? nextRefreshAtFor(baseState.refreshIntervalSeconds) : undefined,
-        refreshCount: loadTradingViewMcpAutoRefreshState().refreshCount + 1,
+        refreshCount: latestState.refreshCount + 1,
         consecutiveFailures: 0,
         lastError: undefined,
         updatedAt: now()
       },
-      buildEvent(
-        "TradingView chart source refreshed",
-        `${feed.providerSymbol} ${feed.timeframe}; ${authoritySummary}`,
-        "success",
-        feed.matchState
-      )
+      shouldEmitSuccessEvent ? buildEvent(successTitle, successDetail, "success", feed.matchState) : undefined
     );
   } catch (error) {
     return emitFailureState({
@@ -403,27 +455,88 @@ export async function refreshTradingViewMcpChartDataNow({
   }
 }
 
+const clearAutoRefreshTimer = () => {
+  if (autoRefreshTimer !== undefined && typeof window !== "undefined") {
+    window.clearTimeout(autoRefreshTimer);
+  }
+  autoRefreshTimer = undefined;
+};
+
+const scheduleNextAutoRefresh = (seconds: number) => {
+  if (!isBrowser()) {
+    return;
+  }
+  clearAutoRefreshTimer();
+  autoRefreshTimer = window.setTimeout(runScheduledRefresh, Math.max(0, seconds) * 1000);
+};
+
+const ensureVisibilityListener = () => {
+  if (typeof document === "undefined" || visibilityHandler) {
+    return;
+  }
+  visibilityHandler = () => {
+    const state = loadTradingViewMcpAutoRefreshState();
+    if (!activeRequest || !state.enabled || document.hidden) {
+      return;
+    }
+    if (state.status === "paused") {
+      publishAutoRefreshState(
+        {
+          ...state,
+          status: "running",
+          nextRefreshAt: nextRefreshAtFor(0),
+          updatedAt: now()
+        },
+        buildEvent("TradingView auto-refresh resumed", "Browser tab is visible; normal refresh interval resumes.", "info")
+      );
+    }
+    scheduleNextAutoRefresh(0);
+  };
+  document.addEventListener("visibilitychange", visibilityHandler);
+};
+
+const removeVisibilityListener = () => {
+  if (typeof document !== "undefined" && visibilityHandler) {
+    document.removeEventListener("visibilitychange", visibilityHandler);
+  }
+  visibilityHandler = undefined;
+};
+
 const runScheduledRefresh = () => {
   const state = loadTradingViewMcpAutoRefreshState();
   if (!activeRequest || !state.enabled) {
     return;
   }
   if (typeof document !== "undefined" && document.hidden) {
+    const alreadyPaused = state.status === "paused";
     publishAutoRefreshState(
       {
         ...state,
         status: "paused",
-        nextRefreshAt: nextRefreshAtFor(state.refreshIntervalSeconds),
+        refreshInProgress: false,
+        nextRefreshAt: nextRefreshAtFor(hiddenRefreshIntervalSeconds),
         updatedAt: now()
       },
-      buildEvent("TradingView auto-refresh paused", "Browser tab is hidden; refresh will resume when visible.", "warning")
+      alreadyPaused
+        ? undefined
+        : buildEvent(
+            "TradingView auto-refresh paused",
+            "Browser tab is hidden; refresh work is slowed to a 25s visibility check.",
+            "warning"
+          )
     );
+    scheduleNextAutoRefresh(hiddenRefreshIntervalSeconds);
     return;
   }
   void refreshTradingViewMcpChartDataNow({
     ...activeRequest,
     candleLimit: state.candleLimit,
+    emitStartEvent: false,
     refreshIntervalSeconds: state.refreshIntervalSeconds
+  }).then((nextState) => {
+    if (nextState.enabled && nextState.consecutiveFailures < 3) {
+      scheduleNextAutoRefresh(nextState.refreshIntervalSeconds);
+    }
   });
 };
 
@@ -437,6 +550,7 @@ export async function startTradingViewMcpAutoRefresh(request: TradingViewMcpAuto
     ...request,
     activateLoop: true,
     candleLimit: state.candleLimit,
+    emitStartEvent: false,
     refreshIntervalSeconds: state.refreshIntervalSeconds
   };
   publishAutoRefreshState(
@@ -444,6 +558,7 @@ export async function startTradingViewMcpAutoRefresh(request: TradingViewMcpAuto
       ...state,
       enabled: true,
       status: "starting",
+      refreshInProgress: false,
       nextRefreshAt: undefined,
       consecutiveFailures: 0,
       lastError: undefined,
@@ -458,16 +573,15 @@ export async function startTradingViewMcpAutoRefresh(request: TradingViewMcpAuto
   );
   const refreshed = await refreshTradingViewMcpChartDataNow(activeRequest);
   if (isBrowser() && refreshed.enabled && refreshed.consecutiveFailures < 3) {
-    autoRefreshTimer = window.setInterval(runScheduledRefresh, refreshed.refreshIntervalSeconds * 1000);
+    ensureVisibilityListener();
+    scheduleNextAutoRefresh(refreshed.refreshIntervalSeconds);
   }
   return loadTradingViewMcpAutoRefreshState();
 }
 
 export function stopTradingViewMcpAutoRefresh(reason = "TradingView MCP auto-refresh stopped.", emitEvent = true) {
-  if (autoRefreshTimer !== undefined && typeof window !== "undefined") {
-    window.clearInterval(autoRefreshTimer);
-  }
-  autoRefreshTimer = undefined;
+  clearAutoRefreshTimer();
+  removeVisibilityListener();
   activeRequest = undefined;
   inFlight = false;
   const state = loadTradingViewMcpAutoRefreshState();
@@ -475,6 +589,7 @@ export function stopTradingViewMcpAutoRefresh(reason = "TradingView MCP auto-ref
     ...state,
     enabled: false,
     status: "stopped" as const,
+    refreshInProgress: false,
     nextRefreshAt: undefined,
     updatedAt: now()
   };
