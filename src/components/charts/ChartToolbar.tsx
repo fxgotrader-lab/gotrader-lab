@@ -11,6 +11,9 @@ const sourceBadgeClass = (source: TradingChartSourceMeta) => {
   if (source.sourceType === "tradingview_mcp_chart") {
     return "border-sky-300/40 bg-sky-300/15 text-sky-100";
   }
+  if (source.sourceType === "mt5_read_only") {
+    return "border-emerald-300/40 bg-emerald-300/15 text-emerald-100";
+  }
   if (source.isMock) {
     return "border-slate-300/30 bg-slate-300/10 text-slate-200";
   }
@@ -41,6 +44,8 @@ export function ChartToolbar({
     ? "LIVE"
     : source.sourceType === "tradingview_mcp_chart"
       ? "TRADINGVIEW MCP"
+      : source.sourceType === "mt5_read_only"
+        ? "MT5 READ-ONLY"
       : source.isImported
         ? "IMPORTED"
         : source.isReplay
@@ -59,6 +64,11 @@ export function ChartToolbar({
           {source.sourceType === "tradingview_mcp_chart" ? (
             <span className="rounded-full border border-sky-300/30 bg-sky-300/10 px-2 py-0.5 text-[0.65rem] uppercase tracking-[0.16em] text-sky-100">
               Read-only, not broker truth
+            </span>
+          ) : null}
+          {source.sourceType === "mt5_read_only" ? (
+            <span className="rounded-full border border-emerald-300/30 bg-emerald-300/10 px-2 py-0.5 text-[0.65rem] uppercase tracking-[0.16em] text-emerald-100">
+              Read-only, no execution
             </span>
           ) : null}
           {source.sourceType === "live_placeholder" ? (

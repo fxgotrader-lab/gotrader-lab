@@ -12,6 +12,7 @@ import type {
   TradingViewMcpRuntimeState,
   TradingViewMcpAutoRefreshState
 } from "@/lib/integrations/tradingview";
+import type { Mt5ReadOnlyRuntimeState } from "@/lib/integrations/mt5";
 import type {
   CandleDataSourceMode,
   CandleWindowSettings,
@@ -98,7 +99,9 @@ export interface RuntimeMarketDataState {
   activeResearchSourceLabel: string;
   activeChartDisplaySourceLabel: string;
   chartDisplayUsesTradingViewMcp: boolean;
+  chartDisplayUsesMt5ReadOnly: boolean;
   researchUsesTradingViewMcp: boolean;
+  researchUsesMt5ReadOnly: boolean;
   chartDisplayWarning?: string;
   chartDisplayCandleCount: number;
   chartDisplayDataFingerprint: string;
@@ -111,6 +114,7 @@ export interface RuntimeMarketDataState {
   researchDataFingerprint: string;
   researchSourceKey: string;
   tradingViewMcpDataFingerprint: string;
+  mt5ReadOnlyDataFingerprint: string;
   activeImportId?: string;
   sourceLabel: string;
   symbol: FuturesSymbol;
@@ -316,6 +320,8 @@ export interface RuntimeTradingViewMcpState {
   warnings: string[];
 }
 
+export type RuntimeMt5ReadOnlyState = Mt5ReadOnlyRuntimeState;
+
 export interface RuntimeRegimeState {
   current: RegimeClassification;
   label: RegimeClassification["stableLabel"];
@@ -352,6 +358,7 @@ export interface ResearchRuntimeSnapshot {
   maturity: RuntimeMaturityState;
   walkForward: RuntimeWalkForwardState;
   tradingViewMcp: RuntimeTradingViewMcpState;
+  mt5ReadOnly: RuntimeMt5ReadOnlyState;
   regime: RuntimeRegimeState;
   fingerprints: RuntimeFingerprintState;
   metricProvenance: RuntimeMetricProvenanceState;

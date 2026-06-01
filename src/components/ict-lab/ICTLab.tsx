@@ -40,6 +40,12 @@ import {
   TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
   TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT
 } from "@/lib/integrations/tradingview";
+import {
+  hydrateActiveMt5ReadOnlyCandleFeed,
+  loadActiveMt5ReadOnlyCandleFeed,
+  MT5_READ_ONLY_UPDATED_EVENT,
+  resolveMt5ReadOnlyRuntimeState
+} from "@/lib/integrations/mt5";
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import {
   analyzeGrinchPhase1,
@@ -91,6 +97,8 @@ export function ICTLab() {
   const preparedSource = useActiveResearchCandles();
   const [tradingViewRuntime, setTradingViewRuntime] = useState(() => resolveTradingViewMcpRuntimeState());
   const [tradingViewFeed, setTradingViewFeed] = useState(() => loadActiveTradingViewMcpChartFeed());
+  const [mt5Runtime, setMt5Runtime] = useState(() => resolveMt5ReadOnlyRuntimeState());
+  const [mt5Feed, setMt5Feed] = useState(() => loadActiveMt5ReadOnlyCandleFeed());
   const fallbackPreparedSource = useMemo(
     () => ({
       mode: "mock" as const,
@@ -109,11 +117,12 @@ export function ICTLab() {
   );
   const sourceForDisplay = preparedSource ?? fallbackPreparedSource;
   const displaySource = useMemo(
-    () => resolveChartDisplayCandleSource(sourceForDisplay, tradingViewFeed),
-    [sourceForDisplay, tradingViewFeed]
+    () => resolveChartDisplayCandleSource(sourceForDisplay, tradingViewFeed, mt5Feed),
+    [sourceForDisplay, tradingViewFeed, mt5Feed]
   );
   const tradingViewCandles = displaySource.chartDisplayUsesTradingViewMcp ? displaySource.activeChartDisplayCandleSource : [];
   const tradingViewResearchEligible = displaySource.researchUsesTradingViewMcp;
+  const mt5ResearchEligible = displaySource.researchUsesMt5ReadOnly;
   const activeCandles = displaySource.activeResearchCandleSource.length ? displaySource.activeResearchCandleSource : mockCandles;
   const chartCandles = displaySource.activeChartDisplayCandleSource.length ? displaySource.activeChartDisplayCandleSource : activeCandles;
   const sourceType = displaySource.activeResearchSourceMode;
@@ -238,8 +247,29 @@ export function ICTLab() {
     };
   }, []);
 
+  useEffect(() => {
+    const refreshMt5Status = () => {
+      setMt5Runtime(resolveMt5ReadOnlyRuntimeState());
+      setMt5Feed(loadActiveMt5ReadOnlyCandleFeed());
+      void hydrateActiveMt5ReadOnlyCandleFeed()
+        .then((feed) => {
+          setMt5Runtime(resolveMt5ReadOnlyRuntimeState(feed));
+          setMt5Feed(feed);
+        })
+        .catch(() => undefined);
+    };
+    refreshMt5Status();
+    window.addEventListener(MT5_READ_ONLY_UPDATED_EVENT, refreshMt5Status);
+    window.addEventListener("storage", refreshMt5Status);
+    return () => {
+      window.removeEventListener(MT5_READ_ONLY_UPDATED_EVENT, refreshMt5Status);
+      window.removeEventListener("storage", refreshMt5Status);
+    };
+  }, []);
+
   const chartData = useMemo(() => {
     const visualOnlyTradingViewChart = tradingViewCandles.length > 0 && !tradingViewResearchEligible;
+    const visualOnlyMt5Chart = displaySource.chartDisplayUsesMt5ReadOnly && !mt5ResearchEligible;
     const base = createTradingChartData({
       candles: chartCandles,
       sourceLabel: chartSourceLabel,
@@ -247,8 +277,8 @@ export function ICTLab() {
       symbol: chartLatestCandle?.symbol,
       timeframe: chartLatestCandle?.timeframe
     });
-    const chartBias: MarketBias = visualOnlyTradingViewChart ? "neutral" : latestStructure?.direction ?? "neutral";
-    const overlays = visualOnlyTradingViewChart
+    const chartBias: MarketBias = visualOnlyTradingViewChart || visualOnlyMt5Chart ? "neutral" : latestStructure?.direction ?? "neutral";
+    const overlays = visualOnlyTradingViewChart || visualOnlyMt5Chart
       ? [buildVwapOverlay(chartCandles)].filter((overlay): overlay is TradingChartLineOverlay => Boolean(overlay))
       : [
       buildVwapOverlay(activeCandles),
@@ -309,12 +339,16 @@ export function ICTLab() {
       ...base,
       bias: chartBias,
       lineOverlays: overlays,
-      markers: visualOnlyTradingViewChart ? [] : buildIctMarkers({
+      markers: visualOnlyTradingViewChart || visualOnlyMt5Chart ? [] : buildIctMarkers({
         structureEvents: analysis.structureEvents.slice(-18) as MarketStructureEvent[],
         sweeps: analysis.sweeps.slice(-14)
       }),
-      stateLabel: visualOnlyTradingViewChart ? "visual only / tradingview_mcp_chart" : `${analysis.zone.currentZone} / ${sourceType}`,
-      zoneOverlays: visualOnlyTradingViewChart ? [] : buildFvgZoneOverlays(activeCandles, analysis.gaps)
+      stateLabel: visualOnlyTradingViewChart
+        ? "visual only / tradingview_mcp_chart"
+        : visualOnlyMt5Chart
+          ? "visual only / mt5_read_only"
+          : `${analysis.zone.currentZone} / ${sourceType}`,
+      zoneOverlays: visualOnlyTradingViewChart || visualOnlyMt5Chart ? [] : buildFvgZoneOverlays(activeCandles, analysis.gaps)
     };
   }, [
     activeCandles,
@@ -325,7 +359,9 @@ export function ICTLab() {
     chartSourceLabel,
     chartSourceType,
     latestStructure?.direction,
+    mt5ResearchEligible,
     sourceType,
+    displaySource.chartDisplayUsesMt5ReadOnly,
     tradingViewCandles.length,
     tradingViewResearchEligible
   ]);
@@ -344,6 +380,8 @@ export function ICTLab() {
           <Badge variant={sourceType === "imported" ? "success" : "warning"}>
             {sourceType === "tradingview_mcp_chart"
               ? "TradingView research source active"
+              : sourceType === "mt5_read_only"
+                ? "MT5 research source active"
               : sourceType === "imported"
                 ? "Imported data active"
                 : "Mock data active"}
@@ -351,6 +389,12 @@ export function ICTLab() {
           {tradingViewCandles.length && !tradingViewResearchEligible ? (
             <Badge variant="warning">TradingView visual only</Badge>
           ) : null}
+          {displaySource.chartDisplayUsesMt5ReadOnly && !mt5ResearchEligible ? (
+            <Badge variant="warning">MT5 visual only</Badge>
+          ) : null}
+          <Badge variant={mt5Runtime.candleFeedAvailable ? "success" : "secondary"}>
+            MT5 {mt5Runtime.connectionStatus.replace(/_/g, " ")}
+          </Badge>
           <Badge variant="muted">No execution</Badge>
         </div>
       </div>

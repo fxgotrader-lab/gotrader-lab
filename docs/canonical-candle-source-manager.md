@@ -13,7 +13,7 @@ Supported or planned providers:
 - `mock`
 - `replay`
 
-TradingView MCP is read-only chart data and evidence. MT5 read-only is planned as a local quote/candle provider. Neither has execution authority in this phase.
+TradingView MCP is read-only chart data and evidence. MT5 read-only is a contract-backed local quote/candle provider that remains disconnected/planned until a local read-only MT5 bridge responds at `http://127.0.0.1:7341`. Neither has execution authority in this phase.
 
 ## Canonical Source Fields
 
@@ -71,7 +71,7 @@ Summaries omit candle arrays so runtime diagnostics do not duplicate large OHLCV
 
 - Imported OHLCV registers as `imported_historical` and remains the preferred research/walk-forward source when active.
 - TradingView MCP registers as `tradingview_mcp` when a read-only feed is loaded from IndexedDB/session cache.
-- MT5 registers as `mt5_read_only` planned/disconnected until a local read-only endpoint is configured.
+- MT5 registers as `mt5_read_only` planned/disconnected by default, and as an available canonical source when a local read-only endpoint returns valid candles.
 - Mock candles register as `mock` for demo/fallback only.
 
 ## Not Implemented
@@ -83,4 +83,4 @@ Summaries omit candle arrays so runtime diagnostics do not duplicate large OHLCV
 - readiness override
 - automatic broker handoff
 
-Future phases can connect local read-only MT5 or Tradovate candle endpoints by normalizing their output into `CanonicalCandleSource` and passing the same eligibility gates.
+Future phases can deepen local read-only MT5 or Tradovate candle endpoints by normalizing their output into `CanonicalCandleSource` and passing the same eligibility gates. Execution remains a separate, locked broker-adapter phase.

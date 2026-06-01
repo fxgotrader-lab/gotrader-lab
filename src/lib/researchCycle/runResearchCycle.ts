@@ -47,6 +47,7 @@ import {
   type PreparedCandleSource
 } from "@/lib/marketData";
 import { hydrateActiveTradingViewMcpChartFeed } from "@/lib/integrations/tradingview";
+import { hydrateActiveMt5ReadOnlyCandleFeed } from "@/lib/integrations/mt5";
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import { buildCanonicalPerformanceMetricsFromRun } from "@/lib/performance/canonicalMetrics";
 import { evaluateReadinessGate } from "@/lib/readiness";
@@ -480,12 +481,15 @@ export async function runResearchCycle({
   }));
   const importedPreset = activeCandleSource.mode === "imported" ? getImportedDataPreset(activeCandleSource.appliedSettings) : "mock";
   const tradingViewChartFeed = await hydrateActiveTradingViewMcpChartFeed().catch(() => undefined);
-  const activeResearchCandleSource = resolveActiveResearchCandleSource(activeCandleSource, tradingViewChartFeed);
+  const mt5ReadOnlyFeed = await hydrateActiveMt5ReadOnlyCandleFeed().catch(() => undefined);
+  const activeResearchCandleSource = resolveActiveResearchCandleSource(activeCandleSource, tradingViewChartFeed, mt5ReadOnlyFeed);
+  const activeResearchUsesExternalReadOnly =
+    activeResearchCandleSource.sourceMode === "tradingview_mcp_chart" || activeResearchCandleSource.sourceMode === "mt5_read_only";
   const importedExpectedButMissing =
-    !activeResearchCandleSource.usesTradingViewMcp &&
+    !activeResearchUsesExternalReadOnly &&
     activeCandleSource.mode !== "imported" &&
     ((importActivation?.importedDatasetCount ?? 0) > 0 || importActivation?.status === "active_import_missing_stale");
-  const importedGuardedMode = activeCandleSource.mode === "imported" && !activeResearchCandleSource.usesTradingViewMcp && !advancedFullResearchMode;
+  const importedGuardedMode = activeCandleSource.mode === "imported" && !activeResearchUsesExternalReadOnly && !advancedFullResearchMode;
   const effectiveSearchMode = searchMode;
   const effectiveMaxCandidateCount = importedGuardedMode
     ? Math.min(maxCandidateCount, DASHBOARD_IMPORTED_CANDIDATE_LIMIT)
@@ -516,7 +520,7 @@ export async function runResearchCycle({
   const researchCandles = activeResearchCandleSource.candles.length ? activeResearchCandleSource.candles : mockCandles;
   const dataSourceLabel = activeResearchCandleSource.sourceLabel;
   const latestResearchCandle = researchCandles[researchCandles.length - 1];
-  const activeConfig = activeResearchCandleSource.usesTradingViewMcp && latestResearchCandle
+  const activeConfig = activeResearchUsesExternalReadOnly && latestResearchCandle
     ? sanitizeBacktestConfig({
         ...baseActiveConfig,
         symbol: latestResearchCandle.symbol,
@@ -549,7 +553,7 @@ export async function runResearchCycle({
     activeConfluenceThreshold: activeConfig.minimumConfluenceThreshold,
     dataSourceMode: activeResearchCandleSource.sourceMode,
     dataSourceLabel,
-    rawCandleCount: activeResearchCandleSource.usesTradingViewMcp ? activeResearchCandleSource.identity.candleCount : activeCandleSource.rawCandleCount,
+    rawCandleCount: activeResearchUsesExternalReadOnly ? activeResearchCandleSource.identity.candleCount : activeCandleSource.rawCandleCount,
     researchWindowCandles: activeResearchCandleSource.identity.candleCount,
     processedCandleCount: activeResearchCandleSource.identity.candleCount,
     researchTimeframe: activeConfig.timeframe,
@@ -562,9 +566,9 @@ export async function runResearchCycle({
     candleWindowSettings: activeCandleSource.appliedSettings,
     candleWindowWarnings: [
       ...activeCandleSource.warnings,
-      ...(activeResearchCandleSource.usesTradingViewMcp
+      ...(activeResearchUsesExternalReadOnly
         ? [
-            `Research source is TradingView MCP read-only chart candles. First ${activeResearchCandleSource.identity.firstTimestamp ?? "n/a"} / ${activeResearchCandleSource.identity.firstClose ?? "n/a"}; last ${activeResearchCandleSource.identity.lastTimestamp ?? "n/a"} / ${activeResearchCandleSource.identity.lastClose ?? "n/a"}. Not broker truth.`
+            `Research source is ${activeResearchCandleSource.sourceMode.replace(/_/g, " ")} read-only candles. First ${activeResearchCandleSource.identity.firstTimestamp ?? "n/a"} / ${activeResearchCandleSource.identity.firstClose ?? "n/a"}; last ${activeResearchCandleSource.identity.lastTimestamp ?? "n/a"} / ${activeResearchCandleSource.identity.lastClose ?? "n/a"}. Not broker truth and no execution authority.`
           ]
         : []),
       ...hardLimitWarnings,

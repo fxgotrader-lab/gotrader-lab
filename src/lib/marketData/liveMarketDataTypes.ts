@@ -1,6 +1,6 @@
 export type LiveMarketDataProvider = "none" | "tradingview_mcp" | "mt5" | "tradovate" | "custom";
 export type LiveMarketDataConnectionStatus = "disconnected" | "connecting" | "connected" | "degraded" | "error";
-export type LiveMarketDataMode = "mock" | "imported_historical" | "replay" | "tradingview_mcp_chart" | "live_feed";
+export type LiveMarketDataMode = "mock" | "imported_historical" | "replay" | "tradingview_mcp_chart" | "mt5_read_only" | "live_feed";
 
 export interface LiveMarketDataStatus {
   provider: LiveMarketDataProvider;

@@ -6,6 +6,10 @@ import {
   type ActiveTradingViewMcpChartFeed
 } from "@/lib/integrations/tradingview";
 import {
+  mt5ReadOnlyCandlesToGoTraderCandles,
+  type ActiveMt5ReadOnlyCandleFeed
+} from "@/lib/integrations/mt5";
+import {
   resolveCanonicalCandleSourceManager,
   type CanonicalCandleSourceSummary
 } from "@/lib/candleSources";
@@ -16,8 +20,16 @@ const sourceModeToLiveDataMode = (source: PreparedCandleSource): LiveMarketDataM
 
 export const resolveLiveMarketDataStatus = (
   source: PreparedCandleSource,
+  mt5Feed?: ActiveMt5ReadOnlyCandleFeed,
   tradingViewFeed?: ActiveTradingViewMcpChartFeed
 ): LiveMarketDataStatus => {
+  if (mt5Feed?.activeForChart && mt5Feed.candleCount > 0) {
+    return createDisconnectedLiveMarketDataStatus({
+      dataMode: "mt5_read_only",
+      lastCandleTimestamp: mt5Feed.lastTimestamp,
+      sourceLabel: mt5Feed.sourceLabel
+    });
+  }
   if (tradingViewFeed?.activeForChart && tradingViewFeed.candleCount > 0) {
     return createDisconnectedLiveMarketDataStatus({
       dataMode: "tradingview_mcp_chart",
@@ -38,7 +50,7 @@ export const currentChartSourceLabel = (status: LiveMarketDataStatus, fallbackLa
     ? status.liveFeedSourceLabel
     : fallbackLabel;
 
-export type ChartDisplaySourceMode = "mock" | "imported" | "tradingview_mcp_chart";
+export type ChartDisplaySourceMode = "mock" | "imported" | "tradingview_mcp_chart" | "mt5_read_only";
 
 export interface CandleSourceIdentity {
   candleCount: number;
@@ -73,7 +85,9 @@ export interface ResolvedChartDisplaySource {
   activeResearchSourceMode: ChartDisplaySourceMode;
   activeChartDisplaySourceMode: ChartDisplaySourceMode;
   chartDisplayUsesTradingViewMcp: boolean;
+  chartDisplayUsesMt5ReadOnly: boolean;
   researchUsesTradingViewMcp: boolean;
+  researchUsesMt5ReadOnly: boolean;
   chartDisplayWarning?: string;
   tradingViewMcpCandleCount: number;
   tradingViewMcpFirstTimestamp?: string;
@@ -84,6 +98,7 @@ export interface ResolvedChartDisplaySource {
   researchIdentity: CandleSourceIdentity;
   researchSourceKey: string;
   tradingViewMcpIdentity: CandleSourceIdentity;
+  mt5ReadOnlyIdentity: CandleSourceIdentity;
   canonicalWarnings: string[];
   fallbackReason?: string;
 }
@@ -124,14 +139,19 @@ export const createCandleSourceIdentity = (
 
 export const resolveActiveResearchCandleSource = (
   source: PreparedCandleSource,
-  tradingViewFeed?: ActiveTradingViewMcpChartFeed
+  tradingViewFeed?: ActiveTradingViewMcpChartFeed,
+  mt5Feed?: ActiveMt5ReadOnlyCandleFeed
 ): ResolvedActiveCandleSource => {
   const researchSourceMode: ChartDisplaySourceMode = source.mode === "imported" ? "imported" : "mock";
   const tradingViewCandles = tradingViewMcpCandlesToGoTraderCandles(tradingViewFeed);
+  const mt5Candles = mt5ReadOnlyCandlesToGoTraderCandles(mt5Feed);
+  const researchUsesMt5ReadOnly = Boolean(mt5Feed?.activeForResearch && mt5Candles.length);
   const researchUsesTradingViewMcp = Boolean(tradingViewFeed?.activeForResearch && tradingViewCandles.length);
-  const candles = researchUsesTradingViewMcp ? tradingViewCandles : source.candles;
-  const sourceMode: ChartDisplaySourceMode = researchUsesTradingViewMcp ? "tradingview_mcp_chart" : researchSourceMode;
-  const sourceLabel = researchUsesTradingViewMcp
+  const candles = researchUsesMt5ReadOnly ? mt5Candles : researchUsesTradingViewMcp ? tradingViewCandles : source.candles;
+  const sourceMode: ChartDisplaySourceMode = researchUsesMt5ReadOnly ? "mt5_read_only" : researchUsesTradingViewMcp ? "tradingview_mcp_chart" : researchSourceMode;
+  const sourceLabel = researchUsesMt5ReadOnly
+    ? `${mt5Feed?.sourceLabel ?? "MT5 read-only candle feed"} - research eligible`
+    : researchUsesTradingViewMcp
     ? `${tradingViewFeed?.sourceLabel ?? "TradingView MCP chart feed"} - research eligible`
     : source.label;
   const identity = createCandleSourceIdentity(candles, sourceMode, sourceLabel);
@@ -142,23 +162,30 @@ export const resolveActiveResearchCandleSource = (
     sourceLabel,
     sourceMode,
     sourceKey: identity.dataFingerprint,
-    usesTradingViewMcp: researchUsesTradingViewMcp
+    usesTradingViewMcp: researchUsesTradingViewMcp || researchUsesMt5ReadOnly
   };
 };
 
 export const resolveActiveChartDisplayCandleSource = (
   source: PreparedCandleSource,
-  tradingViewFeed?: ActiveTradingViewMcpChartFeed
+  tradingViewFeed?: ActiveTradingViewMcpChartFeed,
+  mt5Feed?: ActiveMt5ReadOnlyCandleFeed
 ): ResolvedActiveCandleSource => {
-  const researchSource = resolveActiveResearchCandleSource(source, tradingViewFeed);
+  const researchSource = resolveActiveResearchCandleSource(source, tradingViewFeed, mt5Feed);
   const tradingViewCandles = tradingViewMcpCandlesToGoTraderCandles(tradingViewFeed);
+  const mt5Candles = mt5ReadOnlyCandlesToGoTraderCandles(mt5Feed);
+  const chartDisplayUsesMt5ReadOnly = Boolean(mt5Feed?.activeForChart && mt5Candles.length);
   const chartDisplayUsesTradingViewMcp = Boolean(tradingViewFeed?.activeForChart && tradingViewCandles.length);
-  const fallbackReason = tradingViewFeed?.activeForChart && !tradingViewCandles.length
+  const fallbackReason = mt5Feed?.activeForChart && !mt5Candles.length
+    ? "MT5 read-only chart source selected, but no candles are available; falling back to the active research source."
+    : tradingViewFeed?.activeForChart && !tradingViewCandles.length
     ? "TradingView MCP chart source selected, but no candles are available; falling back to the active research source."
     : undefined;
-  const candles = chartDisplayUsesTradingViewMcp ? tradingViewCandles : researchSource.candles;
-  const sourceMode: ChartDisplaySourceMode = chartDisplayUsesTradingViewMcp ? "tradingview_mcp_chart" : researchSource.sourceMode;
-  const sourceLabel = chartDisplayUsesTradingViewMcp
+  const candles = chartDisplayUsesMt5ReadOnly ? mt5Candles : chartDisplayUsesTradingViewMcp ? tradingViewCandles : researchSource.candles;
+  const sourceMode: ChartDisplaySourceMode = chartDisplayUsesMt5ReadOnly ? "mt5_read_only" : chartDisplayUsesTradingViewMcp ? "tradingview_mcp_chart" : researchSource.sourceMode;
+  const sourceLabel = chartDisplayUsesMt5ReadOnly
+    ? `${mt5Feed?.sourceLabel ?? "MT5 read-only candle feed"} - visual display`
+    : chartDisplayUsesTradingViewMcp
     ? `${tradingViewFeed?.sourceLabel ?? "TradingView MCP chart feed"} - visual display`
     : researchSource.sourceLabel;
   const identity = createCandleSourceIdentity(candles, sourceMode, sourceLabel);
@@ -170,21 +197,25 @@ export const resolveActiveChartDisplayCandleSource = (
     sourceLabel,
     sourceMode,
     sourceKey: identity.dataFingerprint,
-    usesTradingViewMcp: chartDisplayUsesTradingViewMcp
+    usesTradingViewMcp: chartDisplayUsesTradingViewMcp || chartDisplayUsesMt5ReadOnly
   };
 };
 
 export const resolveChartDisplayCandleSource = (
   source: PreparedCandleSource,
-  tradingViewFeed?: ActiveTradingViewMcpChartFeed
+  tradingViewFeed?: ActiveTradingViewMcpChartFeed,
+  mt5Feed?: ActiveMt5ReadOnlyCandleFeed
 ): ResolvedChartDisplaySource => {
-  const canonical = resolveCanonicalCandleSourceManager({ preparedSource: source, tradingViewFeed });
+  const canonical = resolveCanonicalCandleSourceManager({ preparedSource: source, tradingViewFeed, mt5Feed });
   const researchSourceMode: ChartDisplaySourceMode = source.mode === "imported" ? "imported" : "mock";
   const tradingViewCandles = tradingViewMcpCandlesToGoTraderCandles(tradingViewFeed);
-  const researchSource = resolveActiveResearchCandleSource(source, tradingViewFeed);
-  const chartDisplaySource = resolveActiveChartDisplayCandleSource(source, tradingViewFeed);
-  const chartDisplayUsesTradingViewMcp = chartDisplaySource.usesTradingViewMcp;
-  const researchUsesTradingViewMcp = researchSource.usesTradingViewMcp;
+  const mt5Candles = mt5ReadOnlyCandlesToGoTraderCandles(mt5Feed);
+  const researchSource = resolveActiveResearchCandleSource(source, tradingViewFeed, mt5Feed);
+  const chartDisplaySource = resolveActiveChartDisplayCandleSource(source, tradingViewFeed, mt5Feed);
+  const chartDisplayUsesTradingViewMcp = chartDisplaySource.sourceMode === "tradingview_mcp_chart";
+  const chartDisplayUsesMt5ReadOnly = chartDisplaySource.sourceMode === "mt5_read_only";
+  const researchUsesTradingViewMcp = researchSource.sourceMode === "tradingview_mcp_chart";
+  const researchUsesMt5ReadOnly = researchSource.sourceMode === "mt5_read_only";
   const activeResearchCandleSource = researchSource.candles;
   const activeChartDisplayCandleSource = chartDisplaySource.candles;
   const activeResearchSourceLabel = researchSource.sourceLabel;
@@ -194,8 +225,15 @@ export const resolveChartDisplayCandleSource = (
     "tradingview_mcp_chart",
     tradingViewFeed?.sourceLabel ?? "TradingView MCP chart feed - read-only, not broker truth"
   );
+  const mt5ReadOnlyIdentity = createCandleSourceIdentity(
+    mt5Candles,
+    "mt5_read_only",
+    mt5Feed?.sourceLabel ?? "MT5 read-only candle feed - no execution authority"
+  );
   const importedIdentity = createCandleSourceIdentity(source.candles, researchSourceMode, source.label);
-  const chartDisplayWarning = chartDisplayUsesTradingViewMcp && !researchUsesTradingViewMcp
+  const chartDisplayWarning = chartDisplayUsesMt5ReadOnly && !researchUsesMt5ReadOnly
+    ? "Chart display source differs from research source. MT5 read-only candles are visual-only and not used for research."
+    : chartDisplayUsesTradingViewMcp && !researchUsesTradingViewMcp
     ? "Chart display source differs from research source. TradingView MCP candles are visual-only and not used for research."
     : chartDisplaySource.fallbackReason;
 
@@ -208,14 +246,24 @@ export const resolveChartDisplayCandleSource = (
     activeChartDisplayCandleSource,
     activeResearchSourceLabel,
     activeChartDisplaySourceLabel,
-    activeResearchSourceMode: researchUsesTradingViewMcp ? "tradingview_mcp_chart" : researchSourceMode,
+    activeResearchSourceMode: researchUsesTradingViewMcp
+      ? "tradingview_mcp_chart"
+      : researchUsesMt5ReadOnly
+        ? "mt5_read_only"
+        : researchSourceMode,
     activeChartDisplaySourceMode: chartDisplayUsesTradingViewMcp
       ? "tradingview_mcp_chart"
+      : chartDisplayUsesMt5ReadOnly
+        ? "mt5_read_only"
       : researchUsesTradingViewMcp
         ? "tradingview_mcp_chart"
+        : researchUsesMt5ReadOnly
+          ? "mt5_read_only"
         : researchSourceMode,
     chartDisplayUsesTradingViewMcp,
+    chartDisplayUsesMt5ReadOnly,
     researchUsesTradingViewMcp,
+    researchUsesMt5ReadOnly,
     chartDisplayWarning,
     tradingViewMcpCandleCount: tradingViewCandles.length,
     tradingViewMcpFirstTimestamp: tradingViewCandles[0]?.timestamp,
@@ -227,6 +275,7 @@ export const resolveChartDisplayCandleSource = (
     researchIdentity: researchSource.identity,
     researchSourceKey: researchSource.sourceKey,
     tradingViewMcpIdentity,
+    mt5ReadOnlyIdentity,
     canonicalWarnings: canonical.warnings
   };
 };

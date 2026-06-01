@@ -21,6 +21,11 @@ import {
   TRADINGVIEW_MCP_STATUS_STORAGE_KEY
 } from "@/lib/integrations/tradingview";
 import {
+  hydrateActiveMt5ReadOnlyCandleFeed,
+  loadActiveMt5ReadOnlyCandleFeed,
+  resolveMt5ReadOnlyRuntimeState
+} from "@/lib/integrations/mt5";
+import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
   buildMarketContext,
   getActiveImportedCandleSetId,
@@ -87,6 +92,7 @@ import type {
   ResolveResearchRuntimeSnapshotOptions,
   RuntimeDataPreset,
   RuntimeMarketDataState,
+  RuntimeMt5ReadOnlyState,
   RuntimeTradingViewMcpState
 } from "@/lib/runtime/researchRuntimeTypes";
 
@@ -125,14 +131,15 @@ const marketStateFor = (
   importActivation: ImportedCandleActivationState,
   fallbackSymbol?: FuturesSymbol,
   fallbackTimeframe?: Timeframe,
-  chartFeed?: ReturnType<typeof loadActiveTradingViewMcpChartFeed>
+  chartFeed?: ReturnType<typeof loadActiveTradingViewMcpChartFeed>,
+  mt5Feed?: ReturnType<typeof loadActiveMt5ReadOnlyCandleFeed>
 ): RuntimeMarketDataState => {
   const metadata = source.metadata;
   const symbol = metadata?.symbol ?? source.candles[0]?.symbol ?? fallbackSymbol ?? "NQ";
   const timeframe = source.appliedSettings.targetTimeframe ?? metadata?.timeframe ?? source.candles[0]?.timeframe ?? fallbackTimeframe ?? "5m";
   const fallbackToMock = source.mode === "mock";
-  const liveMarketDataStatus = resolveLiveMarketDataStatus(source, chartFeed);
-  const displaySource = resolveChartDisplayCandleSource(source, chartFeed);
+  const liveMarketDataStatus = resolveLiveMarketDataStatus(source, mt5Feed, chartFeed);
+  const displaySource = resolveChartDisplayCandleSource(source, chartFeed, mt5Feed);
 
   return {
     activeDataSource: source.mode,
@@ -144,7 +151,9 @@ const marketStateFor = (
     activeResearchSourceLabel: displaySource.activeResearchSourceLabel,
     activeChartDisplaySourceLabel: displaySource.activeChartDisplaySourceLabel,
     chartDisplayUsesTradingViewMcp: displaySource.chartDisplayUsesTradingViewMcp,
+    chartDisplayUsesMt5ReadOnly: displaySource.chartDisplayUsesMt5ReadOnly,
     researchUsesTradingViewMcp: displaySource.researchUsesTradingViewMcp,
+    researchUsesMt5ReadOnly: displaySource.researchUsesMt5ReadOnly,
     chartDisplayWarning: displaySource.chartDisplayWarning,
     chartDisplayCandleCount: displaySource.activeChartDisplayCandleSource.length,
     chartDisplayDataFingerprint: displaySource.chartDisplayIdentity.dataFingerprint,
@@ -157,6 +166,7 @@ const marketStateFor = (
     researchDataFingerprint: displaySource.researchIdentity.dataFingerprint,
     researchSourceKey: displaySource.researchSourceKey,
     tradingViewMcpDataFingerprint: displaySource.tradingViewMcpIdentity.dataFingerprint,
+    mt5ReadOnlyDataFingerprint: displaySource.mt5ReadOnlyIdentity.dataFingerprint,
     activeImportId: importActivation.activeImportId,
     sourceLabel: source.label,
     symbol,
@@ -178,6 +188,9 @@ const marketStateFor = (
     preparedSource: source
   };
 };
+
+const mt5ReadOnlyStateFor = (mt5Feed: ReturnType<typeof loadActiveMt5ReadOnlyCandleFeed> = loadActiveMt5ReadOnlyCandleFeed()): RuntimeMt5ReadOnlyState =>
+  resolveMt5ReadOnlyRuntimeState(mt5Feed);
 
 const tradingViewMcpStateFor = (chartFeed: ReturnType<typeof loadActiveTradingViewMcpChartFeed> = loadActiveTradingViewMcpChartFeed()): RuntimeTradingViewMcpState => {
   const runtime = resolveTradingViewMcpRuntimeState(chartFeed);
@@ -585,12 +598,14 @@ export async function resolveResearchRuntimeSnapshot(
     warnings: ["Prepared candle source could not be loaded; runtime snapshot used an empty mock fallback."]
   };
   const tradingViewChartFeed = await hydrateActiveTradingViewMcpChartFeed().catch(() => loadActiveTradingViewMcpChartFeed());
+  const mt5ReadOnlyFeed = await hydrateActiveMt5ReadOnlyCandleFeed().catch(() => loadActiveMt5ReadOnlyCandleFeed());
   const marketData = marketStateFor(
     source,
     importActivation,
     latestCycle?.backtestSummary?.config.symbol,
     latestCycle?.researchTimeframe,
-    tradingViewChartFeed
+    tradingViewChartFeed,
+    mt5ReadOnlyFeed
   );
   const regimeMarketContext = buildMarketContext({
     symbol: marketData.symbol,
@@ -813,6 +828,7 @@ export async function resolveResearchRuntimeSnapshot(
     })
   });
   const tradingViewMcp = tradingViewMcpStateFor(tradingViewChartFeed);
+  const mt5ReadOnly = mt5ReadOnlyStateFor(mt5ReadOnlyFeed);
   const sourceTrace = [
     `market data: ${marketData.sourceLabel}`,
     `chart display source: ${marketData.activeChartDisplaySourceLabel} / ${marketData.chartDisplayCandleCount} candles / ${marketData.chartDisplayFirstTimestamp ?? "n/a"} -> ${marketData.chartDisplayLastTimestamp ?? "n/a"}`,
@@ -822,6 +838,7 @@ export async function resolveResearchRuntimeSnapshot(
     `TradingView MCP chart feed: ${tradingViewMcp.chartFeedAvailable ? `${tradingViewMcp.chartFeedCandleCount} candles` : "not active"} / ${tradingViewMcp.chartFeedMatchState}`,
     `TradingView MCP auto-refresh: ${tradingViewMcp.autoRefresh.status} / interval ${tradingViewMcp.autoRefresh.refreshIntervalSeconds}s / count ${tradingViewMcp.autoRefresh.refreshCount}`,
     `TradingView MCP research eligibility: ${tradingViewMcp.researchEligibility} / symbol ${tradingViewMcp.symbolMatch ? "match" : "not matched"} / timeframe ${tradingViewMcp.timeframeMatch ? "match" : "not matched"}`,
+    `MT5 read-only: ${mt5ReadOnly.connectionStatus} / candles ${mt5ReadOnly.candleCount} / research ${mt5ReadOnly.researchEligibility}`,
     `Canonical candle manager: chart ${marketData.activeChartSource.provider} / research ${marketData.activeResearchSource.provider} / walk-forward ${marketData.activeWalkForwardSource.provider} / available ${marketData.allAvailableSources.length}`,
     `Composite regime: ${regimeRuntime.label} / ${Math.round(regimeRuntime.confidence * 100)}% / ${regimeRuntime.dataQuality} / transition ${regimeRuntime.transitionPending ? "pending" : "stable"}`,
     `imported data status: ${marketData.importedDataStatus}`,
@@ -1106,6 +1123,7 @@ export async function resolveResearchRuntimeSnapshot(
       warnings: walkForwardWarnings
     },
     tradingViewMcp,
+    mt5ReadOnly,
     regime: regimeRuntime,
     fingerprints: {
       activeBaseline: activeBaselineFingerprint,

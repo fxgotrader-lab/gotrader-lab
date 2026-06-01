@@ -12,6 +12,8 @@
     "tradingview:mcp-restart": "node scripts/restart-tradingview-mcp-bridge.mjs",
     "tradingview:diagnose": "node scripts/diagnose-tradingview-mcp.mjs",
     "tradingview:start-desktop-debug": "node scripts/start-tradingview-desktop-debug.mjs",
+    "mt5:readonly-bridge": "node scripts/start-mt5-readonly-bridge.mjs",
+    "mt5:readonly-diagnose": "node scripts/diagnose-mt5-readonly-bridge.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "smoke:http": "node scripts/smoke-routes.mjs",
@@ -26,6 +28,7 @@
     "test:local-journal": "node scripts/test-local-journal.mjs",
     "test:multi-broker-contracts": "node scripts/test-multi-broker-contracts.mjs",
     "test:tradingview-mcp": "node scripts/test-tradingview-mcp-bridge.mjs",
+    "test:mt5-readonly": "node scripts/test-mt5-readonly-bridge.mjs",
     "test:regime-classifier": "node scripts/test-regime-classifier.mjs"
   },
   "dependencies": {

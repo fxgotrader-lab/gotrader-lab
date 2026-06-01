@@ -7,6 +7,7 @@ export type ChartDataSourceType =
   | "imported"
   | "replay"
   | "tradingview_mcp_chart"
+  | "mt5_read_only"
   | "live_feed"
   | "live_placeholder";
 
