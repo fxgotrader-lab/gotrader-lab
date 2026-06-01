@@ -9,7 +9,7 @@ import {
 const host = process.env.TRADINGVIEW_MCP_BRIDGE_HOST || defaultBridgeHost;
 const port = Number(process.env.TRADINGVIEW_MCP_BRIDGE_PORT || defaultBridgePort);
 
-const diagnosis = await diagnoseBridgePort({ host, port, includeCandles: true, timeoutMs: 1800 });
+const diagnosis = await diagnoseBridgePort({ host, port, includeCandles: true, timeoutMs: 2600 });
 
 console.log(`TradingView MCP bridge port diagnostic: ${diagnosis.url}`);
 console.log(`Status: ${diagnosis.status}`);

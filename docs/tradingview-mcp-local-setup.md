@@ -171,9 +171,15 @@ It reports one of:
 
 - `free`
 - `healthy_gotrader_wrapper`
+- `wrapper_healthy_upstream_timeout`
 - `stale_gotrader_wrapper`
 - `wrong_process`
 - `occupied_unresponsive`
+
+`/health` is intentionally lightweight. It should respond whenever the GoTrader wrapper process is alive, even when
+TradingView Desktop, CDP, or the upstream CLI is slow. `/status`, `/quote`, `/candles`, `/snapshot`, and `/evidence`
+perform bounded upstream CLI checks. If the upstream CLI times out, those endpoints return structured degraded status
+instead of making the whole wrapper look dead.
 
 Stop a stale GoTrader wrapper:
 
@@ -323,6 +329,7 @@ If GoTrader Settings still shows disconnected:
 - keep the wrapper terminal open
 - check that the URL matches `http://127.0.0.1:7331`
 - run `npm.cmd run tradingview:mcp-diagnose-port`
+- if status is `wrapper_healthy_upstream_timeout`, restart TradingView Desktop with `--remote-debugging-port=9222` and test the upstream CLI
 - if the port is stale, run `npm.cmd run tradingview:mcp-stop`, then restart the wrapper
 - click `Check status` again
 
@@ -336,3 +343,9 @@ The GoTrader wrapper currently uses read-only CLI commands:
 - `ohlcv --count`
 
 It does not collect screenshots, indicator values, Pine drawing levels, or multi-pane evidence yet. Those can be added later as bounded evidence mappings, still with no execution authority.
+
+The wrapper CLI timeout defaults to 2 seconds so browser status checks stay responsive. Override only for local debugging:
+
+```powershell
+$env:TRADINGVIEW_MCP_CLI_TIMEOUT_MS="3000"
+```

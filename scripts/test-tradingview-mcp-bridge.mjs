@@ -123,6 +123,15 @@ try {
 
 const wrapperConnected = checks.some((check) => check.ok && isGoTraderWrapperPayload(check.payload));
 const connected = wrapperConnected;
+const healthCheck = checks.find((check) => check.endpoint === "health");
+const statusCheck = checks.find((check) => check.endpoint === "status");
+const healthPayload = healthCheck?.payload && typeof healthCheck.payload === "object" ? healthCheck.payload : undefined;
+const statusPayload = statusCheck?.payload && typeof statusCheck.payload === "object" ? statusCheck.payload : undefined;
+const upstreamTimedOut =
+  healthPayload?.upstreamStatus === "timeout" ||
+  statusPayload?.upstreamStatus === "timeout" ||
+  statusPayload?.upstream?.status === "timeout" ||
+  String(statusPayload?.status ?? "").includes("upstream_timeout");
 const candlesCheck = checks.find((check) => String(check.endpoint).startsWith("GET /candles"));
 const candlePayload = candlesCheck?.payload && typeof candlesCheck.payload === "object" ? candlesCheck.payload : undefined;
 const quoteCheck = checks.find((check) => String(check.endpoint).startsWith("GET /quote"));
@@ -149,6 +158,14 @@ console.log(
       symbol,
       timeframe,
       connected,
+      bridgeState: wrapperConnected
+        ? upstreamTimedOut
+          ? "wrapper_healthy_upstream_timeout"
+          : "wrapper_healthy"
+        : portDiagnosis?.status ?? "disconnected",
+      wrapperStatus: healthPayload?.wrapperStatus,
+      upstreamStatus: statusPayload?.upstreamStatus ?? healthPayload?.upstreamStatus,
+      lastUpstreamCheckAt: statusPayload?.lastUpstreamCheckAt ?? healthPayload?.lastUpstreamCheckAt,
       quoteEndpoint: quotePayload
         ? {
             connectionStatus: quotePayload.connectionStatus,
@@ -185,7 +202,9 @@ console.log(
         : undefined,
       mode: "read_only_chart_data",
       note: connected
-        ? "Bridge responded. Evidence and candle feed remain read-only and advisory."
+        ? upstreamTimedOut
+          ? "Wrapper is alive, but upstream TradingView MCP CLI timed out. Evidence and candle feed remain read-only and advisory."
+          : "Bridge responded. Evidence and candle feed remain read-only and advisory."
         : portDiagnosis?.listeners?.length
           ? "Port is occupied but wrapper did not respond. Run npm.cmd run tradingview:mcp-diagnose-port."
           : "Bridge did not respond. This is expected unless the local wrapper is running.",

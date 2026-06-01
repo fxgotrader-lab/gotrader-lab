@@ -13,7 +13,18 @@ const cliPath = process.env.TRADINGVIEW_MCP_CLI
     ? join(repoDir, "src", "cli", "index.js")
     : "";
 const nodeBin = process.env.TRADINGVIEW_MCP_NODE || process.execPath;
-const cliTimeoutMs = Number(process.env.TRADINGVIEW_MCP_CLI_TIMEOUT_MS || 8000);
+const cliTimeoutMs = Number(process.env.TRADINGVIEW_MCP_CLI_TIMEOUT_MS || 2000);
+const startedAt = new Date();
+let requestCount = 0;
+let lastError;
+let lastUpstreamCheck = {
+  checkedAt: undefined,
+  status: "unknown",
+  ok: false,
+  error: undefined,
+  payload: undefined
+};
+const activeCliProcesses = new Map();
 
 const authority = {
   executionAuthority: "none",
@@ -88,11 +99,42 @@ const runCli = (args) =>
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true
     });
+    const startedAt = new Date().toISOString();
+    if (child.pid) {
+      activeCliProcesses.set(child.pid, {
+        args,
+        startedAt
+      });
+    }
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    const settle = (result) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      if (child.pid) {
+        activeCliProcesses.delete(child.pid);
+      }
+      if (!result.ok) {
+        lastError = {
+          at: new Date().toISOString(),
+          command: args.join(" "),
+          status: result.status,
+          error: result.error
+        };
+      }
+      resolveRun(result);
+    };
     const timeout = setTimeout(() => {
-      child.kill();
-      resolveRun({
+      try {
+        child.kill();
+      } catch {
+        // The child may have exited between the timeout firing and kill attempt.
+      }
+      settle({
         ok: false,
         status: "timeout",
         error: `TradingView MCP CLI timed out after ${cliTimeoutMs}ms.`
@@ -106,8 +148,7 @@ const runCli = (args) =>
       stderr += chunk.toString();
     });
     child.on("close", (code) => {
-      clearTimeout(timeout);
-      resolveRun({
+      settle({
         ok: code === 0,
         status: code === 0 ? "ok" : "error",
         code,
@@ -116,8 +157,7 @@ const runCli = (args) =>
       });
     });
     child.on("error", (error) => {
-      clearTimeout(timeout);
-      resolveRun({
+      settle({
         ok: false,
         status: "error",
         error: error instanceof Error ? error.message : String(error)
@@ -463,14 +503,64 @@ const buildMarketSnapshotPayload = ({ symbol, timeframe, quote, candles, evidenc
   ...authority
 });
 
+const configured = () => Boolean(cliPath && existsSync(cliPath));
+const uptimeSeconds = () => Math.round((Date.now() - startedAt.getTime()) / 1000);
+
+const buildHealthPayload = () => ({
+  status: "wrapper_running",
+  wrapperStatus: "running",
+  upstreamStatus: lastUpstreamCheck.status,
+  lastUpstreamCheckAt: lastUpstreamCheck.checkedAt,
+  message: "GoTrader TradingView MCP wrapper process is alive. Upstream TradingView CLI status is reported separately.",
+  bridge: {
+    host,
+    port,
+    repoDir: repoDir || null,
+    cliPath: cliPath || null,
+    upstreamCliConfigured: configured()
+  },
+  diagnostics: {
+    pid: process.pid,
+    uptimeSeconds: uptimeSeconds(),
+    requestCount,
+    lastError,
+    lastUpstreamCheck,
+    activeCliProcessCount: activeCliProcesses.size,
+    activeCliProcesses: [...activeCliProcesses.entries()].map(([pid, info]) => ({
+      pid,
+      command: info.args.join(" "),
+      startedAt: info.startedAt
+    }))
+  },
+  mode: "read_only_analysis",
+  ...authority
+});
+
 const statusPayload = async () => {
   const statusResult = await runCli(["status"]);
-  const configured = Boolean(cliPath && existsSync(cliPath));
+  lastUpstreamCheck = {
+    checkedAt: new Date().toISOString(),
+    status: statusResult.ok ? "connected" : statusResult.status === "timeout" ? "timeout" : configured() ? "disconnected" : "not_configured",
+    ok: statusResult.ok,
+    error: statusResult.error,
+    payload: statusResult.ok ? statusResult.payload : undefined
+  };
   return {
-    status: statusResult.ok ? "connected_analysis_only" : configured ? "disconnected" : "wrapper_running_upstream_not_configured",
+    status: statusResult.ok
+      ? "connected_analysis_only"
+      : statusResult.status === "timeout"
+        ? "wrapper_running_upstream_timeout"
+        : configured()
+          ? "wrapper_running_upstream_disconnected"
+          : "wrapper_running_upstream_not_configured",
+    wrapperStatus: "running",
+    upstreamStatus: lastUpstreamCheck.status,
+    lastUpstreamCheckAt: lastUpstreamCheck.checkedAt,
     message: statusResult.ok
       ? "TradingView MCP CLI responded. Read-only evidence wrapper is available."
-      : configured
+      : statusResult.status === "timeout"
+        ? `GoTrader wrapper is running, but upstream TradingView MCP CLI timed out after ${cliTimeoutMs}ms.`
+        : configured()
         ? "TradingView MCP CLI is configured but did not report connected status."
         : "GoTrader wrapper is running. Set TRADINGVIEW_MCP_REPO_DIR to enable upstream TradingView MCP CLI calls.",
     bridge: {
@@ -478,7 +568,7 @@ const statusPayload = async () => {
       port,
       repoDir: repoDir || null,
       cliPath: cliPath || null,
-      upstreamCliConfigured: configured
+      upstreamCliConfigured: configured()
     },
     upstream: {
       ok: statusResult.ok,
@@ -486,12 +576,19 @@ const statusPayload = async () => {
       error: statusResult.error,
       payload: statusResult.ok ? statusResult.payload : undefined
     },
+    diagnostics: buildHealthPayload().diagnostics,
+    warnings: [
+      statusResult.status === "timeout"
+        ? "Upstream TradingView MCP CLI timed out. /health remains available; restart TradingView Desktop/CDP or inspect the upstream CLI."
+        : undefined
+    ].filter(Boolean),
     mode: "read_only_analysis",
     ...authority
   };
 };
 
 const server = createServer(async (req, res) => {
+  requestCount += 1;
   if (req.method === "OPTIONS") {
     json(res, 200, { ok: true });
     return;
@@ -499,7 +596,12 @@ const server = createServer(async (req, res) => {
 
   const requestUrl = new URL(req.url || "/", `http://${host}:${port}`);
 
-  if (requestUrl.pathname === "/" || requestUrl.pathname === "/health" || requestUrl.pathname === "/status") {
+  if (requestUrl.pathname === "/" || requestUrl.pathname === "/health") {
+    json(res, 200, buildHealthPayload());
+    return;
+  }
+
+  if (requestUrl.pathname === "/status") {
     json(res, 200, await statusPayload());
     return;
   }
@@ -629,4 +731,12 @@ server.listen(port, host, () => {
   if (!repoDir) {
     console.log("Set TRADINGVIEW_MCP_REPO_DIR to a local tradingview-mcp clone to enable upstream CLI calls.");
   }
+  void statusPayload().catch((error) => {
+    lastError = {
+      at: new Date().toISOString(),
+      command: "background status",
+      status: "error",
+      error: error instanceof Error ? error.message : String(error)
+    };
+  });
 });

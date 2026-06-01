@@ -197,12 +197,21 @@ export async function diagnoseBridgePort({
     ? await probeJson(`${baseUrl}/candles?symbol=MNQ&timeframe=5m&limit=5`, timeoutMs + 1000)
     : undefined;
   const healthyWrapper = health.ok && isGoTraderWrapperPayload(health.payload);
+  const healthPayload = health.payload && typeof health.payload === "object" ? health.payload : undefined;
+  const statusPayload = status.payload && typeof status.payload === "object" ? status.payload : undefined;
+  const upstreamTimedOut =
+    healthPayload?.upstreamStatus === "timeout" ||
+    statusPayload?.upstreamStatus === "timeout" ||
+    statusPayload?.upstream?.status === "timeout" ||
+    String(statusPayload?.status ?? "").includes("upstream_timeout");
   const anyGoTraderProcess = listeners.some((listener) => isSafeGoTraderWrapperProcess(listener.process));
   const anyResponse = health.ok || status.ok;
   const statusLabel = !listeners.length
     ? "free"
     : healthyWrapper
-      ? "healthy_gotrader_wrapper"
+      ? upstreamTimedOut
+        ? "wrapper_healthy_upstream_timeout"
+        : "healthy_gotrader_wrapper"
       : anyGoTraderProcess
         ? "stale_gotrader_wrapper"
         : anyResponse
@@ -213,6 +222,8 @@ export async function diagnoseBridgePort({
       ? "Start the wrapper with npm.cmd run tradingview:mcp-bridge."
       : statusLabel === "healthy_gotrader_wrapper"
         ? "The wrapper is already running. Use npm.cmd run test:tradingview-mcp or connect from Command Center."
+        : statusLabel === "wrapper_healthy_upstream_timeout"
+          ? "The wrapper is alive, but upstream TradingView MCP CLI timed out. Restart TradingView Desktop with CDP on 9222 or inspect the upstream CLI."
         : statusLabel === "stale_gotrader_wrapper"
           ? "Run npm.cmd run tradingview:mcp-stop, then npm.cmd run tradingview:mcp-bridge."
           : statusLabel === "wrong_process"
