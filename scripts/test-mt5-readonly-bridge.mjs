@@ -58,14 +58,14 @@ const runCheck = async (label, path) => {
 
 const health = await runCheck("GET /health", "health");
 const status = await runCheck("GET /status", "status");
-const quote = await runCheck("GET /quote", `quote?symbol=${encodeURIComponent(brokerSymbol)}`);
+const quote = await runCheck("GET /quote", `quote?requestedSymbol=${encodeURIComponent(symbol)}&symbol=${encodeURIComponent(brokerSymbol)}`);
 const candles = await runCheck(
   "GET /candles",
-  `candles?symbol=${encodeURIComponent(brokerSymbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=${limit}`
+  `candles?requestedSymbol=${encodeURIComponent(symbol)}&symbol=${encodeURIComponent(brokerSymbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=${limit}`
 );
 const snapshot = await runCheck(
   "GET /snapshot",
-  `snapshot?symbol=${encodeURIComponent(brokerSymbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=${limit}`
+  `snapshot?requestedSymbol=${encodeURIComponent(symbol)}&symbol=${encodeURIComponent(brokerSymbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=${limit}`
 );
 const symbols = await runCheck("GET /symbols", "symbols");
 

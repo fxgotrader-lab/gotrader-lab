@@ -175,7 +175,7 @@ export async function fetchMt5ReadOnlyQuote(
   const brokerSymbol = request.brokerSymbol || settings.brokerSymbolOverride || request.symbol;
   try {
     const payload = await fetchJson<Partial<Mt5ReadOnlyQuote>>(
-      endpoint(settings, "quote", { symbol: brokerSymbol })
+      endpoint(settings, "quote", { requestedSymbol: request.symbol, symbol: brokerSymbol })
     );
     const bid = typeof payload.bid === "number" ? payload.bid : undefined;
     const ask = typeof payload.ask === "number" ? payload.ask : undefined;
@@ -183,7 +183,8 @@ export async function fetchMt5ReadOnlyQuote(
     const spread = typeof payload.spread === "number" ? payload.spread : bid !== undefined && ask !== undefined ? ask - bid : undefined;
     return {
       provider: "mt5_read_only",
-      symbol: request.symbol,
+      symbol: payload.symbol ?? brokerSymbol,
+      requestedSymbol: payload.requestedSymbol ?? request.symbol,
       brokerSymbol,
       bid,
       ask,
@@ -201,7 +202,8 @@ export async function fetchMt5ReadOnlyQuote(
   } catch {
     return {
       provider: "mt5_read_only",
-      symbol: request.symbol,
+      symbol: brokerSymbol,
+      requestedSymbol: request.symbol,
       brokerSymbol,
       connectionStatus: "disconnected",
       warnings: ["MT5 read-only quote endpoint is unavailable."],
@@ -239,6 +241,7 @@ export async function fetchMt5ReadOnlyCandles(
   try {
     const payload = await fetchJson<Partial<Mt5ReadOnlyCandlesResponse>>(
       endpoint(settings, "candles", {
+        requestedSymbol: request.symbol,
         symbol: brokerSymbol,
         timeframe: request.timeframe,
         limit: Math.max(1, Math.min(5000, request.limit ?? 240))

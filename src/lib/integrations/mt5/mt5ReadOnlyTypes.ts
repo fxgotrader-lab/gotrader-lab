@@ -54,6 +54,7 @@ export interface Mt5ReadOnlySymbolInfo extends Mt5ReadOnlyAuthority {
 export interface Mt5ReadOnlyQuote extends Mt5ReadOnlyAuthority {
   provider: "mt5_read_only";
   symbol: string;
+  requestedSymbol?: string;
   brokerSymbol?: string;
   bid?: number;
   ask?: number;

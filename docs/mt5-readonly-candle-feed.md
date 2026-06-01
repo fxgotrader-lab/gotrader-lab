@@ -11,6 +11,7 @@ Implemented now:
 - Diagnostic/test scripts.
 - Optional contract stub: `npm.cmd run mt5:readonly-bridge`.
 - Optional upstream REST market-data bridge via `MT5_READONLY_UPSTREAM_BASE_URL`.
+- Safe upstream endpoint discovery across common REST market-data paths.
 - Hard read-only tool policy with explicit account/order/position/history blocking.
 - Canonical candle-source normalization for MT5 candles when a real read-only bridge returns data.
 - Dashboard and Market Data controls for fetch, chart activation, and guarded research-source activation.
@@ -97,22 +98,40 @@ Default upstream paths:
 - symbol info: `/api/v1/market/symbol/info`
 - status probe: `/api/v1/market/symbols`
 
+Discovery candidates:
+
+- status: `/health`, `/status`, `/api/v1/market/symbols`, `/symbols`
+- quote: `/quote`, `/price`, `/tick`, `/api/v1/market/price`
+- candles: `/candles`, `/rates`, `/ohlcv`, `/api/v1/market/candles/latest`
+- symbols: `/symbols`, `/api/v1/market/symbols`
+- symbol info: `/symbol-info`, `/symbol_info`, `/api/v1/market/symbol/info`
+
 Override these only for a compatible local read-only server:
 
 ```powershell
 $env:MT5_READONLY_UPSTREAM_QUOTE_PATH="/api/v1/market/price"
 $env:MT5_READONLY_UPSTREAM_CANDLES_PATH="/api/v1/market/candles/latest"
+$env:MT5_READONLY_DEFAULT_SYMBOL="NAS100"
 ```
 
 The wrapper has no arbitrary MCP tool-call endpoint. Unknown tools are not forwarded. Account, order, position, pending-order, and history paths are explicitly rejected.
+
+Supported upstream transport setting:
+
+```powershell
+$env:MT5_READONLY_UPSTREAM_TRANSPORT="rest"
+```
+
+REST is the default and only implemented upstream transport for this phase. MCP `stdio`, `sse`, and `streamable-http` remain documented upstream capabilities, but GoTrader does not expose or call them directly from the frontend.
 
 ## Quote Shape
 
 ```json
 {
   "provider": "mt5_read_only",
-  "symbol": "MNQ",
-  "brokerSymbol": "MNQ.z",
+  "symbol": "NAS100",
+  "requestedSymbol": "MNQ",
+  "brokerSymbol": "NAS100",
   "bid": 19000.25,
   "ask": 19000.5,
   "mid": 19000.375,
@@ -189,6 +208,18 @@ Examples:
 - `EURUSD`: `EURUSD`, `EUR/USD`
 
 Use the broker-symbol override when your MT5 broker uses custom suffixes.
+
+## Timeframe Mapping
+
+GoTrader maps common app timeframes into MT5-style values when calling the upstream adapter:
+
+- `1m` -> `M1`
+- `5m` -> `M5`
+- `15m` -> `M15`
+- `30m` -> `M30`
+- `1h` -> `H1`
+- `4h` -> `H4`
+- `1d` -> `D1`
 
 ## Scripts
 

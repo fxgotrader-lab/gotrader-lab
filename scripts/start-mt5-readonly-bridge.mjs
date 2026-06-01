@@ -9,17 +9,38 @@ import {
 const host = process.env.MT5_READONLY_BRIDGE_HOST || "127.0.0.1";
 const port = Number(process.env.MT5_READONLY_BRIDGE_PORT || 7341);
 const upstreamBaseUrl = (process.env.MT5_READONLY_UPSTREAM_BASE_URL || "").replace(/\/$/, "");
+const upstreamTransport = process.env.MT5_READONLY_UPSTREAM_TRANSPORT || "rest";
 const upstreamTimeoutMs = Number(process.env.MT5_READONLY_UPSTREAM_TIMEOUT_MS || 2500);
-const upstreamPaths = {
-  status: process.env.MT5_READONLY_UPSTREAM_STATUS_PATH || "/api/v1/market/symbols",
-  quote: process.env.MT5_READONLY_UPSTREAM_QUOTE_PATH || "/api/v1/market/price",
-  candles: process.env.MT5_READONLY_UPSTREAM_CANDLES_PATH || "/api/v1/market/candles/latest",
-  symbols: process.env.MT5_READONLY_UPSTREAM_SYMBOLS_PATH || "/api/v1/market/symbols",
-  symbolInfo: process.env.MT5_READONLY_UPSTREAM_SYMBOL_INFO_PATH || "/api/v1/market/symbol/info"
+const defaultBrokerSymbol = process.env.MT5_READONLY_DEFAULT_SYMBOL || "MNQ";
+const configuredUpstreamPaths = {
+  status: process.env.MT5_READONLY_UPSTREAM_STATUS_PATH,
+  quote: process.env.MT5_READONLY_UPSTREAM_QUOTE_PATH,
+  candles: process.env.MT5_READONLY_UPSTREAM_CANDLES_PATH,
+  symbols: process.env.MT5_READONLY_UPSTREAM_SYMBOLS_PATH,
+  symbolInfo: process.env.MT5_READONLY_UPSTREAM_SYMBOL_INFO_PATH
+};
+const upstreamPathCandidates = {
+  status: [configuredUpstreamPaths.status, "/health", "/status", "/api/v1/market/symbols", "/symbols"].filter(Boolean),
+  quote: [configuredUpstreamPaths.quote, "/quote", "/price", "/tick", "/api/v1/market/price"].filter(Boolean),
+  candles: [
+    configuredUpstreamPaths.candles,
+    "/candles",
+    "/rates",
+    "/ohlcv",
+    "/api/v1/market/candles/latest"
+  ].filter(Boolean),
+  symbols: [configuredUpstreamPaths.symbols, "/symbols", "/api/v1/market/symbols"].filter(Boolean),
+  symbolInfo: [
+    configuredUpstreamPaths.symbolInfo,
+    "/symbol-info",
+    "/symbol_info",
+    "/api/v1/market/symbol/info"
+  ].filter(Boolean)
 };
 const startedAt = new Date();
 let requestCount = 0;
 let lastUpstreamError;
+const discoveredUpstreamPaths = {};
 
 const authority = {
   executionAuthority: "none",
@@ -42,6 +63,7 @@ const plannedStatus = () => ({
   connectionStatus: upstreamBaseUrl ? "degraded" : "planned",
   endpoint: `http://${host}:${port}`,
   upstreamConfigured: Boolean(upstreamBaseUrl),
+  upstreamTransport,
   upstreamBaseUrl: upstreamBaseUrl || undefined,
   wrapperStatus: "running",
   message: upstreamBaseUrl
@@ -56,11 +78,18 @@ const plannedStatus = () => ({
     lastUpstreamError ? `Last upstream error: ${lastUpstreamError}` : undefined
   ].filter(Boolean),
   upstreamPaths: {
-    status: upstreamPaths.status,
-    quote: upstreamPaths.quote,
-    candles: upstreamPaths.candles,
-    symbols: upstreamPaths.symbols,
-    symbolInfo: upstreamPaths.symbolInfo
+    status: discoveredUpstreamPaths.status ?? configuredUpstreamPaths.status,
+    quote: discoveredUpstreamPaths.quote ?? configuredUpstreamPaths.quote,
+    candles: discoveredUpstreamPaths.candles ?? configuredUpstreamPaths.candles,
+    symbols: discoveredUpstreamPaths.symbols ?? configuredUpstreamPaths.symbols,
+    symbolInfo: discoveredUpstreamPaths.symbolInfo ?? configuredUpstreamPaths.symbolInfo
+  },
+  upstreamCandidatePaths: {
+    status: upstreamPathCandidates.status,
+    quote: upstreamPathCandidates.quote,
+    candles: upstreamPathCandidates.candles,
+    symbols: upstreamPathCandidates.symbols,
+    symbolInfo: upstreamPathCandidates.symbolInfo
   },
   startedAt: startedAt.toISOString(),
   uptimeSeconds: Math.round((Date.now() - startedAt.getTime()) / 1000),
@@ -71,10 +100,11 @@ const plannedStatus = () => ({
   ...authority
 });
 
-const disconnectedQuote = (symbol) => ({
+const disconnectedQuote = ({ requestedSymbol, brokerSymbol }) => ({
   provider: "mt5_read_only",
-  symbol,
-  brokerSymbol: symbol,
+  symbol: brokerSymbol,
+  requestedSymbol,
+  brokerSymbol,
   connectionStatus: "planned",
   warnings: ["No local MT5 read-only quote connector is configured."],
   missingEvidence: ["Start or connect a local MT5 read-only service that implements GET /quote."],
@@ -100,6 +130,22 @@ const parseTimestamp = (value) => {
   }
   return new Date().toISOString();
 };
+const mt5TimeframeFor = (timeframe) => ({
+  "1m": "M1",
+  "5m": "M5",
+  "15m": "M15",
+  "30m": "M30",
+  "1h": "H1",
+  "4h": "H4",
+  "1d": "D1",
+  M1: "M1",
+  M5: "M5",
+  M15: "M15",
+  M30: "M30",
+  H1: "H1",
+  H4: "H4",
+  D1: "D1"
+}[timeframe] ?? timeframe);
 const upstreamUrl = (path, params = {}) => {
   const url = new URL(`${upstreamBaseUrl}/${path.replace(/^\//, "")}`);
   Object.entries(params).forEach(([key, value]) => {
@@ -109,7 +155,7 @@ const upstreamUrl = (path, params = {}) => {
   });
   return url.toString();
 };
-const fetchUpstreamJson = async (path, params) => {
+const fetchUpstreamPath = async (path, params) => {
   if (!upstreamBaseUrl) {
     throw new Error("MT5_READONLY_UPSTREAM_BASE_URL is not configured.");
   }
@@ -127,6 +173,26 @@ const fetchUpstreamJson = async (path, params) => {
   } finally {
     clearTimeout(timeout);
   }
+};
+const fetchUpstreamJson = async (kind, params, validator = () => true) => {
+  const candidates = [
+    discoveredUpstreamPaths[kind],
+    ...(upstreamPathCandidates[kind] ?? [])
+  ].filter(Boolean);
+  const errors = [];
+  for (const candidate of [...new Set(candidates)]) {
+    try {
+      const payload = await fetchUpstreamPath(candidate, params);
+      if (validator(payload)) {
+        discoveredUpstreamPaths[kind] = candidate;
+        return { payload, path: candidate };
+      }
+      errors.push(`${candidate}: response shape did not satisfy ${kind} validator`);
+    } catch (error) {
+      errors.push(`${candidate}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  throw new Error(`No safe upstream ${kind} endpoint responded. Tried: ${errors.join("; ")}`);
 };
 const payloadArray = (payload) => {
   if (Array.isArray(payload)) {
@@ -146,7 +212,29 @@ const payloadArray = (payload) => {
   }
   return [];
 };
-const normalizeQuote = (payload, symbol) => {
+const priceLikePayload = (payload) => {
+  const data = payload?.data && typeof payload.data === "object" && !Array.isArray(payload.data) ? payload.data : payload;
+  return [
+    data?.bid,
+    data?.bid_price,
+    data?.price?.bid,
+    data?.ask,
+    data?.ask_price,
+    data?.price?.ask,
+    data?.mid,
+    data?.last,
+    data?.price,
+    data?.close
+  ].some((value) => toNumber(value) !== undefined);
+};
+const candleLikePayload = (payload) =>
+  payloadArray(payload).some((item) =>
+    toNumber(firstDefined(item.open, item.o)) !== undefined &&
+    toNumber(firstDefined(item.high, item.h)) !== undefined &&
+    toNumber(firstDefined(item.low, item.l)) !== undefined &&
+    toNumber(firstDefined(item.close, item.c)) !== undefined
+  );
+const normalizeQuote = ({ payload, requestedSymbol, brokerSymbol, sourcePath }) => {
   const data = payload?.data && typeof payload.data === "object" && !Array.isArray(payload.data) ? payload.data : payload;
   const bid = toNumber(firstDefined(data?.bid, data?.bid_price, data?.price?.bid));
   const ask = toNumber(firstDefined(data?.ask, data?.ask_price, data?.price?.ask));
@@ -154,27 +242,29 @@ const normalizeQuote = (payload, symbol) => {
   const spread = toNumber(firstDefined(data?.spread, data?.spread_points)) ?? (bid !== undefined && ask !== undefined ? ask - bid : undefined);
   return {
     provider: "mt5_read_only",
-    symbol,
-    brokerSymbol: data?.symbol ?? symbol,
+    symbol: data?.symbol ?? brokerSymbol,
+    requestedSymbol,
+    brokerSymbol: data?.symbol ?? brokerSymbol,
     bid,
     ask,
     mid,
     spread,
     timestamp: parseTimestamp(firstDefined(data?.timestamp, data?.time, data?.datetime)),
     connectionStatus: bid !== undefined || ask !== undefined || mid !== undefined ? "connected" : "degraded",
+    sourceMethod: sourcePath ? `upstream_http:${sourcePath}` : undefined,
     warnings: ["MT5 quote was retrieved through the GoTrader read-only wrapper; no execution authority."],
     missingEvidence: bid === undefined && ask === undefined && mid === undefined ? ["Upstream quote payload did not include bid/ask/mid price fields."] : [],
     ...authority
   };
 };
-const normalizeCandles = ({ payload, symbol, timeframe, limit }) => {
+const normalizeCandles = ({ payload, brokerSymbol, timeframe, limit }) => {
   const seen = new Set();
   const candles = payloadArray(payload)
     .map((item, index) => {
       const timestamp = parseTimestamp(firstDefined(item.timestamp, item.time, item.datetime, item.date));
       const time = Math.floor(Date.parse(timestamp) / 1000);
       const candle = {
-        id: `mt5_read_only_${symbol}_${time}_${index}`,
+        id: `mt5_read_only_${brokerSymbol}_${time}_${index}`,
         time,
         timestamp,
         open: toNumber(firstDefined(item.open, item.o)),
@@ -185,7 +275,7 @@ const normalizeCandles = ({ payload, symbol, timeframe, limit }) => {
         tickVolume: toNumber(firstDefined(item.tickVolume, item.tick_volume, item.tickvolume)),
         spread: toNumber(item.spread),
         source: "mt5_read_only",
-        symbol,
+        symbol: brokerSymbol,
         timeframe
       };
       return candle;
@@ -209,11 +299,11 @@ const normalizeCandles = ({ payload, symbol, timeframe, limit }) => {
   return candles;
 };
 
-const disconnectedCandles = ({ symbol, timeframe, limit }) => ({
+const disconnectedCandles = ({ requestedSymbol, brokerSymbol, timeframe, limit }) => ({
   provider: "mt5_read_only",
-  symbol,
-  requestedSymbol: symbol,
-  brokerSymbol: symbol,
+  symbol: brokerSymbol,
+  requestedSymbol,
+  brokerSymbol,
   timeframe,
   requestedTimeframe: timeframe,
   requestedLimit: limit,
@@ -227,25 +317,31 @@ const disconnectedCandles = ({ symbol, timeframe, limit }) => ({
   ...authority
 });
 
-const upstreamQuote = async (symbol) => {
-  const payload = await fetchUpstreamJson(upstreamPaths.quote, { symbol_name: symbol, symbol });
-  return normalizeQuote(payload, symbol);
+const upstreamQuote = async ({ requestedSymbol, brokerSymbol }) => {
+  const { payload, path } = await fetchUpstreamJson("quote", {
+    symbol_name: brokerSymbol,
+    symbol: brokerSymbol
+  }, priceLikePayload);
+  return normalizeQuote({ payload, requestedSymbol, brokerSymbol, sourcePath: path });
 };
 
-const upstreamCandles = async ({ symbol, timeframe, limit }) => {
-  const payload = await fetchUpstreamJson(upstreamPaths.candles, {
-    symbol_name: symbol,
-    symbol,
+const upstreamCandles = async ({ requestedSymbol, brokerSymbol, timeframe, limit }) => {
+  const mt5Timeframe = mt5TimeframeFor(timeframe);
+  const { payload, path } = await fetchUpstreamJson("candles", {
+    symbol_name: brokerSymbol,
+    symbol: brokerSymbol,
     timeframe,
+    mt5_timeframe: mt5Timeframe,
+    mt5Timeframe,
     count: limit,
     limit
-  });
-  const candles = normalizeCandles({ payload, symbol, timeframe, limit });
+  }, candleLikePayload);
+  const candles = normalizeCandles({ payload, brokerSymbol, timeframe, limit });
   return {
     provider: "mt5_read_only",
-    symbol,
-    requestedSymbol: symbol,
-    brokerSymbol: symbol,
+    symbol: brokerSymbol,
+    requestedSymbol,
+    brokerSymbol,
     timeframe,
     requestedTimeframe: timeframe,
     requestedLimit: limit,
@@ -255,7 +351,7 @@ const upstreamCandles = async ({ symbol, timeframe, limit }) => {
     lastTimestamp: candles[candles.length - 1]?.timestamp,
     connectionStatus: candles.length ? "connected" : "degraded",
     depthStatus: candles.length >= limit ? "full" : candles.length ? "partial" : "insufficient_history",
-    sourceMethod: `upstream_http:${upstreamPaths.candles}`,
+    sourceMethod: `upstream_http:${path}`,
     warnings: ["MT5 candles were retrieved through the GoTrader read-only wrapper; no execution authority."],
     missingEvidence: candles.length ? [] : ["Upstream candle payload did not include a valid OHLCV series."],
     ...authority
@@ -270,7 +366,8 @@ const server = createServer(async (req, res) => {
   }
 
   const url = new URL(req.url || "/", `http://${host}:${port}`);
-  const symbol = url.searchParams.get("symbol") || "MNQ";
+  const requestedSymbol = url.searchParams.get("requestedSymbol") || url.searchParams.get("gotraderSymbol") || "MNQ";
+  const symbol = url.searchParams.get("symbol") || defaultBrokerSymbol;
   const timeframe = url.searchParams.get("timeframe") || "5m";
   const limit = Math.max(1, Math.min(5000, Number(url.searchParams.get("limit") || 240)));
 
@@ -319,7 +416,7 @@ const server = createServer(async (req, res) => {
       return;
     }
     try {
-      await fetchUpstreamJson(upstreamPaths.status, {});
+      await fetchUpstreamJson("status", {});
       lastUpstreamError = undefined;
       json(res, 200, {
         ...plannedStatus(),
@@ -339,17 +436,17 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === "/quote") {
     if (!upstreamBaseUrl) {
-      json(res, 200, disconnectedQuote(symbol));
+      json(res, 200, disconnectedQuote({ requestedSymbol, brokerSymbol: symbol }));
       return;
     }
     try {
-      const quote = await upstreamQuote(symbol);
+      const quote = await upstreamQuote({ requestedSymbol, brokerSymbol: symbol });
       lastUpstreamError = undefined;
       json(res, 200, quote);
     } catch (error) {
       lastUpstreamError = error instanceof Error ? error.message : String(error);
       json(res, 200, {
-        ...disconnectedQuote(symbol),
+        ...disconnectedQuote({ requestedSymbol, brokerSymbol: symbol }),
         connectionStatus: "degraded",
         missingEvidence: [`Configured MT5 upstream quote endpoint failed: ${lastUpstreamError}`]
       });
@@ -359,17 +456,17 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === "/candles") {
     if (!upstreamBaseUrl) {
-      json(res, 200, disconnectedCandles({ symbol, timeframe, limit }));
+      json(res, 200, disconnectedCandles({ requestedSymbol, brokerSymbol: symbol, timeframe, limit }));
       return;
     }
     try {
-      const candles = await upstreamCandles({ symbol, timeframe, limit });
+      const candles = await upstreamCandles({ requestedSymbol, brokerSymbol: symbol, timeframe, limit });
       lastUpstreamError = undefined;
       json(res, 200, candles);
     } catch (error) {
       lastUpstreamError = error instanceof Error ? error.message : String(error);
       json(res, 200, {
-        ...disconnectedCandles({ symbol, timeframe, limit }),
+        ...disconnectedCandles({ requestedSymbol, brokerSymbol: symbol, timeframe, limit }),
         connectionStatus: "degraded",
         missingEvidence: [`Configured MT5 upstream candle endpoint failed: ${lastUpstreamError}`]
       });
@@ -379,13 +476,13 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === "/snapshot") {
     if (upstreamBaseUrl) {
-      const quote = await upstreamQuote(symbol).catch((error) => {
+      const quote = await upstreamQuote({ requestedSymbol, brokerSymbol: symbol }).catch((error) => {
         lastUpstreamError = error instanceof Error ? error.message : String(error);
-        return disconnectedQuote(symbol);
+        return disconnectedQuote({ requestedSymbol, brokerSymbol: symbol });
       });
-      const candles = await upstreamCandles({ symbol, timeframe, limit }).catch((error) => {
+      const candles = await upstreamCandles({ requestedSymbol, brokerSymbol: symbol, timeframe, limit }).catch((error) => {
         lastUpstreamError = error instanceof Error ? error.message : String(error);
-        return disconnectedCandles({ symbol, timeframe, limit });
+        return disconnectedCandles({ requestedSymbol, brokerSymbol: symbol, timeframe, limit });
       });
       json(res, 200, {
         provider: "mt5_read_only",
@@ -399,8 +496,8 @@ const server = createServer(async (req, res) => {
     json(res, 200, {
       provider: "mt5_read_only",
       status: plannedStatus(),
-      quote: disconnectedQuote(symbol),
-      candles: disconnectedCandles({ symbol, timeframe, limit }),
+      quote: disconnectedQuote({ requestedSymbol, brokerSymbol: symbol }),
+      candles: disconnectedCandles({ requestedSymbol, brokerSymbol: symbol, timeframe, limit }),
       ...authority
     });
     return;
@@ -409,13 +506,14 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/symbols") {
     if (upstreamBaseUrl) {
       try {
-        const payload = await fetchUpstreamJson(upstreamPaths.symbols, {});
+        const { payload, path } = await fetchUpstreamJson("symbols", {});
         const symbols = payloadArray(payload);
         lastUpstreamError = undefined;
         json(res, 200, {
           provider: "mt5_read_only",
           connectionStatus: "connected",
           symbols,
+          sourceMethod: `upstream_http:${path}`,
           warnings: ["Symbols were retrieved through the GoTrader read-only wrapper."],
           missingEvidence: [],
           ...authority
@@ -457,13 +555,14 @@ const server = createServer(async (req, res) => {
       return;
     }
     try {
-      const payload = await fetchUpstreamJson(upstreamPaths.symbolInfo, { symbol_name: symbol, symbol });
+      const { payload, path } = await fetchUpstreamJson("symbolInfo", { symbol_name: symbol, symbol });
       lastUpstreamError = undefined;
       json(res, 200, {
         provider: "mt5_read_only",
         connectionStatus: "connected",
         symbol,
         symbolInfo: payload,
+        sourceMethod: `upstream_http:${path}`,
         warnings: ["Symbol info was retrieved through the GoTrader read-only wrapper."],
         missingEvidence: [],
         ...authority
