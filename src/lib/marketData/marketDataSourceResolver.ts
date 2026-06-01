@@ -5,6 +5,10 @@ import {
   tradingViewMcpCandlesToGoTraderCandles,
   type ActiveTradingViewMcpChartFeed
 } from "@/lib/integrations/tradingview";
+import {
+  resolveCanonicalCandleSourceManager,
+  type CanonicalCandleSourceSummary
+} from "@/lib/candleSources";
 import type { Candle } from "@/lib/types";
 
 const sourceModeToLiveDataMode = (source: PreparedCandleSource): LiveMarketDataMode =>
@@ -58,6 +62,10 @@ export interface ResolvedActiveCandleSource {
 }
 
 export interface ResolvedChartDisplaySource {
+  activeChartSource: CanonicalCandleSourceSummary;
+  activeResearchSource: CanonicalCandleSourceSummary;
+  activeWalkForwardSource: CanonicalCandleSourceSummary;
+  allAvailableSources: CanonicalCandleSourceSummary[];
   activeResearchCandleSource: Candle[];
   activeChartDisplayCandleSource: Candle[];
   activeResearchSourceLabel: string;
@@ -76,6 +84,7 @@ export interface ResolvedChartDisplaySource {
   researchIdentity: CandleSourceIdentity;
   researchSourceKey: string;
   tradingViewMcpIdentity: CandleSourceIdentity;
+  canonicalWarnings: string[];
   fallbackReason?: string;
 }
 
@@ -169,6 +178,7 @@ export const resolveChartDisplayCandleSource = (
   source: PreparedCandleSource,
   tradingViewFeed?: ActiveTradingViewMcpChartFeed
 ): ResolvedChartDisplaySource => {
+  const canonical = resolveCanonicalCandleSourceManager({ preparedSource: source, tradingViewFeed });
   const researchSourceMode: ChartDisplaySourceMode = source.mode === "imported" ? "imported" : "mock";
   const tradingViewCandles = tradingViewMcpCandlesToGoTraderCandles(tradingViewFeed);
   const researchSource = resolveActiveResearchCandleSource(source, tradingViewFeed);
@@ -190,6 +200,10 @@ export const resolveChartDisplayCandleSource = (
     : chartDisplaySource.fallbackReason;
 
   return {
+    activeChartSource: canonical.activeChartSource,
+    activeResearchSource: canonical.activeResearchSource,
+    activeWalkForwardSource: canonical.activeWalkForwardSource,
+    allAvailableSources: canonical.allAvailableSources,
     activeResearchCandleSource,
     activeChartDisplayCandleSource,
     activeResearchSourceLabel,
@@ -212,6 +226,7 @@ export const resolveChartDisplayCandleSource = (
     importedIdentity,
     researchIdentity: researchSource.identity,
     researchSourceKey: researchSource.sourceKey,
-    tradingViewMcpIdentity
+    tradingViewMcpIdentity,
+    canonicalWarnings: canonical.warnings
   };
 };

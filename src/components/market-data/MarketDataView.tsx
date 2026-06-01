@@ -616,6 +616,60 @@ export function MarketDataView() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
+            <DatabaseZap className="h-4 w-4 text-emerald-300" aria-hidden="true" />
+            Canonical Candle Source Manager
+          </CardTitle>
+          <CardDescription>
+            Provider-neutral source registry for chart display, research cycles, and future walk-forward feeds. Sources
+            remain read-only and carry no execution authority.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div className="grid gap-3 md:grid-cols-3">
+            <StatusTile label="Active chart source" value={`${displaySource.activeChartSource.provider.replace(/_/g, " ")} / ${displaySource.activeChartSource.candleCount.toLocaleString()}`} />
+            <StatusTile label="Active research source" value={`${displaySource.activeResearchSource.provider.replace(/_/g, " ")} / ${displaySource.activeResearchSource.candleCount.toLocaleString()}`} />
+            <StatusTile label="Walk-forward source" value={`${displaySource.activeWalkForwardSource.provider.replace(/_/g, " ")} / ${displaySource.activeWalkForwardSource.candleCount.toLocaleString()}`} />
+          </div>
+          {displaySource.canonicalWarnings.length ? (
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              {displaySource.canonicalWarnings.join(" ")}
+            </div>
+          ) : null}
+          <div className="overflow-hidden rounded-lg border border-border">
+            <div className="grid grid-cols-[1.1fr_0.9fr_0.8fr_0.7fr_0.7fr_0.8fr_0.8fr] gap-2 bg-muted/30 px-3 py-2 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+              <span>Provider</span>
+              <span>Symbol</span>
+              <span>Timeframe</span>
+              <span>Candles</span>
+              <span>Chart</span>
+              <span>Research</span>
+              <span>Storage</span>
+            </div>
+            {displaySource.allAvailableSources.map((source) => (
+              <div
+                key={source.sourceId}
+                className="grid grid-cols-[1.1fr_0.9fr_0.8fr_0.7fr_0.7fr_0.8fr_0.8fr] gap-2 border-t border-border px-3 py-2 text-xs"
+              >
+                <span className="truncate font-medium text-foreground">{source.provider.replace(/_/g, " ")}</span>
+                <span className="truncate">{source.normalizedSymbol}</span>
+                <span>{source.timeframe}</span>
+                <span className="font-mono">{source.candleCount.toLocaleString()}</span>
+                <span>{source.eligibility.chartDisplay ? "yes" : "no"}</span>
+                <span>{source.eligibility.researchCycle ? "yes" : "no"}</span>
+                <span className="truncate">{source.storageBackend}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            MT5 read-only appears here as planned/disconnected until a local read-only endpoint is explicitly configured.
+            It has no order methods and no broker authority in this phase.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
             <RadioTower className="h-4 w-4 text-sky-300" aria-hidden="true" />
             TradingView MCP Chart Feed
           </CardTitle>

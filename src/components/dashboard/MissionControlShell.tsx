@@ -51,6 +51,7 @@ import {
   type ActiveTradingViewMcpChartFeed,
   type TradingViewMcpAutoRefreshState
 } from "@/lib/integrations/tradingview";
+import { createPlannedMt5ReadOnlyStatus } from "@/lib/integrations/mt5";
 import { mt5ExecutionAdapterPlan } from "@/lib/brokers/mt5";
 import { tradovateExecutionAdapterPlan } from "@/lib/brokers/tradovate";
 import { buildVwapOverlay, createTradingChartData } from "@/lib/charting";
@@ -607,6 +608,20 @@ export function MissionControlShell({ state }: { state: LabState }) {
     : runtimeSnapshot?.marketData.fallbackToMock
       ? "warning"
       : "secondary";
+  const mt5ReadOnlyStatus = createPlannedMt5ReadOnlyStatus();
+  const canonicalChartSourceLabel = runtimeSnapshot
+    ? runtimeSnapshot.marketData.activeChartSource.provider.replace(/_/g, " ")
+    : "loading";
+  const canonicalChartSourceDetail = runtimeSnapshot
+    ? `${runtimeSnapshot.marketData.activeChartSource.candleCount.toLocaleString()} candles`
+    : "Resolving canonical chart source";
+  const canonicalResearchSourceLabel = runtimeSnapshot
+    ? runtimeSnapshot.marketData.activeResearchSource.provider.replace(/_/g, " ")
+    : "loading";
+  const canonicalResearchSourceDetail = runtimeSnapshot
+    ? `${runtimeSnapshot.marketData.activeResearchSource.candleCount.toLocaleString()} candles`
+    : "Resolving guarded research source";
+  const mt5ReadOnlyRegistered = runtimeSnapshot?.marketData.allAvailableSources.some((source) => source.provider === "mt5_read_only") ?? false;
   const statusChips = [
     {
       label: "TradingView MCP",
@@ -717,6 +732,15 @@ export function MissionControlShell({ state }: { state: LabState }) {
               {runtimeSnapshot.marketData.chartDisplayWarning}
             </div>
           ) : null}
+          <div className="mt-3 grid gap-2 md:grid-cols-3">
+            <MiniReadout label="Canonical chart" value={canonicalChartSourceLabel} detail={canonicalChartSourceDetail} />
+            <MiniReadout label="Canonical research" value={canonicalResearchSourceLabel} detail={canonicalResearchSourceDetail} />
+            <MiniReadout
+              label="MT5 read-only"
+              value={mt5ReadOnlyRegistered ? mt5ReadOnlyStatus.connectionStatus : "pending registration"}
+              detail="quotes/candles only; execution none"
+            />
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -1112,7 +1136,8 @@ export function MissionControlShell({ state }: { state: LabState }) {
                 TV chart feed {runtimeSnapshot?.tradingViewMcp.chartFeedAvailable ? "active" : "not active"}
               </Badge>
               <Badge variant="warning">Tradovate {tradovateExecutionAdapterPlan.status.replace(/_/g, " ")}</Badge>
-              <Badge variant="warning">MT5 {mt5ExecutionAdapterPlan.status.replace(/_/g, " ")}</Badge>
+              <Badge variant="warning">MT5 read-only {mt5ReadOnlyStatus.connectionStatus}</Badge>
+              <Badge variant="warning">MT5 execution {mt5ExecutionAdapterPlan.status.replace(/_/g, " ")}</Badge>
               <Badge variant="danger">execution disabled</Badge>
             </div>
           </div>

@@ -136,6 +136,11 @@ const marketStateFor = (
 
   return {
     activeDataSource: source.mode,
+    activeChartSource: displaySource.activeChartSource,
+    activeResearchSource: displaySource.activeResearchSource,
+    activeWalkForwardSource: displaySource.activeWalkForwardSource,
+    allAvailableSources: displaySource.allAvailableSources,
+    canonicalSourceWarnings: displaySource.canonicalWarnings,
     activeResearchSourceLabel: displaySource.activeResearchSourceLabel,
     activeChartDisplaySourceLabel: displaySource.activeChartDisplaySourceLabel,
     chartDisplayUsesTradingViewMcp: displaySource.chartDisplayUsesTradingViewMcp,
@@ -817,6 +822,7 @@ export async function resolveResearchRuntimeSnapshot(
     `TradingView MCP chart feed: ${tradingViewMcp.chartFeedAvailable ? `${tradingViewMcp.chartFeedCandleCount} candles` : "not active"} / ${tradingViewMcp.chartFeedMatchState}`,
     `TradingView MCP auto-refresh: ${tradingViewMcp.autoRefresh.status} / interval ${tradingViewMcp.autoRefresh.refreshIntervalSeconds}s / count ${tradingViewMcp.autoRefresh.refreshCount}`,
     `TradingView MCP research eligibility: ${tradingViewMcp.researchEligibility} / symbol ${tradingViewMcp.symbolMatch ? "match" : "not matched"} / timeframe ${tradingViewMcp.timeframeMatch ? "match" : "not matched"}`,
+    `Canonical candle manager: chart ${marketData.activeChartSource.provider} / research ${marketData.activeResearchSource.provider} / walk-forward ${marketData.activeWalkForwardSource.provider} / available ${marketData.allAvailableSources.length}`,
     `Composite regime: ${regimeRuntime.label} / ${Math.round(regimeRuntime.confidence * 100)}% / ${regimeRuntime.dataQuality} / transition ${regimeRuntime.transitionPending ? "pending" : "stable"}`,
     `imported data status: ${marketData.importedDataStatus}`,
     `active import id: ${marketData.activeImportId ?? "none"}`,

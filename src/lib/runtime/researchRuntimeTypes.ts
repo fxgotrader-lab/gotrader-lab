@@ -20,6 +20,7 @@ import type {
   PreparedCandleSource,
   WalkForwardDataPreset
 } from "@/lib/marketData";
+import type { CanonicalCandleSourceSummary } from "@/lib/candleSources";
 import type { CanonicalPerformanceMetrics } from "@/lib/performance/canonicalMetrics";
 import type { SimulatedAccount } from "@/lib/performance/simulatedAccount";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
@@ -89,6 +90,11 @@ export interface RuntimeMetricProvenanceState {
 
 export interface RuntimeMarketDataState {
   activeDataSource: CandleDataSourceMode;
+  activeChartSource: CanonicalCandleSourceSummary;
+  activeResearchSource: CanonicalCandleSourceSummary;
+  activeWalkForwardSource: CanonicalCandleSourceSummary;
+  allAvailableSources: CanonicalCandleSourceSummary[];
+  canonicalSourceWarnings: string[];
   activeResearchSourceLabel: string;
   activeChartDisplaySourceLabel: string;
   chartDisplayUsesTradingViewMcp: boolean;
