@@ -1100,39 +1100,45 @@ export function AutoResearchView() {
       {latestCycle?.grinchComparison ? (
         <Card className="border-cyan-300/20 bg-cyan-300/5">
           <CardHeader>
-            <CardTitle>Grinch vs ICT Baseline</CardTitle>
+            <CardTitle>ICT/Grinch Layer Contribution</CardTitle>
             <CardDescription>
-              Compares the existing ICT baseline against Grinch-filtered, strict, and balanced research candidates. This is supporting evidence only.
+              Measures how the Grinch refinement layer qualifies or blocks ICT foundation setups. This is supporting evidence only.
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-lg border border-border bg-background/45 p-3">
-              <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">ICT baseline</p>
-              <p className="mt-1 font-mono text-sm">{latestCycle.grinchComparison.baseline?.score ?? "n/a"}/100</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {latestCycle.grinchComparison.baseline?.activeProfile?.replace(/_/g, " ") ?? "profile unavailable"}
-              </p>
-            </div>
-            {[
-              { label: "Grinch filtered", summary: latestCycle.grinchComparison.grinchFiltered },
-              { label: "Grinch strict", summary: latestCycle.grinchComparison.grinchStrict },
-              { label: "Grinch balanced", summary: latestCycle.grinchComparison.grinchBalanced }
-            ].map(({ label, summary }) => (
-              <div key={label} className="rounded-lg border border-border bg-background/45 p-3">
-                <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
-                {summary ? (
-                  <>
-                    <p className="mt-1 font-mono text-sm">{summary.totalScore} score</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Grinch {summary.grinchModelScore ?? "n/a"} / {summary.label}
-                    </p>
-                  </>
-                ) : (
-                  <p className="mt-1 text-xs text-muted-foreground">Not evaluated in this cycle.</p>
-                )}
+          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {safeArray(latestCycle.grinchComparison.benchmarkMatrix).map((layer) => (
+              <div key={layer.layerId} className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{layer.label}</p>
+                <p className="mt-1 font-mono text-sm">
+                  {layer.candidate ? `${layer.candidate.totalScore} score` : layer.score !== undefined ? `${layer.score}/100` : "not evaluated"}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {layer.candidate
+                    ? `${layer.candidate.label} / Grinch ${layer.candidate.grinchModelScore ?? "n/a"}`
+                    : layer.activeProfile?.replace(/_/g, " ") ?? layer.note}
+                </p>
               </div>
             ))}
-            <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-3 text-sm text-cyan-100 md:col-span-2 xl:col-span-4">
+            {latestCycle.grinchComparison.layerMetrics ? (
+              <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-3 text-sm text-cyan-100 md:col-span-2 xl:col-span-3">
+                <div className="grid gap-2 md:grid-cols-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">ICT foundation</p>
+                    <p className="font-mono">{latestCycle.grinchComparison.layerMetrics.ictFoundationCandidates} candidates</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">Grinch-qualified</p>
+                    <p className="font-mono">{latestCycle.grinchComparison.layerMetrics.grinchQualifiedCandidates} setups</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">Grinch-blocked</p>
+                    <p className="font-mono">{latestCycle.grinchComparison.layerMetrics.grinchBlockedCandidates} setups</p>
+                  </div>
+                </div>
+                <p className="mt-3 text-xs">{latestCycle.grinchComparison.layerMetrics.layerContributionSummary.join(" ")}</p>
+              </div>
+            ) : null}
+            <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-3 text-sm text-cyan-100 md:col-span-2 xl:col-span-3">
               {latestCycle.grinchComparison.notes.join(" ")}
             </div>
           </CardContent>

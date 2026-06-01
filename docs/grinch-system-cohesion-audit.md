@@ -96,7 +96,7 @@ The largest weakness is operational: local file import is browser-local IndexedD
 - Dashboard Mission Control displays data-source status, Grinch model score, false-positive risk, SMT unavailable state, evidence, maturity, readiness, walk-forward, and safety locks.
 - ICT Lab independently computes and displays Grinch score breakdown, profile validity, rule blocks, missing evidence, Phase 1, Reversal, Consolidation, SMT, and chart overlays.
 - Auto Research scoring includes `grinchModelSupport`, `grinchModelScore`, `grinchFalsePositiveRisk`, and Grinch candidate families.
-- Auto Research compares ICT baseline against Grinch-filtered, strict, and balanced candidates.
+- Auto Research reports ICT foundation plus Grinch refinement layer contribution, including Grinch-qualified and Grinch-blocked ICT setups.
 - Walk-forward stores Grinch metrics per window, including profile detected, profile validity, Grinch score, time alignment, PD alignment, opening-price alignment, SMT state, and false-positive risk.
 - LLM context includes compact Phase 1, Reversal, Consolidation, and SMT summaries, with prompt instructions that Grinch is advisory context only.
 - Evidence Quality marks SMT unavailable when correlated NQ/ES/YM evidence is missing and does not treat unavailable SMT as confirmation.
@@ -181,5 +181,4 @@ No safety boundary regressions were found.
 4. Add ES and YM imported-dataset slots or a provider-neutral correlated-data adapter so SMT can move from unavailable to real confirmation.
 5. Add an automated route/import smoke harness outside the in-app browser file-upload limitation.
 6. Add a compact dashboard flag for "latest Grinch result is imported-data valid" versus "mock/demo only."
-7. Run the imported Standard Grinch test once MNQ import is active, then compare against the earlier 77-trade / 9% win-rate baseline.
-
+7. Run the imported Standard Grinch test once MNQ import is active, then measure layer contribution against the earlier 77-trade / 9% win-rate ICT foundation result.

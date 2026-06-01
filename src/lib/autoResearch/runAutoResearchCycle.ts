@@ -903,6 +903,65 @@ const candidateScoreSummaryFor = (candidate?: AutoResearchCandidateResult): Auto
       }
     : undefined;
 
+const countRuleBlocksContaining = (blocks: string[], terms: string[]) =>
+  blocks.filter((block) => {
+    const normalized = block.toLowerCase();
+    return terms.some((term) => normalized.includes(term));
+  }).length;
+
+const roundLayerMetric = (value: number) => Number(value.toFixed(2));
+
+const buildGrinchLayerMetrics = (
+  baselineBacktest: ReturnType<typeof runBacktest>
+): NonNullable<AutoResearchGrinchComparison["layerMetrics"]> => {
+  const grinchSummary = baselineBacktest.summary.grinchSummary;
+  const decisions = baselineBacktest.decisions;
+  const fullStackTrades = baselineBacktest.trades.filter((trade) => {
+    const score = trade.grinchScore;
+    return Boolean(score && score.activeProfile !== "none" && score.setupQuality !== "blocked" && !score.hardGateReason);
+  });
+  const fullStackWins = fullStackTrades.filter((trade) => trade.outcome === "target_hit").length;
+  const fullStackAverageR =
+    fullStackTrades.reduce((sum, trade) => sum + trade.rMultiple, 0) / Math.max(1, fullStackTrades.length);
+  const timingExpiredBlocks =
+    decisions.filter((decision) => decision.grinchScore?.hardGateReason === "grinch_timing_expired").length ||
+    grinchSummary?.falsePositiveBlockerCounts.timing_expired_trade ||
+    0;
+  const profileInvalidBlocks =
+    decisions.filter((decision) =>
+      ["grinch_profile_invalid", "grinch_profile_weak_without_confirmation", "grinch_no_valid_profile"].includes(
+        decision.grinchScore?.hardGateReason ?? ""
+      )
+    ).length ||
+    grinchSummary?.falsePositiveBlockerCounts.weak_profile_trade ||
+    0;
+  const entryConfirmationFailures = grinchSummary?.falsePositiveBlockerCounts.entry_confirmation_without_valid_profile ?? 0;
+  const pdArrayInvalidBlocks = countRuleBlocksContaining(grinchSummary?.ruleBlocks ?? [], ["pd", "array", "liquidity"]);
+  const grinchBlockedCandidates = grinchSummary?.hardBlockedSignals ?? 0;
+  const grinchQualifiedCandidates = Math.max(0, decisions.length - grinchBlockedCandidates - (grinchSummary?.noValidProfileSignals ?? 0));
+  const fullStackWinRate = fullStackTrades.length ? roundLayerMetric((fullStackWins / fullStackTrades.length) * 100) : 0;
+  const roundedFullStackAverageR = roundLayerMetric(fullStackAverageR);
+
+  return {
+    ictFoundationCandidates: decisions.length,
+    grinchQualifiedCandidates,
+    grinchBlockedCandidates,
+    profileInvalidBlocks,
+    timingExpiredBlocks,
+    pdArrayInvalidBlocks,
+    entryConfirmationFailures,
+    fullStackSetups: fullStackTrades.length,
+    fullStackWinRate,
+    fullStackAverageR: roundedFullStackAverageR,
+    layerContributionSummary: [
+      `ICT foundation produced ${decisions.length} candidate decision point(s).`,
+      `Grinch refinement qualified ${grinchQualifiedCandidates} ICT setup(s) and blocked ${grinchBlockedCandidates} setup(s).`,
+      `Timing expired blocks: ${timingExpiredBlocks}; profile invalid/weak blocks: ${profileInvalidBlocks}.`,
+      `Full-stack ICT/Grinch setup sample: ${fullStackTrades.length} trade(s), ${fullStackWinRate}% win rate, ${roundedFullStackAverageR}R average.`
+    ]
+  };
+};
+
 const buildGrinchComparison = (
   baselineBacktest: ReturnType<typeof runBacktest>,
   candidateResults: AutoResearchCandidateResult[]
@@ -916,6 +975,31 @@ const buildGrinchComparison = (
       .filter((candidate) => candidate.candidateFamily && families.includes(candidate.candidateFamily))
       .sort((a, b) => b.scoreBreakdown.totalScore - a.scoreBreakdown.totalScore)[0];
   const baselineScore = baselineBacktest.summary.grinchSummary?.averageGrinchModelScore;
+  const pdLiquidityCandidate = candidateScoreSummaryFor(findFamily("grinch_require_pd_array_hierarchy_alignment"));
+  const profileCandidate = candidateScoreSummaryFor(findFamily(
+    "grinch_model_model1_only",
+    "grinch_model_reversal_only",
+    "grinch_model_consolidation_only",
+    "grinch_reversal_profile_only",
+    "grinch_consolidation_profile_only"
+  ));
+  const timingCandidate = candidateScoreSummaryFor(findFamily(
+    "grinch_require_time_price_alignment",
+    "grinch_timing_valid_only",
+    "grinch_exclude_expired_timing",
+    "grinch_require_timing_acceptable"
+  ));
+  const entryCandidate = candidateScoreSummaryFor(findFamily(
+    "grinch_require_profile_plus_entry_confirmation",
+    "grinch_model_strict"
+  ));
+  const fullStackCandidate = candidateScoreSummaryFor(findFamily(
+    "grinch_model_balanced",
+    "grinch_model_strict",
+    "grinch_penalize_missing_smt",
+    "grinch_allow_smt_unavailable_but_discount_confidence"
+  ));
+  const layerMetrics = buildGrinchLayerMetrics(baselineBacktest);
   return {
     baseline: {
       score: baselineScore,
@@ -931,11 +1015,53 @@ const buildGrinchComparison = (
     )),
     grinchStrict: candidateScoreSummaryFor(findFamily("grinch_model_strict")),
     grinchBalanced: candidateScoreSummaryFor(findFamily("grinch_model_balanced")),
+    layerMetrics,
+    benchmarkMatrix: [
+      {
+        layerId: "ict_foundation_only",
+        label: "ICT foundation only",
+        score: baselineScore,
+        activeProfile: baselineBacktest.summary.grinchSummary?.activeProfile,
+        falsePositiveRisk: baselineBacktest.summary.grinchSummary?.averageFalsePositiveRisk,
+        note: "Foundation context before the Grinch refinement layer qualifies or blocks setups."
+      },
+      {
+        layerId: "ict_pd_liquidity_alignment",
+        label: "ICT + PD/liquidity alignment",
+        candidate: pdLiquidityCandidate,
+        note: "Measures whether PD array and liquidity alignment improve the ICT foundation."
+      },
+      {
+        layerId: "ict_grinch_profile",
+        label: "ICT + Grinch profile",
+        candidate: profileCandidate,
+        note: "Measures Model 1, Reversal, or Consolidation profile classification as a refinement layer."
+      },
+      {
+        layerId: "ict_grinch_timing",
+        label: "ICT + Grinch timing",
+        candidate: timingCandidate,
+        note: "Measures whether timing-window gates reduce mistimed ICT setup exposure."
+      },
+      {
+        layerId: "ict_grinch_entry_confirmation",
+        label: "ICT + Grinch entry confirmation",
+        candidate: entryCandidate,
+        note: "Measures confirmation after profile and timing context are already present."
+      },
+      {
+        layerId: "ict_full_grinch_stack",
+        label: "ICT + full Grinch stack",
+        candidate: fullStackCandidate,
+        note: "Measures the full-stack ICT/Grinch setup after profile, timing, entry, and evidence filters."
+      }
+    ],
     notes: [
-      baselineScore !== undefined ? `Baseline Grinch score ${baselineScore}/100.` : "Baseline Grinch score unavailable.",
+      baselineScore !== undefined ? `ICT foundation with Grinch refinement score ${baselineScore}/100.` : "ICT foundation Grinch refinement score unavailable.",
       grinchCandidates.length
-        ? `Compared ${grinchCandidates.length} Grinch candidate family result(s) against the ICT baseline.`
+        ? `Evaluated ${grinchCandidates.length} Grinch refinement layer candidate family result(s) on top of the ICT foundation.`
         : "No Grinch candidate families were evaluated in this cycle.",
+      "This is a progressive layer-contribution readout, not a separate Grinch-versus-ICT strategy benchmark.",
       "Grinch score is supporting evidence only; readiness still requires trade count, average R, drawdown, walk-forward, evidence, and maturity."
     ]
   };

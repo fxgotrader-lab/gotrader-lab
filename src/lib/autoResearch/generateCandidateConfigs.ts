@@ -437,8 +437,8 @@ export function generateCandidateConfigs(
       candidate(
         baseline,
         searchMode,
-        "Grinch balanced model filter",
-        "Compare the existing ICT baseline against a balanced Grinch profile emphasis across HTF bias, PD hierarchy, opening prices, timing, entries, and SMT.",
+        "ICT + balanced refinement layer",
+        "Measure the balanced Grinch refinement layer on top of the ICT foundation across HTF bias, PD hierarchy, opening prices, timing, entries, and SMT.",
         {
           minimumConfluenceThreshold: round(clamp01(baseline.minimumConfluenceThreshold + 0.04), 2),
           agentWeights: nudgeAgents(baseline, {
@@ -456,8 +456,8 @@ export function generateCandidateConfigs(
       candidate(
         baseline,
         searchMode,
-        "Grinch strict model gate",
-        "Stress-test whether strict Grinch alignment reduces mistimed entries, weak PD reactions, and profile mismatch false positives.",
+        "ICT + full-stack strict gate",
+        "Stress-test whether the full Grinch refinement stack reduces mistimed ICT entries, weak PD reactions, and profile mismatch false positives.",
         {
           minimumConfluenceThreshold: round(clamp01(Math.max(0.58, baseline.minimumConfluenceThreshold + 0.1)), 2),
           minimumConfidenceThreshold: round(clamp01(Math.max(0.55, baseline.minimumConfidenceThreshold + 0.08)), 2),

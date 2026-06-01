@@ -188,6 +188,36 @@ export interface AutoResearchCandidateScoreSummary {
   grinchModelScore?: number;
 }
 
+export interface AutoResearchGrinchLayerMetrics {
+  ictFoundationCandidates: number;
+  grinchQualifiedCandidates: number;
+  grinchBlockedCandidates: number;
+  profileInvalidBlocks: number;
+  timingExpiredBlocks: number;
+  pdArrayInvalidBlocks: number;
+  entryConfirmationFailures: number;
+  fullStackSetups: number;
+  fullStackWinRate: number;
+  fullStackAverageR: number;
+  layerContributionSummary: string[];
+}
+
+export interface AutoResearchGrinchLayerBenchmark {
+  layerId:
+    | "ict_foundation_only"
+    | "ict_pd_liquidity_alignment"
+    | "ict_grinch_profile"
+    | "ict_grinch_timing"
+    | "ict_grinch_entry_confirmation"
+    | "ict_full_grinch_stack";
+  label: string;
+  score?: number;
+  activeProfile?: string;
+  falsePositiveRisk?: number;
+  candidate?: AutoResearchCandidateScoreSummary;
+  note: string;
+}
+
 export interface AutoResearchGrinchComparison {
   baseline?: {
     score?: number;
@@ -197,6 +227,8 @@ export interface AutoResearchGrinchComparison {
   grinchFiltered?: AutoResearchCandidateScoreSummary;
   grinchStrict?: AutoResearchCandidateScoreSummary;
   grinchBalanced?: AutoResearchCandidateScoreSummary;
+  layerMetrics?: AutoResearchGrinchLayerMetrics;
+  benchmarkMatrix?: AutoResearchGrinchLayerBenchmark[];
   notes: string[];
 }
 

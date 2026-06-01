@@ -301,8 +301,8 @@ export function generateTradeQualityCandidateConfigs(
 
   if (reasonCodes.has("win_rate_too_low") || reasonCodes.has("average_r_too_low")) {
     add(
-      "Grinch balanced quality filter",
-      "Weak win rate or average R can mean the baseline is accepting mistimed, weak-PD, or profile-mismatched setups; this tests balanced Grinch filtering.",
+      "ICT + balanced refinement quality filter",
+      "Weak win rate or average R can mean the ICT foundation is accepting mistimed, weak-PD, or profile-mismatched setups; this tests balanced Grinch refinement.",
       {
         minimumConfluenceThreshold: round(clamp01(baseline.minimumConfluenceThreshold + 0.05), 2),
         agentWeights: {
@@ -318,8 +318,8 @@ export function generateTradeQualityCandidateConfigs(
       "grinch_model_balanced"
     );
     add(
-      "Grinch strict false-positive filter",
-      "Test whether stricter Grinch profile validity reduces low-quality trades and false positives before changing readiness rules.",
+      "ICT + strict refinement false-positive filter",
+      "Test whether stricter Grinch profile validity reduces low-quality ICT setup exposure and false positives before changing readiness rules.",
       {
         minimumConfluenceThreshold: round(clamp01(Math.max(0.56, baseline.minimumConfluenceThreshold + 0.09)), 2),
         minimumConfidenceThreshold: round(clamp01(Math.max(0.54, baseline.minimumConfidenceThreshold + 0.07)), 2),
