@@ -10,6 +10,7 @@ import {
 } from "@/lib/integrations/tradingview/tradingViewMcpAutoRefresh";
 import type {
   TradingViewMcpChartFeedStatus,
+  TradingViewMcpDepthStatus,
   TradingViewMcpFeedUsageMode,
   TradingViewMcpResearchEligibilityState
 } from "@/lib/integrations/tradingview/tradingViewCandleFeedTypes";
@@ -40,6 +41,15 @@ export interface TradingViewMcpRuntimeState {
   chartFeedStatus: TradingViewMcpChartFeedStatus;
   chartFeedAvailable: boolean;
   chartFeedCandleCount: number;
+  chartFeedRequestedLimit?: number;
+  chartFeedEffectiveLimit?: number;
+  chartFeedReturnedCount?: number;
+  chartFeedUpstreamMaxBars?: number;
+  chartFeedUpstreamTotalAvailable?: number;
+  chartFeedResearchMinimumCandles?: number;
+  chartFeedDepthStatus?: TradingViewMcpDepthStatus;
+  chartFeedDepthWarning?: string;
+  chartFeedNextRecommendedAction?: string;
   chartFeedFirstTimestamp?: string;
   chartFeedLastTimestamp?: string;
   chartFeedSymbol?: string;
@@ -175,6 +185,15 @@ export const resolveTradingViewMcpRuntimeState = (providedChartFeed = loadActive
     chartFeedStatus: chartFeed?.connectionStatus ?? "disconnected",
     chartFeedAvailable,
     chartFeedCandleCount,
+    chartFeedRequestedLimit: chartFeed?.requestedLimit,
+    chartFeedEffectiveLimit: chartFeed?.effectiveLimit,
+    chartFeedReturnedCount: chartFeed?.returnedCount,
+    chartFeedUpstreamMaxBars: chartFeed?.upstreamMaxBars,
+    chartFeedUpstreamTotalAvailable: chartFeed?.upstreamTotalAvailable,
+    chartFeedResearchMinimumCandles: chartFeed?.researchMinimumCandles,
+    chartFeedDepthStatus: chartFeed?.depthStatus,
+    chartFeedDepthWarning: chartFeed?.depthWarning,
+    chartFeedNextRecommendedAction: chartFeed?.nextRecommendedAction,
     chartFeedFirstTimestamp: chartFeed?.firstTimestamp,
     chartFeedLastTimestamp: chartFeed?.lastTimestamp,
     chartFeedSymbol: chartFeed?.providerSymbol ?? chartFeed?.symbol,

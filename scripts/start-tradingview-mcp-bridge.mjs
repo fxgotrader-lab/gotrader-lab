@@ -132,9 +132,81 @@ const compactNumber = (value) => {
 const latestPriceFromQuote = (quote) =>
   compactNumber(quote?.close ?? quote?.last ?? quote?.price ?? quote?.lp ?? quote?.bid ?? quote?.ask);
 
-const normalizeLimit = (value) => {
+const UPSTREAM_OHLCV_MAX_BARS = 500;
+const RESEARCH_MINIMUM_CANDLES = 400;
+
+const normalizeRequestedLimit = (value) => {
   const numeric = Number(value ?? 100);
-  return Number.isFinite(numeric) ? Math.max(1, Math.min(500, Math.floor(numeric))) : 100;
+  return Number.isFinite(numeric) ? Math.max(1, Math.min(1000, Math.floor(numeric))) : 100;
+};
+
+const effectiveOhlcvLimit = (requestedLimit) => Math.min(UPSTREAM_OHLCV_MAX_BARS, requestedLimit);
+
+const inferDepthMetadata = ({ effectiveLimit, ohlcvResult, requestedLimit, returnedCount }) => {
+  const upstreamTotalAvailable = compactNumber(
+    ohlcvResult.payload?.total_available ??
+      ohlcvResult.payload?.totalAvailable ??
+      ohlcvResult.payload?.total_bars ??
+      ohlcvResult.payload?.totalBars
+  );
+  const requestedLabel = requestedLimit.toLocaleString();
+  const returnedLabel = returnedCount.toLocaleString();
+  const warnings = [];
+  let depthStatus = "unknown";
+  let depthWarning;
+  let nextRecommendedAction = "Use imported historical data for research if deeper TradingView history is unavailable.";
+
+  if (returnedCount >= requestedLimit) {
+    depthStatus = "full";
+    nextRecommendedAction = "TradingView MCP returned the requested candle depth.";
+  } else if (!ohlcvResult.ok) {
+    depthStatus = "unknown";
+    depthWarning = "TradingView MCP OHLCV command failed, so candle depth could not be verified.";
+    nextRecommendedAction = "Check TradingView Desktop, CDP port 9222, and the local wrapper.";
+  } else if (returnedCount === 0) {
+    depthStatus = "unknown";
+    depthWarning = `TradingView MCP returned 0 of ${requestedLabel} requested candles.`;
+    nextRecommendedAction = "Open a TradingView chart with loaded OHLCV bars, then fetch again.";
+  } else if (upstreamTotalAvailable !== undefined && upstreamTotalAvailable <= returnedCount && returnedCount < effectiveLimit) {
+    depthStatus = "visible_history_limited";
+    depthWarning = `TradingView MCP returned ${returnedLabel} of ${requestedLabel} requested candles because the current TradingView Desktop chart appears to have ${upstreamTotalAvailable.toLocaleString()} bars loaded.`;
+    nextRecommendedAction = "Scroll/load more TradingView chart history or use imported historical data for research.";
+  } else if (requestedLimit > UPSTREAM_OHLCV_MAX_BARS && returnedCount >= UPSTREAM_OHLCV_MAX_BARS) {
+    depthStatus = "capped_by_upstream";
+    depthWarning = `TradingView MCP returned ${returnedLabel} of ${requestedLabel} requested candles because upstream ohlcv is capped at ${UPSTREAM_OHLCV_MAX_BARS.toLocaleString()} bars per call.`;
+    nextRecommendedAction = "Use imported historical data for larger walk-forward/research windows until upstream supports deeper OHLCV history.";
+  } else if (returnedCount < requestedLimit) {
+    depthStatus = "partial";
+    depthWarning = `TradingView MCP returned ${returnedLabel} of ${requestedLabel} requested candles.`;
+    nextRecommendedAction = "Try fetching again after loading more TradingView chart history, or use imported historical data.";
+  }
+
+  if (requestedLimit > UPSTREAM_OHLCV_MAX_BARS) {
+    warnings.push(
+      `Upstream tradingview-mcp ohlcv accepts --count but caps requests at ${UPSTREAM_OHLCV_MAX_BARS.toLocaleString()} bars per call.`
+    );
+  }
+  if (returnedCount < RESEARCH_MINIMUM_CANDLES) {
+    warnings.push(
+      `TradingView MCP returned ${returnedLabel} candles; GoTrader research-source eligibility still requires at least ${RESEARCH_MINIMUM_CANDLES.toLocaleString()} valid candles.`
+    );
+  }
+  if (depthWarning) {
+    warnings.push(depthWarning);
+  }
+
+  return {
+    requestedLimit,
+    effectiveLimit,
+    returnedCount,
+    upstreamMaxBars: UPSTREAM_OHLCV_MAX_BARS,
+    upstreamTotalAvailable,
+    researchMinimumCandles: RESEARCH_MINIMUM_CANDLES,
+    depthStatus,
+    depthWarning,
+    nextRecommendedAction,
+    depthWarnings: warnings
+  };
 };
 
 const timestampFromTradingViewTime = (value) => {
@@ -286,7 +358,7 @@ const buildQuotePayload = ({ symbol, timeframe, statusResult, quoteResult }) => 
   };
 };
 
-const buildCandlesPayload = ({ symbol, timeframe, limit, statusResult, ohlcvResult }) => {
+const buildCandlesPayload = ({ symbol, timeframe, effectiveLimit, requestedLimit, statusResult, ohlcvResult }) => {
   const payloadSymbol = String(ohlcvResult.payload?.symbol ?? symbol ?? "unknown");
   const payloadTimeframe = String(ohlcvResult.payload?.timeframe ?? ohlcvResult.payload?.interval ?? timeframe ?? "unknown");
   const statusPayload = statusResult.payload ?? {};
@@ -294,10 +366,16 @@ const buildCandlesPayload = ({ symbol, timeframe, limit, statusResult, ohlcvResu
     ohlcvResult,
     symbol: payloadSymbol,
     timeframe: payloadTimeframe,
-    limit
+    limit: effectiveLimit
   });
   const first = candles[0];
   const last = candles[candles.length - 1];
+  const depth = inferDepthMetadata({
+    effectiveLimit,
+    ohlcvResult,
+    requestedLimit,
+    returnedCount: candles.length
+  });
   return {
     provider: "tradingview_mcp",
     symbol: payloadSymbol,
@@ -308,9 +386,18 @@ const buildCandlesPayload = ({ symbol, timeframe, limit, statusResult, ohlcvResu
     requestedTimeframe: timeframe,
     candles,
     candleCount: candles.length,
+    requestedLimit: depth.requestedLimit,
+    effectiveLimit: depth.effectiveLimit,
+    returnedCount: depth.returnedCount,
+    upstreamMaxBars: depth.upstreamMaxBars,
+    upstreamTotalAvailable: depth.upstreamTotalAvailable,
+    researchMinimumCandles: depth.researchMinimumCandles,
+    depthStatus: depth.depthStatus,
+    depthWarning: depth.depthWarning,
+    nextRecommendedAction: depth.nextRecommendedAction,
     firstTimestamp: first?.timestamp,
     lastTimestamp: last?.timestamp,
-    sourceCommand: `ohlcv --count ${limit}`,
+    sourceCommand: `ohlcv --count ${effectiveLimit}`,
     connectionStatus: !statusResult.ok
       ? "disconnected"
       : candles.length
@@ -318,7 +405,8 @@ const buildCandlesPayload = ({ symbol, timeframe, limit, statusResult, ohlcvResu
         : "connected_no_candles",
     warnings: [
       "TradingView MCP candles are read-only chart data, not broker truth.",
-      !ohlcvResult.ok ? "TradingView MCP OHLCV command failed." : undefined
+      !ohlcvResult.ok ? "TradingView MCP OHLCV command failed." : undefined,
+      ...depth.depthWarnings
     ].filter(Boolean),
     missingEvidence: candles.length
       ? []
@@ -348,6 +436,12 @@ const buildMarketSnapshotPayload = ({ symbol, timeframe, quote, candles, evidenc
   dataQuality: {
     status: candles.candleCount > 0 ? "usable_chart_feed" : "connected_no_candles",
     candleCount: candles.candleCount,
+    requestedLimit: candles.requestedLimit,
+    returnedCount: candles.returnedCount,
+    researchMinimumCandles: candles.researchMinimumCandles,
+    depthStatus: candles.depthStatus,
+    depthWarning: candles.depthWarning,
+    nextRecommendedAction: candles.nextRecommendedAction,
     warnings: [...candles.warnings, ...quote.warnings],
     missingEvidence: [...candles.missingEvidence, ...quote.missingEvidence]
   },
@@ -446,26 +540,28 @@ const server = createServer(async (req, res) => {
   if (requestUrl.pathname === "/candles") {
     const symbol = String(requestUrl.searchParams.get("symbol") ?? "unknown");
     const timeframe = String(requestUrl.searchParams.get("timeframe") ?? "unknown");
-    const limit = normalizeLimit(requestUrl.searchParams.get("limit"));
+    const requestedLimit = normalizeRequestedLimit(requestUrl.searchParams.get("limit"));
+    const effectiveLimit = effectiveOhlcvLimit(requestedLimit);
     const [statusResult, ohlcvResult] = await Promise.all([
       runCli(["status"]),
-      runCli(["ohlcv", "--count", String(limit)])
+      runCli(["ohlcv", "--count", String(effectiveLimit)])
     ]);
-    json(res, 200, buildCandlesPayload({ symbol, timeframe, limit, statusResult, ohlcvResult }));
+    json(res, 200, buildCandlesPayload({ symbol, timeframe, requestedLimit, effectiveLimit, statusResult, ohlcvResult }));
     return;
   }
 
   if (requestUrl.pathname === "/snapshot") {
     const symbol = String(requestUrl.searchParams.get("symbol") ?? "unknown");
     const timeframe = String(requestUrl.searchParams.get("timeframe") ?? "unknown");
-    const limit = normalizeLimit(requestUrl.searchParams.get("limit"));
+    const requestedLimit = normalizeRequestedLimit(requestUrl.searchParams.get("limit"));
+    const effectiveLimit = effectiveOhlcvLimit(requestedLimit);
     const [statusResult, quoteResult, ohlcvResult] = await Promise.all([
       runCli(["status"]),
       runCli(["quote"]),
-      runCli(["ohlcv", "--count", String(limit)])
+      runCli(["ohlcv", "--count", String(effectiveLimit)])
     ]);
     const quote = buildQuotePayload({ symbol, timeframe, statusResult, quoteResult });
-    const candles = buildCandlesPayload({ symbol, timeframe, limit, statusResult, ohlcvResult });
+    const candles = buildCandlesPayload({ symbol, timeframe, requestedLimit, effectiveLimit, statusResult, ohlcvResult });
     const ohlcvSummary = candleSummary(candles.candles);
     const evidence = buildEvidence({
       symbol,

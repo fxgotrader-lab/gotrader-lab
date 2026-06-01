@@ -76,6 +76,29 @@ This feed may be selected as a chart source in Market Data or Settings. It is la
 If the upstream CLI only returns a summary on a given machine or chart state, `/candles` returns an empty candle array
 with `connected_no_candles` and a `missingEvidence` explanation. GoTrader keeps using imported/mock/replay data.
 
+### Candle Depth Limits
+
+The upstream `tradingview-mcp` CLI currently exposes OHLCV through `ohlcv --count`. Its implementation caps requests at
+500 bars per call and reads only the bars already loaded in the active TradingView Desktop chart. It does not currently
+provide a deeper historical range, `from`/`to`, chunked history, or automatic chart-history scrolling API for GoTrader to
+use safely.
+
+GoTrader may request up to 1,000 candles from the local wrapper, but the wrapper passes the largest safe upstream count
+available and reports depth metadata:
+
+- requested candles
+- effective upstream request
+- returned candles
+- upstream maximum bars
+- upstream total/visible bars, when reported
+- depth status: `full`, `partial`, `capped_by_upstream`, `visible_history_limited`, or `unknown`
+- depth warning and next recommended action
+
+Research-cycle eligibility still requires at least 400 valid candles. If TradingView MCP returns fewer, the feed remains
+visual-only and the UI explains whether the likely limiter is upstream CLI depth or currently loaded TradingView chart
+history. GoTrader does not lower the threshold or fabricate missing candles. Use imported historical data for larger
+research and walk-forward windows when TradingView Desktop cannot expose enough bars.
+
 ## Command Center Auto-Refresh
 
 Dashboard / Command Center can start a local auto-refresh loop for TradingView MCP chart data. The loop is read-only.

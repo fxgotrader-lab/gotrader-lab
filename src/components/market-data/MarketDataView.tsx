@@ -381,6 +381,7 @@ export function MarketDataView() {
       if (!candles.candleCount) {
         setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
         setTradingViewFeedMessage(
+          candles.depthWarning ||
           candles.missingEvidence.join(" ") ||
             "TradingView MCP wrapper is connected, but no candles were returned. Check the TradingView Desktop chart symbol/timeframe."
         );
@@ -400,6 +401,10 @@ export function MarketDataView() {
       setTradingViewFeedMessage(
         [
           `TradingView MCP chart source active with ${feed.candleCount.toLocaleString()} read-only candles.`,
+          feed.requestedLimit
+            ? `Depth: ${feed.candleCount.toLocaleString()} of ${feed.requestedLimit.toLocaleString()} requested (${formatToken(feed.depthStatus)}).`
+            : undefined,
+          feed.depthWarning,
           quote.latestPrice ? `Latest quote ${quote.latestPrice}.` : undefined,
           feed.activeForResearch
             ? "Research-source gate is eligible."
@@ -433,8 +438,13 @@ export function MarketDataView() {
     setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
     setTradingViewFeedMessage(
       candles.candleCount
-        ? `TradingView MCP returned ${candles.candleCount.toLocaleString()} candles and activated chart-only display. Eligibility: ${formatToken(candidate.researchEligibility.state)}.`
-        : candles.missingEvidence.join(" ") || "TradingView MCP connected but candle series unavailable."
+        ? [
+            `TradingView MCP returned ${candles.candleCount.toLocaleString()} candles and activated chart-only display.`,
+            candles.requestedLimit ? `Requested ${candles.requestedLimit.toLocaleString()}; depth ${formatToken(candles.depthStatus)}.` : undefined,
+            candles.depthWarning,
+            `Eligibility: ${formatToken(candidate.researchEligibility.state)}.`
+          ].filter(Boolean).join(" ")
+        : candles.depthWarning || candles.missingEvidence.join(" ") || "TradingView MCP connected but candle series unavailable."
     );
   };
 
@@ -460,8 +470,12 @@ export function MarketDataView() {
     setTradingViewFeedMessage(
       feed.candleCount
         ? usageMode === "research_source" && !feed.activeForResearch
-          ? `TradingView MCP remains visual-only. Eligibility: ${formatToken(feed.researchEligibility.state)}. ${feed.researchEligibility.reasons.join(" ")}`
-          : `TradingView MCP ${usageMode === "research_source" ? "research source" : "chart source"} active with ${feed.candleCount.toLocaleString()} read-only candles. ${feed.matchReason}`
+          ? `TradingView MCP remains visual-only. Eligibility: ${formatToken(feed.researchEligibility.state)}. ${feed.depthWarning ?? feed.researchEligibility.reasons.join(" ")}`
+          : [
+              `TradingView MCP ${usageMode === "research_source" ? "research source" : "chart source"} active with ${feed.candleCount.toLocaleString()} read-only candles.`,
+              feed.requestedLimit ? `Depth: ${feed.candleCount.toLocaleString()} of ${feed.requestedLimit.toLocaleString()} requested (${formatToken(feed.depthStatus)}).` : undefined,
+              feed.matchReason
+            ].filter(Boolean).join(" ")
         : feed.missingEvidence.join(" ") || "TradingView MCP connected but did not return full candle series."
     );
   };
@@ -705,6 +719,10 @@ export function MarketDataView() {
             <StatusTile label="Quote latest" value={String(tradingViewQuote?.latestPrice ?? tradingViewFeed?.latestClose ?? "none")} />
             <StatusTile label="Candle status" value={(tradingViewCandles?.connectionStatus ?? tradingViewFeed?.connectionStatus ?? "not loaded").replace(/_/g, " ")} />
             <StatusTile label="Candle count" value={String(tradingViewCandles?.candleCount ?? tradingViewFeed?.candleCount ?? 0)} />
+            <StatusTile label="Requested candles" value={String(tradingViewCandles?.requestedLimit ?? tradingViewFeed?.requestedLimit ?? tradingViewDisplayLimit)} />
+            <StatusTile label="Returned candles" value={String(tradingViewCandles?.returnedCount ?? tradingViewFeed?.returnedCount ?? tradingViewCandles?.candleCount ?? tradingViewFeed?.candleCount ?? 0)} />
+            <StatusTile label="Research minimum" value={String(tradingViewCandles?.researchMinimumCandles ?? tradingViewFeed?.researchMinimumCandles ?? 400)} />
+            <StatusTile label="Depth status" value={formatToken(tradingViewCandles?.depthStatus ?? tradingViewFeed?.depthStatus)} />
             <StatusTile label="First candle" value={formatDate(tradingViewCandles?.firstTimestamp ?? tradingViewFeed?.firstTimestamp)} />
             <StatusTile label="Last candle" value={formatDate(tradingViewCandles?.lastTimestamp ?? tradingViewFeed?.lastTimestamp)} />
             <StatusTile label="Match state" value={(tradingViewCandidateFeed?.matchState ?? tradingViewFeed?.matchState ?? "unavailable").replace(/_/g, " ")} />
@@ -741,6 +759,16 @@ export function MarketDataView() {
                 <li key={reason}>{reason}</li>
               ))}
             </ul>
+            {(tradingViewCandles?.depthWarning ?? tradingViewFeed?.depthWarning) ? (
+              <p className="mt-2 text-xs">
+                {tradingViewCandles?.depthWarning ?? tradingViewFeed?.depthWarning}
+              </p>
+            ) : null}
+            {(tradingViewCandles?.nextRecommendedAction ?? tradingViewFeed?.nextRecommendedAction) ? (
+              <p className="mt-1 text-xs">
+                Next: {tradingViewCandles?.nextRecommendedAction ?? tradingViewFeed?.nextRecommendedAction}
+              </p>
+            ) : null}
           </div>
           {tradingViewFeedMessage ? (
             <div className="rounded-md border border-sky-300/25 bg-sky-300/10 p-3 text-sky-100">
@@ -756,6 +784,16 @@ export function MarketDataView() {
                 <p className="mt-1 text-xs text-emerald-100/80">
                   {tradingViewFeed.providerSymbol} {tradingViewFeed.timeframe} / {tradingViewFeed.candleCount.toLocaleString()} candles / {tradingViewFeed.matchReason}
                 </p>
+                {tradingViewFeed.requestedLimit ? (
+                  <p className="mt-1 text-xs text-emerald-100/80">
+                    Requested {tradingViewFeed.requestedLimit.toLocaleString()} / returned {tradingViewFeed.candleCount.toLocaleString()} / depth {formatToken(tradingViewFeed.depthStatus)}.
+                  </p>
+                ) : null}
+                {tradingViewFeed.depthWarning ? (
+                  <p className="mt-1 text-xs text-amber-100">
+                    {tradingViewFeed.depthWarning}
+                  </p>
+                ) : null}
                 {!tradingViewFeed.activeForResearch ? (
                   <p className="mt-1 text-xs text-emerald-100/80">
                     Visual-only unless the research gate reports eligible for research cycle.

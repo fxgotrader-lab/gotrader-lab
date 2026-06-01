@@ -248,6 +248,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
       );
       if (!candles.candleCount) {
         const message =
+          candles.depthWarning ||
           candles.missingEvidence.join(" ") ||
           "TradingView MCP wrapper connected, but no candle series was returned. Check the TradingView Desktop chart.";
         setTradingViewOperationMessage(message);
@@ -268,16 +269,24 @@ export function MissionControlShell({ state }: { state: LabState }) {
       setTradingViewOperationMessage(
         [
           `TradingView MCP chart source active with ${feed.candleCount.toLocaleString()} read-only candles.`,
+          feed.requestedLimit
+            ? `Depth: ${feed.candleCount.toLocaleString()} of ${feed.requestedLimit.toLocaleString()} requested (${formatToken(feed.depthStatus)}).`
+            : undefined,
+          feed.depthWarning,
           `Storage: ${feed.candlesPersisted ? "IndexedDB" : "session-only"}.`,
           feed.activeForResearch
             ? "Ready for guarded research source use."
             : `Research remains guarded: ${feed.researchEligibility.reasons.join(" ")}`
-        ].join(" ")
+        ].filter(Boolean).join(" ")
       );
       addDataConnectionEvent(
         "Candles fetched",
-        `${feed.candleCount.toLocaleString()} candles from ${feed.firstTimestamp ?? "n/a"} to ${feed.lastTimestamp ?? "n/a"}. Storage ${feed.candlesPersisted ? "IndexedDB" : "session-only"}.`,
-        "success",
+        [
+          `${feed.candleCount.toLocaleString()} candles from ${feed.firstTimestamp ?? "n/a"} to ${feed.lastTimestamp ?? "n/a"}.`,
+          feed.requestedLimit ? `Requested ${feed.requestedLimit.toLocaleString()}; depth ${formatToken(feed.depthStatus)}.` : undefined,
+          feed.depthWarning
+        ].filter(Boolean).join(" "),
+        feed.candleCount >= (feed.researchMinimumCandles ?? 400) ? "success" : "warning",
         feed.providerSymbol
       );
       addDataConnectionEvent(
@@ -325,6 +334,15 @@ export function MissionControlShell({ state }: { state: LabState }) {
           candleCount: feed.candleCount,
           firstTimestamp: feed.firstTimestamp,
           lastTimestamp: feed.lastTimestamp,
+          requestedLimit: feed.requestedLimit,
+          effectiveLimit: feed.effectiveLimit,
+          returnedCount: feed.returnedCount,
+          upstreamMaxBars: feed.upstreamMaxBars,
+          upstreamTotalAvailable: feed.upstreamTotalAvailable,
+          researchMinimumCandles: feed.researchMinimumCandles,
+          depthStatus: feed.depthStatus,
+          depthWarning: feed.depthWarning,
+          nextRecommendedAction: feed.nextRecommendedAction,
           sourceCommand: feed.sourceCommand,
           connectionStatus: feed.connectionStatus,
           warnings: feed.warnings,
@@ -496,12 +514,16 @@ export function MissionControlShell({ state }: { state: LabState }) {
       if (runtimeSnapshot.tradingViewMcp.chartFeedAvailable) {
         return [
           `TradingView MCP chart source active with ${runtimeSnapshot.tradingViewMcp.chartFeedCandleCount.toLocaleString()} read-only candles.`,
+          runtimeSnapshot.tradingViewMcp.chartFeedRequestedLimit
+            ? `Depth: ${runtimeSnapshot.tradingViewMcp.chartFeedCandleCount.toLocaleString()} of ${runtimeSnapshot.tradingViewMcp.chartFeedRequestedLimit.toLocaleString()} requested (${formatToken(runtimeSnapshot.tradingViewMcp.chartFeedDepthStatus)}).`
+            : undefined,
+          runtimeSnapshot.tradingViewMcp.chartFeedDepthWarning,
           runtimeSnapshot.marketData.researchUsesTradingViewMcp
             ? "Research source is TradingView MCP; execution remains disabled."
             : `Research remains guarded: ${
                 runtimeSnapshot.tradingViewMcp.eligibilityReasons[0] ?? "TradingView MCP is visual-only."
               }`
-        ].join(" ");
+        ].filter(Boolean).join(" ");
       }
       if (runtimeSnapshot.tradingViewMcp.bridgeStatus === "connected_analysis_only") {
         return "TradingView MCP bridge connected; fetch candles to activate the chart feed.";
@@ -513,6 +535,9 @@ export function MissionControlShell({ state }: { state: LabState }) {
     runtimeSnapshot?.tradingViewMcp.bridgeStatus,
     runtimeSnapshot?.tradingViewMcp.chartFeedAvailable,
     runtimeSnapshot?.tradingViewMcp.chartFeedCandleCount,
+    runtimeSnapshot?.tradingViewMcp.chartFeedDepthStatus,
+    runtimeSnapshot?.tradingViewMcp.chartFeedDepthWarning,
+    runtimeSnapshot?.tradingViewMcp.chartFeedRequestedLimit,
     runtimeSnapshot?.tradingViewMcp.eligibilityReasons
   ]);
 
@@ -968,6 +993,12 @@ export function MissionControlShell({ state }: { state: LabState }) {
                 : "not checked"
             ],
             [
+              "TradingView depth",
+              runtimeSnapshot?.tradingViewMcp.chartFeedRequestedLimit
+                ? `${runtimeSnapshot.tradingViewMcp.chartFeedCandleCount.toLocaleString()} of ${runtimeSnapshot.tradingViewMcp.chartFeedRequestedLimit.toLocaleString()} requested / ${formatToken(runtimeSnapshot.tradingViewMcp.chartFeedDepthStatus)} / minimum ${runtimeSnapshot.tradingViewMcp.chartFeedResearchMinimumCandles ?? 400}`
+                : "not requested"
+            ],
+            [
               "Proposal context",
               runtimeSnapshot?.proposal.latestProposalIsCurrent
                 ? `current: ${runtimeSnapshot.proposal.latestProposalId}`
@@ -1355,7 +1386,10 @@ function buildActionItems(snapshot?: ResearchRuntimeSnapshot, run?: AutonomousRe
     items.push({
       id: "tradingview-research-guarded",
       title: "Research source not eligible",
-      detail: snapshot.tradingViewMcp.eligibilityReasons[0] ?? "TradingView MCP is visual-only until source gates pass.",
+      detail:
+        snapshot.tradingViewMcp.chartFeedDepthWarning ??
+        snapshot.tradingViewMcp.eligibilityReasons[0] ??
+        "TradingView MCP is visual-only until source gates pass.",
       href: "/market-data",
       severity: "warning"
     });
@@ -1413,7 +1447,11 @@ function buildFeedItems(
           id: "runtime-tv-status",
           title: `TradingView MCP ${snapshot.tradingViewMcp.bridgeStatus.replace(/_/g, " ")}`,
           detail: snapshot.tradingViewMcp.chartFeedAvailable
-            ? `${snapshot.tradingViewMcp.chartFeedCandleCount.toLocaleString()} read-only candles available for chart display.`
+            ? `${snapshot.tradingViewMcp.chartFeedCandleCount.toLocaleString()} read-only candles available for chart display.${
+                snapshot.tradingViewMcp.chartFeedRequestedLimit
+                  ? ` Requested ${snapshot.tradingViewMcp.chartFeedRequestedLimit.toLocaleString()}; depth ${formatToken(snapshot.tradingViewMcp.chartFeedDepthStatus)}.`
+                  : ""
+              }`
             : "TradingView MCP chart feed is not active.",
           timestamp: snapshot.generatedAt,
           severity: snapshot.tradingViewMcp.bridgeStatus === "connected_analysis_only" ? "success" : "warning",

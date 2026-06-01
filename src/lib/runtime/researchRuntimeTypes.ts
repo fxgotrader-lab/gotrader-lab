@@ -276,6 +276,15 @@ export interface RuntimeTradingViewMcpState {
   chartFeedStatus: TradingViewMcpRuntimeState["chartFeedStatus"];
   chartFeedAvailable: boolean;
   chartFeedCandleCount: number;
+  chartFeedRequestedLimit?: number;
+  chartFeedEffectiveLimit?: number;
+  chartFeedReturnedCount?: number;
+  chartFeedUpstreamMaxBars?: number;
+  chartFeedUpstreamTotalAvailable?: number;
+  chartFeedResearchMinimumCandles?: number;
+  chartFeedDepthStatus?: TradingViewMcpRuntimeState["chartFeedDepthStatus"];
+  chartFeedDepthWarning?: string;
+  chartFeedNextRecommendedAction?: string;
   chartFeedFirstTimestamp?: string;
   chartFeedSourceLabel: string;
   chartFeedMatchState: string;

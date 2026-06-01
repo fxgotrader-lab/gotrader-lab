@@ -300,12 +300,24 @@ export const createActiveTradingViewMcpChartFeed = ({
   });
   const connectionStatus = candles.length ? "connected_with_candles" : candlesResponse.connectionStatus;
   const sourceLabel = "TradingView MCP chart feed - read-only, not broker truth";
-  const researchEligibility = evaluateTradingViewMcpResearchEligibility({
+  const evaluatedEligibility = evaluateTradingViewMcpResearchEligibility({
     candles,
     connectionStatus,
     matchState: match.state,
     sourceLabel
   });
+  const depthReason =
+    candlesResponse.depthWarning && candles.length < tradingViewMcpCandleMinimums.researchCycle
+      ? candlesResponse.depthWarning
+      : undefined;
+  const researchEligibility = depthReason
+    ? {
+        ...evaluatedEligibility,
+        reasons: [...evaluatedEligibility.reasons, depthReason].filter(
+          (reason, index, reasons): reason is string => Boolean(reason) && reasons.indexOf(reason) === index
+        )
+      }
+    : evaluatedEligibility;
   const activeForResearch =
     usageMode === "research_source" && researchEligibility.state === "eligible_for_research_cycle";
   return {
@@ -322,6 +334,15 @@ export const createActiveTradingViewMcpChartFeed = ({
     chartResolution: candlesResponse.chartResolution,
     candles,
     candleCount: candles.length,
+    requestedLimit: candlesResponse.requestedLimit,
+    effectiveLimit: candlesResponse.effectiveLimit,
+    returnedCount: candlesResponse.returnedCount ?? candles.length,
+    upstreamMaxBars: candlesResponse.upstreamMaxBars,
+    upstreamTotalAvailable: candlesResponse.upstreamTotalAvailable,
+    researchMinimumCandles: candlesResponse.researchMinimumCandles ?? tradingViewMcpCandleMinimums.researchCycle,
+    depthStatus: candlesResponse.depthStatus,
+    depthWarning: candlesResponse.depthWarning,
+    nextRecommendedAction: candlesResponse.nextRecommendedAction,
     firstTimestamp: candles[0]?.timestamp,
     lastTimestamp: latest?.timestamp,
     latestClose: latest?.close,
@@ -344,6 +365,8 @@ export const createActiveTradingViewMcpChartFeed = ({
     warnings: [
       ...candlesResponse.warnings,
       "TradingView MCP chart feed is visual/analysis data only and has no broker execution authority.",
+      candlesResponse.depthWarning,
+      candlesResponse.nextRecommendedAction,
       match.state === "symbol_mismatch" || match.state === "timeframe_mismatch" ? match.reason : undefined
     ].filter(Boolean) as string[],
     missingEvidence: candlesResponse.missingEvidence,

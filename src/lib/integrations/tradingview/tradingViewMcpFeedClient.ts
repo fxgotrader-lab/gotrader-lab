@@ -106,6 +106,12 @@ const disconnectedCandles = (request: TradingViewMcpFeedRequest, error?: unknown
   requestedTimeframe: request.timeframe,
   candles: [],
   candleCount: 0,
+  requestedLimit: request.limit,
+  effectiveLimit: 0,
+  returnedCount: 0,
+  depthStatus: "unknown",
+  depthWarning: "TradingView MCP candle depth could not be checked because the bridge is disconnected.",
+  nextRecommendedAction: "Start npm.cmd run tradingview:mcp-bridge, then fetch TradingView MCP candles again.",
   connectionStatus: "disconnected",
   warnings: ["TradingView MCP chart feed is disconnected."],
   missingEvidence: [

@@ -24,6 +24,12 @@ export type TradingViewMcpResearchEligibilityState =
 
 export type TradingViewMcpFeedUsageMode = "chart_only" | "research_source";
 export type TradingViewMcpFeedStorageBackend = "indexeddb" | "session" | "metadata_only";
+export type TradingViewMcpDepthStatus =
+  | "full"
+  | "partial"
+  | "capped_by_upstream"
+  | "visible_history_limited"
+  | "unknown";
 
 export interface TradingViewMcpResearchEligibility {
   state: TradingViewMcpResearchEligibilityState;
@@ -93,6 +99,15 @@ export interface TradingViewMcpCandlesResponse extends TradingViewMcpFeedAuthori
   requestedTimeframe: string;
   candles: TradingViewMcpFeedCandle[];
   candleCount: number;
+  requestedLimit?: number;
+  effectiveLimit?: number;
+  returnedCount?: number;
+  upstreamMaxBars?: number;
+  upstreamTotalAvailable?: number;
+  researchMinimumCandles?: number;
+  depthStatus?: TradingViewMcpDepthStatus;
+  depthWarning?: string;
+  nextRecommendedAction?: string;
   firstTimestamp?: string;
   lastTimestamp?: string;
   sourceCommand?: string;
@@ -125,6 +140,15 @@ export interface ActiveTradingViewMcpChartFeed extends TradingViewMcpFeedAuthori
   chartResolution?: string;
   candles: TradingViewMcpFeedCandle[];
   candleCount: number;
+  requestedLimit?: number;
+  effectiveLimit?: number;
+  returnedCount?: number;
+  upstreamMaxBars?: number;
+  upstreamTotalAvailable?: number;
+  researchMinimumCandles?: number;
+  depthStatus?: TradingViewMcpDepthStatus;
+  depthWarning?: string;
+  nextRecommendedAction?: string;
   firstTimestamp?: string;
   lastTimestamp?: string;
   latestClose?: number;
