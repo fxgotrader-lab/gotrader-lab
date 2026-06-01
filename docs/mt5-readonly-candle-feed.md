@@ -134,6 +134,17 @@ $env:MT5_READONLY_UPSTREAM_CANDLES_PATH="/api/v1/market/candles/latest"
 $env:MT5_READONLY_DEFAULT_SYMBOL="NAS100"
 ```
 
+Broker-symbol overrides are intentionally separate from the GoTrader requested symbol:
+
+```powershell
+$env:MT5_READONLY_REQUESTED_SYMBOL="MNQ"
+$env:MT5_READONLY_DEFAULT_SYMBOL="USTECH"
+$env:MT5_READONLY_BROKER_SYMBOL="USTECH"
+npm.cmd run test:mt5-readonly
+```
+
+`requestedSymbol` is GoTrader provenance. `symbol` is the MT5 broker symbol sent upstream. For example, `MNQ` can request MT5 broker proxy data such as `USTECH`, but that data must be labeled as read-only CFD/proxy data and not CME MNQ futures broker truth.
+
 The wrapper has no arbitrary MCP tool-call endpoint. Unknown tools are not forwarded. Account, order, position, pending-order, and history paths are explicitly rejected.
 
 Supported upstream transport setting:

@@ -11,7 +11,12 @@ const port = Number(process.env.MT5_READONLY_BRIDGE_PORT || 7341);
 const upstreamBaseUrl = (process.env.MT5_READONLY_UPSTREAM_BASE_URL || "").replace(/\/$/, "");
 const upstreamTransport = process.env.MT5_READONLY_UPSTREAM_TRANSPORT || "rest";
 const upstreamTimeoutMs = Number(process.env.MT5_READONLY_UPSTREAM_TIMEOUT_MS || 2500);
-const defaultBrokerSymbol = process.env.MT5_READONLY_DEFAULT_SYMBOL || "MNQ";
+const defaultRequestedSymbol = process.env.MT5_READONLY_REQUESTED_SYMBOL || "MNQ";
+const defaultBrokerSymbol =
+  process.env.MT5_READONLY_BROKER_SYMBOL ||
+  process.env.MT5_READONLY_DEFAULT_SYMBOL ||
+  defaultRequestedSymbol;
+const brokerSymbolSuggestions = ["USTECH", "US500", "US30", "XAUUSD", "EURUSD.pro", "EURUSD", "NAS100", "US100"];
 const configuredUpstreamPaths = {
   status: process.env.MT5_READONLY_UPSTREAM_STATUS_PATH,
   quote: process.env.MT5_READONLY_UPSTREAM_QUOTE_PATH,
@@ -84,6 +89,8 @@ const plannedStatus = () => ({
     symbols: discoveredUpstreamPaths.symbols ?? configuredUpstreamPaths.symbols,
     symbolInfo: discoveredUpstreamPaths.symbolInfo ?? configuredUpstreamPaths.symbolInfo
   },
+  defaultRequestedSymbol,
+  defaultBrokerSymbol,
   upstreamCandidatePaths: {
     status: upstreamPathCandidates.status,
     quote: upstreamPathCandidates.quote,
@@ -155,6 +162,11 @@ const upstreamUrl = (path, params = {}) => {
   });
   return url.toString();
 };
+const safeBodyPreview = (value, maxLength = 700) =>
+  String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
 const upstreamRequestFor = (path, params = {}) => {
   const brokerSymbol = params.symbol_name ?? params.symbol;
 
@@ -192,17 +204,26 @@ const fetchUpstreamPath = async (path, params) => {
     throw new Error("MT5_READONLY_UPSTREAM_BASE_URL is not configured.");
   }
   const request = upstreamRequestFor(path, params);
+  const requestUrl = upstreamUrl(request.path, request.params);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), upstreamTimeoutMs);
   try {
-    const response = await fetch(upstreamUrl(request.path, request.params), {
+    const response = await fetch(requestUrl, {
       cache: "no-store",
       signal: controller.signal
     });
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      const body = safeBodyPreview(await response.text().catch(() => ""));
+      throw new Error(`HTTP ${response.status} from ${requestUrl}${body ? `; body: ${body}` : ""}`);
     }
     return await response.json();
+  } catch (error) {
+    const message = error?.name === "AbortError"
+      ? `timeout after ${upstreamTimeoutMs}ms`
+      : error instanceof Error
+        ? error.message
+        : String(error);
+    throw new Error(message.includes(requestUrl) ? message : `${message} while requesting ${requestUrl}`);
   } finally {
     clearTimeout(timeout);
   }
@@ -245,6 +266,30 @@ const payloadArray = (payload) => {
   }
   return [];
 };
+const discoverBrokerSymbolSuggestions = async () => {
+  if (!upstreamBaseUrl) {
+    return [];
+  }
+  try {
+    const { payload } = await fetchUpstreamJson("symbols", {}, (candidate) => Array.isArray(candidate) || payloadArray(candidate).length > 0);
+    const symbols = payloadArray(payload).map((item) => String(item?.name ?? item?.symbol ?? item)).filter(Boolean);
+    const normalized = new Map(symbols.map((symbol) => [symbol.toUpperCase(), symbol]));
+    const discovered = brokerSymbolSuggestions
+      .map((symbol) => normalized.get(symbol.toUpperCase()))
+      .filter(Boolean);
+    return [...new Set(discovered.length ? discovered : brokerSymbolSuggestions)];
+  } catch {
+    return brokerSymbolSuggestions;
+  }
+};
+const failureEvidence = async ({ action, brokerSymbol, error }) => {
+  const message = error instanceof Error ? error.message : String(error);
+  const suggestions = await discoverBrokerSymbolSuggestions();
+  return [
+    `Configured MT5 upstream ${action} endpoint failed for brokerSymbol=${brokerSymbol}: ${message}`,
+    suggestions.length ? `Broker symbols to try from the MT5 symbol list/common aliases: ${suggestions.join(", ")}` : undefined
+  ].filter(Boolean);
+};
 const priceLikePayload = (payload) => {
   const data = payload?.data && typeof payload.data === "object" && !Array.isArray(payload.data) ? payload.data : payload;
   return [
@@ -271,7 +316,8 @@ const normalizeQuote = ({ payload, requestedSymbol, brokerSymbol, sourcePath }) 
   const data = payload?.data && typeof payload.data === "object" && !Array.isArray(payload.data) ? payload.data : payload;
   const bid = toNumber(firstDefined(data?.bid, data?.bid_price, data?.price?.bid));
   const ask = toNumber(firstDefined(data?.ask, data?.ask_price, data?.price?.ask));
-  const mid = toNumber(firstDefined(data?.mid, data?.last, data?.price, data?.close)) ?? (bid !== undefined && ask !== undefined ? (bid + ask) / 2 : undefined);
+  const upstreamMid = toNumber(firstDefined(data?.mid, data?.last, data?.price, data?.close));
+  const mid = upstreamMid && upstreamMid > 0 ? upstreamMid : bid !== undefined && ask !== undefined ? (bid + ask) / 2 : upstreamMid;
   const spread = toNumber(firstDefined(data?.spread, data?.spread_points)) ?? (bid !== undefined && ask !== undefined ? ask - bid : undefined);
   return {
     provider: "mt5_read_only",
@@ -399,8 +445,8 @@ const server = createServer(async (req, res) => {
   }
 
   const url = new URL(req.url || "/", `http://${host}:${port}`);
-  const requestedSymbol = url.searchParams.get("requestedSymbol") || url.searchParams.get("gotraderSymbol") || "MNQ";
-  const symbol = url.searchParams.get("symbol") || defaultBrokerSymbol;
+  const requestedSymbol = url.searchParams.get("requestedSymbol") || url.searchParams.get("gotraderSymbol") || defaultRequestedSymbol;
+  const symbol = url.searchParams.get("symbol") || url.searchParams.get("brokerSymbol") || defaultBrokerSymbol;
   const timeframe = url.searchParams.get("timeframe") || "5m";
   const limit = Math.max(1, Math.min(5000, Number(url.searchParams.get("limit") || 240)));
 
@@ -481,7 +527,7 @@ const server = createServer(async (req, res) => {
       json(res, 200, {
         ...disconnectedQuote({ requestedSymbol, brokerSymbol: symbol }),
         connectionStatus: "degraded",
-        missingEvidence: [`Configured MT5 upstream quote endpoint failed: ${lastUpstreamError}`]
+        missingEvidence: await failureEvidence({ action: "quote", brokerSymbol: symbol, error })
       });
     }
     return;
@@ -501,7 +547,7 @@ const server = createServer(async (req, res) => {
       json(res, 200, {
         ...disconnectedCandles({ requestedSymbol, brokerSymbol: symbol, timeframe, limit }),
         connectionStatus: "degraded",
-        missingEvidence: [`Configured MT5 upstream candle endpoint failed: ${lastUpstreamError}`]
+        missingEvidence: await failureEvidence({ action: "candle", brokerSymbol: symbol, error })
       });
     }
     return;
@@ -607,7 +653,7 @@ const server = createServer(async (req, res) => {
         connectionStatus: "degraded",
         symbol,
         warnings: ["Configured upstream symbol-info endpoint failed."],
-        missingEvidence: [lastUpstreamError],
+        missingEvidence: await failureEvidence({ action: "symbol-info", brokerSymbol: symbol, error }),
         ...authority
       });
     }

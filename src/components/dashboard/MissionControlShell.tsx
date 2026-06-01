@@ -408,10 +408,11 @@ export function MissionControlShell({ state }: { state: LabState }) {
 
   const connectMt5ReadOnly = async ({ usageMode = "chart_only" }: { usageMode?: "chart_only" | "research_source" } = {}) => {
     setMt5Busy(true);
-    const brokerSymbol = mt5BrokerSymbol.trim() || commandCenterSymbol;
+    const brokerSymbol = mt5BrokerSymbol.trim() || undefined;
+    const brokerSymbolLabel = brokerSymbol ?? "wrapper default";
     const limit = Math.max(1, Number(mt5CandleLimit) || 400);
-    setMt5OperationMessage(`Checking MT5 read-only bridge for ${brokerSymbol} ${commandCenterTimeframe}...`);
-    addDataConnectionEvent("MT5 status checked", `Checking ${brokerSymbol} through read-only bridge.`, "running");
+    setMt5OperationMessage(`Checking MT5 read-only bridge for GoTrader ${commandCenterSymbol} via MT5 ${brokerSymbolLabel} ${commandCenterTimeframe}...`);
+    addDataConnectionEvent("MT5 status checked", `Checking GoTrader ${commandCenterSymbol} via MT5 broker symbol ${brokerSymbolLabel}.`, "running");
     try {
       const settings = saveMt5ReadOnlySettings({
         enabled: true,
@@ -433,7 +434,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
           ? `Quote ${quote.mid ?? quote.bid ?? quote.ask}; spread ${quote.spread ?? "n/a"}.`
           : quote.missingEvidence.join(" ") || "No MT5 quote returned.",
         quote.mid || quote.bid || quote.ask ? "success" : "warning",
-        brokerSymbol
+        quote.brokerSymbol ?? brokerSymbolLabel
       );
 
       const feed = await fetchAndStoreMt5ReadOnlyCandleFeed({
@@ -451,7 +452,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
         feed.candleCount
           ? [
               `MT5 read-only ${usageMode === "research_source" && feed.activeForResearch ? "research" : "chart"} source loaded with ${feed.candleCount.toLocaleString()} candles.`,
-              `Broker symbol ${feed.brokerSymbol ?? brokerSymbol}; depth ${formatToken(feed.depthStatus)}.`,
+              `GoTrader ${feed.requestedSymbol}; MT5 broker symbol ${feed.brokerSymbol ?? brokerSymbolLabel}; depth ${formatToken(feed.depthStatus)}.`,
               feed.activeForResearch ? "Research source gate passed." : `Research guarded: ${feed.researchEligibility.reasons.join(" ")}`
             ].join(" ")
           : feed.missingEvidence.join(" ") || "MT5 bridge connected but returned no candles."
@@ -912,6 +913,13 @@ export function MissionControlShell({ state }: { state: LabState }) {
                     />
                   </label>
                 </div>
+                <p className="mt-2 text-[11px] leading-4 text-slate-400">
+                  GoTrader requested symbol: <span className="font-mono text-slate-200">{commandCenterSymbol}</span>. MT5 broker symbol:{" "}
+                  <span className="font-mono text-slate-200">{mt5BrokerSymbol.trim() || runtimeSnapshot?.mt5ReadOnly.brokerSymbol || "wrapper default"}</span>.
+                  {mt5BrokerSymbol.trim() || runtimeSnapshot?.mt5ReadOnly.brokerSymbol
+                    ? " Broker CFD/proxy data is read-only and not CME futures broker truth."
+                    : " Leave blank to use MT5_READONLY_DEFAULT_SYMBOL from the local wrapper."}
+                </p>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
                   <Button variant="secondary" onClick={() => void connectMt5ReadOnly({ usageMode: "chart_only" })} disabled={mt5Busy}>
                     {mt5Busy ? "Checking MT5..." : "Connect MT5 Read-Only"}

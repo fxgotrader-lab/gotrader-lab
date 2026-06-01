@@ -1,6 +1,9 @@
 const bridgeUrl = (process.env.MT5_READONLY_BRIDGE_URL || "http://127.0.0.1:7341").replace(/\/$/, "");
-const symbol = process.env.MT5_READONLY_TEST_SYMBOL || "MNQ";
-const brokerSymbol = process.env.MT5_READONLY_TEST_BROKER_SYMBOL || symbol;
+const requestedSymbol = process.env.MT5_READONLY_REQUESTED_SYMBOL || "MNQ";
+const brokerSymbol =
+  process.env.MT5_READONLY_BROKER_SYMBOL ||
+  process.env.MT5_READONLY_DEFAULT_SYMBOL ||
+  requestedSymbol;
 const timeframe = process.env.MT5_READONLY_TEST_TIMEFRAME || "5m";
 const limit = Number(process.env.MT5_READONLY_TEST_LIMIT || 400);
 const timeoutMs = Number(process.env.MT5_READONLY_TEST_TIMEOUT_MS || 2500);
@@ -27,7 +30,20 @@ const fetchWithTimeout = async (url) => {
 };
 
 const compact = (payload) => {
-  if (!payload || typeof payload !== "object" || !Array.isArray(payload.candles)) {
+  if (!payload || typeof payload !== "object") {
+    return payload;
+  }
+  if (payload.candles && typeof payload.candles === "object" && Array.isArray(payload.candles.candles)) {
+    return {
+      ...payload,
+      candles: {
+        ...payload.candles,
+        candles: payload.candles.candles.slice(0, 2),
+        candleSampleNote: `${payload.candles.candles.length} candles returned; nested snapshot output compacted.`
+      }
+    };
+  }
+  if (!Array.isArray(payload.candles)) {
     return payload;
   }
   return {
@@ -58,14 +74,14 @@ const runCheck = async (label, path) => {
 
 const health = await runCheck("GET /health", "health");
 const status = await runCheck("GET /status", "status");
-const quote = await runCheck("GET /quote", `quote?requestedSymbol=${encodeURIComponent(symbol)}&symbol=${encodeURIComponent(brokerSymbol)}`);
+const quote = await runCheck("GET /quote", `quote?requestedSymbol=${encodeURIComponent(requestedSymbol)}&symbol=${encodeURIComponent(brokerSymbol)}`);
 const candles = await runCheck(
   "GET /candles",
-  `candles?requestedSymbol=${encodeURIComponent(symbol)}&symbol=${encodeURIComponent(brokerSymbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=${limit}`
+  `candles?requestedSymbol=${encodeURIComponent(requestedSymbol)}&symbol=${encodeURIComponent(brokerSymbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=${limit}`
 );
 const snapshot = await runCheck(
   "GET /snapshot",
-  `snapshot?requestedSymbol=${encodeURIComponent(symbol)}&symbol=${encodeURIComponent(brokerSymbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=${limit}`
+  `snapshot?requestedSymbol=${encodeURIComponent(requestedSymbol)}&symbol=${encodeURIComponent(brokerSymbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=${limit}`
 );
 const symbols = await runCheck("GET /symbols", "symbols");
 
@@ -86,8 +102,12 @@ console.log(
   JSON.stringify(
     {
       bridgeUrl,
-      symbol,
+      requestedSymbol,
+      symbol: requestedSymbol,
       brokerSymbol,
+      brokerSymbolResolution: {
+        order: ["MT5_READONLY_BROKER_SYMBOL", "MT5_READONLY_DEFAULT_SYMBOL", "requestedSymbol"]
+      },
       timeframe,
       requestedLimit: limit,
       wrapperResponded,

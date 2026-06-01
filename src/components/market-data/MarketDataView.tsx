@@ -539,8 +539,9 @@ export function MarketDataView() {
   };
 
   const fetchMt5QuoteForChart = async () => {
-    const brokerSymbol = mt5BrokerSymbol.trim() || symbol;
-    setMt5FeedMessage(`Fetching MT5 read-only quote for ${brokerSymbol}...`);
+    const brokerSymbol = mt5BrokerSymbol.trim() || undefined;
+    const brokerSymbolLabel = brokerSymbol ?? "wrapper default";
+    setMt5FeedMessage(`Fetching MT5 read-only quote for GoTrader ${symbol} via MT5 ${brokerSymbolLabel}...`);
     setChartVerification(undefined);
     const settings = saveMt5ReadOnlySettings({ ...loadMt5ReadOnlySettings(), enabled: true, brokerSymbolOverride: mt5BrokerSymbol.trim() || undefined });
     const quote = await fetchMt5ReadOnlyQuote({ symbol, brokerSymbol }, settings);
@@ -554,9 +555,10 @@ export function MarketDataView() {
   };
 
   const fetchMt5CandlesForChart = async () => {
-    const brokerSymbol = mt5BrokerSymbol.trim() || symbol;
+    const brokerSymbol = mt5BrokerSymbol.trim() || undefined;
+    const brokerSymbolLabel = brokerSymbol ?? "wrapper default";
     const limit = Number(mt5CandleLimit) || 400;
-    setMt5FeedMessage(`Fetching MT5 read-only candles for ${brokerSymbol} ${timeframe}...`);
+    setMt5FeedMessage(`Fetching MT5 read-only candles for GoTrader ${symbol} via MT5 ${brokerSymbolLabel} ${timeframe}...`);
     setChartVerification(undefined);
     const settings = saveMt5ReadOnlySettings({ ...loadMt5ReadOnlySettings(), enabled: true, brokerSymbolOverride: mt5BrokerSymbol.trim() || undefined });
     const candles = await fetchMt5ReadOnlyCandles({ symbol, brokerSymbol, timeframe, limit }, settings);
@@ -600,11 +602,12 @@ export function MarketDataView() {
   };
 
   const useMt5CandlesAsSource = async (usageMode: "chart_only" | "research_source") => {
-    const brokerSymbol = mt5BrokerSymbol.trim() || symbol;
+    const brokerSymbol = mt5BrokerSymbol.trim() || undefined;
+    const brokerSymbolLabel = brokerSymbol ?? "wrapper default";
     setMt5FeedMessage(
       usageMode === "research_source"
-        ? `Evaluating MT5 read-only candles as research source for ${brokerSymbol} ${timeframe}...`
-        : `Loading MT5 read-only candles into GoTrader chart for ${brokerSymbol} ${timeframe}...`
+        ? `Evaluating MT5 read-only candles as research source for GoTrader ${symbol} via MT5 ${brokerSymbolLabel} ${timeframe}...`
+        : `Loading MT5 read-only candles into GoTrader chart for GoTrader ${symbol} via MT5 ${brokerSymbolLabel} ${timeframe}...`
     );
     setChartVerification(undefined);
     const feed = mt5Feed?.candleCount
@@ -801,7 +804,7 @@ export function MarketDataView() {
                   setMt5BrokerSymbol(event.target.value);
                   saveMt5ReadOnlySettings({ brokerSymbolOverride: event.target.value.trim() || undefined });
                 }}
-                placeholder={symbol}
+                placeholder="Wrapper default"
               />
             </div>
             <div className="space-y-2">
@@ -842,7 +845,8 @@ export function MarketDataView() {
           </div>
           <div className="grid gap-3 md:grid-cols-4">
             <StatusTile label="Bridge" value={formatToken(mt5Runtime.connectionStatus)} />
-            <StatusTile label="Broker symbol" value={mt5Runtime.brokerSymbol ?? (mt5BrokerSymbol || symbol)} />
+            <StatusTile label="GoTrader symbol" value={symbol} />
+            <StatusTile label="Broker symbol" value={(mt5Runtime.brokerSymbol ?? mt5BrokerSymbol) || "wrapper default"} />
             <StatusTile label="Quote latest" value={String(mt5Runtime.latestPrice ?? mt5Quote?.mid ?? mt5Quote?.bid ?? "none")} />
             <StatusTile label="Spread" value={String(mt5Runtime.spread ?? mt5Quote?.spread ?? "n/a")} />
             <StatusTile label="Candles" value={String(mt5Candles?.returnedCount ?? mt5Runtime.candleCount)} />
@@ -857,6 +861,10 @@ export function MarketDataView() {
           <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
             <p className="font-medium">MT5 status: {formatToken(mt5Runtime.researchEligibility)}</p>
             <p className="mt-1 text-xs">{mt5FeedMessage ?? mt5Runtime.eligibilityReasons.join(" ")}</p>
+            <p className="mt-2 text-xs">
+              GoTrader requested symbol <span className="font-mono">{symbol}</span>; MT5 broker symbol{" "}
+              <span className="font-mono">{(mt5Runtime.brokerSymbol ?? mt5BrokerSymbol) || "wrapper default"}</span>. Broker CFD/proxy data such as USTECH is read-only and not CME MNQ futures broker truth.
+            </p>
           </div>
         </CardContent>
       </Card>

@@ -24,8 +24,8 @@ const authority = {
 };
 
 const symbolAliases: Record<string, string[]> = {
-  MNQ: ["MNQ", "MNQ.Z", "MNQM", "MICRO NASDAQ", "MICRO NASDAQ 100"],
-  NQ: ["NQ", "NAS100", "US100", "USTEC", "NASDAQ", "NASDAQ100"],
+  MNQ: ["MNQ", "MNQ.Z", "MNQM", "MICRO NASDAQ", "MICRO NASDAQ 100", "NAS100", "US100", "USTEC", "USTECH"],
+  NQ: ["NQ", "NAS100", "US100", "USTEC", "USTECH", "NASDAQ", "NASDAQ100"],
   ES: ["ES", "SPX500", "US500", "SP500", "S&P500"],
   YM: ["YM", "US30", "DJ30", "DOW", "DOW30"],
   XAUUSD: ["XAUUSD", "GOLD", "XAU/USD"],
@@ -269,7 +269,7 @@ const toFuturesSymbol = (symbol?: string): FuturesSymbol => {
   if (futuresSymbols.has(normalized as FuturesSymbol)) {
     return normalized as FuturesSymbol;
   }
-  if (["NAS100", "US100", "USTEC", "NASDAQ", "NASDAQ100"].includes(normalized)) {
+  if (["NAS100", "US100", "USTEC", "USTECH", "NASDAQ", "NASDAQ100"].includes(normalized)) {
     return "NQ";
   }
   if (["SPX500", "US500", "SP500", "S&P500"].map(canonical).includes(normalized)) {

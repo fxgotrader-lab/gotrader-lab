@@ -115,6 +115,11 @@ const endpoint = (settings: Mt5ReadOnlySettings, path: string, params?: Record<s
   return url.toString();
 };
 
+const selectedBrokerSymbol = (
+  requestBrokerSymbol?: string,
+  settingsBrokerSymbol?: string
+) => requestBrokerSymbol?.trim() || settingsBrokerSymbol?.trim() || undefined;
+
 const fetchJson = async <T>(url: string): Promise<T> => {
   const controller = new AbortController();
   const timeout = globalThis.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -172,20 +177,21 @@ export async function fetchMt5ReadOnlyQuote(
   request: { symbol: string; brokerSymbol?: string },
   settings: Mt5ReadOnlySettings = loadMt5ReadOnlySettings()
 ): Promise<Mt5ReadOnlyQuote> {
-  const brokerSymbol = request.brokerSymbol || settings.brokerSymbolOverride || request.symbol;
+  const brokerSymbol = selectedBrokerSymbol(request.brokerSymbol, settings.brokerSymbolOverride);
   try {
     const payload = await fetchJson<Partial<Mt5ReadOnlyQuote>>(
       endpoint(settings, "quote", { requestedSymbol: request.symbol, symbol: brokerSymbol })
     );
     const bid = typeof payload.bid === "number" ? payload.bid : undefined;
     const ask = typeof payload.ask === "number" ? payload.ask : undefined;
-    const mid = typeof payload.mid === "number" ? payload.mid : bid !== undefined && ask !== undefined ? (bid + ask) / 2 : undefined;
+    const upstreamMid = typeof payload.mid === "number" ? payload.mid : undefined;
+    const mid = upstreamMid && upstreamMid > 0 ? upstreamMid : bid !== undefined && ask !== undefined ? (bid + ask) / 2 : upstreamMid;
     const spread = typeof payload.spread === "number" ? payload.spread : bid !== undefined && ask !== undefined ? ask - bid : undefined;
     return {
       provider: "mt5_read_only",
-      symbol: payload.symbol ?? brokerSymbol,
+      symbol: payload.symbol ?? brokerSymbol ?? request.symbol,
       requestedSymbol: payload.requestedSymbol ?? request.symbol,
-      brokerSymbol,
+      brokerSymbol: payload.brokerSymbol ?? brokerSymbol,
       bid,
       ask,
       mid,
@@ -202,7 +208,7 @@ export async function fetchMt5ReadOnlyQuote(
   } catch {
     return {
       provider: "mt5_read_only",
-      symbol: brokerSymbol,
+      symbol: brokerSymbol ?? request.symbol,
       requestedSymbol: request.symbol,
       brokerSymbol,
       connectionStatus: "disconnected",
@@ -218,9 +224,9 @@ const disconnectedCandles = (
   settings: Mt5ReadOnlySettings
 ): Mt5ReadOnlyCandlesResponse => ({
   provider: "mt5_read_only",
-  symbol: request.brokerSymbol || settings.brokerSymbolOverride || request.symbol,
+  symbol: selectedBrokerSymbol(request.brokerSymbol, settings.brokerSymbolOverride) || request.symbol,
   requestedSymbol: request.symbol,
-  brokerSymbol: request.brokerSymbol || settings.brokerSymbolOverride || request.symbol,
+  brokerSymbol: selectedBrokerSymbol(request.brokerSymbol, settings.brokerSymbolOverride),
   timeframe: request.timeframe,
   requestedTimeframe: request.timeframe,
   requestedLimit: Math.max(1, request.limit ?? 240),
@@ -237,7 +243,7 @@ export async function fetchMt5ReadOnlyCandles(
   request: { symbol: string; timeframe: string; limit?: number; brokerSymbol?: string },
   settings: Mt5ReadOnlySettings = loadMt5ReadOnlySettings()
 ): Promise<Mt5ReadOnlyCandlesResponse> {
-  const brokerSymbol = request.brokerSymbol || settings.brokerSymbolOverride || request.symbol;
+  const brokerSymbol = selectedBrokerSymbol(request.brokerSymbol, settings.brokerSymbolOverride);
   try {
     const payload = await fetchJson<Partial<Mt5ReadOnlyCandlesResponse>>(
       endpoint(settings, "candles", {
@@ -250,7 +256,7 @@ export async function fetchMt5ReadOnlyCandles(
     const candles = Array.isArray(payload.candles) ? payload.candles : [];
     return {
       provider: "mt5_read_only",
-      symbol: payload.symbol ?? brokerSymbol,
+      symbol: payload.symbol ?? brokerSymbol ?? request.symbol,
       requestedSymbol: request.symbol,
       brokerSymbol: payload.brokerSymbol ?? brokerSymbol,
       timeframe: payload.timeframe ?? request.timeframe,
