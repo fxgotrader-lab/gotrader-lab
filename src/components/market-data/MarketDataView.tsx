@@ -366,7 +366,7 @@ export function MarketDataView() {
       setTradingViewRuntime(resolveTradingViewMcpRuntimeState());
       if (status.connectionStatus !== "connected_analysis_only") {
         setTradingViewFeedMessage(
-          "Wrapper not running. Start npm.cmd run tradingview:mcp-bridge, then click Connect TradingView MCP again."
+          "TradingView MCP port is disconnected or occupied but not responding. Run npm.cmd run tradingview:mcp-diagnose-port. If stale, run npm.cmd run tradingview:mcp-stop, then restart npm.cmd run tradingview:mcp-bridge."
         );
         return;
       }

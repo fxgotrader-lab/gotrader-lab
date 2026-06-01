@@ -143,6 +143,62 @@ npm.cmd run test:tradingview-mcp
 
 If the wrapper is not running, the test reports disconnected and exits successfully. That is intentional so build/smoke validation does not require TradingView Desktop.
 
+## Diagnose, Stop, Or Restart A Stale Wrapper
+
+If starting the wrapper prints `EADDRINUSE`, port `7331` is already occupied. The start script now probes
+`http://127.0.0.1:7331/health` before failing:
+
+- if a healthy GoTrader wrapper is already running, it prints the URL and exits successfully
+- if the port is occupied by a stale wrapper or another process, it prints the PID/process details and next commands
+- it does not dump a raw Node stack trace for normal stale-port recovery
+
+Run the port diagnostic:
+
+```powershell
+npm.cmd run tradingview:mcp-diagnose-port
+```
+
+The diagnostic checks:
+
+- whether port `7331` is free
+- listener PID
+- process name/path/command line when Windows exposes it
+- `GET /health`
+- `GET /status`
+- `GET /candles?symbol=MNQ&timeframe=5m&limit=5`
+
+It reports one of:
+
+- `free`
+- `healthy_gotrader_wrapper`
+- `stale_gotrader_wrapper`
+- `wrong_process`
+- `occupied_unresponsive`
+
+Stop a stale GoTrader wrapper:
+
+```powershell
+npm.cmd run tradingview:mcp-stop
+```
+
+The stop helper only stops listeners that look like a Node-based GoTrader TradingView MCP wrapper. If another unknown
+process owns the port, it prints a warning and refuses to kill it by default. To override:
+
+```powershell
+$env:FORCE_STOP_TRADINGVIEW_MCP_BRIDGE="true"
+npm.cmd run tradingview:mcp-stop
+```
+
+Restart the wrapper:
+
+```powershell
+$env:TRADINGVIEW_MCP_REPO_DIR="C:\Users\andre\tradingview-mcp"
+npm.cmd run tradingview:mcp-restart
+```
+
+`tradingview:mcp-restart` stops a safe stale GoTrader wrapper if needed, then starts
+`scripts/start-tradingview-mcp-bridge.mjs` in the current terminal. Keep that terminal open while using the bridge.
+
 Full local sequence:
 
 ```powershell
@@ -266,6 +322,8 @@ If GoTrader Settings still shows disconnected:
 
 - keep the wrapper terminal open
 - check that the URL matches `http://127.0.0.1:7331`
+- run `npm.cmd run tradingview:mcp-diagnose-port`
+- if the port is stale, run `npm.cmd run tradingview:mcp-stop`, then restart the wrapper
 - click `Check status` again
 
 ## Current Limits
@@ -275,5 +333,6 @@ The GoTrader wrapper currently uses read-only CLI commands:
 - `status`
 - `quote`
 - `ohlcv --summary`
+- `ohlcv --count`
 
 It does not collect screenshots, indicator values, Pine drawing levels, or multi-pane evidence yet. Those can be added later as bounded evidence mappings, still with no execution authority.

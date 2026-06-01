@@ -212,7 +212,8 @@ export function MissionControlShell({ state }: { state: LabState }) {
       await resolveAndStoreRuntime().catch(() => undefined);
 
       if (status.connectionStatus !== "connected_analysis_only") {
-        const message = "Wrapper not running. Start npm.cmd run tradingview:mcp-bridge, then try again.";
+        const message =
+          "TradingView MCP port is disconnected or occupied but not responding. Run npm.cmd run tradingview:mcp-diagnose-port. If stale, run npm.cmd run tradingview:mcp-stop, then restart npm.cmd run tradingview:mcp-bridge.";
         setTradingViewOperationMessage(message);
         addDataConnectionEvent("TradingView MCP failed", message, "failed", status.message);
         return;
@@ -707,7 +708,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
               <TradingChart key={commandCenterChart.source.sourceKey} {...commandCenterChart} heightClassName="h-[360px]" />
             ) : (
               <div className="flex h-[360px] items-center justify-center text-sm text-slate-500">
-                Chart data is loading. Connect TradingView MCP or activate imported candles.
+                No chart data loaded. Connect TradingView MCP or activate imported candles.
               </div>
             )}
           </div>
@@ -1358,7 +1359,7 @@ function buildActionItems(snapshot?: ResearchRuntimeSnapshot, run?: AutonomousRe
   if (!snapshot.marketData.isImportedDataActive) {
     items.push({
       id: "imported-data",
-      title: "Imported data unavailable",
+      title: "Imported source inactive",
       detail: `Not valid for imported MNQ comparison. ${snapshot.marketData.importedDataMessage}`,
       href: "/market-data",
       severity: "warning"

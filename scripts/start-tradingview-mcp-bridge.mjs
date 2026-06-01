@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
+import { compactProcess, diagnoseBridgePort } from "./tradingview-bridge-port-utils.mjs";
 
 const host = process.env.TRADINGVIEW_MCP_BRIDGE_HOST || "127.0.0.1";
 const port = Number(process.env.TRADINGVIEW_MCP_BRIDGE_PORT || 7331);
@@ -594,6 +595,33 @@ const server = createServer(async (req, res) => {
     message: "Supported routes: GET /health, GET /status, GET /, POST /evidence, GET /evidence?symbol=...&timeframe=..., GET /quote, GET /candles, GET /snapshot",
     ...authority
   });
+});
+
+server.on("error", async (error) => {
+  if (error?.code !== "EADDRINUSE") {
+    console.error(`TradingView MCP wrapper failed: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
+
+  const diagnosis = await diagnoseBridgePort({ host, port, includeCandles: false });
+  if (diagnosis.status === "healthy_gotrader_wrapper") {
+    console.log(`TradingView MCP wrapper already running at ${diagnosis.url}`);
+    console.log("Use npm.cmd run test:tradingview-mcp or connect from Command Center.");
+    process.exit(0);
+  }
+
+  const listener = diagnosis.listeners[0];
+  console.error(
+    `Port ${port} is occupied${listener?.pid ? ` by PID ${listener.pid}` : ""}, but it is not responding as the GoTrader wrapper.`
+  );
+  if (listener?.process) {
+    console.error(compactProcess(listener.process));
+  }
+  console.error("Next steps:");
+  console.error("  npm.cmd run tradingview:mcp-diagnose-port");
+  console.error("  npm.cmd run tradingview:mcp-stop");
+  console.error(diagnosis.nextRecommendedAction);
+  process.exit(1);
 });
 
 server.listen(port, host, () => {

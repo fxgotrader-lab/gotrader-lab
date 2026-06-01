@@ -1,3 +1,5 @@
+import { diagnoseBridgePort, isGoTraderWrapperPayload } from "./tradingview-bridge-port-utils.mjs";
+
 const bridgeUrl = (process.env.TRADINGVIEW_MCP_BRIDGE_URL || "http://127.0.0.1:7331").replace(/\/$/, "");
 const symbol = process.env.TRADINGVIEW_MCP_TEST_SYMBOL || "MNQ";
 const timeframe = process.env.TRADINGVIEW_MCP_TEST_TIMEFRAME || "5m";
@@ -119,12 +121,26 @@ try {
   });
 }
 
-const connected = checks.some((check) => check.ok);
+const wrapperConnected = checks.some((check) => check.ok && isGoTraderWrapperPayload(check.payload));
+const connected = wrapperConnected;
 const candlesCheck = checks.find((check) => String(check.endpoint).startsWith("GET /candles"));
 const candlePayload = candlesCheck?.payload && typeof candlesCheck.payload === "object" ? candlesCheck.payload : undefined;
 const quoteCheck = checks.find((check) => String(check.endpoint).startsWith("GET /quote"));
 const quotePayload = quoteCheck?.payload && typeof quoteCheck.payload === "object" ? quoteCheck.payload : undefined;
 const depthReturnedCount = Number(depthPayload?.returnedCount ?? depthPayload?.candleCount ?? 0);
+let portDiagnosis;
+if (!wrapperConnected) {
+  try {
+    const parsedUrl = new URL(bridgeUrl);
+    portDiagnosis = await diagnoseBridgePort({
+      host: parsedUrl.hostname,
+      port: Number(parsedUrl.port || 80),
+      includeCandles: false
+    });
+  } catch {
+    portDiagnosis = undefined;
+  }
+}
 
 console.log(
   JSON.stringify(
@@ -170,7 +186,21 @@ console.log(
       mode: "read_only_chart_data",
       note: connected
         ? "Bridge responded. Evidence and candle feed remain read-only and advisory."
-        : "Bridge did not respond. This is expected unless the local wrapper is running.",
+        : portDiagnosis?.listeners?.length
+          ? "Port is occupied but wrapper did not respond. Run npm.cmd run tradingview:mcp-diagnose-port."
+          : "Bridge did not respond. This is expected unless the local wrapper is running.",
+      portDiagnosis: portDiagnosis
+        ? {
+            status: portDiagnosis.status,
+            listeners: portDiagnosis.listeners.map((listener) => ({
+              localAddress: listener.localAddress,
+              pid: listener.pid,
+              processName: listener.process?.name,
+              executablePath: listener.process?.executablePath
+            })),
+            nextRecommendedAction: portDiagnosis.nextRecommendedAction
+          }
+        : undefined,
       ...authority,
       checks
     },

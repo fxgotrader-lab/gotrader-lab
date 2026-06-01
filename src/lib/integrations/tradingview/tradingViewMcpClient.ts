@@ -104,6 +104,7 @@ export async function checkTradingViewMcpBridgeStatus(
 
   return disconnectedStatus(settings, "TradingView MCP bridge did not respond.", [
     "Start the local TradingView MCP bridge and ensure CORS allows this app origin.",
+    "If port 7331 is occupied but disconnected, run npm.cmd run tradingview:mcp-diagnose-port, then npm.cmd run tradingview:mcp-stop if it is a stale GoTrader wrapper.",
     "No TradingView evidence was imported."
   ]);
 }
