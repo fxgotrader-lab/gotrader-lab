@@ -16,7 +16,6 @@ import {
   getImportedDataPreset,
   getWalkForwardDataPreset,
   loadCandleWindowSettings,
-  loadPreparedWalkForwardCandleSource,
   loadWalkForwardCandleWindowSettings,
   MARKET_DATA_IMPORT_UPDATED_EVENT,
   saveWalkForwardCandleWindowSettings,
@@ -24,7 +23,6 @@ import {
   WALK_FORWARD_WINDOW_SETTINGS_UPDATED_EVENT,
   walkForwardDataPresetSettings,
   type CandleWindowSettings,
-  type PreparedCandleSource,
   type WalkForwardDataPreset
 } from "@/lib/marketData";
 import {
@@ -38,6 +36,7 @@ import {
   createWalkForwardWindows,
   latestWalkForwardRun,
   loadWalkForwardState,
+  loadPreparedCanonicalWalkForwardCandleSource,
   runWalkForwardValidation,
   splitRatioPresets,
   walkForwardModeWindowSize,
@@ -46,6 +45,7 @@ import {
   type WalkForwardRun,
   type WalkForwardSplitRatioPreset
 } from "@/lib/walkForward";
+import type { ResolvedWalkForwardCandleSource } from "@/lib/walkForward/walkForwardSourceResolver";
 
 const verdictVariant = (verdict?: string) =>
   verdict === "paper_demo_review_candidate" || verdict === "robust_research"
@@ -65,7 +65,7 @@ const formatRatio = (value: number) => `${Math.round(value * 100)}%`;
 const formatDate = (value?: string) => (value ? new Date(value).toLocaleString() : "not run");
 const minimumProcessedCandlesFor = (mode: WalkForwardMode, requiredWindows = 3) =>
   walkForwardModeWindowSize[mode] + Math.max(0, requiredWindows - 1);
-const emptyWalkForwardSource: PreparedCandleSource = {
+const emptyWalkForwardSource: ResolvedWalkForwardCandleSource = {
   mode: "mock",
   label: "Loading walk-forward candles",
   candles: [],
@@ -76,7 +76,13 @@ const emptyWalkForwardSource: PreparedCandleSource = {
   appliedSettings: walkForwardDataPresetSettings.safe,
   aggregationApplied: false,
   performanceMode: "safe",
-  warnings: []
+  warnings: [],
+  dataQuality: "insufficient",
+  provider: "mock",
+  sourceFingerprint: "loading",
+  sourceWarnings: [],
+  walkForwardEligible: false,
+  walkForwardEligibilityReasons: ["Walk-forward source is still loading."]
 };
 
 export function WalkForwardView() {
@@ -87,7 +93,7 @@ export function WalkForwardView() {
   const [maxWindows, setMaxWindows] = useState(3);
   const [dashboardWindowSettings, setDashboardWindowSettings] = useState<CandleWindowSettings>(() => loadCandleWindowSettings());
   const [walkForwardSettings, setWalkForwardSettings] = useState<CandleWindowSettings>(() => loadWalkForwardCandleWindowSettings());
-  const [walkForwardSource, setWalkForwardSource] = useState<PreparedCandleSource>(emptyWalkForwardSource);
+  const [walkForwardSource, setWalkForwardSource] = useState<ResolvedWalkForwardCandleSource>(emptyWalkForwardSource);
   const [customInSample, setCustomInSample] = useState(60);
   const [customValidation, setCustomValidation] = useState(20);
   const [customOutOfSample, setCustomOutOfSample] = useState(20);
@@ -106,7 +112,7 @@ export function WalkForwardView() {
     setLatestRun(latestWalkForwardRun(loadWalkForwardState()));
     setDashboardWindowSettings(loadCandleWindowSettings());
     setWalkForwardSettings(loadWalkForwardCandleWindowSettings());
-    void loadPreparedWalkForwardCandleSource()
+    void loadPreparedCanonicalWalkForwardCandleSource()
       .then(setWalkForwardSource)
       .catch(() => undefined);
     void resolveResearchRuntimeSnapshot()
@@ -139,8 +145,8 @@ export function WalkForwardView() {
       : 0;
 
   const run = async () => {
-    if (walkForwardSource.mode !== "imported") {
-      setActionMessage("Walk-forward imported-data validation requires an active imported dataset. Reactivate or re-import MNQ data on Market Data first.");
+    if (!walkForwardSource.walkForwardEligible) {
+      setActionMessage(walkForwardSource.walkForwardEligibilityReasons[0] ?? "Active walk-forward source is not eligible yet.");
       return;
     }
     if (expectedWindows < 3) {
@@ -209,19 +215,34 @@ export function WalkForwardView() {
   const minimumProcessedCandles = minimumProcessedCandlesFor(mode);
   const walkForwardPreset = getWalkForwardDataPreset(walkForwardSettings);
   const dashboardPreset = getImportedDataPreset(dashboardWindowSettings);
+  const providerLabel = walkForwardSource.provider.replace(/_/g, " ");
+  const sourceSymbolLabel = [
+    walkForwardSource.candles[0]?.symbol ?? runtimeSnapshot?.marketData.symbol ?? "unknown",
+    walkForwardSource.brokerSymbol ? `broker ${walkForwardSource.brokerSymbol}` : undefined
+  ].filter(Boolean).join(" / ");
+  const sourceRangeLabel = [
+    walkForwardSource.candles[0]?.timestamp ?? "n/a",
+    walkForwardSource.candles[walkForwardSource.candles.length - 1]?.timestamp ?? "n/a"
+  ].join(" -> ");
+  const sourceEligibilityLabel = walkForwardSource.walkForwardEligible
+    ? "eligible"
+    : walkForwardSource.walkForwardEligibilityReasons[0] ?? "not eligible";
   const usingDashboardSafeData =
     walkForwardSource.mode === "imported" &&
     walkForwardSource.researchWindowCandles <= 500 &&
     walkForwardSource.appliedSettings.targetTimeframe === "5m";
   const feasibilityWarnings = [
-    walkForwardSource.mode !== "imported"
-      ? "Walk-forward is using mock data. Reactivate imported MNQ data before running imported-data validation."
-      : undefined,
+    walkForwardSource.mode === "mt5_read_only"
+      ? "Walk-forward is using MT5 read-only provider/proxy data. Imported historical remains preferred before promotion."
+      : walkForwardSource.mode !== "imported"
+        ? walkForwardSource.walkForwardEligibilityReasons[0] ?? "Active walk-forward source is not eligible yet."
+        : undefined,
     expectedWindows < 3 ? "Not enough data for meaningful walk-forward. Increase raw window." : undefined,
     usingDashboardSafeData
       ? "Walk-forward is using Dashboard Safe data. Select a larger walk-forward data preset for meaningful validation."
       : undefined,
-    walkForwardSettings.windowSize > 10000 ? "Raw walk-forward window above 10,000 candles can be heavy in the browser." : undefined
+    walkForwardSettings.windowSize > 10000 ? "Raw walk-forward window above 10,000 candles can be heavy in the browser." : undefined,
+    ...walkForwardSource.sourceWarnings
   ].filter((warning): warning is string => Boolean(warning));
 
   const createFollowUpSearch = () => {
@@ -253,15 +274,15 @@ export function WalkForwardView() {
     <div className="space-y-5">
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
         <div>
-          <p className="text-sm uppercase text-primary">Imported-data validation</p>
+          <p className="text-sm uppercase text-primary">Canonical source validation</p>
           <h2 className="mt-1 text-3xl font-semibold tracking-normal">Walk-Forward Validation</h2>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
             Tests active calibration behavior across in-sample, validation, and out-of-sample windows so one selected
             candle window cannot masquerade as robust research.
           </p>
         </div>
-        <Badge variant={runtimeSnapshot?.marketData.isImportedDataActive ? "success" : "warning"}>
-          {runtimeSnapshot?.marketData.isImportedDataActive ? "imported data active" : "mock data warning"}
+        <Badge variant={walkForwardSource.walkForwardEligible ? "success" : "warning"}>
+          {walkForwardSource.walkForwardEligible ? `${providerLabel} source eligible` : `${providerLabel} source guarded`}
         </Badge>
       </div>
 
@@ -274,10 +295,13 @@ export function WalkForwardView() {
       ) : null}
 
       <Card className="border-cyan-400/20 bg-cyan-400/5">
-        <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-2 xl:grid-cols-5">
+        <CardContent className="grid gap-3 p-4 text-sm text-cyan-50 md:grid-cols-2 xl:grid-cols-6">
           <StatusTile label="Dashboard research preset" value={`${dashboardPreset} / ${runtimeSnapshot ? `${runtimeSnapshot.marketData.researchWindow.toLocaleString()} raw -> ${runtimeSnapshot.marketData.processedCandleCount.toLocaleString()} ${runtimeSnapshot.marketData.timeframe}` : "loading"}`} />
+          <StatusTile label="Active walk-forward source" value={`${providerLabel} / ${walkForwardSource.label}`} />
+          <StatusTile label="Requested / broker symbol" value={sourceSymbolLabel} />
           <StatusTile label="Walk-forward data preset" value={`${walkForwardPreset} / ${walkForwardSource.researchWindowCandles.toLocaleString()} raw -> ${walkForwardSource.processedCandleCount.toLocaleString()} ${walkForwardSource.appliedSettings.targetTimeframe}`} />
-          <StatusTile label="Raw imported dataset" value={walkForwardSource.mode === "imported" ? walkForwardSource.rawCandleCount.toLocaleString() : "mock data"} />
+          <StatusTile label="First / last candle" value={sourceRangeLabel} />
+          <StatusTile label="Source eligibility" value={sourceEligibilityLabel} />
           <StatusTile label="Minimum processed needed" value={`${minimumProcessedCandles.toLocaleString()} for ${mode} / 3 windows`} />
           <StatusTile label="Active calibration" value={runtimeSnapshot?.activeConfig.activeCalibrationId ?? "default baseline"} />
         </CardContent>
@@ -416,9 +440,9 @@ export function WalkForwardView() {
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2">
-              <Button onClick={run} disabled={busy || walkForwardSource.mode !== "imported"} className="justify-center gap-2">
+              <Button onClick={run} disabled={busy || !walkForwardSource.walkForwardEligible || expectedWindows < 3} className="justify-center gap-2">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
-                {busy ? "Walk-forward running" : walkForwardSource.mode !== "imported" ? "Reactivate imported data first" : "Run Walk-Forward"}
+                {busy ? "Walk-forward running" : !walkForwardSource.walkForwardEligible ? "Source not eligible" : expectedWindows < 3 ? "Need more windows" : "Run Walk-Forward"}
               </Button>
               {busy ? (
                 <Button variant="destructive" onClick={cancel} className="justify-center gap-2">

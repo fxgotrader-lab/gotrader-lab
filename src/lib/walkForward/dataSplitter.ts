@@ -68,7 +68,7 @@ export function resolveSplitRatio(
 
 const metadataFor = (source: PreparedCandleSource) => ({
   aggregateTimeframe: source.appliedSettings.targetTimeframe,
-  dataSource: source.mode === "imported" ? source.label : "Mock candles",
+  dataSource: source.mode === "mock" ? "Mock candles" : source.label,
   symbol: source.metadata?.symbol ?? source.candles[0]?.symbol ?? "NQ",
   contract: source.metadata?.contract
 });

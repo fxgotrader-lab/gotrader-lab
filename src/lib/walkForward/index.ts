@@ -6,6 +6,8 @@ export {
   walkForwardModeWindowSize
 } from "@/lib/walkForward/dataSplitter";
 export { analyzeWalkForwardStability } from "@/lib/walkForward/stabilityAnalyzer";
+export { loadPreparedCanonicalWalkForwardCandleSource } from "@/lib/walkForward/walkForwardSourceResolver";
+export type { ResolvedWalkForwardCandleSource } from "@/lib/walkForward/walkForwardSourceResolver";
 export {
   clearWalkForwardHistory,
   latestWalkForwardRun,

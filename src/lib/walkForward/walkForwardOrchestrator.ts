@@ -2,8 +2,7 @@ import { runBacktest, type BacktestResult, type ResolvedBacktestConfig } from "@
 import {
   buildMarketContext,
   getImportedDataPreset,
-  getWalkForwardDataPreset,
-  loadPreparedWalkForwardCandleSource
+  getWalkForwardDataPreset
 } from "@/lib/marketData";
 import { classifyMarketRegime } from "@/lib/regime";
 import type { RegimeClassification } from "@/lib/regime";
@@ -20,6 +19,7 @@ import {
   saveWalkForwardProgress,
   saveWalkForwardRun
 } from "@/lib/walkForward/walkForwardStorage";
+import { loadPreparedCanonicalWalkForwardCandleSource } from "@/lib/walkForward/walkForwardSourceResolver";
 import type {
   WalkForwardMode,
   WalkForwardRun,
@@ -43,6 +43,12 @@ const modeMaxWindows: Record<WalkForwardMode, number> = {
 const DEFAULT_MINIMUM_WINDOWS = 3;
 const DEFAULT_MINIMUM_OOS_TRADES_PER_WINDOW = 5;
 const DEFAULT_MINIMUM_TOTAL_OOS_TRADES = 20;
+
+const marketContextModeFor = (sourceMode: string) =>
+  sourceMode === "imported" ? "imported" as const : sourceMode === "mt5_read_only" ? "future_provider" as const : "mock" as const;
+
+const evidenceQualityScoreFor = (sourceMode: string) =>
+  sourceMode === "imported" ? 82 : sourceMode === "mt5_read_only" ? 52 : 34;
 
 const passFailReasonsFor = (metrics: WalkForwardWindowMetrics, split: WalkForwardSplitLabel) => [
   metrics.totalTrades < (split === "out_of_sample" ? DEFAULT_MINIMUM_OOS_TRADES_PER_WINDOW : 2)
@@ -189,12 +195,12 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
   const started = Date.now();
   const runId = uid("walk_forward");
   const mode = options.mode ?? "safe";
-  const source = await loadPreparedWalkForwardCandleSource();
+  const source = await loadPreparedCanonicalWalkForwardCandleSource();
   const activeConfig = resolveActiveBacktestConfig();
   const ratio = resolveSplitRatio(options.splitRatioPreset ?? "60_20_20", options.customRatio);
   const requestedMaxWindows = Math.max(1, options.maxWindows ?? modeMaxWindows[mode]);
   const maxWindows = Math.max(1, Math.min(requestedMaxWindows, modeMaxWindows[mode]));
-  const dataPreset = source.mode === "imported" ? getImportedDataPreset(source.appliedSettings) : "mock";
+  const dataPreset = source.mode === "imported" ? getImportedDataPreset(source.appliedSettings) : source.mode === "mt5_read_only" ? "custom" : "mock";
   const walkForwardDataPreset = source.mode === "imported" ? getWalkForwardDataPreset(source.appliedSettings) : "custom";
   const windows = createWalkForwardWindows({
     candles: source.candles,
@@ -217,7 +223,7 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
       ? "Use Standard preset, a larger raw candle window, or adjusted split settings to reach the preferred 3 windows."
       : undefined
   ].filter((note): note is string => Boolean(note));
-  const evidenceQualityScore = source.mode === "imported" ? 82 : 34;
+  const evidenceQualityScore = evidenceQualityScoreFor(source.mode);
   let run: WalkForwardRun = {
     runId,
     startedAt: now(),
@@ -233,6 +239,11 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
     dataSource: source.mode,
     dataSourceLabel: source.label,
     dataPreset,
+    sourceProvider: source.provider,
+    sourceFingerprint: source.sourceFingerprint,
+    sourceDataQuality: source.dataQuality,
+    sourceWarnings: source.sourceWarnings,
+    providerSymbol: source.brokerSymbol,
     symbol: source.metadata?.symbol ?? source.candles[0]?.symbol ?? activeConfig.config.symbol,
     contract: source.metadata?.contract,
     timeframe: source.appliedSettings.targetTimeframe,
@@ -244,10 +255,15 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
     proposalId: options.proposalId,
     windows: [],
     warnings: [
-      source.mode !== "imported" ? "Walk-forward validation is most meaningful with imported historical OHLCV data; mock candles cap confidence." : undefined,
+      source.mode === "mt5_read_only"
+        ? "Walk-forward validation is using MT5 read-only provider/proxy data. Imported historical remains preferred before promotion."
+        : source.mode !== "imported"
+          ? "Walk-forward validation is most meaningful with imported historical OHLCV data; mock candles cap confidence."
+          : undefined,
       windows.length < DEFAULT_MINIMUM_WINDOWS
         ? `Only ${windows.length} walk-forward window(s) could be created; ${DEFAULT_MINIMUM_WINDOWS} are preferred before judging strategy quality.`
-        : undefined
+        : undefined,
+      ...source.sourceWarnings
     ].filter((warning): warning is string => Boolean(warning)),
     safetyNotice: "Walk-forward validation is simulation-only. It cannot execute trades, enable demo/live mode, or override readiness."
   };
@@ -295,7 +311,7 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
         const splitMarketContext = buildMarketContext({
           symbol: split.symbol,
           timeframe: split.aggregateTimeframe,
-          mode: source.mode === "imported" ? "imported" : "mock",
+          mode: marketContextModeFor(source.mode),
           candles: split.candles
         });
         const splitRegime = classifyMarketRegime({

@@ -252,6 +252,11 @@ export interface WalkForwardRun {
   dataSource: string;
   dataSourceLabel: string;
   dataPreset: RuntimeDataPreset;
+  sourceProvider?: string;
+  sourceFingerprint?: string;
+  sourceDataQuality?: string;
+  sourceWarnings?: string[];
+  providerSymbol?: string;
   symbol: FuturesSymbol;
   contract?: string;
   timeframe: Timeframe;

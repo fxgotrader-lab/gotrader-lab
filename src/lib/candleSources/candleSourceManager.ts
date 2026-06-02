@@ -207,7 +207,7 @@ export function canonicalSourceFromMt5ReadOnlyFeed(feed?: ActiveMt5ReadOnlyCandl
     symbol: feed.symbol,
     timeframe: feed.timeframe,
     userSelectedForResearch: feed.activeForResearch,
-    userSelectedForWalkForward: false,
+    userSelectedForWalkForward: feed.activeForResearch && feed.researchEligibility.walkForwardEligible,
     warnings: [
       ...feed.warnings,
       "MT5 read-only candles are market data only and not execution authority."
@@ -254,7 +254,7 @@ export function resolveCanonicalCandleSourceManager({
       ? "MT5 read-only is available for chart display but not eligible for research/walk-forward."
       : undefined,
     activeWalkForward.provider !== "imported_historical"
-      ? "Walk-forward source is not imported historical data; keep walk-forward blocked until sufficient read-only historical depth exists."
+      ? "Walk-forward source is not imported historical data; treat results as read-only provider/proxy validation and cross-validate with imported historical data before promotion."
       : undefined
   ].filter((warning): warning is string => Boolean(warning));
 
