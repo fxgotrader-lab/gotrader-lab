@@ -39,7 +39,10 @@ export interface Mt5ReadOnlyStatus extends Mt5ReadOnlyAuthority {
 export interface Mt5ReadOnlySettings {
   bridgeUrl: string;
   enabled: boolean;
+  requestedSymbol?: string;
   brokerSymbolOverride?: string;
+  timeframe?: string;
+  candleLimit?: number;
 }
 
 export interface Mt5ReadOnlySymbolInfo extends Mt5ReadOnlyAuthority {

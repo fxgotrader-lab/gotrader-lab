@@ -129,6 +129,8 @@ export function ICTLab() {
   const chartSourceType = displaySource.activeChartDisplaySourceMode;
   const sourceLabel = displaySource.activeResearchSourceLabel;
   const chartSourceLabel = displaySource.activeChartDisplaySourceLabel;
+  const mt5BrokerSymbol = mt5Runtime.brokerSymbol ?? mt5Feed?.brokerSymbol ?? "USTECH";
+  const mt5RequestedSymbol = mt5Feed?.requestedSymbol ?? "MNQ";
 
   const analysis = useMemo(() => {
     const latestAnalysisCandle = activeCandles[activeCandles.length - 1];
@@ -411,23 +413,25 @@ export function ICTLab() {
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <CardTitle>TradingView Chart Evidence</CardTitle>
+              <CardTitle>Active Source Provenance</CardTitle>
               <CardDescription>
-                Optional local MCP evidence. It supports ICT review but never overrides deterministic GoTrader analysis.
+                ICT analysis reads the canonical active candle source. MT5 read-only is CFD/proxy market data with no execution authority.
               </CardDescription>
             </div>
-            <Badge variant={tradingViewRuntime.bridgeStatus === "connected_analysis_only" ? "success" : "warning"}>
-              {tradingViewRuntime.bridgeStatus === "connected_analysis_only" ? "connected analysis-only" : "disconnected"}
+            <Badge variant={sourceType === "mt5_read_only" || chartSourceType === "mt5_read_only" ? "success" : "warning"}>
+              {sourceType === "mt5_read_only" || chartSourceType === "mt5_read_only" ? "MT5 read-only active" : "fallback source active"}
             </Badge>
           </div>
         </CardHeader>
         <CardContent className="grid gap-3 text-sm md:grid-cols-4">
-          <StatusTile label="Connection" value={tradingViewRuntime.bridgeStatus.replace(/_/g, " ")} />
-          <StatusTile label="Chart bias" value={tradingViewRuntime.chartBias} />
-          <StatusTile label="Confidence" value={String(tradingViewRuntime.confidence)} />
-          <StatusTile label="Authority" value="analysis only" />
+          <StatusTile label="Chart source" value={chartSourceType.replace(/_/g, " ")} />
+          <StatusTile label="Research source" value={sourceType.replace(/_/g, " ")} />
+          <StatusTile label="Broker symbol" value={chartSourceType === "mt5_read_only" || sourceType === "mt5_read_only" ? mt5BrokerSymbol : "n/a"} />
+          <StatusTile label="Authority" value="execution none" />
           <div className="rounded-lg border border-cyan-300/20 bg-background/45 p-3 text-cyan-100 md:col-span-4">
-            {tradingViewCandles.length
+            {sourceType === "mt5_read_only" || chartSourceType === "mt5_read_only"
+              ? `MT5 read-only is active for GoTrader ${mt5RequestedSymbol} via broker symbol ${mt5BrokerSymbol}. Treat this as CFD/proxy chart data, not CME MNQ futures broker truth.`
+              : tradingViewCandles.length
               ? tradingViewResearchEligible
                 ? `TradingView MCP chart feed is active for research analysis with ${tradingViewCandles.length.toLocaleString()} read-only candles. It is still not broker truth.`
                 : `Displaying TradingView MCP candles visually; analysis uses ${displaySource.activeResearchSourceLabel} unless research eligibility passes. ${tradingViewFeed?.researchEligibility.reasons[0] ?? "It is not eligible for ICT analysis."}`

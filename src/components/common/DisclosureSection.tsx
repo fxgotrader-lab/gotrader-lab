@@ -33,7 +33,7 @@ export function DisclosureSection({
         </span>
         <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
       </summary>
-      <div className="border-t border-border/70 p-4">{children}</div>
+      <div className="hidden border-t border-border/70 p-4 group-open:block">{children}</div>
     </details>
   );
 }

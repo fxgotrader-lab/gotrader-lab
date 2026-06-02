@@ -44,6 +44,7 @@ import { hermesNotificationHookSpec } from "@/lib/integrations/hermesNotificatio
 import {
   hydrateActiveMt5ReadOnlyCandleFeed,
   loadActiveMt5ReadOnlyCandleFeed,
+  loadMt5ReadOnlySettings,
   MT5_READ_ONLY_UPDATED_EVENT,
   resolveMt5ReadOnlyRuntimeState
 } from "@/lib/integrations/mt5";
@@ -184,6 +185,7 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
       : runtimeSnapshot?.marketData.activeResearchSource.provider === "mt5_read_only"
         ? runtimeSnapshot.marketData.activeResearchSource
         : runtimeSnapshot?.marketData.allAvailableSources.find((source) => source.provider === "mt5_read_only");
+  const mt5ReadOnlySettings = loadMt5ReadOnlySettings();
   const mt5ReadOnlyConnected =
     mt5Runtime.connectionStatus === "connected" ||
     mt5Runtime.connectionStatus === "degraded" ||
@@ -191,13 +193,15 @@ export function SettingsView({ state, onReset }: { state: LabState; onReset: () 
     Boolean(activeMt5CanonicalSource && activeMt5CanonicalSource.candleCount > 0);
   const mt5RequestedSymbol =
     activeMt5CanonicalSource?.symbol ??
+    mt5ReadOnlySettings.requestedSymbol ??
     runtimeSnapshot?.marketData.symbol ??
     state.tradeTheses[0]?.symbol ??
     "MNQ";
   const mt5BrokerSymbol =
     mt5Runtime.brokerSymbol ??
     activeMt5CanonicalSource?.provenance.providerSymbol ??
-    "wrapper default";
+    mt5ReadOnlySettings.brokerSymbolOverride ??
+    "USTECH";
   const mt5CandleCount = mt5Runtime.candleCount || activeMt5CanonicalSource?.candleCount || 0;
   const mt5ChartSourceActive =
     runtimeSnapshot?.marketData.activeChartSource.provider === "mt5_read_only" || mt5Runtime.activeForChart;

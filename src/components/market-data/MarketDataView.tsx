@@ -140,8 +140,8 @@ const sameCandleSeries = (left: CandleSourceIdentity, right: CandleSourceIdentit
   left.lastClose === right.lastClose;
 
 export function MarketDataView() {
-  const [symbol, setSymbol] = useState<FuturesSymbol>("NQ");
-  const [timeframe, setTimeframe] = useState<Timeframe>("5m");
+  const [symbol, setSymbol] = useState<FuturesSymbol>(() => (loadMt5ReadOnlySettings().requestedSymbol as FuturesSymbol) ?? "MNQ");
+  const [timeframe, setTimeframe] = useState<Timeframe>(() => (loadMt5ReadOnlySettings().timeframe as Timeframe) ?? "5m");
   const [imports, setImports] = useState<ImportedCandleMetadata[]>([]);
   const [activeImportId, setActiveImportId] = useState<string>();
   const [activeSource, setActiveSource] = useState<PreparedCandleSource>(fallbackSource);
@@ -165,8 +165,8 @@ export function MarketDataView() {
   const [mt5Runtime, setMt5Runtime] = useState(() => resolveMt5ReadOnlyRuntimeState());
   const [mt5FeedMessage, setMt5FeedMessage] = useState<string>();
   const [mt5Connecting, setMt5Connecting] = useState(false);
-  const [mt5CandleLimit, setMt5CandleLimit] = useState("400");
-  const [mt5BrokerSymbol, setMt5BrokerSymbol] = useState(() => loadMt5ReadOnlySettings().brokerSymbolOverride ?? "");
+  const [mt5CandleLimit, setMt5CandleLimit] = useState(() => String(Math.max(1000, loadMt5ReadOnlySettings().candleLimit ?? 1000)));
+  const [mt5BrokerSymbol, setMt5BrokerSymbol] = useState(() => loadMt5ReadOnlySettings().brokerSymbolOverride ?? "USTECH");
   const [chartVerification, setChartVerification] = useState<ChartSourceVerification>();
   const contextSymbol = activeSource.metadata?.symbol ?? symbol;
   const contextTimeframe = activeSource.mode === "imported" ? activeSource.appliedSettings.targetTimeframe : timeframe;
@@ -539,11 +539,19 @@ export function MarketDataView() {
   };
 
   const fetchMt5QuoteForChart = async () => {
-    const brokerSymbol = mt5BrokerSymbol.trim() || undefined;
-    const brokerSymbolLabel = brokerSymbol ?? "wrapper default";
+    const loadedSettings = loadMt5ReadOnlySettings();
+    const brokerSymbol = (mt5BrokerSymbol.trim() || loadedSettings.brokerSymbolOverride || "USTECH").trim();
+    const brokerSymbolLabel = brokerSymbol;
     setMt5FeedMessage(`Fetching MT5 read-only quote for GoTrader ${symbol} via MT5 ${brokerSymbolLabel}...`);
     setChartVerification(undefined);
-    const settings = saveMt5ReadOnlySettings({ ...loadMt5ReadOnlySettings(), enabled: true, brokerSymbolOverride: mt5BrokerSymbol.trim() || undefined });
+    const settings = saveMt5ReadOnlySettings({
+      ...loadedSettings,
+      enabled: true,
+      requestedSymbol: symbol,
+      brokerSymbolOverride: brokerSymbol,
+      timeframe,
+      candleLimit: Number(mt5CandleLimit) || loadedSettings.candleLimit || 1000
+    });
     const quote = await fetchMt5ReadOnlyQuote({ symbol, brokerSymbol }, settings);
     setMt5Quote(quote);
     setMt5Runtime(resolveMt5ReadOnlyRuntimeState());
@@ -555,12 +563,20 @@ export function MarketDataView() {
   };
 
   const fetchMt5CandlesForChart = async () => {
-    const brokerSymbol = mt5BrokerSymbol.trim() || undefined;
-    const brokerSymbolLabel = brokerSymbol ?? "wrapper default";
-    const limit = Number(mt5CandleLimit) || 400;
+    const loadedSettings = loadMt5ReadOnlySettings();
+    const brokerSymbol = (mt5BrokerSymbol.trim() || loadedSettings.brokerSymbolOverride || "USTECH").trim();
+    const brokerSymbolLabel = brokerSymbol;
+    const limit = Number(mt5CandleLimit) || loadedSettings.candleLimit || 1000;
     setMt5FeedMessage(`Fetching MT5 read-only candles for GoTrader ${symbol} via MT5 ${brokerSymbolLabel} ${timeframe}...`);
     setChartVerification(undefined);
-    const settings = saveMt5ReadOnlySettings({ ...loadMt5ReadOnlySettings(), enabled: true, brokerSymbolOverride: mt5BrokerSymbol.trim() || undefined });
+    const settings = saveMt5ReadOnlySettings({
+      ...loadedSettings,
+      enabled: true,
+      requestedSymbol: symbol,
+      brokerSymbolOverride: brokerSymbol,
+      timeframe,
+      candleLimit: limit
+    });
     const candles = await fetchMt5ReadOnlyCandles({ symbol, brokerSymbol, timeframe, limit }, settings);
     setMt5Candles(candles);
     const feed = await fetchAndStoreMt5ReadOnlyCandleFeed({
@@ -587,7 +603,15 @@ export function MarketDataView() {
     setMt5FeedMessage(`Checking MT5 read-only bridge at ${loadMt5ReadOnlySettings().bridgeUrl}...`);
     setChartVerification(undefined);
     try {
-      const settings = saveMt5ReadOnlySettings({ ...loadMt5ReadOnlySettings(), enabled: true, brokerSymbolOverride: mt5BrokerSymbol.trim() || undefined });
+      const loadedSettings = loadMt5ReadOnlySettings();
+      const settings = saveMt5ReadOnlySettings({
+        ...loadedSettings,
+        enabled: true,
+        requestedSymbol: symbol,
+        brokerSymbolOverride: mt5BrokerSymbol.trim() || loadedSettings.brokerSymbolOverride || "USTECH",
+        timeframe,
+        candleLimit: Number(mt5CandleLimit) || loadedSettings.candleLimit || 1000
+      });
       const status = await checkMt5ReadOnlyStatus(settings);
       setMt5Runtime(resolveMt5ReadOnlyRuntimeState());
       if (status.connectionStatus !== "connected" && status.connectionStatus !== "degraded") {
@@ -602,8 +626,9 @@ export function MarketDataView() {
   };
 
   const useMt5CandlesAsSource = async (usageMode: "chart_only" | "research_source") => {
-    const brokerSymbol = mt5BrokerSymbol.trim() || undefined;
-    const brokerSymbolLabel = brokerSymbol ?? "wrapper default";
+    const loadedSettings = loadMt5ReadOnlySettings();
+    const brokerSymbol = (mt5BrokerSymbol.trim() || loadedSettings.brokerSymbolOverride || "USTECH").trim();
+    const brokerSymbolLabel = brokerSymbol;
     setMt5FeedMessage(
       usageMode === "research_source"
         ? `Evaluating MT5 read-only candles as research source for GoTrader ${symbol} via MT5 ${brokerSymbolLabel} ${timeframe}...`
@@ -618,8 +643,18 @@ export function MarketDataView() {
           timeframe,
           gotraderSymbol: symbol,
           gotraderTimeframe: timeframe,
-          limit: usageMode === "research_source" ? Math.max(400, Number(mt5CandleLimit) || 400) : Number(mt5CandleLimit) || 400,
-          settings: saveMt5ReadOnlySettings({ ...loadMt5ReadOnlySettings(), enabled: true, brokerSymbolOverride: mt5BrokerSymbol.trim() || undefined }),
+          limit:
+            usageMode === "research_source"
+              ? Math.max(400, Number(mt5CandleLimit) || loadedSettings.candleLimit || 1000)
+              : Number(mt5CandleLimit) || loadedSettings.candleLimit || 1000,
+          settings: saveMt5ReadOnlySettings({
+            ...loadedSettings,
+            enabled: true,
+            requestedSymbol: symbol,
+            brokerSymbolOverride: brokerSymbol,
+            timeframe,
+            candleLimit: usageMode === "research_source" ? Math.max(400, Number(mt5CandleLimit) || 1000) : Number(mt5CandleLimit) || 1000
+          }),
           usageMode
         });
     setMt5Feed(feed);
@@ -638,7 +673,7 @@ export function MarketDataView() {
     setMt5Feed(undefined);
     setMt5Runtime(resolveMt5ReadOnlyRuntimeState());
     setChartVerification(undefined);
-    setMt5FeedMessage("MT5 read-only cached candles cleared. Falling back to imported/mock/TradingView candles.");
+    setMt5FeedMessage("MT5 read-only cached candles cleared. Falling back to imported/mock candles until MT5 is connected again.");
   };
 
   const verifyChartSource = () => {
@@ -669,11 +704,15 @@ export function MarketDataView() {
           <h2 className="mt-1 text-3xl font-semibold tracking-normal">Market Data Context</h2>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
             Advanced data inspection and import management. Most users should operate from Command Center for
-            TradingView MCP connection, chart activation, research eligibility, and autonomous research startup.
+            MT5 read-only connection, chart activation, research eligibility, and autonomous research startup.
           </p>
         </div>
-        <Badge variant={activeSource.mode === "imported" ? "success" : "warning"}>
-          {activeSource.mode === "imported" ? "imported historical data active" : "mock / planning only"}
+        <Badge variant={displaySource.chartDisplayUsesMt5ReadOnly ? "success" : activeSource.mode === "imported" ? "success" : "warning"}>
+          {displaySource.chartDisplayUsesMt5ReadOnly
+            ? "MT5 read-only active"
+            : activeSource.mode === "imported"
+              ? "imported historical data active"
+              : "mock / planning only"}
         </Badge>
       </div>
 
@@ -682,7 +721,7 @@ export function MarketDataView() {
       <div className="rounded-xl border border-cyan-300/25 bg-cyan-300/10 p-4 text-sm text-cyan-100">
         <p className="font-semibold">Command Center is the primary operating surface.</p>
         <p className="mt-1 text-cyan-100/80">
-          Use Dashboard / Command Center to connect TradingView MCP, activate the chart feed, check research-source eligibility,
+          Use Dashboard / Command Center to connect MT5 read-only, activate the chart feed, check research-source eligibility,
           and start autonomous research. This page is for advanced source inspection, local imports, and troubleshooting.
         </p>
       </div>
@@ -694,8 +733,8 @@ export function MarketDataView() {
             Live Data Adapter Status
           </CardTitle>
           <CardDescription>
-            Read-only feed status for chart data. TradingView MCP is analysis-only and MT5 remains locked unless a
-            separate read-only bridge is explicitly connected.
+            Read-only feed status for chart data. MT5 read-only is the primary current-candle source; TradingView MCP is
+            a legacy/alternative evidence source only.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
@@ -792,7 +831,11 @@ export function MarketDataView() {
                 id="mt5-feed-symbol"
                 value={symbol}
                 options={symbolOptions}
-                onChange={(event) => setSymbol(event.target.value as FuturesSymbol)}
+                onChange={(event) => {
+                  const nextSymbol = event.target.value as FuturesSymbol;
+                  setSymbol(nextSymbol);
+                  saveMt5ReadOnlySettings({ requestedSymbol: nextSymbol });
+                }}
               />
             </div>
             <div className="space-y-2">
@@ -804,7 +847,7 @@ export function MarketDataView() {
                   setMt5BrokerSymbol(event.target.value);
                   saveMt5ReadOnlySettings({ brokerSymbolOverride: event.target.value.trim() || undefined });
                 }}
-                placeholder="Wrapper default"
+                placeholder="USTECH"
               />
             </div>
             <div className="space-y-2">
@@ -813,7 +856,11 @@ export function MarketDataView() {
                 id="mt5-feed-timeframe"
                 value={timeframe}
                 options={timeframeOptions}
-                onChange={(event) => setTimeframe(event.target.value as Timeframe)}
+                onChange={(event) => {
+                  const nextTimeframe = event.target.value as Timeframe;
+                  setTimeframe(nextTimeframe);
+                  saveMt5ReadOnlySettings({ timeframe: nextTimeframe });
+                }}
               />
             </div>
             <div className="space-y-2">
@@ -822,7 +869,10 @@ export function MarketDataView() {
                 id="mt5-feed-limit"
                 value={mt5CandleLimit}
                 options={mt5CandleLimitOptions}
-                onChange={(event) => setMt5CandleLimit(event.target.value)}
+                onChange={(event) => {
+                  setMt5CandleLimit(event.target.value);
+                  saveMt5ReadOnlySettings({ candleLimit: Number(event.target.value) });
+                }}
               />
             </div>
             <Button variant="secondary" onClick={() => void connectMt5ReadOnly()} disabled={mt5Connecting} className="self-end">
@@ -846,7 +896,7 @@ export function MarketDataView() {
           <div className="grid gap-3 md:grid-cols-4">
             <StatusTile label="Bridge" value={formatToken(mt5Runtime.connectionStatus)} />
             <StatusTile label="GoTrader symbol" value={symbol} />
-            <StatusTile label="Broker symbol" value={(mt5Runtime.brokerSymbol ?? mt5BrokerSymbol) || "wrapper default"} />
+            <StatusTile label="Broker symbol" value={(mt5Runtime.brokerSymbol ?? mt5BrokerSymbol) || "USTECH"} />
             <StatusTile label="Quote latest" value={String(mt5Runtime.latestPrice ?? mt5Quote?.mid ?? mt5Quote?.bid ?? "none")} />
             <StatusTile label="Spread" value={String(mt5Runtime.spread ?? mt5Quote?.spread ?? "n/a")} />
             <StatusTile label="Candles" value={String(mt5Candles?.returnedCount ?? mt5Runtime.candleCount)} />
@@ -863,7 +913,7 @@ export function MarketDataView() {
             <p className="mt-1 text-xs">{mt5FeedMessage ?? mt5Runtime.eligibilityReasons.join(" ")}</p>
             <p className="mt-2 text-xs">
               GoTrader requested symbol <span className="font-mono">{symbol}</span>; MT5 broker symbol{" "}
-              <span className="font-mono">{(mt5Runtime.brokerSymbol ?? mt5BrokerSymbol) || "wrapper default"}</span>. Broker CFD/proxy data such as USTECH is read-only and not CME MNQ futures broker truth.
+              <span className="font-mono">{(mt5Runtime.brokerSymbol ?? mt5BrokerSymbol) || "USTECH"}</span>. Broker CFD/proxy data such as USTECH is read-only and not CME MNQ futures broker truth.
             </p>
           </div>
         </CardContent>
@@ -917,8 +967,8 @@ export function MarketDataView() {
             ))}
           </div>
           <p className="text-xs text-muted-foreground">
-            MT5 read-only appears here as planned/disconnected until a local read-only endpoint is explicitly configured.
-            It has no order methods and no broker authority in this phase.
+            MT5 read-only appears here as a canonical source when the safe local wrapper returns candles. It has no
+            order methods and no broker authority in this phase.
           </p>
         </CardContent>
       </Card>
@@ -1354,7 +1404,9 @@ export function MarketDataView() {
                 <p className="mt-1 text-xs text-muted-foreground">
                   Shared Lightweight Charts preview of the current research window. Current chart source:{" "}
                   {displaySource.activeChartDisplaySourceLabel}.{" "}
-                  {displaySource.chartDisplayUsesTradingViewMcp
+                  {displaySource.chartDisplayUsesMt5ReadOnly
+                    ? "MT5 read-only CFD/proxy data; not CME futures broker truth."
+                    : displaySource.chartDisplayUsesTradingViewMcp
                     ? "Read-only TradingView MCP data; not broker truth."
                     : liveMarketDataStatus.liveFeedAvailable
                       ? liveMarketDataStatus.liveFeedSourceLabel
@@ -1363,13 +1415,20 @@ export function MarketDataView() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Badge variant={displaySource.chartDisplayUsesTradingViewMcp ? "secondary" : activeSource.mode === "imported" ? "success" : "warning"}>
-                  {displaySource.chartDisplayUsesTradingViewMcp ? "TRADINGVIEW MCP" : activeSource.mode === "imported" ? "IMPORTED" : "MOCK"}
+                <Badge variant={displaySource.chartDisplayUsesMt5ReadOnly ? "success" : displaySource.chartDisplayUsesTradingViewMcp ? "secondary" : activeSource.mode === "imported" ? "success" : "warning"}>
+                  {displaySource.chartDisplayUsesMt5ReadOnly
+                    ? "MT5 READ-ONLY"
+                    : displaySource.chartDisplayUsesTradingViewMcp
+                      ? "TRADINGVIEW MCP"
+                      : activeSource.mode === "imported"
+                        ? "IMPORTED"
+                        : "MOCK"}
                 </Badge>
-                {displaySource.chartDisplayUsesTradingViewMcp ? (
+                {displaySource.chartDisplayUsesTradingViewMcp || displaySource.chartDisplayUsesMt5ReadOnly ? (
                   <>
                     <Badge variant="secondary">READ-ONLY</Badge>
                     <Badge variant="warning">NOT BROKER TRUTH</Badge>
+                    {displaySource.chartDisplayUsesMt5ReadOnly ? <Badge variant="warning">CFD PROXY</Badge> : null}
                   </>
                 ) : null}
               </div>
@@ -1377,6 +1436,7 @@ export function MarketDataView() {
             <div className="mb-3 grid gap-2 text-xs md:grid-cols-4">
               <StatusTile label="Chart first" value={`${formatDate(displaySource.chartDisplayIdentity.firstTimestamp)} / ${displaySource.chartDisplayIdentity.firstClose ?? "n/a"}`} />
               <StatusTile label="Chart last" value={`${formatDate(displaySource.chartDisplayIdentity.lastTimestamp)} / ${displaySource.chartDisplayIdentity.lastClose ?? "n/a"}`} />
+              <StatusTile label="MT5 read-only candles" value={`${displaySource.mt5ReadOnlyIdentity.candleCount.toLocaleString()} / ${formatDate(displaySource.mt5ReadOnlyIdentity.lastTimestamp)}`} />
               <StatusTile label="TradingView MCP candles" value={`${displaySource.tradingViewMcpIdentity.candleCount.toLocaleString()} / ${formatDate(displaySource.tradingViewMcpIdentity.lastTimestamp)}`} />
               <StatusTile label="Imported/source candles" value={`${displaySource.importedIdentity.candleCount.toLocaleString()} / ${formatDate(displaySource.importedIdentity.lastTimestamp)}`} />
             </div>

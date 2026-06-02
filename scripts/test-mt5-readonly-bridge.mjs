@@ -3,9 +3,9 @@ const requestedSymbol = process.env.MT5_READONLY_REQUESTED_SYMBOL || "MNQ";
 const brokerSymbol =
   process.env.MT5_READONLY_BROKER_SYMBOL ||
   process.env.MT5_READONLY_DEFAULT_SYMBOL ||
-  requestedSymbol;
+  "USTECH";
 const timeframe = process.env.MT5_READONLY_TEST_TIMEFRAME || "5m";
-const limit = Number(process.env.MT5_READONLY_TEST_LIMIT || 400);
+const limit = Number(process.env.MT5_READONLY_TEST_LIMIT || 1000);
 const timeoutMs = Number(process.env.MT5_READONLY_TEST_TIMEOUT_MS || 2500);
 const researchMinimumCandles = 400;
 
@@ -106,7 +106,7 @@ console.log(
       symbol: requestedSymbol,
       brokerSymbol,
       brokerSymbolResolution: {
-        order: ["MT5_READONLY_BROKER_SYMBOL", "MT5_READONLY_DEFAULT_SYMBOL", "requestedSymbol"]
+        order: ["MT5_READONLY_BROKER_SYMBOL", "MT5_READONLY_DEFAULT_SYMBOL", "USTECH"]
       },
       timeframe,
       requestedLimit: limit,

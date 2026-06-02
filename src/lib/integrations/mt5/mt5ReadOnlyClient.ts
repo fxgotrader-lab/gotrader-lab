@@ -41,8 +41,22 @@ const publish = (detail?: unknown) => {
 
 const defaultSettings: Mt5ReadOnlySettings = {
   bridgeUrl: DEFAULT_MT5_READ_ONLY_BRIDGE_URL,
-  enabled: false
+  enabled: false,
+  requestedSymbol: "MNQ",
+  brokerSymbolOverride: "USTECH",
+  timeframe: "5m",
+  candleLimit: 1000
 };
+
+const sanitizeSettings = (settings: Partial<Mt5ReadOnlySettings> | null | undefined): Mt5ReadOnlySettings => ({
+  ...defaultSettings,
+  ...(settings ?? {}),
+  bridgeUrl: (settings?.bridgeUrl || defaultSettings.bridgeUrl).replace(/\/$/, ""),
+  requestedSymbol: (settings?.requestedSymbol || defaultSettings.requestedSymbol || "MNQ").trim(),
+  brokerSymbolOverride: (settings?.brokerSymbolOverride || defaultSettings.brokerSymbolOverride || "USTECH").trim(),
+  timeframe: (settings?.timeframe || defaultSettings.timeframe || "5m").trim(),
+  candleLimit: Math.max(1, Number(settings?.candleLimit ?? defaultSettings.candleLimit ?? 1000))
+});
 
 export const loadMt5ReadOnlySettings = (): Mt5ReadOnlySettings => {
   if (!isBrowser()) {
@@ -50,22 +64,17 @@ export const loadMt5ReadOnlySettings = (): Mt5ReadOnlySettings => {
   }
   try {
     const parsed = JSON.parse(window.localStorage.getItem(SETTINGS_KEY) ?? "null") as Partial<Mt5ReadOnlySettings> | null;
-    return {
-      ...defaultSettings,
-      ...parsed,
-      bridgeUrl: (parsed?.bridgeUrl || defaultSettings.bridgeUrl).replace(/\/$/, "")
-    };
+    return sanitizeSettings(parsed);
   } catch {
     return defaultSettings;
   }
 };
 
 export const saveMt5ReadOnlySettings = (settings: Partial<Mt5ReadOnlySettings>): Mt5ReadOnlySettings => {
-  const saved = {
+  const saved = sanitizeSettings({
     ...loadMt5ReadOnlySettings(),
-    ...settings,
-    bridgeUrl: (settings.bridgeUrl ?? loadMt5ReadOnlySettings().bridgeUrl).replace(/\/$/, "")
-  };
+    ...settings
+  });
   if (isBrowser()) {
     window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(saved));
     publish({ settings: saved });
@@ -118,7 +127,7 @@ const endpoint = (settings: Mt5ReadOnlySettings, path: string, params?: Record<s
 const selectedBrokerSymbol = (
   requestBrokerSymbol?: string,
   settingsBrokerSymbol?: string
-) => requestBrokerSymbol?.trim() || settingsBrokerSymbol?.trim() || undefined;
+) => requestBrokerSymbol?.trim() || settingsBrokerSymbol?.trim() || defaultSettings.brokerSymbolOverride;
 
 const fetchJson = async <T>(url: string): Promise<T> => {
   const controller = new AbortController();
@@ -214,6 +223,42 @@ export async function fetchMt5ReadOnlyQuote(
       connectionStatus: "disconnected",
       warnings: ["MT5 read-only quote endpoint is unavailable."],
       missingEvidence: [`No read-only quote returned from ${settings.bridgeUrl}.`],
+      ...authority
+    };
+  }
+}
+
+export async function fetchMt5ReadOnlySymbols(settings: Mt5ReadOnlySettings = loadMt5ReadOnlySettings()) {
+  try {
+    const payload = await fetchJson<{
+      connectionStatus?: Mt5ReadOnlyStatus["connectionStatus"];
+      symbols?: unknown[];
+      warnings?: string[];
+      missingEvidence?: string[];
+    }>(endpoint(settings, "symbols"));
+    const symbols = (payload.symbols ?? [])
+      .map((item) => (typeof item === "object" && item !== null ? (item as { symbol?: unknown; name?: unknown }).symbol ?? (item as { name?: unknown }).name : item))
+      .filter((item): item is string | number => typeof item === "string" || typeof item === "number")
+      .map((item) => String(item))
+      .filter(Boolean);
+    return {
+      provider: "mt5_read_only" as const,
+      connectionStatus: normalizeConnectionStatus(payload.connectionStatus, symbols.length ? "connected" : "degraded"),
+      symbols,
+      warnings: [
+        ...(payload.warnings ?? []),
+        "MT5 symbols are read-only metadata and expose no execution authority."
+      ],
+      missingEvidence: payload.missingEvidence ?? [],
+      ...authority
+    };
+  } catch {
+    return {
+      provider: "mt5_read_only" as const,
+      connectionStatus: "disconnected" as const,
+      symbols: [] as string[],
+      warnings: ["MT5 read-only symbols endpoint is unavailable."],
+      missingEvidence: [`No read-only symbols returned from ${settings.bridgeUrl}.`],
       ...authority
     };
   }
