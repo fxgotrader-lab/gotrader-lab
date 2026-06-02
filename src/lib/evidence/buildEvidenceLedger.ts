@@ -47,14 +47,20 @@ const entry = ({
   limitations
 });
 
+const isExternalReadOnlyProvider = (input: EvidenceLedgerInput) => input.dataMode === "future_provider";
+
 const derivedSource = (input: EvidenceLedgerInput): EvidenceSourceClass =>
-  input.dataMode === "imported" ? "derived_from_real" : input.dataMode === "mock" ? "mock" : "planned";
+  input.dataMode === "imported" || isExternalReadOnlyProvider(input)
+    ? "derived_from_real"
+    : input.dataMode === "mock"
+      ? "mock"
+      : "planned";
 
 const resultSource = (input: EvidenceLedgerInput, exists: boolean): EvidenceSourceClass => {
   if (!exists) {
     return "unavailable";
   }
-  return input.dataMode === "imported" ? "derived_from_real" : "mock";
+  return input.dataMode === "imported" || isExternalReadOnlyProvider(input) ? "derived_from_real" : "mock";
 };
 
 const plannedOrUnavailable = (label: string, available = false): EvidenceSourceClass =>
@@ -63,51 +69,68 @@ const plannedOrUnavailable = (label: string, available = false): EvidenceSourceC
 export function buildEvidenceLedger(input: EvidenceLedgerInput): EvidenceLedgerSummary {
   const generatedAt = now();
   const imported = input.dataMode === "imported";
+  const externalReadOnly = isExternalReadOnlyProvider(input);
   const ohlcvCoverage = imported
     ? Math.min(1, input.processedCandleCount / 400)
-    : input.dataMode === "mock"
+    : externalReadOnly
+      ? Math.min(0.72, input.processedCandleCount / 400)
+      : input.dataMode === "mock"
       ? Math.min(0.4, input.processedCandleCount / 500)
       : 0.1;
-  const ohlcvSource: EvidenceSourceClass = imported ? "real_imported" : input.dataMode === "mock" ? "mock" : "unavailable";
+  const ohlcvSource: EvidenceSourceClass = imported
+    ? "real_imported"
+    : externalReadOnly
+      ? "derived_from_real"
+      : input.dataMode === "mock"
+        ? "mock"
+        : "unavailable";
   const derived = derivedSource(input);
-  const resultCoverage = ratio(input.processedCandleCount, imported ? 400 : 250);
+  const resultCoverage = ratio(input.processedCandleCount, imported || externalReadOnly ? 400 : 250);
 
   const entries: EvidenceLedgerEntry[] = [
     entry({
       category: "OHLCV candles",
       label: input.sourceLabel,
       sourceType: ohlcvSource,
-      completeness: imported ? 0.9 : input.dataMode === "mock" ? 0.45 : 0.05,
-      freshness: imported ? 0.72 : input.dataMode === "mock" ? 0.35 : 0.05,
-      reliability: imported ? 0.9 : input.dataMode === "mock" ? 0.35 : 0.05,
+      completeness: imported ? 0.9 : externalReadOnly ? 0.72 : input.dataMode === "mock" ? 0.45 : 0.05,
+      freshness: imported ? 0.72 : externalReadOnly ? 0.86 : input.dataMode === "mock" ? 0.35 : 0.05,
+      reliability: imported ? 0.9 : externalReadOnly ? 0.62 : input.dataMode === "mock" ? 0.35 : 0.05,
       coverage: ohlcvCoverage,
       timestamp: input.latestCycleTimestamp ?? generatedAt,
       notes: imported
         ? `${input.rawCandleCount.toLocaleString()} raw candles available; ${input.processedCandleCount.toLocaleString()} processed candles used.`
+        : externalReadOnly
+          ? `${input.processedCandleCount.toLocaleString()} read-only provider candles used. Provider candles are research inputs, not broker truth.`
         : "Bundled mock candles support UI and deterministic flow testing only.",
       limitations: imported
         ? ["Historical import only; no live feed, DOM, or broker stream."]
+        : externalReadOnly
+          ? ["External read-only candles may be CFD/proxy data and cannot provide broker execution/account truth."]
         : ["Mock candles cannot confirm live market behavior."]
     }),
     entry({
       category: "ICT structure",
       label: "Derived ICT facts",
       sourceType: derived,
-      completeness: imported ? 0.82 : 0.42,
-      freshness: imported ? 0.7 : 0.35,
-      reliability: imported ? 0.78 : 0.36,
+      completeness: imported ? 0.82 : externalReadOnly ? 0.7 : 0.42,
+      freshness: imported ? 0.7 : externalReadOnly ? 0.78 : 0.35,
+      reliability: imported ? 0.78 : externalReadOnly ? 0.58 : 0.36,
       coverage: resultCoverage,
       timestamp: input.latestCycleTimestamp,
-      notes: imported ? "ICT structure is derived from imported OHLCV." : "ICT facts are derived from mock candles.",
+      notes: imported
+        ? "ICT structure is derived from imported OHLCV."
+        : externalReadOnly
+          ? "ICT structure is derived from active read-only provider candles."
+          : "ICT facts are derived from mock candles.",
       limitations: ["Derived facts inherit the limits of the active candle window."]
     }),
     entry({
       category: "session levels",
       label: "Session and range levels",
       sourceType: derived,
-      completeness: imported ? 0.72 : 0.36,
-      freshness: imported ? 0.68 : 0.32,
-      reliability: imported ? 0.74 : 0.34,
+      completeness: imported ? 0.72 : externalReadOnly ? 0.64 : 0.36,
+      freshness: imported ? 0.68 : externalReadOnly ? 0.72 : 0.32,
+      reliability: imported ? 0.74 : externalReadOnly ? 0.52 : 0.34,
       coverage: resultCoverage,
       timestamp: input.latestCycleTimestamp,
       notes: "Prior/session ranges are computed from available candle history.",
@@ -116,10 +139,10 @@ export function buildEvidenceLedger(input: EvidenceLedgerInput): EvidenceLedgerS
     entry({
       category: "VWAP / volume profile",
       label: "Auction and profile context",
-      sourceType: imported ? "derived_from_real" : "mock",
-      completeness: imported ? 0.58 : 0.28,
-      freshness: imported ? 0.62 : 0.28,
-      reliability: imported ? 0.62 : 0.3,
+      sourceType: imported || externalReadOnly ? "derived_from_real" : "mock",
+      completeness: imported ? 0.58 : externalReadOnly ? 0.5 : 0.28,
+      freshness: imported ? 0.62 : externalReadOnly ? 0.68 : 0.28,
+      reliability: imported ? 0.62 : externalReadOnly ? 0.48 : 0.3,
       coverage: resultCoverage,
       timestamp: input.latestCycleTimestamp,
       notes: "VWAP/profile context is calculated locally from available candles.",
@@ -286,7 +309,11 @@ export function buildEvidenceLedger(input: EvidenceLedgerInput): EvidenceLedgerS
     mockPlannedUnavailableCount > entries.length / 2
       ? "Too many evidence inputs are mock, planned, or unavailable for high-confidence readiness."
       : undefined,
-    !imported ? "Active OHLCV is mock; imported historical data is recommended before readiness progression." : undefined,
+    externalReadOnly
+      ? "Active OHLCV is read-only provider/proxy data; imported historical or broker-truth data is still recommended before readiness progression."
+      : !imported
+        ? "Active OHLCV is mock; imported historical data is recommended before readiness progression."
+        : undefined,
     sourceCounts.unavailable > 0 ? "Unavailable evidence areas reduce confidence and should be shown to LLM reviewers." : undefined
   ].filter((warning): warning is string => Boolean(warning));
 

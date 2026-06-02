@@ -123,10 +123,13 @@ const deriveScores = (candles: Candle[], input: RegimeClassifierInput): { scores
   const recentRange = Math.max(...recent.map((candle) => candle.high)) - Math.min(...recent.map((candle) => candle.low));
   const expansionFactor = recentRange / Math.max(0.000001, openingRangeSize || baselineAtr);
   const momentumRaw = (lastClose - recent[0].close) / Math.max(0.000001, recentAtr * 3);
-  const vix = input.marketContext?.macro.vix;
-  const dxyRelationship = input.marketContext?.intermarket.dxyNqRelationship;
-  const vixRelationship = input.marketContext?.intermarket.vixEquityRelationship;
+  const macroAvailable = input.marketContext?.macro.status !== "planned";
+  const intermarketAvailable = input.marketContext?.intermarket.status !== "planned";
+  const vix = macroAvailable ? input.marketContext?.macro.vix : undefined;
+  const dxyRelationship = intermarketAvailable ? input.marketContext?.intermarket.dxyNqRelationship : undefined;
+  const vixRelationship = intermarketAvailable ? input.marketContext?.intermarket.vixEquityRelationship : undefined;
   const yieldInversion =
+    macroAvailable &&
     typeof input.marketContext?.macro.twoYearYield === "number" &&
     typeof input.marketContext?.macro.tenYearYield === "number" &&
     input.marketContext.macro.twoYearYield > input.marketContext.macro.tenYearYield;
@@ -319,6 +322,9 @@ export function classifyMarketRegime(input: RegimeClassifierInput): RegimeClassi
   const sourceFingerprint = sourceFingerprintFor(candles, symbol, timeframe);
   const missingInputs = [
     candleCount < 100 ? `Need at least 100 candles for sufficient regime confidence; received ${candleCount}.` : undefined,
+    input.marketContext?.mode === "future_provider"
+      ? "Active candles come from a read-only external provider or CFD/proxy feed; use as research input only, not broker truth."
+      : undefined,
     input.marketContext?.macro.status === "planned" ? "Real macro/VIX/DXY/yield inputs are not connected; mock/planned context only." : undefined,
     input.marketContext?.intermarket.status === "planned" ? "ES/NQ/YM dispersion is not fully connected." : undefined
   ].filter((item): item is string => Boolean(item));
@@ -357,13 +363,17 @@ export function classifyMarketRegime(input: RegimeClassifierInput): RegimeClassi
 
   const derived = deriveScores(candles, input);
   const classified = classifyInstantaneous(derived.scores, candles, input, timestamp);
-  const confidence = dataQuality === "limited" ? Math.min(classified.confidence, 0.62) : classified.confidence;
+  const contextConfidenceCap = missingInputs.length ? 0.72 : 1;
+  const confidence = dataQuality === "limited"
+    ? Math.min(classified.confidence, 0.62, contextConfidenceCap)
+    : Math.min(classified.confidence, contextConfidenceCap);
   const stable = applyHysteresis(classified.label, confidence, input.history);
   const conflictScore = clamp(derived.conflicts.length * 0.22 + (stable.transitionPending ? 0.18 : 0));
   const warnings = [
     ...classified.warnings,
     ...derived.conflicts,
     dataQuality === "limited" ? "Limited candle count caps regime confidence." : undefined,
+    missingInputs.length ? "Missing regime inputs cap regime confidence and prevent regime from acting as strong readiness evidence." : undefined,
     stable.transitionPending ? `Transition pending from ${stable.transitionState.previousStableLabel} to ${classified.label}.` : undefined
   ].filter((item): item is string => Boolean(item));
 

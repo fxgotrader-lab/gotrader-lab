@@ -118,6 +118,15 @@ const dataPresetFor = (source: PreparedCandleSource): RuntimeDataPreset => {
   return getImportedDataPreset(source.appliedSettings);
 };
 
+const evidenceModeForRuntimeSource = (
+  sourceMode?: "mock" | "imported" | "tradingview_mcp_chart" | "mt5_read_only"
+) => {
+  if (sourceMode === "tradingview_mcp_chart" || sourceMode === "mt5_read_only") {
+    return "future_provider" as const;
+  }
+  return sourceMode === "imported" ? "imported" as const : "mock" as const;
+};
+
 const fallbackImportActivation = (): ImportedCandleActivationState => ({
   imports: [],
   activeCandlesAvailable: false,
@@ -135,11 +144,12 @@ const marketStateFor = (
   mt5Feed?: ReturnType<typeof loadActiveMt5ReadOnlyCandleFeed>
 ): RuntimeMarketDataState => {
   const metadata = source.metadata;
-  const symbol = metadata?.symbol ?? source.candles[0]?.symbol ?? fallbackSymbol ?? "NQ";
-  const timeframe = source.appliedSettings.targetTimeframe ?? metadata?.timeframe ?? source.candles[0]?.timeframe ?? fallbackTimeframe ?? "5m";
   const fallbackToMock = source.mode === "mock";
   const liveMarketDataStatus = resolveLiveMarketDataStatus(source, mt5Feed, chartFeed);
   const displaySource = resolveChartDisplayCandleSource(source, chartFeed, mt5Feed);
+  const activeResearchSummary = displaySource.activeResearchSource;
+  const symbol = (activeResearchSummary.symbol ?? metadata?.symbol ?? source.candles[0]?.symbol ?? fallbackSymbol ?? "NQ") as FuturesSymbol;
+  const timeframe = (activeResearchSummary.timeframe ?? source.appliedSettings.targetTimeframe ?? metadata?.timeframe ?? source.candles[0]?.timeframe ?? fallbackTimeframe ?? "5m") as Timeframe;
 
   return {
     activeDataSource: source.mode,
@@ -607,20 +617,26 @@ export async function resolveResearchRuntimeSnapshot(
     tradingViewChartFeed,
     mt5ReadOnlyFeed
   );
+  const displaySource = resolveChartDisplayCandleSource(source, tradingViewChartFeed, mt5ReadOnlyFeed);
+  const runtimeResearchCandles = displaySource.activeResearchCandleSource.length
+    ? displaySource.activeResearchCandleSource
+    : source.candles;
+  const runtimeResearchMode = evidenceModeForRuntimeSource(displaySource.activeResearchSourceMode);
+  const runtimeResearchSourceLabel = displaySource.activeResearchSourceLabel;
   const regimeMarketContext = buildMarketContext({
     symbol: marketData.symbol,
     timeframe: marketData.timeframe,
-    mode: source.mode === "imported" ? "imported" : "mock",
-    candles: source.candles
+    mode: runtimeResearchMode,
+    candles: runtimeResearchCandles
   });
   const regimeClassification = appendRegimeClassificationHistory(
     classifyMarketRegime({
-      candles: source.candles,
+      candles: runtimeResearchCandles,
       history: loadRegimeClassificationHistory(),
       marketContext: regimeMarketContext,
       symbol: marketData.symbol,
       timeframe: marketData.timeframe,
-      timestamp: source.candles[source.candles.length - 1]?.timestamp ?? snapshotGeneratedAt
+      timestamp: runtimeResearchCandles[runtimeResearchCandles.length - 1]?.timestamp ?? snapshotGeneratedAt
     })
   );
   const regimeRuntime = {
@@ -637,54 +653,54 @@ export async function resolveResearchRuntimeSnapshot(
     historyStorage: "browser_compact_history" as const,
     jsonlHistoryPath: "state/regime_history.jsonl" as const
   };
-  const grinchPhase1Summary = source.candles.length
+  const grinchPhase1Summary = runtimeResearchCandles.length
     ? analyzeGrinchPhase1({
-        candles: source.candles,
+        candles: runtimeResearchCandles,
         options: {
           symbol: marketData.symbol,
           timeframe: marketData.timeframe,
-          currentTimestamp: source.candles[source.candles.length - 1]?.timestamp
+          currentTimestamp: runtimeResearchCandles[runtimeResearchCandles.length - 1]?.timestamp
         }
       })
     : undefined;
-  const grinchPhase2ReversalSummary = source.candles.length && grinchPhase1Summary
+  const grinchPhase2ReversalSummary = runtimeResearchCandles.length && grinchPhase1Summary
     ? analyzeGrinchPhase2Reversal({
-        candles: source.candles,
+        candles: runtimeResearchCandles,
         phase1: grinchPhase1Summary,
         options: {
           symbol: marketData.symbol,
           timeframe: marketData.timeframe,
-          currentTimestamp: source.candles[source.candles.length - 1]?.timestamp
+          currentTimestamp: runtimeResearchCandles[runtimeResearchCandles.length - 1]?.timestamp
         }
       })
     : undefined;
-  const grinchPhase3ConsolidationSummary = source.candles.length && grinchPhase1Summary
+  const grinchPhase3ConsolidationSummary = runtimeResearchCandles.length && grinchPhase1Summary
     ? analyzeGrinchPhase3Consolidation({
-        candles: source.candles,
+        candles: runtimeResearchCandles,
         phase1: grinchPhase1Summary,
         options: {
           symbol: marketData.symbol,
           timeframe: marketData.timeframe,
-          currentTimestamp: source.candles[source.candles.length - 1]?.timestamp
+          currentTimestamp: runtimeResearchCandles[runtimeResearchCandles.length - 1]?.timestamp
         }
       })
     : undefined;
-  const grinchPhase4SmtSummary = source.candles.length && grinchPhase1Summary
+  const grinchPhase4SmtSummary = runtimeResearchCandles.length && grinchPhase1Summary
     ? analyzeGrinchPhase4Smt({
-        candles: source.candles,
+        candles: runtimeResearchCandles,
         phase1: grinchPhase1Summary,
         reversal: grinchPhase2ReversalSummary,
         consolidation: grinchPhase3ConsolidationSummary,
         options: {
           symbol: marketData.symbol,
           timeframe: marketData.timeframe,
-          currentTimestamp: source.candles[source.candles.length - 1]?.timestamp
+          currentTimestamp: runtimeResearchCandles[runtimeResearchCandles.length - 1]?.timestamp
         }
       })
     : undefined;
-  const grinchStrategyScore = source.candles.length && grinchPhase1Summary
+  const grinchStrategyScore = runtimeResearchCandles.length && grinchPhase1Summary
     ? calculateGrinchStrategyScore({
-        candles: source.candles,
+        candles: runtimeResearchCandles,
         phase1: grinchPhase1Summary,
         reversal: grinchPhase2ReversalSummary,
         consolidation: grinchPhase3ConsolidationSummary,
@@ -692,7 +708,7 @@ export async function resolveResearchRuntimeSnapshot(
         options: {
           symbol: marketData.symbol,
           timeframe: marketData.timeframe,
-          currentTimestamp: source.candles[source.candles.length - 1]?.timestamp
+          currentTimestamp: runtimeResearchCandles[runtimeResearchCandles.length - 1]?.timestamp
         }
       })
     : undefined;
@@ -781,11 +797,11 @@ export async function resolveResearchRuntimeSnapshot(
   const latestWalkForward = latestWalkForwardRun(walkForwardState);
   const activeImportId = getActiveImportedCandleSetId();
   const evidenceLedgerSummary = buildEvidenceLedger({
-    dataMode: marketData.activeDataSource === "imported" ? "imported" : "mock",
-    sourceLabel: marketData.sourceLabel,
-    rawCandleCount: marketData.rawCandleCount,
-    processedCandleCount: marketData.processedCandleCount,
-    researchWindow: marketData.researchWindow,
+    dataMode: runtimeResearchMode,
+    sourceLabel: runtimeResearchSourceLabel,
+    rawCandleCount: displaySource.researchIdentity.candleCount,
+    processedCandleCount: displaySource.researchIdentity.candleCount,
+    researchWindow: displaySource.researchIdentity.candleCount,
     latestCycleId: latestCycle?.cycleId,
     latestCycleTimestamp: latestCycle?.completedAt ?? latestCycle?.startedAt,
     latestLLMRunId: latestLLMRun?.runId,

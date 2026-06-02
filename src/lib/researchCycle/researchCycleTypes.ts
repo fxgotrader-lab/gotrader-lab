@@ -11,6 +11,7 @@ import type { LLMAdvisoryRun } from "@/lib/llm";
 import type { CandleWindowSettings, CandleDataSourceMode, ResearchPerformanceMode } from "@/lib/marketData";
 import type { CanonicalPerformanceMetrics } from "@/lib/performance/canonicalMetrics";
 import type { ReadinessGateSnapshot } from "@/lib/readiness";
+import type { RegimeClassification } from "@/lib/regime";
 import type { ResearchQualityReview } from "@/lib/researchQuality";
 import type { CalibrationProposal, CalibrationProposalChanges } from "@/lib/selfImprovement";
 import type { FuturesSymbol, MarketBias, Timeframe } from "@/lib/types";
@@ -133,6 +134,56 @@ export interface ResearchCycleAgentDebateSummary {
   minorityView: string;
 }
 
+export interface ResearchCycleRegimeSummary {
+  label: RegimeClassification["stableLabel"];
+  instantaneousLabel: RegimeClassification["instantaneousLabel"];
+  stableLabel: RegimeClassification["stableLabel"];
+  confidence: number;
+  dataQuality: RegimeClassification["dataQuality"];
+  transitionPending: boolean;
+  candleCount: number;
+  requiredCandleCount: number;
+  missingInputs: string[];
+  supportingFactors: string[];
+  warnings: string[];
+  sourceFingerprint: string;
+}
+
+export interface ResearchCycleEvidenceSummary {
+  evidenceScore: number;
+  realEvidenceCoverage: number;
+  weakestEvidenceCategories: string[];
+  readinessEvidenceWarnings: string[];
+  nextDataImprovement: string;
+}
+
+export interface ResearchCycleMaturitySummary {
+  maturityScore: number;
+  maturityGrade: string;
+  missingRequirements: string[];
+  maturityWarnings: string[];
+  nextMaturityRequirement: string;
+}
+
+export interface ResearchCycleSourceMetadata {
+  activeSourceMode: CandleDataSourceMode;
+  activeSourceLabel: string;
+  activeSourceFingerprint: string;
+  candleCount: number;
+  firstTimestamp?: string;
+  lastTimestamp?: string;
+  firstClose?: number;
+  lastClose?: number;
+  researchEligibility?: string;
+  eligibilityReasons: string[];
+  sourceWarnings: string[];
+  authority: {
+    executionAuthority: "none";
+    brokerAuthority: "none";
+    readinessOverrideAuthority: "none";
+  };
+}
+
 export interface ResearchCycleRun {
   cycleId: string;
   startedAt: string;
@@ -182,6 +233,10 @@ export interface ResearchCycleRun {
   researchQualitySummary?: ResearchCycleQualitySummary;
   bestCandidateSummary?: ResearchCycleCandidateSummary;
   agentDebateConsensus?: ResearchCycleAgentDebateSummary;
+  regimeSummary?: ResearchCycleRegimeSummary;
+  evidenceSummary?: ResearchCycleEvidenceSummary;
+  maturitySummary?: ResearchCycleMaturitySummary;
+  sourceMetadata?: ResearchCycleSourceMetadata;
   proposalStatus?: string;
   blockers?: string[];
   createdProposalId?: string;

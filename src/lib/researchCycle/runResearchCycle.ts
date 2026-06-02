@@ -24,6 +24,7 @@ import {
 import type { BacktestResult, ResolvedBacktestConfig } from "@/lib/backtesting";
 import { recordResearchCycleCommunication } from "@/lib/communications/communicationSpec";
 import { buildEvidenceLedger } from "@/lib/evidence";
+import type { EvidenceLedgerInput } from "@/lib/evidence";
 import {
   buildLLMResearchContextPacket,
   importLLMAgentResponse,
@@ -49,7 +50,8 @@ import {
 import { hydrateActiveTradingViewMcpChartFeed } from "@/lib/integrations/tradingview";
 import { hydrateActiveMt5ReadOnlyCandleFeed } from "@/lib/integrations/mt5";
 import { mockCandles } from "@/lib/mockData/mockCandles";
-import { buildCanonicalPerformanceMetricsFromRun } from "@/lib/performance/canonicalMetrics";
+import { buildCanonicalPerformanceMetricsFromRun, canonicalMetricsForRun } from "@/lib/performance/canonicalMetrics";
+import { calculateResearchMaturity } from "@/lib/maturity";
 import { evaluateReadinessGate } from "@/lib/readiness";
 import { analyzeValidationResults, saveLatestResearchQualityReview } from "@/lib/researchQuality";
 import type {
@@ -83,6 +85,7 @@ import type { LabState, ThesisInput, TradeThesis } from "@/lib/types";
 import { safeArray, safeTopN, uid } from "@/lib/utils";
 import { runValidationSuite, saveLatestValidationReport } from "@/lib/validation";
 import type { ValidationSuiteReport } from "@/lib/validation";
+import { latestWalkForwardRun, loadWalkForwardState } from "@/lib/walkForward";
 
 export const RESEARCH_CYCLE_STORAGE_KEY = "gotrader_ai_lab_research_cycle_state";
 export const RESEARCH_CYCLE_UPDATED_EVENT = "gotrader-ai-lab-research-cycle-updated";
@@ -181,6 +184,62 @@ const readinessBlockerLabel = (requirement: { id?: string; label: string; passed
 
 const uniqueText = (items: Array<string | undefined>) =>
   items.filter((item): item is string => Boolean(item?.trim())).filter((item, index, array) => array.indexOf(item) === index);
+
+const evidenceDataModeFor = (
+  sourceMode: ResearchCycleRun["dataSourceMode"],
+  fallbackMode: PreparedCandleSource["mode"]
+): EvidenceLedgerInput["dataMode"] => {
+  if (sourceMode === "tradingview_mcp_chart" || sourceMode === "mt5_read_only") {
+    return "future_provider";
+  }
+  return fallbackMode === "imported" ? "imported" : "mock";
+};
+
+const sourceMetadataFor = ({
+  activeResearchCandleSource,
+  mt5ReadOnlyFeed,
+  tradingViewChartFeed
+}: {
+  activeResearchCandleSource: ReturnType<typeof resolveActiveResearchCandleSource>;
+  mt5ReadOnlyFeed?: Awaited<ReturnType<typeof hydrateActiveMt5ReadOnlyCandleFeed>>;
+  tradingViewChartFeed?: Awaited<ReturnType<typeof hydrateActiveTradingViewMcpChartFeed>>;
+}): ResearchCycleRun["sourceMetadata"] => {
+  const mt5Active = activeResearchCandleSource.sourceMode === "mt5_read_only";
+  const tradingViewActive = activeResearchCandleSource.sourceMode === "tradingview_mcp_chart";
+  const eligibility = mt5Active
+    ? mt5ReadOnlyFeed?.researchEligibility
+    : tradingViewActive
+      ? tradingViewChartFeed?.researchEligibility
+      : undefined;
+
+  return {
+    activeSourceMode: activeResearchCandleSource.sourceMode,
+    activeSourceLabel: activeResearchCandleSource.sourceLabel,
+    activeSourceFingerprint: activeResearchCandleSource.identity.dataFingerprint,
+    candleCount: activeResearchCandleSource.identity.candleCount,
+    firstTimestamp: activeResearchCandleSource.identity.firstTimestamp,
+    lastTimestamp: activeResearchCandleSource.identity.lastTimestamp,
+    firstClose: activeResearchCandleSource.identity.firstClose,
+    lastClose: activeResearchCandleSource.identity.lastClose,
+    researchEligibility: eligibility?.state,
+    eligibilityReasons: safeArray(eligibility?.reasons),
+    sourceWarnings: uniqueText([
+      ...(mt5Active ? safeArray(mt5ReadOnlyFeed?.warnings) : []),
+      ...(tradingViewActive ? safeArray(tradingViewChartFeed?.warnings) : []),
+      activeResearchCandleSource.sourceMode === "mt5_read_only"
+        ? "MT5 read-only candles are CFD/proxy market data, not CME futures broker truth."
+        : undefined,
+      activeResearchCandleSource.sourceMode === "tradingview_mcp_chart"
+        ? "TradingView MCP candles are chart data, not broker truth."
+        : undefined
+    ]),
+    authority: {
+      executionAuthority: "none",
+      brokerAuthority: "none",
+      readinessOverrideAuthority: "none"
+    }
+  };
+};
 
 const publish = (state: ResearchCycleState) => {
   if (isBrowser()) {
@@ -519,6 +578,7 @@ export async function runResearchCycle({
     : [];
   const researchCandles = activeResearchCandleSource.candles.length ? activeResearchCandleSource.candles : mockCandles;
   const dataSourceLabel = activeResearchCandleSource.sourceLabel;
+  const evidenceDataMode = evidenceDataModeFor(activeResearchCandleSource.sourceMode, activeCandleSource.mode);
   const latestResearchCandle = researchCandles[researchCandles.length - 1];
   const activeConfig = activeResearchUsesExternalReadOnly && latestResearchCandle
     ? sanitizeBacktestConfig({
@@ -576,6 +636,7 @@ export async function runResearchCycle({
         ? [`Current data source is Mock. Not valid for imported MNQ comparison. ${importActivation?.message ?? ""}`.trim()]
         : [])
     ],
+    sourceMetadata: sourceMetadataFor({ activeResearchCandleSource, mt5ReadOnlyFeed, tradingViewChartFeed }),
     nextRecommendedAction: "Research cycle is running.",
     resultSummary: "Research cycle is running.",
     safetyNotice: "Research cycle only. Broker execution remains disabled."
@@ -682,6 +743,23 @@ export async function runResearchCycle({
       };
       labStorage.save(workingState);
       run.thesisSummary = summarizeThesis(generatedThesis.thesis, generatedThesis.debateSession.id);
+      const regimeClassification = generatedThesis.thesis.regimeClassification;
+      if (regimeClassification) {
+        run.regimeSummary = {
+          label: regimeClassification.stableLabel,
+          instantaneousLabel: regimeClassification.instantaneousLabel,
+          stableLabel: regimeClassification.stableLabel,
+          confidence: regimeClassification.confidence,
+          dataQuality: regimeClassification.dataQuality,
+          transitionPending: regimeClassification.transitionPending,
+          candleCount: regimeClassification.candleCount,
+          requiredCandleCount: 100,
+          missingInputs: regimeClassification.missingInputs,
+          supportingFactors: safeTopN(regimeClassification.supportingFactors, 6),
+          warnings: safeTopN(regimeClassification.warnings, 6),
+          sourceFingerprint: regimeClassification.sourceFingerprint
+        };
+      }
       run.agentDebateConsensus = summarizeAgentDebateConsensus(structuredDebateSession);
       passStep("thesis_generation", {
         summary: `${generatedThesis.thesis.symbol} ${generatedThesis.thesis.timeframe} thesis generated: ${generatedThesis.thesis.finalBias}.`,
@@ -776,15 +854,15 @@ export async function runResearchCycle({
     const llmMarketContext = buildMarketContext({
       symbol: activeConfig.symbol,
       timeframe: activeConfig.timeframe,
-      mode: activeCandleSource.mode === "imported" ? "imported" : "mock",
-      candles: activeCandleSource.candles
+      mode: evidenceDataMode,
+      candles: researchCandles
     });
     const llmEvidenceQualitySummary = buildEvidenceLedger({
-      dataMode: activeCandleSource.mode === "imported" ? "imported" : "mock",
+      dataMode: evidenceDataMode,
       sourceLabel: dataSourceLabel,
-      rawCandleCount: activeCandleSource.rawCandleCount,
-      processedCandleCount: activeCandleSource.processedCandleCount,
-      researchWindow: activeCandleSource.researchWindowCandles,
+      rawCandleCount: run.rawCandleCount ?? researchCandles.length,
+      processedCandleCount: run.processedCandleCount ?? researchCandles.length,
+      researchWindow: run.researchWindowCandles ?? researchCandles.length,
       latestCycleId: run.cycleId,
       latestCycleTimestamp: run.startedAt,
       debateSessionId: run.agentDebateConsensus?.sessionId,
@@ -1047,6 +1125,74 @@ export async function runResearchCycle({
       summary: `Readiness remains ${readinessSnapshot.state}.`,
       detail: `${safeArray(readinessSnapshot.failedRequirements).length} failed requirement${safeArray(readinessSnapshot.failedRequirements).length === 1 ? "" : "s"}; no override applied.`
     });
+
+    run.canonicalMetrics = buildCanonicalPerformanceMetricsFromRun(run, validationReport);
+    const cycleEvidenceSummary = buildEvidenceLedger({
+      dataMode: evidenceDataMode,
+      sourceLabel: dataSourceLabel,
+      rawCandleCount: run.rawCandleCount ?? researchCandles.length,
+      processedCandleCount: run.processedCandleCount ?? researchCandles.length,
+      researchWindow: run.researchWindowCandles ?? researchCandles.length,
+      latestCycleId: run.cycleId,
+      latestCycleTimestamp: run.completedAt ?? run.startedAt,
+      latestLLMRunId: run.llmRun?.runId,
+      llmAdvisoryPassed: run.llmRun?.advisoryPassed,
+      debateSessionId: run.agentDebateConsensus?.sessionId,
+      validationId: run.validationSummary?.validationId,
+      researchQualityId: run.researchQualitySummary?.reviewId,
+      readinessState: readinessSnapshot.state,
+      proposalId: run.createdProposalId,
+      smtState: run.backtestSummary?.grinchSummary?.latestScore?.smtState
+    });
+    run.evidenceSummary = {
+      evidenceScore: cycleEvidenceSummary.overallScore,
+      realEvidenceCoverage: cycleEvidenceSummary.realEvidenceCoverage,
+      weakestEvidenceCategories: safeTopN(cycleEvidenceSummary.weakestEvidenceCategories, 5),
+      readinessEvidenceWarnings: safeTopN(cycleEvidenceSummary.readinessEvidenceWarnings, 5),
+      nextDataImprovement: cycleEvidenceSummary.nextDataImprovement
+    };
+    const existingCycleState = loadResearchCycleState();
+    const maturityCycles = [
+      run,
+      ...safeArray(existingCycleState.runs).filter((item) => item.cycleId !== run.cycleId)
+    ].map((cycle) => {
+      const metrics = canonicalMetricsForRun(cycle);
+      return {
+        cycleId: cycle.cycleId,
+        timestamp: cycle.completedAt ?? cycle.startedAt,
+        status: cycle.status,
+        activeCalibrationId: metrics?.activeCalibrationId ?? cycle.activeCalibrationId,
+        dataSourceMode: cycle.dataSourceMode,
+        researchPreset: cycle.researchPreset,
+        candleWindow: metrics?.candleWindow ?? `${cycle.researchWindowCandles ?? 0} raw / ${cycle.processedCandleCount ?? 0} processed`,
+        rawCandleCount: metrics?.rawCandleCount ?? cycle.rawCandleCount,
+        processedCandleCount: metrics?.processedCandleCount ?? cycle.processedCandleCount,
+        totalTrades: metrics?.totalTrades ?? cycle.backtestSummary?.totalTrades,
+        winRate: metrics?.winRate ?? cycle.backtestSummary?.winRate,
+        averageR: metrics?.averageR ?? cycle.backtestSummary?.averageR,
+        maxDrawdownR: metrics?.maxDrawdownR ?? cycle.backtestSummary?.maxDrawdown,
+        falsePositiveCount: metrics?.falsePositiveCount,
+        readinessScore: metrics?.readinessScore ?? cycle.researchQualitySummary?.readinessScore ?? cycle.validationSummary?.readinessScore,
+        readinessState: cycle.readinessSnapshot?.state,
+        llmAdvisoryPassed: cycle.llmRun?.advisoryPassed
+      };
+    });
+    const maturitySummary = calculateResearchMaturity({
+      activeCalibrationId: activeResearchConfig.activeCalibrationId,
+      activeCalibrationApprovedAt: activeResearchConfig.activeResearchCalibration?.approvedAt,
+      cycles: maturityCycles,
+      evidenceQualityScore: cycleEvidenceSummary.overallScore,
+      proposals: loadSelfImprovementState().proposals,
+      latestReadinessState: readinessSnapshot.state,
+      latestWalkForwardRun: latestWalkForwardRun(loadWalkForwardState())
+    });
+    run.maturitySummary = {
+      maturityScore: maturitySummary.score,
+      maturityGrade: maturitySummary.grade,
+      missingRequirements: safeTopN(maturitySummary.missingRequirements, 5),
+      maturityWarnings: safeTopN(maturitySummary.maturityWarnings, 5),
+      nextMaturityRequirement: maturitySummary.nextMaturityRequirement
+    };
 
     let auditWarning: string | undefined;
     if (heavyAuditSkipped) {
