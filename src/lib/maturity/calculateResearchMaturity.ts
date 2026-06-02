@@ -40,6 +40,9 @@ const readinessTrendFor = (cycles: ResearchMaturityCycleInput[]): ResearchMaturi
 const proposalFailed = (verdict?: string) =>
   verdict === "reject" || verdict === "needs_follow_up" || verdict === "no_material_change";
 
+const isReadOnlyProviderCycle = (cycle: ResearchMaturityCycleInput) =>
+  cycle.dataSourceMode === "mt5_read_only" || cycle.dataSourceMode === "tradingview_mcp_chart";
+
 const gradeForScore = (score: number): ResearchMaturityGrade => {
   if (score >= 85) {
     return "paper_demo_candidate_review";
@@ -94,7 +97,8 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
     : cycles.filter((cycle) => !cycle.activeCalibrationId);
   const maturityCycles = currentCalibrationCycles.length ? currentCalibrationCycles : cycles;
   const importedDataCycles = maturityCycles.filter((cycle) => cycle.dataSourceMode === "imported").length;
-  const mockDataCycles = maturityCycles.filter((cycle) => cycle.dataSourceMode !== "imported").length;
+  const readOnlyProviderCycles = maturityCycles.filter(isReadOnlyProviderCycle).length;
+  const mockDataCycles = maturityCycles.filter((cycle) => cycle.dataSourceMode !== "imported" && !isReadOnlyProviderCycle(cycle)).length;
   const dataWindowsTested = distinctCount(maturityCycles.map((cycle) => cycle.candleWindow));
   const totalSimulatedTrades = maturityCycles.reduce((sum, cycle) => sum + (cycle.totalTrades ?? 0), 0);
   const llmAdvisoryPassCount = maturityCycles.filter((cycle) => cycle.llmAdvisoryPassed).length;
@@ -148,7 +152,11 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
     walkForward: clamp(walkForwardScore),
     readinessTrend: readinessTrend === "improving" ? 85 : readinessTrend === "stable" ? 70 : readinessTrend === "declining" ? 25 : 35,
     proposalDiscipline: clamp(70 + acceptedProposalCount * 5 - noOpOrFailedProposalCount * 10 - rejectedProposalCount * 2),
-    dataReality: importedDataCycles ? clamp((importedDataCycles / Math.max(3, maturityCycles.length)) * 100) : 20
+    dataReality: importedDataCycles
+      ? clamp((importedDataCycles / Math.max(3, maturityCycles.length)) * 100)
+      : readOnlyProviderCycles
+        ? 35
+        : 20
   };
 
   let score = Math.round(
@@ -182,7 +190,13 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
     missingRequirements.push("Needs more OOS consistency before robust maturity can be trusted.");
   }
   if (input.evidenceQualityScore < 60) missingRequirements.push("Improve evidence quality before Paper-Demo Candidate review.");
-  if (!importedDataCycles) missingRequirements.push("Use imported historical data; mock-only runs cap maturity.");
+  if (!importedDataCycles) {
+    missingRequirements.push(
+      readOnlyProviderCycles
+        ? "Validate read-only provider/proxy results against imported historical data before maturity can advance."
+        : "Use imported historical data; mock-only runs cap maturity."
+    );
+  }
   if (readinessTrend === "declining") missingRequirements.push("Readiness trend is declining across tested cycles.");
   if (!trendAvailability.basicTrendAvailable) missingRequirements.push(trendAvailability.message);
 
@@ -212,7 +226,11 @@ export function calculateResearchMaturity(input: ResearchMaturityInput): Researc
   score = Math.min(score, scoreCapForGrade(grade));
 
   const maturityWarnings = [
-    !importedDataCycles ? "Mock-only data caps maturity at early research." : undefined,
+    !importedDataCycles
+      ? readOnlyProviderCycles
+        ? "Read-only provider/proxy data caps maturity at early research until cross-validated with imported historical data."
+        : "Mock-only data caps maturity at early research."
+      : undefined,
     input.evidenceQualityScore < 60 ? "Low evidence quality caps maturity and should block Paper-Demo Candidate confidence." : undefined,
     totalSimulatedTrades < 50 ? "Too few simulated trades to trust calibration maturity." : undefined,
     llmAdvisoryPassCount < 1 ? "Missing LLM advisory review caps maturity." : undefined,
