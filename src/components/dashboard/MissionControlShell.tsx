@@ -445,6 +445,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
 
   const connectMt5ReadOnly = async ({ usageMode = "chart_only" }: { usageMode?: "chart_only" | "research_source" } = {}) => {
     setMt5Busy(true);
+    const actionLabel = usageMode === "research_source" ? "Use MT5 for Research" : "Connect MT5 Read-Only";
     const loadedSettings = loadMt5ReadOnlySettings();
     const requestedSymbol = (loadedSettings.requestedSymbol || commandCenterSymbol || "MNQ").trim();
     const timeframe = (loadedSettings.timeframe || commandCenterTimeframe || "5m").trim();
@@ -452,7 +453,13 @@ export function MissionControlShell({ state }: { state: LabState }) {
     const limit = Math.max(1, Number(mt5CandleLimit) || loadedSettings.candleLimit || 1000);
     setMt5BrokerSymbol(brokerSymbol);
     setMt5CandleLimit(String(limit));
-    setMt5OperationMessage(`Checking MT5 read-only bridge for GoTrader ${requestedSymbol} via MT5 ${brokerSymbol} ${timeframe}...`);
+    setMt5OperationMessage(`${actionLabel} clicked. Checking wrapper for GoTrader ${requestedSymbol} via MT5 ${brokerSymbol} ${timeframe}...`);
+    addDataConnectionEvent(
+      usageMode === "research_source" ? "MT5 research click received" : "MT5 connect clicked",
+      `Dashboard action received. Requested ${requestedSymbol}; broker symbol ${brokerSymbol}; timeframe ${timeframe}; limit ${limit.toLocaleString()}.`,
+      "running",
+      brokerSymbol
+    );
     addDataConnectionEvent("MT5 status checked", `Checking GoTrader ${requestedSymbol} via MT5 broker symbol ${brokerSymbol}.`, "running");
     try {
       const settings = saveMt5ReadOnlySettings({
@@ -500,6 +507,12 @@ export function MissionControlShell({ state }: { state: LabState }) {
       );
 
       setMt5OperationMessage(`Fetching ${limit.toLocaleString()} MT5 candles for GoTrader ${requestedSymbol} via ${brokerSymbol} ${timeframe}...`);
+      addDataConnectionEvent(
+        "MT5 candles requested",
+        `Fetching ${limit.toLocaleString()} ${timeframe} candles from safe wrapper ${settings.bridgeUrl}.`,
+        "running",
+        brokerSymbol
+      );
       const feed = await fetchAndStoreMt5ReadOnlyCandleFeed({
         symbol: requestedSymbol,
         brokerSymbol,
@@ -510,15 +523,26 @@ export function MissionControlShell({ state }: { state: LabState }) {
         settings,
         usageMode
       });
+      addDataConnectionEvent(
+        "MT5 canonical registration checked",
+        feed.candles.length
+          ? `Stored ${feed.candles.length.toLocaleString()} candles as canonical MT5 read-only source.`
+          : feed.missingEvidence.join(" ") || "No MT5 candle array was returned, so canonical registration is blocked.",
+        feed.candles.length ? "success" : "warning",
+        feed.feedId
+      );
       await resolveAndStoreRuntime().catch(() => undefined);
       setMt5OperationMessage(
-        feed.candleCount
+        feed.candles.length
           ? [
-              `MT5 read-only ${usageMode === "research_source" && feed.activeForResearch ? "research" : "chart"} source loaded with ${feed.candleCount.toLocaleString()} candles.`,
+              `${actionLabel} clicked. MT5 read-only ${usageMode === "research_source" && feed.activeForResearch ? "research" : "chart"} source loaded with ${feed.candleCount.toLocaleString()} candles.`,
               `GoTrader ${feed.requestedSymbol}; MT5 broker symbol ${feed.brokerSymbol ?? brokerSymbol}; depth ${formatToken(feed.depthStatus)}.`,
               feed.activeForResearch ? "Research source gate passed." : `Research guarded: ${feed.researchEligibility.reasons.join(" ")}`
             ].join(" ")
-          : feed.missingEvidence.join(" ") || "MT5 bridge connected but returned no candles."
+          : [
+              `${actionLabel} clicked. ${feed.missingEvidence.join(" ") || "MT5 bridge connected but returned no candles."}`,
+              `Start/verify MT5 upstream on 8000 and GoTrader safe wrapper on 7341, then retry Connect MT5 Read-Only.`
+            ].join(" ")
       );
       addDataConnectionEvent(
         feed.activeForResearch ? "MT5 research source activated" : "MT5 chart source activated",
@@ -536,28 +560,40 @@ export function MissionControlShell({ state }: { state: LabState }) {
   };
 
   const useExistingMt5ForResearch = async () => {
+    setMt5OperationMessage("Use MT5 for Research clicked. Checking cached MT5 candle source and research gate...");
+    addDataConnectionEvent("MT5 research click received", "Checking cached MT5 read-only source before setting research source.", "running");
     const feed = await hydrateActiveMt5ReadOnlyCandleFeed().catch(() => loadActiveMt5ReadOnlyCandleFeed());
-    if (!feed?.candleCount) {
+    if (!feed?.candles.length) {
+      const message = feed?.candleCount
+        ? "MT5 metadata exists, but the candle array was not hydrated from IndexedDB/session. Reconnect MT5 Read-Only to refresh the canonical source."
+        : "No MT5 candles are loaded. Running the full MT5 connect flow in research-source mode.";
+      setMt5OperationMessage(message);
+      addDataConnectionEvent("MT5 research source needs candles", message, "warning", feed?.feedId);
       await connectMt5ReadOnly({ usageMode: "research_source" });
       return;
     }
-    const researchFeed = updateActiveMt5ReadOnlyCandleFeedMetadata(feed, { usageMode: "research_source" });
-    await resolveAndStoreRuntime().catch(() => undefined);
-    if (researchFeed.activeForResearch) {
-      setMt5OperationMessage("MT5 read-only is now the guarded research source. Execution remains disabled.");
-      addDataConnectionEvent("MT5 research source activated", "MT5 read-only candles passed the research-source gate.", "success", researchFeed.candleFingerprint);
-      return;
+    setMt5Busy(true);
+    try {
+      const researchFeed = updateActiveMt5ReadOnlyCandleFeedMetadata(feed, { usageMode: "research_source" });
+      await resolveAndStoreRuntime().catch(() => undefined);
+      if (researchFeed.activeForResearch) {
+        setMt5OperationMessage("MT5 read-only is now the guarded research source. Execution remains disabled.");
+        addDataConnectionEvent("MT5 research source activated", "MT5 read-only candles passed the research-source gate.", "success", researchFeed.candleFingerprint);
+        return;
+      }
+      setMt5OperationMessage(`MT5 remains chart-only: ${researchFeed.researchEligibility.reasons.join(" ")}`);
+      addDataConnectionEvent("MT5 research source blocked", researchFeed.researchEligibility.reasons.join(" "), "warning", researchFeed.researchEligibility.state);
+    } finally {
+      setMt5Busy(false);
     }
-    setMt5OperationMessage(`MT5 remains chart-only: ${researchFeed.researchEligibility.reasons.join(" ")}`);
-    addDataConnectionEvent("MT5 research source blocked", researchFeed.researchEligibility.reasons.join(" "), "warning", researchFeed.researchEligibility.state);
   };
 
   const clearMt5ReadOnlySource = async () => {
     await clearMt5ReadOnlyCandleFeedCache();
-      await resolveAndStoreRuntime().catch(() => undefined);
-      setMt5OperationMessage("MT5 read-only cached candles cleared. Falling back to imported/mock sources until MT5 is connected again.");
-      addDataConnectionEvent("MT5 cache cleared", "Removed MT5 read-only candle cache only.", "warning");
-    };
+    await resolveAndStoreRuntime().catch(() => undefined);
+    setMt5OperationMessage("MT5 read-only cached candles cleared. Falling back to imported/mock sources until MT5 is connected again.");
+    addDataConnectionEvent("MT5 cache cleared", "Removed MT5 read-only candle cache only.", "warning");
+  };
 
   const persistAutoRefreshSettings = (intervalSeconds = autoRefreshIntervalSeconds, candleLimit = autoRefreshCandleLimit) => {
     const saved = saveTradingViewMcpAutoRefreshSettings({
@@ -761,12 +797,17 @@ export function MissionControlShell({ state }: { state: LabState }) {
   };
 
   const useExistingMt5ForChart = async () => {
+    setMt5OperationMessage("Use MT5 for Chart clicked. Checking cached MT5 candle source...");
+    addDataConnectionEvent("MT5 chart click received", "Checking cached MT5 read-only source before setting chart source.", "running");
     setMt5Busy(true);
     try {
       const feed = await hydrateActiveMt5ReadOnlyCandleFeed().catch(() => loadActiveMt5ReadOnlyCandleFeed());
-      if (!feed?.candleCount) {
-        setMt5OperationMessage("No MT5 candles are loaded. Connect MT5 Read-Only first.");
-        addDataConnectionEvent("MT5 chart source blocked", "No cached MT5 candles are available for chart display.", "warning");
+      if (!feed?.candles.length) {
+        const message = feed?.candleCount
+          ? "MT5 metadata exists, but the candle array was not hydrated from IndexedDB/session. Reconnect MT5 Read-Only to refresh the canonical source."
+          : "No MT5 candles are loaded. Connect MT5 Read-Only first.";
+        setMt5OperationMessage(message);
+        addDataConnectionEvent("MT5 chart source blocked", message, "warning", feed?.feedId);
         return;
       }
       const usageMode = feed.usageMode === "research_source" ? "research_source" : "chart_only";
@@ -861,6 +902,14 @@ export function MissionControlShell({ state }: { state: LabState }) {
     "USTECH";
   const mt5ResearchEligible = mt5ResearchEligibleFrom(runtimeSnapshot);
   const mt5ResearchEligibilityReason = mt5ResearchEligibilityReasonFrom(runtimeSnapshot);
+  const mt5ChartActionReason = mt5ReadOnlyRegistered
+    ? `MT5 chart source can use ${mt5ReadOnlyCandleCount.toLocaleString()} cached candles.`
+    : runtimeSnapshot?.mt5ReadOnly.connectionStatus === "degraded" || runtimeSnapshot?.mt5ReadOnly.connectionStatus === "connected"
+      ? "MT5 wrapper responded, but no canonical candle source is registered yet. Click Connect MT5 Read-Only to fetch candles."
+      : "No MT5 candles are loaded. Start MT5 upstream on 8000 and GoTrader wrapper on 7341, then click Connect MT5 Read-Only.";
+  const mt5ResearchActionReason = mt5ResearchEligible
+    ? "MT5 read-only candles passed the research-source gate."
+    : mt5ResearchEligibilityReason || "MT5 research-source gate has not passed yet.";
   const statusChips = [
     {
       label: "MT5 Read-Only",
@@ -1055,19 +1104,27 @@ export function MissionControlShell({ state }: { state: LabState }) {
                   <Button
                     variant="secondary"
                     onClick={() => void useExistingMt5ForChart()}
-                    disabled={mt5Busy || !mt5ReadOnlyRegistered}
-                    title={mt5ReadOnlyRegistered ? "MT5 read-only candles can be used for chart display." : "Load MT5 candles first."}
+                    disabled={mt5Busy}
+                    title={mt5ChartActionReason}
                   >
                     Use MT5 for Chart
                   </Button>
                   <Button
                     variant="secondary"
                     onClick={() => void useExistingMt5ForResearch()}
-                    disabled={mt5Busy || !mt5ResearchEligible}
-                    title={mt5ResearchEligible ? "MT5 read-only candles passed the research-source gate." : mt5ResearchEligibilityReason}
+                    disabled={mt5Busy}
+                    title={mt5ResearchActionReason}
                   >
                     Use MT5 for Research
                   </Button>
+                </div>
+                <div className="mt-2 space-y-1 rounded-md border border-white/10 bg-black/20 p-2 text-[11px] leading-4 text-slate-400">
+                  <p>
+                    Chart action: <span className="text-slate-200">{mt5ChartActionReason}</span>
+                  </p>
+                  <p>
+                    Research action: <span className="text-slate-200">{mt5ResearchActionReason}</span>
+                  </p>
                 </div>
                 <Button variant="outline" className="mt-2 w-full justify-start" onClick={() => void clearMt5ReadOnlySource()} disabled={mt5Busy}>
                   Clear MT5 cached candles
