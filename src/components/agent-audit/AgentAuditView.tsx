@@ -135,6 +135,22 @@ export function AgentAuditView() {
       </div>
 
       <Card>
+        <CardHeader>
+          <CardTitle>Agent Metric Provenance</CardTitle>
+          <CardDescription>
+            Audit score, strongest/weakest labels, and reliability verdicts are explainability metrics from local research traces.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-5">
+          <ProvenanceTile label="Sample size" value={`${safeArray(state.traces).length} trace(s)`} />
+          <ProvenanceTile label="Last updated cycle" value={formatDate(summary.latestAuditAt)} />
+          <ProvenanceTile label="Data source" value="local research audit" />
+          <ProvenanceTile label="Regime context" value="trace-level when available" />
+          <ProvenanceTile label="Metric status" value={safeArray(state.traces).length ? "simulated" : "insufficient"} />
+        </CardContent>
+      </Card>
+
+      <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2">
@@ -239,6 +255,15 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
         <div className="mt-1 truncate font-semibold text-foreground">{value}</div>
       </CardContent>
     </Card>
+  );
+}
+
+function ProvenanceTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/45 p-3">
+      <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{label}</div>
+      <div className="mt-1 truncate font-semibold text-foreground">{value}</div>
+    </div>
   );
 }
 

@@ -175,6 +175,22 @@ export function AgentDebateView() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Agent Metric Provenance</CardTitle>
+          <CardDescription>
+            Confidence, probability, and alignment counts are local research metrics. They are not broker performance.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-5">
+          <StatusTile label="Sample size" value={selectedSession ? `${selectedSession.openingStatements.length} agents` : "insufficient"} />
+          <StatusTile label="Last updated cycle" value={selectedSession?.timestamp ? new Date(selectedSession.timestamp).toLocaleString() : "none"} />
+          <StatusTile label="Data source" value={runtimeSnapshot?.marketData.activeResearchSourceLabel ?? "runtime not loaded"} />
+          <StatusTile label="Regime context" value={runtimeSnapshot?.regime.label.replace(/_/g, " ") ?? "unavailable"} />
+          <StatusTile label="Metric status" value={selectedSession ? "simulated" : "insufficient"} />
+        </CardContent>
+      </Card>
+
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Card>
           <CardHeader>
