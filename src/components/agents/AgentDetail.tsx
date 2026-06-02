@@ -33,6 +33,8 @@ export function AgentDetail({ state }: { state: LabState }) {
     label: `T${index + 1}`,
     confidence: Math.round(item.value * 100)
   }));
+  const sampleSize = agent.wins + agent.losses;
+  const metricStatus = sampleSize > 0 ? "simulated" : "insufficient";
 
   return (
     <div className="space-y-5">
@@ -59,6 +61,40 @@ export function AgentDetail({ state }: { state: LabState }) {
         <MetricCard label="Sharpe-like" value={agent.sharpeLike.toFixed(2)} detail="Simulation score" />
         <MetricCard label="Calibration" value={formatPercent(agent.confidenceCalibration)} detail="Confidence vs score" />
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Agent Metric Provenance</CardTitle>
+              <CardDescription>Confidence, hit-rate, weight, and Sharpe-like metrics are local research metrics, not broker performance.</CardDescription>
+            </div>
+            <Badge variant={metricStatus === "simulated" ? "secondary" : "warning"}>{metricStatus}</Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-5">
+          <div className="rounded-lg border border-border bg-background/45 p-3">
+            <p className="text-xs text-muted-foreground">Sample size</p>
+            <p className="mt-1 font-mono">{sampleSize}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-background/45 p-3">
+            <p className="text-xs text-muted-foreground">Last updated</p>
+            <p className="mt-1 font-mono">{agent.confidenceHistory.at(-1)?.date ?? "local registry"}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-background/45 p-3">
+            <p className="text-xs text-muted-foreground">Data source</p>
+            <p className="mt-1 font-mono">local simulation</p>
+          </div>
+          <div className="rounded-lg border border-border bg-background/45 p-3">
+            <p className="text-xs text-muted-foreground">Regime context</p>
+            <p className="mt-1 font-mono">cycle-level when available</p>
+          </div>
+          <div className="rounded-lg border border-border bg-background/45 p-3">
+            <p className="text-xs text-muted-foreground">Metric status</p>
+            <p className="mt-1 font-mono">{metricStatus}</p>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-5 xl:grid-cols-[1fr_0.9fr]">
         <Card>

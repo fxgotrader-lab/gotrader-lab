@@ -18,6 +18,10 @@ import {
   type AutonomousResearchRun,
   type AutonomousResearchState
 } from "@/lib/autonomousResearch";
+import {
+  latestAutoResearchCycle,
+  loadAutoResearchState
+} from "@/lib/autoResearch";
 import { COMMUNICATION_AUDIT_UPDATED_EVENT, loadCommunicationMessages } from "@/lib/communications/communicationSpec";
 import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
@@ -68,6 +72,17 @@ import {
 import { mt5ExecutionAdapterPlan } from "@/lib/brokers/mt5";
 import { tradovateExecutionAdapterPlan } from "@/lib/brokers/tradovate";
 import { buildVwapOverlay, createTradingChartData } from "@/lib/charting";
+import {
+  buildBenchmarkDisplayRows,
+  buildExpandedResearchMetricRows,
+  buildLayerContributionRows,
+  buildProposalImpactRows,
+  buildRiskReportRows,
+  buildSourceContextRows,
+  formatNullableNumber,
+  formatPercentMetric,
+  formatR
+} from "@/lib/researchMetrics";
 import { RESEARCH_CYCLE_UPDATED_EVENT } from "@/lib/researchCycle";
 import {
   ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
@@ -783,10 +798,27 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const feedItems = useMemo(() => buildFeedItems(runtimeSnapshot, latestRun, dataConnectionEvents), [dataConnectionEvents, latestRun, runtimeSnapshot]);
   const commandCenterChart = useMemo(() => buildCommandCenterChartData(runtimeSnapshot), [runtimeSnapshot]);
   const warnings = selectRuntimeWarnings(runtimeSnapshot);
+  const latestAutoResearch = useMemo(
+    () => runtimeSnapshot?.latestResearchCycle.latestRun?.autoResearchCycle ?? latestAutoResearchCycle(loadAutoResearchState()),
+    [runtimeSnapshot?.latestResearchCycle.latestCycleId]
+  );
   const autoRefreshRunning = tradingViewAutoRefresh.status === "running" && tradingViewAutoRefresh.enabled;
   const autoRefreshCountdown = formatCountdown(tradingViewAutoRefresh.nextRefreshAt, autoRefreshClock);
   const latestBacktest = runtimeSnapshot?.latestResearchCycle.latestBacktestSummary;
   const grinch = runtimeSnapshot?.latestResearchCycle.activeGrinchProfileSummary;
+  const canonicalMetrics = runtimeSnapshot?.performance.canonicalPerformanceMetrics;
+  const latestGrinchComparison = runtimeSnapshot?.latestResearchCycle.latestRun?.autoResearchCycle?.grinchComparison ?? latestAutoResearch?.grinchComparison;
+  const layerMetrics = latestGrinchComparison?.layerMetrics;
+  const benchmarkMatrix = safeArray(latestGrinchComparison?.benchmarkMatrix);
+  const benchmarkRows = buildBenchmarkDisplayRows(benchmarkMatrix, latestAutoResearch);
+  const falsePositiveRate =
+    canonicalMetrics && canonicalMetrics.totalTrades + canonicalMetrics.falsePositiveCount > 0
+      ? canonicalMetrics.falsePositiveCount / (canonicalMetrics.totalTrades + canonicalMetrics.falsePositiveCount)
+      : undefined;
+  const sourceContextRows = buildSourceContextRows(runtimeSnapshot);
+  const expandedResearchMetricRows = buildExpandedResearchMetricRows(runtimeSnapshot);
+  const riskReportRows = buildRiskReportRows(runtimeSnapshot);
+  const proposalImpactRows = buildProposalImpactRows(runtimeSnapshot);
   const primaryBlocker =
     actionItems[0]?.title ??
     runtimeSnapshot?.readiness.actualBlockers[0] ??
@@ -1240,6 +1272,70 @@ export function MissionControlShell({ state }: { state: LabState }) {
         </div>
       </section>
 
+      <section className="grid gap-4 xl:grid-cols-2">
+        <div className="rounded-xl border border-white/10 bg-slate-950/85 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Research Quality</p>
+              <h3 className="mt-1 text-lg font-semibold text-slate-50">Metrics Report</h3>
+              <p className="mt-1 text-xs text-slate-500">{canonicalMetrics?.metricSourceLabel ?? "Not enough completed research data."}</p>
+            </div>
+            <Badge variant={canonicalMetrics ? "success" : "secondary"}>
+              {canonicalMetrics ? "real latest-cycle metrics" : "awaiting data"}
+            </Badge>
+          </div>
+          {canonicalMetrics ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <MiniReadout label="Expectancy" value={formatR(canonicalMetrics.averageR)} detail="Average simulated R per trade" />
+              <MiniReadout label="Profit factor" value={formatNullableNumber(canonicalMetrics.profitFactor)} detail={`Sample ${canonicalMetrics.totalTrades} trades`} />
+              <MiniReadout label="Max drawdown" value={formatR(canonicalMetrics.maxDrawdownR)} detail={`Net ${formatR(canonicalMetrics.realizedR)}`} />
+              <MiniReadout label="False-positive rate" value={formatPercentMetric(falsePositiveRate)} detail={`${canonicalMetrics.falsePositiveCount} estimated false positives`} />
+              <MiniReadout label="Evidence" value={`${runtimeSnapshot?.evidence.evidenceQualityScore ?? 0}/100`} detail={runtimeSnapshot?.evidence.weakestEvidenceCategories[0]?.replace(/_/g, " ") ?? "ledger ready"} />
+              <MiniReadout label="Maturity" value={`${runtimeSnapshot?.maturity.maturityScore ?? 0}/100`} detail={runtimeSnapshot?.maturity.maturityGrade.replace(/_/g, " ") ?? "untested"} />
+            </div>
+          ) : (
+            <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm text-slate-400">
+              Not enough completed research data. Run an AI Research Cycle to populate expectancy, false-positive rate, evidence, maturity, and walk-forward status.
+            </div>
+          )}
+          <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-300/5 p-3 text-xs text-cyan-100/80">
+            Source context: {sourceContextRows.map((row) => `${row.label} ${row.value}`).join(" / ")}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-slate-950/85 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-300">Layer Contribution</p>
+              <h3 className="mt-1 text-lg font-semibold text-slate-50">ICT Foundation + Grinch Refinement</h3>
+              <p className="mt-1 text-xs text-slate-500">Progressive layer contribution, not Grinch versus ICT.</p>
+            </div>
+            <Badge variant={layerMetrics ? "success" : "secondary"}>
+              {layerMetrics ? "computed" : "awaiting runs"}
+            </Badge>
+          </div>
+          {layerMetrics ? (
+            <>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <MiniReadout label="ICT foundation" value={String(layerMetrics.ictFoundationCandidates)} detail="candidate setups" />
+                <MiniReadout label="Grinch-qualified" value={String(layerMetrics.grinchQualifiedCandidates)} detail="ICT setups passed refinement" />
+                <MiniReadout label="Grinch-blocked" value={String(layerMetrics.grinchBlockedCandidates)} detail="invalid or low-quality setups blocked" />
+                <MiniReadout label="Timing expired" value={String(layerMetrics.timingExpiredBlocks)} detail="blocked timing gate" />
+                <MiniReadout label="Full-stack setups" value={String(layerMetrics.fullStackSetups)} detail={`Win ${formatPercentMetric(layerMetrics.fullStackWinRate)}`} />
+                <MiniReadout label="Full-stack avg R" value={formatR(layerMetrics.fullStackAverageR)} detail="ICT + full Grinch stack" />
+              </div>
+              <p className="mt-3 rounded-lg border border-emerald-300/15 bg-emerald-300/5 p-3 text-xs leading-5 text-emerald-100/80">
+                {safeArray(layerMetrics.layerContributionSummary).join(" ") || "Layer contribution summary pending."}
+              </p>
+            </>
+          ) : (
+            <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm text-slate-400">
+              Layer contribution metrics appear after Auto Research computes ICT foundation, PD/liquidity, Grinch profile, timing, entry confirmation, and full-stack setup layers.
+            </div>
+          )}
+        </div>
+      </section>
+
       <MissionControlDataFeed items={safeTopN(feedItems, 10)} />
 
       <TechnicalDetails
@@ -1248,6 +1344,121 @@ export function MissionControlShell({ state }: { state: LabState }) {
       >
         <div className="space-y-4">
           <WhyNotReadyCard context="command_center" snapshot={runtimeSnapshot} />
+          <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">Research Metrics Report</p>
+                <h3 className="mt-1 text-base font-semibold text-slate-50">Canonical Latest-Cycle Metrics</h3>
+                <p className="mt-1 text-sm text-slate-400">Jesse-inspired reporting surface using GoTrader simulation data only.</p>
+              </div>
+              <Badge variant={canonicalMetrics ? "success" : "secondary"}>{canonicalMetrics ? "available" : "not enough data"}</Badge>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {expandedResearchMetricRows.map((row) => (
+                <MiniReadout key={row.label} label={row.label} value={row.value} detail={row.detail} />
+              ))}
+            </div>
+          </section>
+          <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">Layer Contribution</p>
+                <h3 className="mt-1 text-base font-semibold text-slate-50">ICT Foundation to Full-Stack ICT/Grinch Setup</h3>
+                <p className="mt-1 text-sm text-slate-400">Progressive qualification layers. This is not a Grinch-vs-ICT benchmark.</p>
+              </div>
+              <Badge variant={layerMetrics ? "success" : "secondary"}>{layerMetrics ? "computed" : "awaiting Auto Research"}</Badge>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {buildLayerContributionRows(layerMetrics).map((row) => (
+                <MiniReadout key={row.label} label={row.label} value={row.value} detail={row.detail} />
+              ))}
+            </div>
+            <div className="mt-4 overflow-x-auto rounded-lg border border-white/10">
+              <div className="grid grid-cols-[1.4fr_repeat(6,minmax(80px,1fr))] gap-2 border-b border-white/10 bg-white/[0.04] px-3 py-2 text-xs uppercase tracking-[0.14em] text-slate-500">
+                <span>Layer</span>
+                <span>Candidates</span>
+                <span>Trades</span>
+                <span>Win rate</span>
+                <span>Avg R</span>
+                <span>Max DD</span>
+                <span>Readiness impact</span>
+              </div>
+              {benchmarkRows.length ? (
+                benchmarkRows.map((layer) => (
+                  <div key={layer.layerId} className="grid grid-cols-[1.4fr_repeat(6,minmax(80px,1fr))] gap-2 border-b border-white/5 px-3 py-2 text-xs text-slate-300 last:border-b-0">
+                    <span className="font-medium text-slate-100">{layer.label}</span>
+                    <span className="font-mono">{layer.candidates}</span>
+                    <span className="font-mono">{layer.trades}</span>
+                    <span className="font-mono">{layer.winRate}</span>
+                    <span className="font-mono">{layer.averageR}</span>
+                    <span className="font-mono">{layer.maxDrawdown}</span>
+                    <span>{layer.readinessImpact}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="px-3 py-4 text-sm text-slate-400">
+                  Benchmark matrix planned / awaiting enough research runs. Rows will remain progressive: ICT foundation only, ICT + PD/liquidity alignment, ICT + Grinch profile, ICT + Grinch timing, ICT + Grinch entry confirmation, ICT + full Grinch stack.
+                </div>
+              )}
+            </div>
+          </section>
+          <section className="grid gap-4 xl:grid-cols-2">
+            <div className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-300">Monte Carlo Robustness</p>
+              <h3 className="mt-1 text-base font-semibold text-slate-50">Robustness Report</h3>
+              <p className="mt-1 text-sm text-slate-400">
+                Planned: trade-order shuffle, drawdown distribution, losing-streak probability, and edge survival score.
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <MiniReadout label="Edge survival score" value="planned" detail="No Monte Carlo engine wired yet" />
+                <MiniReadout label="5th percentile drawdown" value="planned" detail="Awaiting shuffle simulation" />
+                <MiniReadout label="Losing streak probability" value="planned" detail={canonicalMetrics ? `Sample ${canonicalMetrics.totalTrades} trades` : "No sample yet"} />
+                <MiniReadout label="Sample warning" value={canonicalMetrics && canonicalMetrics.totalTrades >= 30 ? "sample usable" : "sample small"} detail="Do not fabricate robustness values" />
+              </div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300">Risk Report</p>
+              <h3 className="mt-1 text-base font-semibold text-slate-50">Research Risk Simulation Only</h3>
+              <p className="mt-1 text-sm text-slate-400">No execution authority. Future paper/live risk readiness remains locked.</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {riskReportRows.map((row) => (
+                  <MiniReadout key={row.label} label={row.label} value={row.value} detail={row.detail} />
+                ))}
+              </div>
+            </div>
+          </section>
+          <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-pink-300">Proposal Impact Report</p>
+                <h3 className="mt-1 text-base font-semibold text-slate-50">Before / After / Regression Warnings</h3>
+                <p className="mt-1 text-sm text-slate-400">Proposal metrics are approval-gated simulation evidence only.</p>
+              </div>
+              <Badge variant={runtimeSnapshot?.proposal.latestProposal ? "warning" : "secondary"}>
+                {runtimeSnapshot?.proposal.latestProposal ? formatToken(runtimeSnapshot.proposal.latestProposal.status) : "no current proposal"}
+              </Badge>
+            </div>
+            {runtimeSnapshot?.proposal.latestProposal ? (
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {proposalImpactRows.map((row) => (
+                  <MiniReadout key={row.label} label={row.label} value={row.value} detail={row.detail} />
+                ))}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm text-slate-400">
+                No current proposal available.
+              </div>
+            )}
+          </section>
+          <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Metric Source Context</p>
+            <h3 className="mt-1 text-base font-semibold text-slate-50">Data Source Awareness</h3>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {sourceContextRows.map((row) => (
+                <MiniReadout key={row.label} label={row.label} value={row.value} detail={row.detail} />
+              ))}
+            </div>
+          </section>
           <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div>

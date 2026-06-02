@@ -1306,6 +1306,47 @@ export function SelfImprovementView() {
           </CardContent>
         </Card>
       </div>
+      <Card className="mt-5">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Proposal Impact Report</CardTitle>
+              <CardDescription>
+                Jesse-inspired before/after surface for regression warnings, regime effect, walk-forward effect, and auto-apply eligibility.
+              </CardDescription>
+            </div>
+            <Badge variant={latestProposal ? "warning" : "secondary"}>
+              {latestProposal ? latestProposal.status : "no current proposal"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {latestProposal ? (
+            <div className="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
+              {[
+                ["Before metrics", snapshotBeforeMetrics ? `${snapshotBeforeMetrics.totalTrades} trades` : "n/a", snapshotBeforeMetrics ? `Win ${formatPercent(snapshotBeforeMetrics.winRate, 1)} / avg ${formatNumber(snapshotBeforeMetrics.averageR)}R` : "No proposal snapshot"],
+                ["After metrics", snapshotAfterMetrics ? `${snapshotAfterMetrics.totalTrades} trades` : "not tested", snapshotAfterMetrics ? `Win ${formatPercent(snapshotAfterMetrics.winRate, 1)} / avg ${formatNumber(snapshotAfterMetrics.averageR)}R` : "Run simulation test"],
+                ["Delta average R", snapshotBeforeMetrics && snapshotAfterMetrics ? `${formatNumber(snapshotAfterMetrics.averageR - snapshotBeforeMetrics.averageR)}R` : "n/a", "After minus before"],
+                ["Regression warnings", String(snapshotComparisonResult?.criticalRegressions.length ?? 0), snapshotComparisonResult?.criticalRegressions[0] ?? "No comparison warning"],
+                ["Regime-specific effect", "not segmented", "Proposal impact by regime is planned"],
+                ["Walk-forward effect", runtimeSnapshot?.walkForward.proposalValidated ? "validated" : "not validated", runtimeSnapshot?.walkForward.recommendedNextAction ?? "Run walk-forward"],
+                ["Auto-apply effect", latestProposal.autoApplyStatus?.replace(/_/g, " ") ?? "not evaluated", latestProposal.autoApplyBlockedReasons?.[0] ?? "Manual approval remains required"],
+                ["Authority", "none", "Proposal cannot execute or override readiness"]
+              ].map(([label, value, detail]) => (
+                <div key={label} className="rounded-lg border border-border bg-background/45 p-3">
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <p className="mt-1 font-mono text-sm text-foreground">{value}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-border bg-background/45 p-3 text-sm text-muted-foreground">
+              No current proposal available.
+            </div>
+          )}
+        </CardContent>
+      </Card>
       <div className="mt-5 rounded-lg border border-border bg-background/45 p-3 text-xs text-muted-foreground">
         <div className="font-medium text-foreground">Advanced detail: runtime snapshot diagnostics</div>
         <div>Snapshot ID: {runtimeSnapshot?.snapshotId ?? "not loaded"}</div>

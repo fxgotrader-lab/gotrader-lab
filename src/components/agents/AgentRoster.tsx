@@ -74,6 +74,15 @@ export function AgentRoster({ state }: { state: LabState }) {
                         </div>
                         <Progress value={agent.weight * 100} />
                       </div>
+                      <div className="rounded-md border border-border bg-background/45 p-2 text-xs text-muted-foreground">
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <span>Metric provenance</span>
+                          <Badge variant={agent.wins + agent.losses > 0 ? "secondary" : "warning"}>
+                            {agent.wins + agent.losses > 0 ? "simulated" : "insufficient"}
+                          </Badge>
+                        </div>
+                        Sample {agent.wins + agent.losses}; local agent registry; regime context applied during research-cycle debate when available.
+                      </div>
                     </CardContent>
                   </Card>
                 </Link>
