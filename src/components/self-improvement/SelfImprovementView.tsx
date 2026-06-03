@@ -81,6 +81,8 @@ const verdictVariant = (verdict?: string) =>
         : verdict === "reject" || verdict === "no_material_change"
         ? "danger"
         : "muted";
+const executableStatusVariant = (status?: string) =>
+  status === "executable" ? "success" : status === "diagnostic_only" ? "secondary" : "warning";
 const formatToken = (value?: string) => (value ?? "not tested").replace(/_/g, " ");
 const tradeQualityTargets = new Set([
   "high_drawdown",
@@ -575,6 +577,9 @@ export function SelfImprovementView() {
         runtimeSnapshot?.marketData.activeResearchSource.symbol,
       timeframe: runtimeSnapshot?.marketData.activeResearchSource.timeframe ?? latestCycleCanonicalMetrics?.timeframe,
       candleCount: runtimeSnapshot?.marketData.activeResearchSource.candleCount ?? latestCycleCanonicalMetrics?.rawCandleCount,
+      sourceFingerprint:
+        runtimeSnapshot?.marketData.activeResearchSource.fingerprint ??
+        latestCycleCanonicalMetrics?.sourceCycleId,
       regimeLabel: runtimeSnapshot?.regime.label,
       regimeDataQuality: runtimeSnapshot?.regime.dataQuality
     }),
@@ -584,6 +589,7 @@ export function SelfImprovementView() {
       latestCycleCanonicalMetrics?.symbol,
       latestCycleCanonicalMetrics?.timeframe,
       runtimeSnapshot?.marketData.activeResearchSource.candleCount,
+      runtimeSnapshot?.marketData.activeResearchSource.fingerprint,
       runtimeSnapshot?.marketData.activeResearchSource.provider,
       runtimeSnapshot?.marketData.activeResearchSource.provenance.providerSymbol,
       runtimeSnapshot?.marketData.activeResearchSource.provenance.sourceLabel,
@@ -636,6 +642,8 @@ export function SelfImprovementView() {
         (proposal) =>
           proposal.proposalIntent === "grinch_profile_calibration_intent" &&
           proposal.proposalIntentDetails?.candidateFamily === grinchCalibrationIntent.candidateFamily &&
+          proposal.proposalIntentDetails?.reportFingerprint === grinchCalibrationIntent.reportFingerprint &&
+          proposal.proposalIntentDetails?.sourceFingerprint === grinchCalibrationIntent.sourceFingerprint &&
           proposal.status === "proposed"
       )
     : undefined;
@@ -652,6 +660,13 @@ export function SelfImprovementView() {
     safeArray(state.proposals).find((proposal) => proposal.proposalId === state.latestProposalId) ??
     safeArray(state.proposals)[0] ??
     generatedProposalFromCycle;
+  const latestProposalIntentIsStale = Boolean(
+    latestProposal?.proposalIntentDetails &&
+      grinchCalibrationIntent &&
+      (latestProposal.proposalIntentDetails.reportFingerprint !== grinchCalibrationIntent.reportFingerprint ||
+        latestProposal.proposalIntentDetails.sourceFingerprint !== grinchCalibrationIntent.sourceFingerprint ||
+        latestProposal.proposalIntentDetails.candidateFamily !== grinchCalibrationIntent.candidateFamily)
+  );
   const latestProposalPersisted = Boolean(
     latestProposal && safeArray(state.proposals).some((proposal) => proposal.proposalId === latestProposal.proposalId)
   );
@@ -809,7 +824,7 @@ export function SelfImprovementView() {
   const createGrinchDraftProposal = () => {
     if (existingGrinchDraftProposal) {
       setSearchParams({ proposalId: existingGrinchDraftProposal.proposalId });
-      setActionMessage(`Opened existing Grinch draft proposal ${existingGrinchDraftProposal.proposalId}.`);
+      setActionMessage(`Opened matching current Grinch draft proposal ${existingGrinchDraftProposal.proposalId}.`);
       return;
     }
     if (!grinchCalibrationDraftProposal) {
@@ -1206,11 +1221,18 @@ export function SelfImprovementView() {
                   <p className="mt-1 text-xs text-muted-foreground">{grinchCalibrationIntent.targetSubsystem}</p>
                 </div>
                 <div className="rounded-lg border border-amber-300/20 bg-background/35 p-3">
-                  <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Candidate family</p>
-                  <p className="mt-1 font-mono text-sm text-foreground">{grinchCalibrationIntent.candidateFamily.replace(/_/g, " ")}</p>
+                  <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Current strongest near-miss</p>
+                  <p className="mt-1 font-semibold text-foreground">{grinchCalibrationIntent.sourceProfile ?? "unknown profile"}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     Near miss {grinchCalibrationIntent.nearMissScore ?? "n/a"}/100
                   </p>
+                </div>
+                <div className="rounded-lg border border-amber-300/20 bg-background/35 p-3">
+                  <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Recommended family</p>
+                  <p className="mt-1 font-mono text-sm text-foreground">{grinchCalibrationIntent.candidateFamily.replace(/_/g, " ")}</p>
+                  <Badge className="mt-2" variant={executableStatusVariant(grinchCalibrationIntent.executableStatus)}>
+                    {grinchCalibrationIntent.executableStatusLabel}
+                  </Badge>
                 </div>
                 <div className="rounded-lg border border-amber-300/20 bg-background/35 p-3">
                   <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Source context</p>
@@ -1230,6 +1252,29 @@ export function SelfImprovementView() {
               <div className="rounded-lg border border-amber-300/20 bg-background/35 p-3">
                 <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Reason</p>
                 <p className="mt-1 text-foreground">{grinchCalibrationIntent.reason}</p>
+                <p className="mt-2 text-xs text-muted-foreground">{grinchCalibrationIntent.executableStatusReason}</p>
+                <p className="mt-1 text-xs text-amber-100">
+                  {grinchCalibrationIntent.executableStatus === "executable"
+                    ? `Executable Auto Research family: ${grinchCalibrationIntent.executableAutoResearchFamilies.map(formatToken).join(", ")}.`
+                    : "Draft only: candidate family is not executable by Auto Research yet."}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">{grinchCalibrationIntent.nextImplementationStep}</p>
+              </div>
+              <div className="grid gap-2 text-xs md:grid-cols-2">
+                <div className="rounded-lg border border-amber-300/20 bg-background/35 p-3">
+                  <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Intent generated</p>
+                  <p className="mt-1 font-mono text-foreground">{sourceDateFormat(grinchCalibrationIntent.generatedAt)}</p>
+                  <p className="mt-1 truncate text-muted-foreground" title={grinchCalibrationIntent.reportFingerprint}>
+                    Report {grinchCalibrationIntent.reportFingerprint}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-amber-300/20 bg-background/35 p-3">
+                  <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Source fingerprint</p>
+                  <p className="mt-1 truncate font-mono text-foreground" title={grinchCalibrationIntent.sourceFingerprint}>
+                    {grinchCalibrationIntent.sourceFingerprint ?? "unknown"}
+                  </p>
+                  <p className="mt-1 text-muted-foreground">Prior draft proposals stay historical when this fingerprint changes.</p>
+                </div>
               </div>
               <div className="grid gap-2 md:grid-cols-5">
                 {grinchCalibrationIntent.requiredValidationSteps.map((step) => (
@@ -1439,10 +1484,20 @@ export function SelfImprovementView() {
                   <p className="text-xs uppercase tracking-[0.14em] text-amber-100/75">Draft intent details</p>
                   <p className="mt-1 text-base font-semibold text-amber-50">{latestProposal.proposalIntentDetails.title}</p>
                   <p className="mt-1 text-sm text-amber-100/80">{latestProposal.proposalIntentDetails.reason}</p>
+                  {latestProposalIntentIsStale ? (
+                    <p className="mt-2 rounded-md border border-amber-300/25 bg-amber-300/10 p-2 text-xs text-amber-100">
+                      Historical draft: the current calibration report/source fingerprint no longer matches this proposal.
+                    </p>
+                  ) : null}
                 </div>
-                <Badge variant="warning">draft proposal only</Badge>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="warning">draft proposal only</Badge>
+                  <Badge variant={executableStatusVariant(latestProposal.proposalIntentDetails.executableStatus)}>
+                    {latestProposal.proposalIntentDetails.executableStatusLabel}
+                  </Badge>
+                </div>
               </div>
-              <div className="mt-3 grid gap-2 md:grid-cols-3">
+              <div className="mt-3 grid gap-2 md:grid-cols-4">
                 <div className="rounded-md border border-amber-300/20 bg-background/35 p-2">
                   <p className="text-xs text-muted-foreground">Target subsystem</p>
                   <p className="mt-1 text-sm text-foreground">{latestProposal.proposalIntentDetails.targetSubsystem}</p>
@@ -1459,6 +1514,30 @@ export function SelfImprovementView() {
                     {latestProposal.proposalIntentDetails.autoApplyAllowed ? "allowed" : "blocked"}
                   </p>
                 </div>
+                <div className="rounded-md border border-amber-300/20 bg-background/35 p-2">
+                  <p className="text-xs text-muted-foreground">Generated</p>
+                  <p className="mt-1 font-mono text-sm text-foreground">{sourceDateFormat(latestProposal.proposalIntentDetails.generatedAt)}</p>
+                </div>
+              </div>
+              <div className="mt-3 rounded-md border border-amber-300/20 bg-background/35 p-2 text-xs">
+                <p className="text-muted-foreground">Executable awareness</p>
+                <p className="mt-1 text-foreground">{latestProposal.proposalIntentDetails.executableStatusReason}</p>
+                <p className="mt-1 text-muted-foreground">
+                  {latestProposal.proposalIntentDetails.executableStatus === "executable"
+                    ? `Mapped Auto Research families: ${latestProposal.proposalIntentDetails.executableAutoResearchFamilies.map(formatToken).join(", ")}.`
+                    : `Closest existing families: ${
+                        latestProposal.proposalIntentDetails.closestAutoResearchFamilies.length
+                          ? latestProposal.proposalIntentDetails.closestAutoResearchFamilies.map(formatToken).join(", ")
+                          : "none"
+                      }.`}
+                </p>
+                <p className="mt-1 text-amber-100">{latestProposal.proposalIntentDetails.nextImplementationStep}</p>
+                <p className="mt-2 truncate text-muted-foreground" title={latestProposal.proposalIntentDetails.reportFingerprint}>
+                  Report fingerprint: {latestProposal.proposalIntentDetails.reportFingerprint}
+                </p>
+                <p className="mt-1 truncate text-muted-foreground" title={latestProposal.proposalIntentDetails.sourceFingerprint}>
+                  Source fingerprint: {latestProposal.proposalIntentDetails.sourceFingerprint ?? "unknown"}
+                </p>
               </div>
               <div className="mt-3 flex flex-wrap gap-1">
                 {latestProposal.proposalIntentDetails.requiredValidationSteps.map((step) => (

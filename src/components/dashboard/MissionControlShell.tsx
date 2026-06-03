@@ -111,6 +111,8 @@ const pct = (value?: number) =>
   typeof value === "number" && Number.isFinite(value) ? `${(value * 100).toFixed(0)}%` : "n/a";
 
 const formatToken = (value?: string) => (value ?? "idle").replace(/_/g, " ");
+const executableStatusVariant = (status?: string) =>
+  status === "executable" ? "success" : status === "diagnostic_only" ? "secondary" : "warning";
 const formatBool = (value?: boolean) => (typeof value === "boolean" ? (value ? "yes" : "no") : "unknown");
 const tradingViewAutoRefreshIntervalOptions = tradingViewMcpAutoRefreshIntervalOptions.map((value) => ({
   label: `${value}s`,
@@ -921,6 +923,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
             runtimeSnapshot?.marketData.activeResearchSource.symbol,
           timeframe: runtimeSnapshot?.marketData.activeResearchSource.timeframe,
           candleCount: runtimeSnapshot?.marketData.activeResearchSource.candleCount,
+          sourceFingerprint: runtimeSnapshot?.marketData.activeResearchSource.fingerprint,
           regimeLabel: runtimeSnapshot?.regime.label,
           regimeDataQuality: runtimeSnapshot?.regime.dataQuality
         }
@@ -1626,10 +1629,17 @@ export function MissionControlShell({ state }: { state: LabState }) {
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">Draft Proposal Intent</p>
                     <h4 className="mt-1 text-sm font-semibold text-amber-50">{grinchCalibrationProposalIntent.title}</h4>
                     <p className="mt-1 max-w-3xl text-xs text-amber-100/80">{grinchCalibrationProposalIntent.reason}</p>
+                    <p className="mt-2 text-xs text-amber-100/70">
+                      Current strongest near-miss: {grinchCalibrationProposalIntent.sourceProfile ?? "unknown"} /{" "}
+                      {grinchCalibrationProposalIntent.nearMissScore ?? "n/a"}/100.
+                    </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="warning">draft proposal only</Badge>
                     <Badge variant="muted">auto-apply blocked</Badge>
+                    <Badge variant={executableStatusVariant(grinchCalibrationProposalIntent.executableStatus)}>
+                      {grinchCalibrationProposalIntent.executableStatusLabel}
+                    </Badge>
                     <Link
                       to="/self-improvement"
                       className="inline-flex h-8 items-center justify-center rounded-md border border-amber-300/30 bg-amber-300/10 px-3 text-xs font-medium text-amber-50 transition-colors hover:bg-amber-300/15"
@@ -1645,6 +1655,28 @@ export function MissionControlShell({ state }: { state: LabState }) {
                       <p className="mt-1 text-slate-400">{step.status}</p>
                     </div>
                   ))}
+                </div>
+                <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
+                  <div className="rounded-md border border-amber-300/15 bg-slate-950/35 p-2">
+                    <p className="font-medium text-amber-100">Executable awareness</p>
+                    <p className="mt-1 text-slate-300">{grinchCalibrationProposalIntent.executableStatusReason}</p>
+                    <p className="mt-1 text-slate-400">
+                      {grinchCalibrationProposalIntent.executableStatus === "executable"
+                        ? `Mapped Auto Research families: ${grinchCalibrationProposalIntent.executableAutoResearchFamilies.map(formatToken).join(", ")}.`
+                        : "Draft only: candidate family is not executable by Auto Research yet."}
+                    </p>
+                    <p className="mt-1 text-amber-100/80">{grinchCalibrationProposalIntent.nextImplementationStep}</p>
+                  </div>
+                  <div className="rounded-md border border-amber-300/15 bg-slate-950/35 p-2">
+                    <p className="font-medium text-amber-100">Report/source fingerprint</p>
+                    <p className="mt-1 truncate font-mono text-slate-300" title={grinchCalibrationProposalIntent.reportFingerprint}>
+                      {grinchCalibrationProposalIntent.reportFingerprint}
+                    </p>
+                    <p className="mt-1 truncate font-mono text-slate-400" title={grinchCalibrationProposalIntent.sourceFingerprint}>
+                      {grinchCalibrationProposalIntent.sourceFingerprint ?? "unknown source"}
+                    </p>
+                    <p className="mt-1 text-slate-400">Generated {formatDateTime(grinchCalibrationProposalIntent.generatedAt)}</p>
+                  </div>
                 </div>
                 <p className="mt-3 text-xs text-amber-100/75">
                   Target subsystem: {grinchCalibrationProposalIntent.targetSubsystem}. Candidate family:{" "}

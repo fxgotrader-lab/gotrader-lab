@@ -31,8 +31,13 @@ export {
   buildGrinchCalibrationProposalIntentDetails,
   calibrationMetricsFromCanonicalPerformance,
   createGrinchCalibrationDraftProposal,
+  executableAutoResearchCandidateFamilies,
+  grinchCalibrationCandidateFamilyRegistry,
   grinchCalibrationRequiredValidationSteps,
+  resolveGrinchCalibrationFamilyExecutionInfo,
   selectBestGrinchCalibrationRow,
+  type GrinchCalibrationCandidateFamilyExecutionInfo,
+  type GrinchCalibrationExecutableStatus,
   type GrinchCalibrationSourceContext
 } from "@/lib/selfImprovement/grinchCalibrationProposalIntent";
 export {

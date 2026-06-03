@@ -32,12 +32,21 @@ export interface CalibrationProposalIntentDetails {
   title: string;
   targetSubsystem: string;
   candidateFamily: string;
+  generatedAt: string;
+  reportFingerprint: string;
+  sourceFingerprint?: string;
   reason: string;
   draftOnly: true;
   autoApplyAllowed: false;
   nearMissScore?: number;
   sourceProfile?: string;
   firstFailedGate?: string;
+  executableStatus: "executable" | "planned_not_implemented" | "diagnostic_only";
+  executableStatusLabel: string;
+  executableAutoResearchFamilies: string[];
+  closestAutoResearchFamilies: string[];
+  executableStatusReason: string;
+  nextImplementationStep: string;
   sourceReportTitle?: string;
   sourceReportFinding?: string;
   sourceContext?: {
@@ -47,6 +56,7 @@ export interface CalibrationProposalIntentDetails {
     brokerSymbol?: string;
     timeframe?: string;
     candleCount?: number;
+    sourceFingerprint?: string;
     regimeLabel?: string;
     regimeDataQuality?: string;
   };
