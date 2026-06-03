@@ -32,6 +32,7 @@ import {
   resolveChartDisplayCandleSource,
   loadPreparedCandleSource
 } from "@/lib/marketData";
+import { resolveSessionTimeMapping } from "@/lib/sessions";
 import {
   hydrateActiveTradingViewMcpChartFeed,
   loadActiveTradingViewMcpChartFeed,
@@ -132,6 +133,16 @@ export function ICTLab() {
   const chartSourceLabel = displaySource.activeChartDisplaySourceLabel;
   const mt5BrokerSymbol = mt5Runtime.brokerSymbol ?? mt5Feed?.brokerSymbol ?? "USTECH";
   const mt5RequestedSymbol = mt5Feed?.requestedSymbol ?? "MNQ";
+  const sessionTimeMapping = useMemo(
+    () =>
+      resolveSessionTimeMapping({
+        provider: sourceType,
+        requestedSymbol: mt5RequestedSymbol,
+        brokerSymbol: mt5BrokerSymbol,
+        candles: activeCandles
+      }),
+    [activeCandles, mt5BrokerSymbol, mt5RequestedSymbol, sourceType]
+  );
 
   const analysis = useMemo(() => {
     const latestAnalysisCandle = activeCandles[activeCandles.length - 1];
@@ -141,7 +152,7 @@ export function ICTLab() {
     const sweeps = detectLiquiditySweeps(activeCandles, swings);
     const gaps = detectFairValueGaps(activeCandles);
     const zone = detectPremiumDiscount(activeCandles, swings);
-    const sessions = tagSessions(activeCandles);
+    const sessions = tagSessions(activeCandles, sessionTimeMapping);
     const structureEvents = [...mss, ...bos].sort((a, b) => a.index - b.index);
     const grinchPhase1 = analyzeGrinchPhase1({
       candles: activeCandles,
@@ -152,7 +163,11 @@ export function ICTLab() {
       options: {
         symbol: latestAnalysisCandle?.symbol,
         timeframe: latestAnalysisCandle?.timeframe,
-        currentTimestamp: latestAnalysisCandle?.timestamp
+        currentTimestamp: latestAnalysisCandle?.timestamp,
+        sourceProvider: sourceType,
+        requestedSymbol: mt5RequestedSymbol,
+        brokerSymbol: mt5BrokerSymbol,
+        sessionTimeMapping
       }
     });
     const grinchReversalProfile = analyzeGrinchPhase2Reversal({
@@ -165,7 +180,11 @@ export function ICTLab() {
       options: {
         symbol: latestAnalysisCandle?.symbol,
         timeframe: latestAnalysisCandle?.timeframe,
-        currentTimestamp: latestAnalysisCandle?.timestamp
+        currentTimestamp: latestAnalysisCandle?.timestamp,
+        sourceProvider: sourceType,
+        requestedSymbol: mt5RequestedSymbol,
+        brokerSymbol: mt5BrokerSymbol,
+        sessionTimeMapping
       }
     });
     const grinchConsolidationProfile = analyzeGrinchPhase3Consolidation({
@@ -178,7 +197,11 @@ export function ICTLab() {
       options: {
         symbol: latestAnalysisCandle?.symbol,
         timeframe: latestAnalysisCandle?.timeframe,
-        currentTimestamp: latestAnalysisCandle?.timestamp
+        currentTimestamp: latestAnalysisCandle?.timestamp,
+        sourceProvider: sourceType,
+        requestedSymbol: mt5RequestedSymbol,
+        brokerSymbol: mt5BrokerSymbol,
+        sessionTimeMapping
       }
     });
     const grinchSmtProfile = analyzeGrinchPhase4Smt({
@@ -193,7 +216,11 @@ export function ICTLab() {
       options: {
         symbol: latestAnalysisCandle?.symbol,
         timeframe: latestAnalysisCandle?.timeframe,
-        currentTimestamp: latestAnalysisCandle?.timestamp
+        currentTimestamp: latestAnalysisCandle?.timestamp,
+        sourceProvider: sourceType,
+        requestedSymbol: mt5RequestedSymbol,
+        brokerSymbol: mt5BrokerSymbol,
+        sessionTimeMapping
       }
     });
     const grinchStrategyScore = calculateGrinchStrategyScore({
@@ -209,11 +236,15 @@ export function ICTLab() {
       options: {
         symbol: latestAnalysisCandle?.symbol,
         timeframe: latestAnalysisCandle?.timeframe,
-        currentTimestamp: latestAnalysisCandle?.timestamp
+        currentTimestamp: latestAnalysisCandle?.timestamp,
+        sourceProvider: sourceType,
+        requestedSymbol: mt5RequestedSymbol,
+        brokerSymbol: mt5BrokerSymbol,
+        sessionTimeMapping
       }
     });
     return { bos, gaps, grinchConsolidationProfile, grinchPhase1, grinchReversalProfile, grinchSmtProfile, grinchStrategyScore, mss, sessions, structureEvents, sweeps, swings, zone };
-  }, [activeCandles]);
+  }, [activeCandles, mt5BrokerSymbol, mt5RequestedSymbol, sessionTimeMapping, sourceType]);
 
   const latestCandle = activeCandles[activeCandles.length - 1];
   const chartLatestCandle = chartCandles[chartCandles.length - 1] ?? latestCandle;
@@ -555,7 +586,7 @@ export function ICTLab() {
               <InfoBox
                 key={reference.label}
                 title={`${reference.label} timestamp used`}
-                body={`${reference.timestamp}; price ${reference.price}; relation ${reference.relation}. ${
+                body={`Raw ${reference.timestamp}; local ${reference.localTimestamp}; price ${reference.price}; relation ${reference.relation}; fallback ${reference.fallbackMethod}; source zone ${reference.sourceTimestampZone}. ${
                   reference.missingEvidence[0] ?? "Reference available."
                 }`}
               />

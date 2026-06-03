@@ -32,8 +32,12 @@ export interface GrinchProfileEvidenceDiagnostics {
   openingReferences: Array<{
     label: string;
     timestamp: string;
+    localTimestamp: string;
     price: string;
     relation: string;
+    timingZone: string;
+    sourceTimestampZone: string;
+    fallbackMethod: string;
     missingEvidence: string[];
   }>;
   sessionTimezoneAssumption: string;
@@ -56,8 +60,12 @@ const timingValid = (timingGrade?: string) => timingGrade === "ideal" || timingG
 const openingReferenceRow = (reference: GrinchOpeningPriceReference | undefined, fallbackLabel: string) => ({
   label: reference?.label ?? fallbackLabel,
   timestamp: reference?.timestamp ?? "not found",
+  localTimestamp: reference?.localTimestampLabel ?? "not resolved",
   price: typeof reference?.price === "number" ? reference.price.toFixed(2) : "not found",
   relation: cleanToken(reference?.currentRelation),
+  timingZone: reference?.timingZone ?? "literal_timestamp",
+  sourceTimestampZone: reference?.sourceTimestampZone ?? "unknown",
+  fallbackMethod: cleanToken(reference?.fallbackMethod),
   missingEvidence: reference?.missingEvidence ?? [`${fallbackLabel} was not found in the active candle window.`]
 });
 
@@ -147,7 +155,9 @@ export function buildGrinchProfileEvidenceDiagnostics({
       openingReferenceRow(phase1?.sundayOpenState, "Sunday Open")
     ],
     sessionTimezoneAssumption:
-      "Grinch timing currently reads the literal HH:mm in candle.timestamp. No MT5 CFD broker-session calendar or New York-time conversion is applied in this diagnostic pass.",
+      phase1?.sessionTimeMapping
+        ? `Timing zone ${phase1.sessionTimeMapping.timingZone}; source timestamp zone ${phase1.sessionTimeMapping.sourceTimestampZone}; session model ${phase1.sessionTimeMapping.sessionModel}. ${phase1.sessionTimeMapping.warnings[0] ?? ""}`
+        : "Grinch timing is using the default literal candle timestamp clock.",
     noValidProfileCount: noValidProfileCount ?? 0
   };
 }

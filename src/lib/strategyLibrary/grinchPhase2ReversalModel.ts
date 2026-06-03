@@ -24,13 +24,14 @@ export function analyzeGrinchPhase2Reversal(input: GrinchPhase2ReversalContextIn
       ...input,
       candles
     });
-  const reversal = detectReversalProfile({ candles, phase1 });
+  const reversal = detectReversalProfile({ candles, phase1, sessionTimeMapping: phase1.sessionTimeMapping });
 
   return {
     modelId: "grinch_phase_2_reversal_profile",
     generatedAt: new Date().toISOString(),
     symbol: input.options?.symbol ?? latestCandle?.symbol ?? phase1.symbol,
     timeframe: input.options?.timeframe ?? latestCandle?.timeframe ?? phase1.timeframe,
+    sessionTimeMapping: phase1.sessionTimeMapping,
     phase1ModelId: phase1.modelId,
     htfBias: phase1.htfBias,
     htfDrawOnLiquidity: phase1.htfDrawOnLiquidity,

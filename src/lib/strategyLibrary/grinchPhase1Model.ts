@@ -11,6 +11,7 @@ import { detectModelOnePowerThree } from "@/lib/ict/modelOnePowerThree";
 import { findSundayOpenState, findTwelveAmOpenState } from "@/lib/ict/openingPriceEquilibrium";
 import { buildPdArrayHierarchy } from "@/lib/ict/pdArrayHierarchy";
 import { classifyTimePriceAlignment } from "@/lib/ict/timePriceAlignment";
+import { resolveSessionTimeMapping } from "@/lib/sessions";
 import type {
   GrinchInvalidationPlan,
   GrinchPhase1ContextInput,
@@ -80,6 +81,15 @@ export function analyzeGrinchPhase1(input: GrinchPhase1ContextInput): GrinchPhas
   const candles = filterCandles(input.candles, input.options);
   const latestCandle = candles[candles.length - 1];
   const generatedAt = new Date().toISOString();
+  const sessionTimeMapping =
+    input.options?.sessionTimeMapping ??
+    resolveSessionTimeMapping({
+      provider: input.options?.sourceProvider,
+      requestedSymbol: input.options?.requestedSymbol ?? input.options?.symbol,
+      brokerSymbol: input.options?.brokerSymbol ?? latestCandle?.symbol,
+      symbol: input.options?.symbol ?? latestCandle?.symbol,
+      candles
+    });
   const swings = input.swings ?? detectSwings(candles, 2);
   const fairValueGaps = input.fairValueGaps ?? detectFairValueGaps(candles);
   const liquiditySweeps = input.liquiditySweeps ?? detectLiquiditySweeps(candles, swings);
@@ -87,8 +97,8 @@ export function analyzeGrinchPhase1(input: GrinchPhase1ContextInput): GrinchPhas
   const bos = detectBOS(candles, swings);
   const structureEvents = input.structureEvents ?? [...mss, ...bos].sort((a, b) => a.index - b.index);
   const dealingRange = resolveDealingRange(candles, swings, input.options?.lookbackCandles);
-  const sundayOpenState = findSundayOpenState(candles);
-  const twelveAmOpenState = findTwelveAmOpenState(candles);
+  const sundayOpenState = findSundayOpenState(candles, sessionTimeMapping);
+  const twelveAmOpenState = findTwelveAmOpenState(candles, sessionTimeMapping);
   const pdHierarchy = buildPdArrayHierarchy({
     candles,
     fairValueGaps,
@@ -99,13 +109,14 @@ export function analyzeGrinchPhase1(input: GrinchPhase1ContextInput): GrinchPhas
   });
   const htfBias = resolveHigherTimeframeBias(dealingRange, liquiditySweeps);
   const marketCycle = classifyMarketCycle(candles, dealingRange);
-  const timePriceAlignment = classifyTimePriceAlignment(input.options?.currentTimestamp ?? input.options?.referenceTimestamp ?? latestCandle?.timestamp);
+  const timePriceAlignment = classifyTimePriceAlignment(input.options?.currentTimestamp ?? input.options?.referenceTimestamp ?? latestCandle?.timestamp, sessionTimeMapping);
   const modelOne = detectModelOnePowerThree({
     candles,
     dealingRange,
     pdArrays: pdHierarchy.rankedPdArrays,
     timePriceAlignment,
-    twelveAmOpenState
+    twelveAmOpenState,
+    sessionTimeMapping
   });
   const entryConfirmation = evaluateEntryConfirmation({
     candles,
@@ -159,6 +170,7 @@ export function analyzeGrinchPhase1(input: GrinchPhase1ContextInput): GrinchPhas
     generatedAt,
     symbol: input.options?.symbol ?? latestCandle?.symbol,
     timeframe: input.options?.timeframe ?? latestCandle?.timeframe,
+    sessionTimeMapping,
     htfBias: htfBias.htfBias,
     htfDrawOnLiquidity: htfBias.htfDrawOnLiquidity,
     dealingRange,

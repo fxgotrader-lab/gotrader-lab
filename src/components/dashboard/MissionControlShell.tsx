@@ -1597,13 +1597,17 @@ export function MissionControlShell({ state }: { state: LabState }) {
               <MiniReadout label="Hard gate" value={grinchProfileDiagnostics.hardGateReason} detail={grinchProfileDiagnostics.noValidProfileReason} />
               <MiniReadout label="Timing status" value={latestGrinchScore?.timingGrade?.replace(/_/g, " ") ?? "unknown"} detail={grinchProfileDiagnostics.timingWindowStatus} />
               <MiniReadout label="Candidate counts" value={grinchProfileDiagnostics.candidateSummary} detail={`No-valid-profile signals ${grinchProfileDiagnostics.noValidProfileCount.toLocaleString()}`} />
-              <MiniReadout label="Session clock" value="literal timestamp HH:mm" detail={grinchProfileDiagnostics.sessionTimezoneAssumption} />
+              <MiniReadout
+                label="Session timing"
+                value={runtimeSnapshot?.latestResearchCycle.grinchPhase1Summary?.sessionTimeMapping?.timingZone ?? "literal timestamp"}
+                detail={grinchProfileDiagnostics.sessionTimezoneAssumption}
+              />
               {grinchProfileDiagnostics.openingReferences.map((reference) => (
                 <MiniReadout
                   key={reference.label}
                   label={`${reference.label} timestamp`}
                   value={reference.timestamp}
-                  detail={`Price ${reference.price}; relation ${reference.relation}; ${reference.missingEvidence[0] ?? "reference available"}`}
+                  detail={`Local ${reference.localTimestamp}; price ${reference.price}; relation ${reference.relation}; fallback ${reference.fallbackMethod}; source zone ${reference.sourceTimestampZone}; ${reference.missingEvidence[0] ?? "reference available"}`}
                 />
               ))}
             </div>

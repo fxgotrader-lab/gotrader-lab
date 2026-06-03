@@ -1,11 +1,15 @@
 import type { GrinchTimePriceAlignment, GrinchTimingGrade } from "@/lib/strategyLibrary/grinchStrategyTypes";
 import { clockMinutesFor } from "@/lib/ict/openingPriceEquilibrium";
+import type { SessionTimeMapping } from "@/lib/sessions";
 
 const isBetween = (value: number, start: number, end: number) => value >= start && value <= end;
 const minutes = (hour: number, minute = 0) => hour * 60 + minute;
 
-export function classifyTimePriceAlignment(timestamp?: string): GrinchTimePriceAlignment {
-  const clockMinutes = timestamp ? clockMinutesFor(timestamp) : undefined;
+export function classifyTimePriceAlignment(timestamp?: string, sessionTimeMapping?: SessionTimeMapping): GrinchTimePriceAlignment {
+  const clockMinutes = timestamp ? clockMinutesFor(timestamp, sessionTimeMapping) : undefined;
+  const timingZoneDetail = sessionTimeMapping?.timingZone && sessionTimeMapping.timingZone !== "literal_timestamp"
+    ? ` (${sessionTimeMapping.timingZone} timing)`
+    : "";
   if (typeof clockMinutes !== "number") {
     return {
       timingGrade: "expired",
@@ -13,7 +17,7 @@ export function classifyTimePriceAlignment(timestamp?: string): GrinchTimePriceA
       isLondonObservationWindow: false,
       isNySetupWindow: false,
       isNyConfirmationWindow: false,
-      reason: "Timestamp is missing or does not include a parseable clock time."
+      reason: `Timestamp is missing or does not include a parseable clock time${timingZoneDetail}.`
     };
   }
 
@@ -24,7 +28,7 @@ export function classifyTimePriceAlignment(timestamp?: string): GrinchTimePriceA
       isLondonObservationWindow: true,
       isNySetupWindow: false,
       isNyConfirmationWindow: false,
-      reason: "London is trading in the 2:00-3:00 observation window around 12AM Open."
+      reason: `London is trading in the 2:00-3:00 observation window around 12AM Open${timingZoneDetail}.`
     };
   }
 
@@ -35,7 +39,7 @@ export function classifyTimePriceAlignment(timestamp?: string): GrinchTimePriceA
       isLondonObservationWindow: false,
       isNySetupWindow: true,
       isNyConfirmationWindow: false,
-      reason: "NY first-five timing is active; transcript treats it as ideal mainly when a target has already been met and reversal evidence is immediate."
+      reason: `NY first-five timing is active${timingZoneDetail}; transcript treats it as ideal mainly when a target has already been met and reversal evidence is immediate.`
     };
   }
 
@@ -47,7 +51,7 @@ export function classifyTimePriceAlignment(timestamp?: string): GrinchTimePriceA
       isNySetupWindow: true,
       isNyConfirmationWindow: false,
       reason:
-        "NY 9:35-10:00 is retracement and observation time; transcript warns to wait for 10:00 confirmation unless exceptional reversal evidence exists."
+        `NY 9:35-10:00 is retracement and observation time${timingZoneDetail}; transcript warns to wait for 10:00 confirmation unless exceptional reversal evidence exists.`
     };
   }
 
@@ -58,7 +62,7 @@ export function classifyTimePriceAlignment(timestamp?: string): GrinchTimePriceA
       isLondonObservationWindow: false,
       isNySetupWindow: false,
       isNyConfirmationWindow: true,
-      reason: "NY 10:00-10:15 confirmation/continuation window is active."
+      reason: `NY 10:00-10:15 confirmation/continuation window is active${timingZoneDetail}.`
     };
   }
 
@@ -69,7 +73,7 @@ export function classifyTimePriceAlignment(timestamp?: string): GrinchTimePriceA
       isLondonObservationWindow: false,
       isNySetupWindow: false,
       isNyConfirmationWindow: false,
-      reason: "Delayed profile window is active; probability is lower and confirmation must be exceptional."
+      reason: `Delayed profile window is active${timingZoneDetail}; probability is lower and confirmation must be exceptional.`
     };
   }
 
@@ -82,7 +86,7 @@ export function classifyTimePriceAlignment(timestamp?: string): GrinchTimePriceA
     isNyConfirmationWindow: false,
     reason:
       timingGrade === "early"
-        ? "NY setup window has not opened yet; Model 1 is incomplete."
-        : "Primary Model 1 timing has expired unless a later phase supplies exceptional confirmation."
+        ? `NY setup window has not opened yet${timingZoneDetail}; Model 1 is incomplete.`
+        : `Primary Model 1 timing has expired${timingZoneDetail} unless a later phase supplies exceptional confirmation.`
   };
 }

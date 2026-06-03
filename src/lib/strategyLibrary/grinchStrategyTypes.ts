@@ -8,6 +8,7 @@ import type {
   SwingPoint,
   Timeframe
 } from "@/lib/types";
+import type { SessionTimeMapping } from "@/lib/sessions";
 
 export type GrinchHtfBias = "bullish" | "bearish" | "neutral" | "unclear";
 export type GrinchDrawOnLiquidity = "buyside" | "sellside" | "internal_range" | "external_range" | "unclear";
@@ -73,6 +74,10 @@ export interface GrinchPhase1AnalysisOptions {
   referenceTimestamp?: string;
   lookbackCandles?: number;
   currentTimestamp?: string;
+  sourceProvider?: string;
+  requestedSymbol?: string;
+  brokerSymbol?: string;
+  sessionTimeMapping?: SessionTimeMapping;
 }
 
 export interface GrinchOpeningPriceReference {
@@ -80,6 +85,14 @@ export interface GrinchOpeningPriceReference {
   label: string;
   price?: number;
   timestamp?: string;
+  timingZone?: string;
+  sourceTimestampZone?: string;
+  localDate?: string;
+  localTime?: string;
+  localTimestampLabel?: string;
+  fallbackMethod?: "exact_midnight" | "first_after_midnight" | "first_candle_of_timing_date" | "first_sunday_candle" | "not_found";
+  sessionModel?: string;
+  sessionWarning?: string;
   openingGapDirection?: "gap_up" | "gap_down" | "flat" | "unknown";
   gapReferenceClose?: number;
   currentRelation: "above" | "below" | "at" | "unknown";
@@ -257,6 +270,7 @@ export interface GrinchPhase1ModelOutput {
   generatedAt: string;
   symbol?: FuturesSymbol;
   timeframe?: Timeframe;
+  sessionTimeMapping?: SessionTimeMapping;
   htfBias: GrinchHtfBias;
   htfDrawOnLiquidity: GrinchDrawOnLiquidity;
   dealingRange: GrinchDealingRange;
@@ -295,6 +309,7 @@ export interface GrinchPhase2ReversalModelOutput extends GrinchReversalProfileRe
   generatedAt: string;
   symbol?: FuturesSymbol;
   timeframe?: Timeframe;
+  sessionTimeMapping?: SessionTimeMapping;
   phase1ModelId: GrinchPhase1ModelOutput["modelId"];
   htfBias: GrinchHtfBias;
   htfDrawOnLiquidity: GrinchDrawOnLiquidity;
@@ -313,6 +328,7 @@ export interface GrinchPhase3ConsolidationModelOutput extends GrinchConsolidatio
   generatedAt: string;
   symbol?: FuturesSymbol;
   timeframe?: Timeframe;
+  sessionTimeMapping?: SessionTimeMapping;
   phase1ModelId: GrinchPhase1ModelOutput["modelId"];
   htfBias: GrinchHtfBias;
   htfDrawOnLiquidity: GrinchDrawOnLiquidity;

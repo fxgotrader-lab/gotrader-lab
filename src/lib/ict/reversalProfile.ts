@@ -1,6 +1,7 @@
 import type { Candle } from "@/lib/types";
 import { clockMinutesFor } from "@/lib/ict/openingPriceEquilibrium";
 import type { GrinchInvalidationPlan, GrinchPhase1ModelOutput, GrinchReversalProfileResult } from "@/lib/strategyLibrary/grinchStrategyTypes";
+import type { SessionTimeMapping } from "@/lib/sessions";
 
 const minutes = (hour: number, minute = 0) => hour * 60 + minute;
 const between = (value: number | undefined, start: number, end: number) =>
@@ -38,17 +39,19 @@ const expansionAwayFromTwelveAm = ({
   candles,
   londonCandles,
   relation,
-  twelveAmOpen
+  twelveAmOpen,
+  sessionTimeMapping
 }: {
   candles: Candle[];
   londonCandles: Candle[];
   relation: ReturnType<typeof relationToLevel>;
   twelveAmOpen?: number;
+  sessionTimeMapping?: SessionTimeMapping;
 }) => {
   if (!londonCandles.length || typeof twelveAmOpen !== "number" || (relation !== "above" && relation !== "below")) {
     return false;
   }
-  const preNy = candles.filter((candle) => between(clockMinutesFor(candle.timestamp), minutes(3), minutes(9, 29)));
+  const preNy = candles.filter((candle) => between(clockMinutesFor(candle.timestamp, sessionTimeMapping), minutes(3), minutes(9, 29)));
   if (preNy.length < 2) {
     return false;
   }
@@ -69,18 +72,20 @@ const targetReachedAndContinuation = ({
   candles,
   relation,
   phase1,
-  twelveAmOpen
+  twelveAmOpen,
+  sessionTimeMapping
 }: {
   candles: Candle[];
   relation: ReturnType<typeof relationToLevel>;
   phase1: GrinchPhase1ModelOutput;
   twelveAmOpen?: number;
+  sessionTimeMapping?: SessionTimeMapping;
 }): GrinchReversalProfileResult["continuationBeyond12am"] => {
   if (typeof twelveAmOpen !== "number" || (relation !== "above" && relation !== "below")) {
     return "unclear";
   }
   const tolerance = toleranceFor(twelveAmOpen);
-  const nyAndLater = candles.filter((candle) => between(clockMinutesFor(candle.timestamp), minutes(9, 30), minutes(16)));
+  const nyAndLater = candles.filter((candle) => between(clockMinutesFor(candle.timestamp, sessionTimeMapping), minutes(9, 30), minutes(16)));
   const touched = nyAndLater.some((candle) => candle.low <= twelveAmOpen + tolerance && candle.high >= twelveAmOpen - tolerance);
   if (!touched) {
     return "unclear";
@@ -137,14 +142,16 @@ const invalidationFor = ({
   candles,
   relation,
   phase1,
-  twelveAmOpen
+  twelveAmOpen,
+  sessionTimeMapping
 }: {
   candles: Candle[];
   relation: ReturnType<typeof relationToLevel>;
   phase1: GrinchPhase1ModelOutput;
   twelveAmOpen?: number;
+  sessionTimeMapping?: SessionTimeMapping;
 }): GrinchInvalidationPlan => {
-  const nyAndLater = candles.filter((candle) => between(clockMinutesFor(candle.timestamp), minutes(9, 30), minutes(16)));
+  const nyAndLater = candles.filter((candle) => between(clockMinutesFor(candle.timestamp, sessionTimeMapping), minutes(9, 30), minutes(16)));
   const nyHigh = nyAndLater.length ? Math.max(...nyAndLater.map((candle) => candle.high)) : undefined;
   const nyLow = nyAndLater.length ? Math.min(...nyAndLater.map((candle) => candle.low)) : undefined;
   return {
@@ -162,15 +169,17 @@ const invalidationFor = ({
 
 export function detectReversalProfile({
   candles,
-  phase1
+  phase1,
+  sessionTimeMapping = phase1.sessionTimeMapping
 }: {
   candles: Candle[];
   phase1: GrinchPhase1ModelOutput;
+  sessionTimeMapping?: SessionTimeMapping;
 }): GrinchReversalProfileResult {
   const reasons: string[] = [];
   const missingEvidence: string[] = [];
   const twelveAmOpen = phase1.twelveAmOpenState.price;
-  const londonCandles = candles.filter((candle) => between(clockMinutesFor(candle.timestamp), minutes(2), minutes(3)));
+  const londonCandles = candles.filter((candle) => between(clockMinutesFor(candle.timestamp, sessionTimeMapping), minutes(2), minutes(3)));
   const londonRelation = relationToLevel(londonCandles, twelveAmOpen);
   const twelveAmInteractionState =
     londonRelation === "around" ? "interacted" : londonRelation === "above" || londonRelation === "below" ? "failed_to_interact" : "unclear";
@@ -178,7 +187,8 @@ export function detectReversalProfile({
     candles,
     londonCandles,
     relation: londonRelation,
-    twelveAmOpen
+    twelveAmOpen,
+    sessionTimeMapping
   });
   const londonBehavior =
     expandedAway
@@ -196,9 +206,10 @@ export function detectReversalProfile({
     candles,
     relation: londonRelation,
     phase1,
-    twelveAmOpen
+    twelveAmOpen,
+    sessionTimeMapping
   });
-  const invalidation = invalidationFor({ candles, relation: londonRelation, phase1, twelveAmOpen });
+  const invalidation = invalidationFor({ candles, relation: londonRelation, phase1, twelveAmOpen, sessionTimeMapping });
 
   if (typeof twelveAmOpen !== "number") {
     missingEvidence.push("12AM Open is required for Reversal Profile classification.");

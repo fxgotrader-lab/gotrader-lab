@@ -1,5 +1,6 @@
 import type { Candle } from "@/lib/types";
 import { clockMinutesFor } from "@/lib/ict/openingPriceEquilibrium";
+import type { SessionTimeMapping } from "@/lib/sessions";
 import type {
   GrinchConsolidationProfileResult,
   GrinchExpectedExpansionDirection,
@@ -212,18 +213,20 @@ const invalidationFor = ({
 
 export function detectConsolidationProfile({
   candles,
-  phase1
+  phase1,
+  sessionTimeMapping = phase1.sessionTimeMapping
 }: {
   candles: Candle[];
   phase1: GrinchPhase1ModelOutput;
+  sessionTimeMapping?: SessionTimeMapping;
 }): GrinchConsolidationProfileResult {
   const reasons: string[] = [];
   const missingEvidence: string[] = [];
   const twelveAmOpen = phase1.twelveAmOpenState.price;
-  const consolidationCandles = candles.filter((candle) => between(clockMinutesFor(candle.timestamp), minutes(2), minutes(9, 29)));
-  const londonCandles = candles.filter((candle) => between(clockMinutesFor(candle.timestamp), minutes(2), minutes(3)));
-  const nyCandles = candles.filter((candle) => between(clockMinutesFor(candle.timestamp), minutes(9, 30), minutes(10)));
-  const confirmationCandles = candles.filter((candle) => between(clockMinutesFor(candle.timestamp), minutes(10), minutes(10, 15)));
+  const consolidationCandles = candles.filter((candle) => between(clockMinutesFor(candle.timestamp, sessionTimeMapping), minutes(2), minutes(9, 29)));
+  const londonCandles = candles.filter((candle) => between(clockMinutesFor(candle.timestamp, sessionTimeMapping), minutes(2), minutes(3)));
+  const nyCandles = candles.filter((candle) => between(clockMinutesFor(candle.timestamp, sessionTimeMapping), minutes(9, 30), minutes(10)));
+  const confirmationCandles = candles.filter((candle) => between(clockMinutesFor(candle.timestamp, sessionTimeMapping), minutes(10), minutes(10, 15)));
   const consolidationRange = rangeFor(consolidationCandles.length ? consolidationCandles : londonCandles);
   const { rangeHigh, rangeLow, rangeMidpoint } = consolidationRange;
   const tolerance = toleranceFor(twelveAmOpen);

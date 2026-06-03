@@ -8,6 +8,7 @@ import type {
 } from "@/lib/strategyLibrary/grinchStrategyTypes";
 import { clockMinutesFor } from "@/lib/ict/openingPriceEquilibrium";
 import { resolveDealingRange } from "@/lib/ict/dealingRangePremiumDiscount";
+import type { SessionTimeMapping } from "@/lib/sessions";
 
 const minutes = (hour: number, minute = 0) => hour * 60 + minute;
 const between = (value: number | undefined, start: number, end: number) =>
@@ -28,9 +29,9 @@ const relationToLevel = (candles: Candle[], level?: number) => {
   return above > below ? ("above" as const) : ("below" as const);
 };
 
-const displacementAfter = (candles: Candle[], startMinute: number, endMinute: number) => {
+const displacementAfter = (candles: Candle[], startMinute: number, endMinute: number, sessionTimeMapping?: SessionTimeMapping) => {
   const after = candles.filter((candle) => {
-    const clock = clockMinutesFor(candle.timestamp);
+    const clock = clockMinutesFor(candle.timestamp, sessionTimeMapping);
     return typeof clock === "number" && clock > startMinute && clock <= endMinute;
   });
   if (after.length < 3) {
@@ -48,21 +49,23 @@ export function detectModelOnePowerThree({
   dealingRange,
   pdArrays,
   timePriceAlignment,
-  twelveAmOpenState
+  twelveAmOpenState,
+  sessionTimeMapping
 }: {
   candles: Candle[];
   dealingRange: GrinchDealingRange;
   pdArrays: GrinchPdArray[];
   timePriceAlignment: GrinchTimePriceAlignment;
   twelveAmOpenState: GrinchOpeningPriceReference;
+  sessionTimeMapping?: SessionTimeMapping;
 }): GrinchModelOnePowerThreeResult {
   const reasons: string[] = [];
   const missingEvidence: string[] = [];
   const level = twelveAmOpenState.price;
-  const londonCandles = candles.filter((candle) => between(clockMinutesFor(candle.timestamp), minutes(2), minutes(3)));
-  const nySetupCandles = candles.filter((candle) => between(clockMinutesFor(candle.timestamp), minutes(9, 30), minutes(10)));
+  const londonCandles = candles.filter((candle) => between(clockMinutesFor(candle.timestamp, sessionTimeMapping), minutes(2), minutes(3)));
+  const nySetupCandles = candles.filter((candle) => between(clockMinutesFor(candle.timestamp, sessionTimeMapping), minutes(9, 30), minutes(10)));
   const londonRelationToTwelveAm = relationToLevel(londonCandles, level);
-  const displacementCandle = displacementAfter(candles, minutes(3), minutes(9, 30));
+  const displacementCandle = displacementAfter(candles, minutes(3), minutes(9, 30), sessionTimeMapping);
   const activeArray = touchedPdArray(pdArrays);
 
   if (typeof level !== "number") {
@@ -92,7 +95,7 @@ export function detectModelOnePowerThree({
       : "lower"
     : undefined;
   const postNyCandles = candles.filter((candle) => {
-    const clock = clockMinutesFor(candle.timestamp);
+    const clock = clockMinutesFor(candle.timestamp, sessionTimeMapping);
     return typeof clock === "number" && clock >= minutes(9, 30);
   });
   const protectedHighViolated =

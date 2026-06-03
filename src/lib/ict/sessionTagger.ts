@@ -1,12 +1,8 @@
 import type { Candle, CandleSession, ICTKillZone, SessionContext } from "@/lib/types";
+import { getTimingClockMinutes, type SessionTimeMapping } from "@/lib/sessions";
 
-const minutesFromTimestamp = (timestamp: string) => {
-  const match = /T(\d{2}):(\d{2})/.exec(timestamp);
-  if (!match) {
-    return 0;
-  }
-  return Number(match[1]) * 60 + Number(match[2]);
-};
+const minutesFromTimestamp = (timestamp: string, sessionTimeMapping?: SessionTimeMapping) =>
+  getTimingClockMinutes(timestamp, sessionTimeMapping) ?? 0;
 
 const isWithin = (minutes: number, start: number, end: number) => {
   if (start <= end) {
@@ -62,8 +58,8 @@ const sessionOpenFor = (session: CandleSession) => {
   return 17 * 60;
 };
 
-export function tagSession(candle: Candle): SessionContext {
-  const minutes = minutesFromTimestamp(candle.timestamp);
+export function tagSession(candle: Candle, sessionTimeMapping?: SessionTimeMapping): SessionContext {
+  const minutes = minutesFromTimestamp(candle.timestamp, sessionTimeMapping);
   const session = sessionFor(minutes);
   const killZone = killZoneFor(minutes);
 
@@ -79,6 +75,6 @@ export function tagSession(candle: Candle): SessionContext {
   };
 }
 
-export function tagSessions(candles: Candle[]): SessionContext[] {
-  return candles.map(tagSession);
+export function tagSessions(candles: Candle[], sessionTimeMapping?: SessionTimeMapping): SessionContext[] {
+  return candles.map((candle) => tagSession(candle, sessionTimeMapping));
 }

@@ -52,6 +52,7 @@ import { loadLatestResearchQualityReview, RESEARCH_QUALITY_STORAGE_KEY } from "@
 import { latestResearchCycleRun, loadResearchCycleState, RESEARCH_CYCLE_STORAGE_KEY } from "@/lib/researchCycle";
 import { createMetricProvenance } from "@/lib/runtime/metricProvenance";
 import { compareRunFingerprints, createRunFingerprint, LLM_REVIEWER_SCHEMA_VERSION } from "@/lib/runtime/runFingerprint";
+import { resolveSessionTimeMapping } from "@/lib/sessions";
 import {
   ACTIVE_RESEARCH_CALIBRATION_STORAGE_KEY,
   loadSelfImprovementState,
@@ -625,6 +626,13 @@ export async function resolveResearchRuntimeSnapshot(
     : source.candles;
   const runtimeResearchMode = evidenceModeForRuntimeSource(displaySource.activeResearchSourceMode);
   const runtimeResearchSourceLabel = displaySource.activeResearchSourceLabel;
+  const grinchSessionTimeMapping = resolveSessionTimeMapping({
+    provider: displaySource.activeResearchSource.provider,
+    requestedSymbol: marketData.symbol,
+    brokerSymbol: displaySource.activeResearchSource.provenance.providerSymbol ?? displaySource.activeResearchSource.symbol,
+    symbol: marketData.symbol,
+    candles: runtimeResearchCandles
+  });
   const regimeMarketContext = buildMarketContext({
     symbol: marketData.symbol,
     timeframe: marketData.timeframe,
@@ -661,7 +669,11 @@ export async function resolveResearchRuntimeSnapshot(
         options: {
           symbol: marketData.symbol,
           timeframe: marketData.timeframe,
-          currentTimestamp: runtimeResearchCandles[runtimeResearchCandles.length - 1]?.timestamp
+          currentTimestamp: runtimeResearchCandles[runtimeResearchCandles.length - 1]?.timestamp,
+          sourceProvider: displaySource.activeResearchSource.provider,
+          requestedSymbol: marketData.symbol,
+          brokerSymbol: displaySource.activeResearchSource.provenance.providerSymbol ?? displaySource.activeResearchSource.symbol,
+          sessionTimeMapping: grinchSessionTimeMapping
         }
       })
     : undefined;
@@ -672,7 +684,11 @@ export async function resolveResearchRuntimeSnapshot(
         options: {
           symbol: marketData.symbol,
           timeframe: marketData.timeframe,
-          currentTimestamp: runtimeResearchCandles[runtimeResearchCandles.length - 1]?.timestamp
+          currentTimestamp: runtimeResearchCandles[runtimeResearchCandles.length - 1]?.timestamp,
+          sourceProvider: displaySource.activeResearchSource.provider,
+          requestedSymbol: marketData.symbol,
+          brokerSymbol: displaySource.activeResearchSource.provenance.providerSymbol ?? displaySource.activeResearchSource.symbol,
+          sessionTimeMapping: grinchSessionTimeMapping
         }
       })
     : undefined;
@@ -683,7 +699,11 @@ export async function resolveResearchRuntimeSnapshot(
         options: {
           symbol: marketData.symbol,
           timeframe: marketData.timeframe,
-          currentTimestamp: runtimeResearchCandles[runtimeResearchCandles.length - 1]?.timestamp
+          currentTimestamp: runtimeResearchCandles[runtimeResearchCandles.length - 1]?.timestamp,
+          sourceProvider: displaySource.activeResearchSource.provider,
+          requestedSymbol: marketData.symbol,
+          brokerSymbol: displaySource.activeResearchSource.provenance.providerSymbol ?? displaySource.activeResearchSource.symbol,
+          sessionTimeMapping: grinchSessionTimeMapping
         }
       })
     : undefined;
@@ -696,7 +716,11 @@ export async function resolveResearchRuntimeSnapshot(
         options: {
           symbol: marketData.symbol,
           timeframe: marketData.timeframe,
-          currentTimestamp: runtimeResearchCandles[runtimeResearchCandles.length - 1]?.timestamp
+          currentTimestamp: runtimeResearchCandles[runtimeResearchCandles.length - 1]?.timestamp,
+          sourceProvider: displaySource.activeResearchSource.provider,
+          requestedSymbol: marketData.symbol,
+          brokerSymbol: displaySource.activeResearchSource.provenance.providerSymbol ?? displaySource.activeResearchSource.symbol,
+          sessionTimeMapping: grinchSessionTimeMapping
         }
       })
     : undefined;
@@ -710,7 +734,11 @@ export async function resolveResearchRuntimeSnapshot(
         options: {
           symbol: marketData.symbol,
           timeframe: marketData.timeframe,
-          currentTimestamp: runtimeResearchCandles[runtimeResearchCandles.length - 1]?.timestamp
+          currentTimestamp: runtimeResearchCandles[runtimeResearchCandles.length - 1]?.timestamp,
+          sourceProvider: displaySource.activeResearchSource.provider,
+          requestedSymbol: marketData.symbol,
+          brokerSymbol: displaySource.activeResearchSource.provenance.providerSymbol ?? displaySource.activeResearchSource.symbol,
+          sessionTimeMapping: grinchSessionTimeMapping
         }
       })
     : undefined;

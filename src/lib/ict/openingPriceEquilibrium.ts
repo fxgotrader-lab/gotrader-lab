@@ -1,25 +1,15 @@
 import type { Candle } from "@/lib/types";
+import { getTimingClockMinutes, getTimingDateKey, getTimingDayOfWeek, resolveSessionTimeMapping, resolveSessionTimestampParts, type SessionTimeMapping } from "@/lib/sessions";
 import type { GrinchOpeningPriceReference } from "@/lib/strategyLibrary/grinchStrategyTypes";
 
 const round = (value: number, digits = 2) => Number(value.toFixed(digits));
 
-export const clockMinutesFor = (timestamp: string) => {
-  const match = /(?:T|\s)(\d{2}):(\d{2})/.exec(timestamp);
-  if (!match) {
-    return undefined;
-  }
-  return Number(match[1]) * 60 + Number(match[2]);
-};
+export const clockMinutesFor = (timestamp: string, sessionTimeMapping?: SessionTimeMapping) =>
+  getTimingClockMinutes(timestamp, sessionTimeMapping);
 
-const dateKeyFor = (timestamp: string) => timestamp.slice(0, 10);
+const dateKeyFor = (timestamp: string, sessionTimeMapping?: SessionTimeMapping) => getTimingDateKey(timestamp, sessionTimeMapping);
 
-const dayOfWeekFor = (timestamp: string) => {
-  const parsed = Date.parse(timestamp);
-  if (!Number.isFinite(parsed)) {
-    return undefined;
-  }
-  return new Date(parsed).getDay();
-};
+const dayOfWeekFor = (timestamp: string, sessionTimeMapping?: SessionTimeMapping) => getTimingDayOfWeek(timestamp, sessionTimeMapping);
 
 const relationTo = (price: number | undefined, current: number | undefined): GrinchOpeningPriceReference["currentRelation"] => {
   if (typeof price !== "number" || typeof current !== "number" || !Number.isFinite(price) || !Number.isFinite(current)) {
@@ -71,9 +61,33 @@ const sensitivityFor = (candles: Candle[], price: number | undefined) => {
   return Math.min(1, round(touches / Math.max(3, candles.length * 0.08), 2));
 };
 
-const buildMissingState = (type: GrinchOpeningPriceReference["type"], label: string, missingEvidence: string[]): GrinchOpeningPriceReference => ({
+const referenceTimingFields = (
+  candle: Candle | undefined,
+  sessionTimeMapping: SessionTimeMapping,
+  fallbackMethod: NonNullable<GrinchOpeningPriceReference["fallbackMethod"]>
+) => {
+  const parts = candle ? resolveSessionTimestampParts(candle.timestamp, sessionTimeMapping) : undefined;
+  return {
+    timingZone: sessionTimeMapping.timingZone,
+    sourceTimestampZone: sessionTimeMapping.sourceTimestampZone,
+    localDate: parts?.localDate,
+    localTime: parts?.localTime,
+    localTimestampLabel: parts?.localTimestampLabel,
+    fallbackMethod,
+    sessionModel: sessionTimeMapping.sessionModel,
+    sessionWarning: sessionTimeMapping.warnings[0]
+  };
+};
+
+const buildMissingState = (
+  type: GrinchOpeningPriceReference["type"],
+  label: string,
+  missingEvidence: string[],
+  sessionTimeMapping = resolveSessionTimeMapping()
+): GrinchOpeningPriceReference => ({
   type,
   label,
+  ...referenceTimingFields(undefined, sessionTimeMapping, "not_found"),
   openingGapDirection: "unknown",
   currentRelation: "unknown",
   touchedAfterOpen: false,
@@ -83,31 +97,56 @@ const buildMissingState = (type: GrinchOpeningPriceReference["type"], label: str
   missingEvidence
 });
 
-const firstCandleAtOrAfterMidnight = (candles: Candle[], dateKey: string) =>
-  candles.find((candle) => dateKeyFor(candle.timestamp) === dateKey && (clockMinutesFor(candle.timestamp) ?? 0) <= 15) ??
-  candles.find((candle) => dateKeyFor(candle.timestamp) === dateKey);
+const firstCandleAtOrAfterMidnight = (candles: Candle[], dateKey: string, sessionTimeMapping: SessionTimeMapping) => {
+  const dayCandles = candles.filter((candle) => dateKeyFor(candle.timestamp, sessionTimeMapping) === dateKey);
+  const exactMidnight = dayCandles.find((candle) => clockMinutesFor(candle.timestamp, sessionTimeMapping) === 0);
+  const nearMidnight = dayCandles.find((candle) => {
+    const clock = clockMinutesFor(candle.timestamp, sessionTimeMapping);
+    return typeof clock === "number" && clock > 0 && clock <= 15;
+  });
+  const fallback = dayCandles[0];
+  return {
+    candle: exactMidnight ?? nearMidnight ?? fallback,
+    fallbackMethod: exactMidnight
+      ? ("exact_midnight" as const)
+      : nearMidnight
+        ? ("first_after_midnight" as const)
+        : fallback
+          ? ("first_candle_of_timing_date" as const)
+          : ("not_found" as const)
+  };
+};
 
-export function findTwelveAmOpenState(candles: Candle[]): GrinchOpeningPriceReference {
+export function findTwelveAmOpenState(candles: Candle[], sessionTimeMapping = resolveSessionTimeMapping({ candles })): GrinchOpeningPriceReference {
   const latest = candles[candles.length - 1];
   if (!latest) {
-    return buildMissingState("twelve_am_open", "12AM Open", ["No candles available to locate 12AM Open."]);
+    return buildMissingState("twelve_am_open", "12AM Open", ["No candles available to locate 12AM Open."], sessionTimeMapping);
   }
 
-  const latestDate = dateKeyFor(latest.timestamp);
-  const openCandle = [...candles].reverse().find((candle) => clockMinutesFor(candle.timestamp) === 0) ?? firstCandleAtOrAfterMidnight(candles, latestDate);
+  const latestDate = dateKeyFor(latest.timestamp, sessionTimeMapping);
+  const { candle: openCandle, fallbackMethod } = firstCandleAtOrAfterMidnight(candles, latestDate, sessionTimeMapping);
   if (!openCandle) {
-    return buildMissingState("twelve_am_open", "12AM Open", ["Active window does not include a daily 12AM reference."]);
+    return buildMissingState("twelve_am_open", "12AM Open", ["Active window does not include a daily 12AM reference."], sessionTimeMapping);
   }
 
   const openIndex = candles.findIndex((candle) => candle.id === openCandle.id);
   const price = openCandle.open;
   const touched = touchedAfter(candles, openIndex, price);
   const relation = relationTo(price, latest.close);
+  const missingEvidence =
+    fallbackMethod === "exact_midnight"
+      ? []
+      : [
+          fallbackMethod === "first_after_midnight"
+            ? "No exact 12AM candle was found; using the first candle within 15 minutes after timing-zone midnight."
+            : "No exact 12AM candle was found; using the first candle available on the timing-zone date."
+        ];
   return {
     type: "twelve_am_open",
     label: "12AM Open",
     price,
     timestamp: openCandle.timestamp,
+    ...referenceTimingFields(openCandle, sessionTimeMapping, fallbackMethod),
     openingGapDirection: "unknown",
     currentRelation: relation,
     touchedAfterOpen: touched,
@@ -119,22 +158,24 @@ export function findTwelveAmOpenState(candles: Candle[]): GrinchOpeningPriceRefe
         : relation === "above"
           ? "Price is above daily equilibrium; 12AM Open can act as support or retracement magnet."
           : "Price is sensitive to daily equilibrium.",
-    missingEvidence: []
+    missingEvidence
   };
 }
 
-export function findSundayOpenState(candles: Candle[]): GrinchOpeningPriceReference {
+export function findSundayOpenState(candles: Candle[], sessionTimeMapping = resolveSessionTimeMapping({ candles })): GrinchOpeningPriceReference {
   const latest = candles[candles.length - 1];
   if (!latest) {
-    return buildMissingState("sunday_open", "Sunday Open", ["No candles available to locate Sunday Open."]);
+    return buildMissingState("sunday_open", "Sunday Open", ["No candles available to locate Sunday Open."], sessionTimeMapping);
   }
 
-  const sundayCandles = candles.filter((candle) => dayOfWeekFor(candle.timestamp) === 0);
-  const latestSundayDate = sundayCandles.length ? dateKeyFor(sundayCandles[sundayCandles.length - 1].timestamp) : undefined;
-  const weeklyOpen = latestSundayDate ? sundayCandles.find((candle) => dateKeyFor(candle.timestamp) === latestSundayDate) : undefined;
+  const sundayCandles = candles.filter((candle) => dayOfWeekFor(candle.timestamp, sessionTimeMapping) === 0);
+  const latestSundayDate = sundayCandles.length ? dateKeyFor(sundayCandles[sundayCandles.length - 1].timestamp, sessionTimeMapping) : undefined;
+  const weeklyOpen = latestSundayDate
+    ? sundayCandles.find((candle) => dateKeyFor(candle.timestamp, sessionTimeMapping) === latestSundayDate)
+    : undefined;
 
   if (!weeklyOpen) {
-    return buildMissingState("sunday_open", "Sunday Open", ["Active window does not include a Sunday weekly open reference."]);
+    return buildMissingState("sunday_open", "Sunday Open", ["Active window does not include a Sunday weekly open reference."], sessionTimeMapping);
   }
 
   const openIndex = candles.findIndex((candle) => candle.id === weeklyOpen.id);
@@ -161,6 +202,7 @@ export function findSundayOpenState(candles: Candle[]): GrinchOpeningPriceRefere
     label: "Sunday Open",
     price,
     timestamp: weeklyOpen.timestamp,
+    ...referenceTimingFields(weeklyOpen, sessionTimeMapping, "first_sunday_candle"),
     openingGapDirection,
     gapReferenceClose: previousCandle?.close,
     currentRelation: relation,
