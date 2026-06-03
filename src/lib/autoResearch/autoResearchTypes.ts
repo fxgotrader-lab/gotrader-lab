@@ -77,6 +77,7 @@ export type AutoResearchCandidateFamily =
   | "grinch_model_consolidation_only"
   | "grinch_reversal_profile_only"
   | "grinch_consolidation_profile_only"
+  | "reversal_expansion_confirmation"
   | "grinch_timing_valid_only"
   | "grinch_ny_930_1000_only"
   | "grinch_1000_1015_confirmation_only"
@@ -92,6 +93,14 @@ export type AutoResearchCandidateFamily =
   | "grinch_smt_unavailable_penalty"
   | "grinch_penalize_missing_smt"
   | "grinch_allow_smt_unavailable_but_discount_confidence";
+
+export interface AutoResearchCandidateFamilyMetadata {
+  id: AutoResearchCandidateFamily;
+  label: string;
+  target: string;
+  researchOnly: true;
+  autoApplyAllowed: false;
+}
 
 export type AutoResearchCycleStatus =
   | "idle"
@@ -110,6 +119,7 @@ export interface AutoResearchCandidateConfig {
   ictScoringWeights?: Partial<ICTScoringWeights>;
   changedParameters: string[];
   candidateFamily?: AutoResearchCandidateFamily;
+  candidateFamilyMetadata?: AutoResearchCandidateFamilyMetadata;
 }
 
 export interface AutoResearchScoringCriteria {
@@ -162,6 +172,42 @@ export interface AutoResearchCandidateResult {
   readinessEstimate: ReadinessGateSnapshot;
   metrics: CalibrationProposalMetrics;
   scoreBreakdown: AutoResearchScoreBreakdown;
+  calibrationFamilyReport?: {
+    familyId: AutoResearchCandidateFamily;
+    label: string;
+    target: string;
+    researchOnly: true;
+    autoApplyAllowed: false;
+    reversalExpansion?: {
+      conditionPassed: boolean;
+      status: "passed" | "missing_evidence" | "unavailable";
+      timingStatus?: string;
+      reversalProfileState?: string;
+      twelveAmInteractionState?: string;
+      londonBehavior?: string;
+      continuationBeyond12am?: string;
+      entryIntent?: string;
+      missingExpansionEvidence: string[];
+      profileCandidateCount?: number;
+      activeProfile?: string;
+      hardGateReason?: string;
+      readinessImpact?: string;
+    };
+    metrics: {
+      tradeCount: number;
+      winRate: number;
+      averageR: number;
+      maxDrawdown: number;
+      falsePositiveCount: number;
+      readiness: string;
+      walkForwardVerdict?: string;
+    };
+    safetyAuthority: {
+      executionAuthority: "none";
+      brokerAuthority: "none";
+      readinessOverrideAuthority: "none";
+    };
+  };
   grinchScore?: GrinchStrategyScore;
   grinchComparison?: {
     baselineScore?: number;
@@ -176,6 +222,7 @@ export interface AutoResearchCandidateResult {
   promotionEligible: boolean;
   rejectionReasons: string[];
   candidateFamily?: AutoResearchCandidateFamily;
+  candidateFamilyMetadata?: AutoResearchCandidateFamilyMetadata;
 }
 
 export interface AutoResearchCandidateScoreSummary {

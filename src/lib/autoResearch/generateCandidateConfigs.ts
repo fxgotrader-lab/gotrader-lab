@@ -12,6 +12,17 @@ import { uid } from "@/lib/utils";
 const round = (value: number, digits = 2) => Number(value.toFixed(digits));
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
+const candidateFamilyMetadataFor = (family?: AutoResearchCandidateFamily) =>
+  family === "reversal_expansion_confirmation"
+    ? {
+        id: "reversal_expansion_confirmation" as const,
+        label: "Reversal Expansion Confirmation",
+        target: "Grinch reversal profile refinement",
+        researchOnly: true as const,
+        autoApplyAllowed: false as const
+      }
+    : undefined;
+
 const candidate = (
   baseline: ResolvedBacktestConfig,
   searchMode: AutoResearchSearchMode,
@@ -30,7 +41,8 @@ const candidate = (
     config: sanitizeBacktestConfig({ ...baseline, ...configPatch }),
     ictScoringWeights,
     changedParameters,
-    candidateFamily
+    candidateFamily,
+    candidateFamilyMetadata: candidateFamilyMetadataFor(candidateFamily)
   };
 };
 
@@ -73,6 +85,9 @@ const dedupeCandidates = (candidates: AutoResearchCandidateConfig[]) => {
     return true;
   });
 };
+
+const isGrinchCandidateFamily = (family?: AutoResearchCandidateFamily) =>
+  Boolean(family?.startsWith("grinch_") || family === "reversal_expansion_confirmation");
 
 export function generateCandidateConfigs(
   baseline: ResolvedBacktestConfig,
@@ -735,6 +750,73 @@ export function generateCandidateConfigs(
       candidate(
         baseline,
         searchMode,
+        "Reversal expansion confirmation - strict",
+        "Research-only test for Reversal Profile quality: London must fail to interact with 12AM Open, price must expand cleanly away into the NY approach, and timing/readiness gates still apply.",
+        {
+          sessionFilter: "NY AM Kill Zone",
+          minimumConfluenceThreshold: round(clamp01(Math.max(0.56, baseline.minimumConfluenceThreshold + 0.08)), 2),
+          minimumConfidenceThreshold: round(clamp01(Math.max(0.54, baseline.minimumConfidenceThreshold + 0.07)), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-reversal-profile-agent": 0.18,
+            "grinch-opening-price-equilibrium-agent": 0.08,
+            "grinch-time-price-alignment-agent": 0.12,
+            "grinch-entry-confirmation-agent": 0.1,
+            "grinch-model-one-power-three-agent": -0.04,
+            "grinch-consolidation-profile-agent": -0.04
+          })
+        },
+        [
+          "reversalExpansionConfirmationStrict",
+          "sessionFilter",
+          "confluenceThreshold",
+          "confidenceThreshold",
+          "agentWeights"
+        ],
+        "reversal_expansion_confirmation"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Reversal expansion confirmation - balanced",
+        "Research-only balanced variant for Reversal expansion: emphasize 12AM/Open interaction, expansion away, NY timing, and entry confirmation without bypassing profile or readiness gates.",
+        {
+          sessionFilter: "NY AM Kill Zone",
+          minimumConfidenceThreshold: round(clamp01(baseline.minimumConfidenceThreshold + 0.04), 2),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-reversal-profile-agent": 0.16,
+            "grinch-opening-price-equilibrium-agent": 0.06,
+            "grinch-time-price-alignment-agent": 0.1,
+            "grinch-entry-confirmation-agent": 0.08,
+            "grinch-model-one-power-three-agent": -0.03,
+            "grinch-consolidation-profile-agent": -0.03
+          })
+        },
+        ["reversalExpansionConfirmationBalanced", "sessionFilter", "confidenceThreshold", "agentWeights"],
+        "reversal_expansion_confirmation"
+      ),
+      candidate(
+        baseline,
+        searchMode,
+        "Reversal expansion confirmation - exploratory",
+        "Research-only exploratory variant: increase Reversal expansion evidence weighting while preserving the active confluence/confidence thresholds and the NY timing gate.",
+        {
+          sessionFilter: "NY AM Kill Zone",
+          decisionInterval: Math.max(1, Math.min(baseline.decisionInterval, 2)),
+          agentWeights: nudgeAgents(baseline, {
+            "grinch-reversal-profile-agent": 0.14,
+            "grinch-opening-price-equilibrium-agent": 0.04,
+            "grinch-time-price-alignment-agent": 0.08,
+            "grinch-entry-confirmation-agent": 0.06,
+            "grinch-model-one-power-three-agent": -0.02,
+            "grinch-consolidation-profile-agent": -0.02
+          })
+        },
+        ["reversalExpansionConfirmationExploratory", "sessionFilter", "decisionInterval", "agentWeights"],
+        "reversal_expansion_confirmation"
+      ),
+      candidate(
+        baseline,
+        searchMode,
         "Grinch consolidation profile only",
         "Test whether 12AM consolidation, side raid, and expansion profile evidence improves setup selection.",
         {
@@ -830,6 +912,7 @@ export function generateCandidateConfigs(
   const maxCount = Math.max(1, Math.min(25, maxCandidateCount));
   const deduped = dedupeCandidates(candidates);
   const grinchPriority: AutoResearchCandidateFamily[] = [
+    "reversal_expansion_confirmation",
     "grinch_exclude_expired_timing",
     "grinch_no_trade_when_no_valid_profile",
     "grinch_timing_valid_only",
@@ -846,9 +929,9 @@ export function generateCandidateConfigs(
     return index === -1 ? grinchPriority.length : index;
   };
   const grinchCandidates = deduped
-    .filter((item) => item.candidateFamily?.startsWith("grinch_"))
+    .filter((item) => isGrinchCandidateFamily(item.candidateFamily))
     .sort((a, b) => priorityFor(a.candidateFamily) - priorityFor(b.candidateFamily));
-  const otherCandidates = deduped.filter((item) => !item.candidateFamily?.startsWith("grinch_"));
+  const otherCandidates = deduped.filter((item) => !isGrinchCandidateFamily(item.candidateFamily));
   const grinchQuota = Math.min(grinchCandidates.length, maxCount <= 5 ? Math.min(4, maxCount) : searchMode === "deep" ? 12 : Math.min(10, maxCount));
   return [
     ...otherCandidates.slice(0, Math.max(0, maxCount - grinchQuota)),

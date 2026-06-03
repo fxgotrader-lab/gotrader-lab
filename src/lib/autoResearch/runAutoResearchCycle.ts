@@ -224,6 +224,7 @@ const compactCandidate = (candidate: AutoResearchCandidateResult): AutoResearchC
     ictScoringWeights: source.ictScoringWeights,
     changedParameters: safeArray(source.changedParameters),
     candidateFamily: source.candidateFamily,
+    candidateFamilyMetadata: source.candidateFamilyMetadata,
     readinessEstimate: compactReadinessEstimate(source.readinessEstimate),
     metrics: {
       validationId: metrics.validationId,
@@ -244,6 +245,7 @@ const compactCandidate = (candidate: AutoResearchCandidateResult): AutoResearchC
       weakestScenario: metrics.weakestScenario
     },
     scoreBreakdown,
+    calibrationFamilyReport: source.calibrationFamilyReport,
     grinchScore: source.grinchScore
       ? {
           ...source.grinchScore,
@@ -645,6 +647,81 @@ export function latestAutoResearchCycle(state = loadAutoResearchState()) {
   return cycles.find((cycle) => cycle.cycleId === state.latestCycleId) ?? cycles[0];
 }
 
+const isGrinchCandidateFamily = (family?: AutoResearchCandidateResult["candidateFamily"]) =>
+  Boolean(family?.startsWith("grinch_") || family === "reversal_expansion_confirmation");
+
+const buildCalibrationFamilyReport = ({
+  backtestResult,
+  candidate,
+  metrics,
+  readinessEstimate
+}: {
+  backtestResult: ReturnType<typeof runBacktest>;
+  candidate: ReturnType<typeof generateCandidateConfigs>[number];
+  metrics: CalibrationProposalMetrics;
+  readinessEstimate: ReadinessGateSnapshot;
+}): AutoResearchCandidateResult["calibrationFamilyReport"] => {
+  if (candidate.candidateFamily !== "reversal_expansion_confirmation") {
+    return undefined;
+  }
+
+  const grinchSummary = backtestResult.summary.grinchSummary;
+  const latestScore = grinchSummary?.latestScore;
+  const reversalProfile = latestScore?.evaluatedProfiles?.find((profile) => profile.profile === "reversal");
+  const missingExpansionEvidence = safeArray(latestScore?.missingEvidence)
+    .filter((item) => /12am|london|expansion|reversal/i.test(item))
+    .slice(0, 5);
+  const expansionConfirmedByReason = safeArray(latestScore?.reasons).some((item) => /expanded away|reversal profile/i.test(item));
+  const conditionPassed = Boolean(
+    latestScore &&
+      reversalProfile &&
+      (reversalProfile.selectable || latestScore.activeProfile === "reversal") &&
+      !missingExpansionEvidence.some((item) => /no clean expansion away/i.test(item)) &&
+      (expansionConfirmedByReason || latestScore.activeProfile === "reversal")
+  );
+  const status = !latestScore ? "unavailable" : conditionPassed ? "passed" : "missing_evidence";
+
+  return {
+    familyId: "reversal_expansion_confirmation",
+    label: "Reversal Expansion Confirmation",
+    target: "Grinch reversal profile refinement",
+    researchOnly: true,
+    autoApplyAllowed: false,
+    reversalExpansion: {
+      conditionPassed,
+      status,
+      timingStatus: reversalProfile?.timingGrade ?? latestScore?.timingGrade,
+      reversalProfileState: reversalProfile?.state,
+      twelveAmInteractionState: latestScore?.reasons.find((item) => /12AM/i.test(item)),
+      londonBehavior: latestScore?.reasons.find((item) => /London/i.test(item)),
+      continuationBeyond12am: latestScore?.missingEvidence.find((item) => /continuation|12AM Open/i.test(item)),
+      entryIntent: reversalProfile?.entryIntent,
+      missingExpansionEvidence: missingExpansionEvidence.length
+        ? missingExpansionEvidence
+        : conditionPassed
+          ? []
+          : ["Reversal expansion evidence was not available in the latest Grinch score."],
+      profileCandidateCount: grinchSummary?.profileCandidateCounts.reversal ?? 0,
+      activeProfile: latestScore?.activeProfile,
+      hardGateReason: latestScore?.hardGateReason,
+      readinessImpact: `${readinessEstimate.state}; trade count ${metrics.totalTrades}, win rate ${Math.round(metrics.winRate * 100)}%, average R ${metrics.averageR.toFixed(2)}.`
+    },
+    metrics: {
+      tradeCount: metrics.totalTrades,
+      winRate: metrics.winRate,
+      averageR: metrics.averageR,
+      maxDrawdown: metrics.maxDrawdown,
+      falsePositiveCount: metrics.falsePositiveCount,
+      readiness: readinessEstimate.state
+    },
+    safetyAuthority: {
+      executionAuthority: "none",
+      brokerAuthority: "none",
+      readinessOverrideAuthority: "none"
+    }
+  };
+};
+
 const evaluateCandidate = (
   candidate: ReturnType<typeof generateCandidateConfigs>[number],
   baselineMetrics: ReturnType<typeof summarizeValidationMetrics>,
@@ -680,6 +757,12 @@ const evaluateCandidate = (
       grinchScore,
       scoringCriteria: defaultAutoResearchScoringCriteria
     });
+    const calibrationFamilyReport = buildCalibrationFamilyReport({
+      backtestResult,
+      candidate,
+      metrics,
+      readinessEstimate
+    });
 
     return {
       candidateId: candidate.candidateId,
@@ -689,12 +772,14 @@ const evaluateCandidate = (
       ictScoringWeights: candidate.ictScoringWeights,
       changedParameters: candidate.changedParameters,
       candidateFamily: candidate.candidateFamily,
+      candidateFamilyMetadata: candidate.candidateFamilyMetadata,
       backtestResult,
       validationReport,
       researchQualityReview,
       readinessEstimate,
       metrics,
       scoreBreakdown,
+      calibrationFamilyReport,
       grinchScore,
       comparisonResult,
       resultCategory: "rejected",
@@ -880,7 +965,7 @@ const tradeQualitySummaryFor = ({
           .filter((candidate) => safeArray(candidate.changedParameters).includes("allowLong") || safeArray(candidate.changedParameters).includes("allowShort"))
           .map((candidate) => candidate.label),
         ...safeArray(candidates)
-          .filter((candidate) => candidate.candidateFamily?.startsWith("grinch_"))
+          .filter((candidate) => isGrinchCandidateFamily(candidate.candidateFamily))
           .map((candidate) => `Grinch filter tested: ${candidate.label}`),
         bestCandidate ? `Best quality candidate: ${bestCandidate.label}` : undefined,
         changed.length ? `Changed parameters tested: ${[...new Set(changed)].join(", ")}` : undefined
@@ -966,7 +1051,7 @@ const buildGrinchComparison = (
   baselineBacktest: ReturnType<typeof runBacktest>,
   candidateResults: AutoResearchCandidateResult[]
 ): AutoResearchGrinchComparison | undefined => {
-  const grinchCandidates = safeArray(candidateResults).filter((candidate) => candidate.candidateFamily?.startsWith("grinch_"));
+  const grinchCandidates = safeArray(candidateResults).filter((candidate) => isGrinchCandidateFamily(candidate.candidateFamily));
   if (!baselineBacktest.summary.grinchSummary && !grinchCandidates.length) {
     return undefined;
   }
@@ -979,6 +1064,7 @@ const buildGrinchComparison = (
   const profileCandidate = candidateScoreSummaryFor(findFamily(
     "grinch_model_model1_only",
     "grinch_model_reversal_only",
+    "reversal_expansion_confirmation",
     "grinch_model_consolidation_only",
     "grinch_reversal_profile_only",
     "grinch_consolidation_profile_only"

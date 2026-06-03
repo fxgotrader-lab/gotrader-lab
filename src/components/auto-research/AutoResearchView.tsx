@@ -154,6 +154,26 @@ const CandidateTable = ({ candidates }: { candidates: AutoResearchCandidateResul
               {candidate.candidateFamily ? (
                 <Badge className="mt-2" variant="secondary">{formatToken(candidate.candidateFamily)}</Badge>
               ) : null}
+              {candidate.calibrationFamilyReport?.reversalExpansion ? (
+                <div className="mt-2 max-w-md rounded-md border border-amber-300/20 bg-amber-300/10 p-2 text-xs text-amber-100">
+                  <div className="flex flex-wrap gap-1">
+                    <Badge variant={candidate.calibrationFamilyReport.reversalExpansion.conditionPassed ? "success" : "warning"}>
+                      expansion {formatToken(candidate.calibrationFamilyReport.reversalExpansion.status)}
+                    </Badge>
+                    <Badge variant="muted">
+                      timing {formatToken(candidate.calibrationFamilyReport.reversalExpansion.timingStatus)}
+                    </Badge>
+                    <Badge variant="muted">
+                      candidates {candidate.calibrationFamilyReport.reversalExpansion.profileCandidateCount ?? 0}
+                    </Badge>
+                  </div>
+                  <p className="mt-2 text-amber-100/80">
+                    {candidate.calibrationFamilyReport.reversalExpansion.missingExpansionEvidence.length
+                      ? candidate.calibrationFamilyReport.reversalExpansion.missingExpansionEvidence.join(" ")
+                      : "Reversal expansion condition passed in this candidate report."}
+                  </p>
+                </div>
+              ) : null}
             </td>
             <td className="px-3 py-3">
               <Badge variant={categoryVariant(candidate.resultCategory)}>{formatToken(candidate.resultCategory)}</Badge>

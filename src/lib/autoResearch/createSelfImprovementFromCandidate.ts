@@ -80,6 +80,7 @@ const grinchImprovementText = (candidate: AutoResearchCandidateResult) => {
     candidate.candidateFamily?.includes("pd_array") ? "PD hierarchy filter" : undefined,
     candidate.candidateFamily?.includes("time_price") ? "timing alignment" : undefined,
     candidate.candidateFamily?.includes("smt") ? "SMT penalty/discount" : undefined,
+    candidate.candidateFamily === "reversal_expansion_confirmation" ? "reversal expansion confirmation" : undefined,
     candidate.candidateFamily?.includes("reversal") ? "reversal profile selection" : undefined,
     candidate.candidateFamily?.includes("consolidation") ? "consolidation profile selection" : undefined,
     candidate.candidateFamily?.includes("model1") ? "Model 1 profile selection" : undefined

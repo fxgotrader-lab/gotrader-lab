@@ -49,6 +49,7 @@ const familyTitle: Record<GrinchCalibrationCandidateFamily, string> = {
 export const executableAutoResearchCandidateFamilies: AutoResearchCandidateFamily[] = [
   "grinch_model_model1_only",
   "grinch_model_reversal_only",
+  "reversal_expansion_confirmation",
   "grinch_model_consolidation_only",
   "grinch_reversal_profile_only",
   "grinch_consolidation_profile_only",
@@ -89,13 +90,13 @@ export const grinchCalibrationCandidateFamilyRegistry: Record<
   },
   reversal_expansion_confirmation: {
     calibrationFamily: "reversal_expansion_confirmation",
-    status: "planned_not_implemented",
-    executableAutoResearchFamilies: [],
+    status: "executable",
+    executableAutoResearchFamilies: ["reversal_expansion_confirmation"],
     closestAutoResearchFamilies: ["grinch_reversal_profile_only", "grinch_model_reversal_only"],
     reason:
-      "Reversal expansion confirmation is currently diagnostic; existing reversal candidates adjust profile emphasis but do not test expansion confirmation directly.",
+      "Reversal expansion confirmation now maps to a research-only Auto Research candidate family that tests London/12AM interaction, expansion away, timing, and entry confirmation evidence.",
     nextImplementationStep:
-      "Add an Auto Research candidate that isolates 12AM/London interaction plus clean expansion-away confirmation for reversal setups."
+      "Run the reversal expansion confirmation candidate through AI Research, walk-forward, evidence, maturity, and regime consistency checks before any concrete proposal can be considered."
   },
   consolidation_range_tightness: {
     calibrationFamily: "consolidation_range_tightness",
