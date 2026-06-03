@@ -1,6 +1,12 @@
 import type { MarketBias, Timeframe, FuturesSymbol } from "@/lib/types";
 
 export type LLMResearchMode = "llm_required";
+export type GoTraderAdvisoryProviderMode = "local_llm_bridge" | "openclaw" | "disabled";
+export type GoTraderAdvisoryMode =
+  | "explain_cycle"
+  | "calibration_review"
+  | "self_improvement_review"
+  | "blocker_review";
 export type LLMProviderMode =
   | "deterministic_fallback"
   | "mock_llm"
@@ -271,6 +277,97 @@ export interface LLMResearchContextPacket {
   dashboardAdvisoryRequest?: {
     question: string;
     status: "plain_language_review";
+  };
+}
+
+export interface GoTraderAdvisoryPacket {
+  packetId: string;
+  timestamp: string;
+  source: "gotrader_ai_lab";
+  advisoryMode: GoTraderAdvisoryMode;
+  latestCycle: {
+    cycleId?: string;
+    dataSource: string;
+    provider: string;
+    requestedSymbol?: string;
+    brokerSymbol?: string;
+    candleCount: number;
+    firstTimestamp?: string;
+    lastTimestamp?: string;
+    regime: {
+      label: string;
+      confidence: number;
+      dataQuality: string;
+      transitionPending: boolean;
+    };
+    ictThesis?: string;
+    grinchProfile?: string;
+    grinchBlocker?: string;
+    trades?: number;
+    winRate?: number;
+    averageR?: number;
+    drawdown?: number;
+    profitFactor?: number | null;
+    readiness: string;
+    evidenceScore?: number;
+    maturityScore?: number;
+    walkForwardVerdict?: string;
+    blockers: string[];
+  };
+  layerContribution: {
+    ictFoundationCandidates?: number;
+    grinchQualifiedCandidates?: number;
+    grinchBlockedCandidates?: number;
+    profileInvalidBlocks?: number;
+    timingExpiredBlocks?: number;
+    pdArrayInvalidBlocks?: number;
+    entryConfirmationFailures?: number;
+    fullStackSetups?: number;
+    layerContributionSummary: string;
+  };
+  sourceContext: {
+    activeResearchSource: string;
+    provider: string;
+    requestedSymbol?: string;
+    brokerSymbol?: string;
+    candleCount: number;
+    warning: string;
+    authority: {
+      executionAuthority: "none";
+      brokerAuthority: "none";
+      readinessOverrideAuthority: "none";
+    };
+  };
+  safety: {
+    executionAuthority: "none";
+    brokerAuthority: "none";
+    readinessOverrideAuthority: "none";
+    constraints: string[];
+  };
+  userQuestion?: string;
+  excludedLargeSections: string[];
+}
+
+export interface OpenClawAdvisoryResponse {
+  advisoryStatus: "complete" | "unavailable" | "error" | "timeout";
+  summary: string;
+  topBlockers: string[];
+  nextActions: string[];
+  calibrationRecommendations: string[];
+  selfImprovementProposalIntent?: {
+    createProposal: boolean;
+    proposalTitle?: string;
+    targetSubsystem?: string;
+    candidateFamilies: string[];
+    requiresWalkForward: boolean;
+    autoApplyAllowed: false;
+  };
+  riskNotes: string[];
+  questions: string[];
+  authority: {
+    executionAuthority: "none";
+    brokerAuthority: "none";
+    readinessOverrideAuthority: "none";
   };
 }
 

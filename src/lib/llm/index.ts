@@ -1,4 +1,18 @@
 export {
+  ADVISORY_PROVIDER_SETTINGS_STORAGE_KEY,
+  loadAdvisoryProviderSettings,
+  OPENCLAW_ADVISORY_DEFAULT_URL,
+  OPENCLAW_ADVISORY_TIMEOUT_MS,
+  openClawAdvisoryUrlFromEnv,
+  runOpenClawAdvisory,
+  saveAdvisoryProviderSettings
+} from "@/lib/llm/advisoryProviderClient";
+export type {
+  AdvisoryProviderSettings,
+  OpenClawAdvisoryRunResult,
+  OpenClawAdvisoryUnavailableReason
+} from "@/lib/llm/advisoryProviderClient";
+export {
   buildLLMResearchContextPacket,
   runLLMAgentOrchestrator
 } from "@/lib/llm/llmAgentOrchestrator";
@@ -63,7 +77,11 @@ export type {
   LLMAuthority,
   LLMBaselineDebateSummary,
   LLMEvidenceQualitySummary,
+  GoTraderAdvisoryMode,
+  GoTraderAdvisoryPacket,
+  GoTraderAdvisoryProviderMode,
   LLMICTContextSummary,
+  OpenClawAdvisoryResponse,
   LLMProceedRecommendation,
   LLMProvider,
   LLMProviderMode,

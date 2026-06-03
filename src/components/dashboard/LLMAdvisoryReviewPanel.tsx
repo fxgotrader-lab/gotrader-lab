@@ -4,13 +4,22 @@ import { Bot, MessageSquareText, ShieldCheck } from "lucide-react";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import {
   checkLocalBridgeHealth,
+  loadAdvisoryProviderSettings,
   getLocalBridgeStatusSnapshot,
+  OPENCLAW_ADVISORY_DEFAULT_URL,
   LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS,
   LLM_LOCAL_BRIDGE_BASE_URL,
   resetLocalBridgeCircuitBreaker,
+  runOpenClawAdvisory,
   runLocalBridgeAdvisory,
+  saveAdvisoryProviderSettings,
+  type GoTraderAdvisoryMode,
+  type GoTraderAdvisoryPacket,
+  type GoTraderAdvisoryProviderMode,
   type LLMAgentResponse,
   type LLMEvidenceQualitySummary,
   type LLMResearchContextPacket,
@@ -40,6 +49,7 @@ type AdvisoryMessage = {
 type LastAdvisoryPayload = {
   packetId?: string;
   status: AdvisoryStatus;
+  providerMode?: GoTraderAdvisoryProviderMode;
   bridgeProcessStatus?: PanelBridgeProcessStatus;
   advisoryCapabilityStatus?: PanelAdvisoryCapabilityStatus;
   circuitBreakerStatus?: PanelCircuitBreakerStatus;
@@ -57,6 +67,8 @@ type LastAdvisoryPayload = {
   excludedLargeSections?: string[];
   timeoutMs?: number;
   model?: string;
+  openClawEndpoint?: string;
+  openClawProposalIntent?: string;
 };
 
 const authority = {
@@ -68,6 +80,8 @@ const authority = {
 const promptButtons = [
   "Explain this cycle",
   "Why is this blocked?",
+  "Suggest calibration",
+  "Review self-improvement",
   "What should I test next?",
   "Why is Grinch profile not present?"
 ];
@@ -205,6 +219,20 @@ const blockersFor = (snapshot?: ResearchRuntimeSnapshot) =>
     ],
     5
   );
+
+const advisoryModeForQuestion = (question: string): GoTraderAdvisoryMode => {
+  const normalized = question.toLowerCase();
+  if (normalized.includes("self-improvement") || normalized.includes("proposal")) {
+    return "self_improvement_review";
+  }
+  if (normalized.includes("calibration") || normalized.includes("test next")) {
+    return "calibration_review";
+  }
+  if (normalized.includes("blocked") || normalized.includes("blocker") || normalized.includes("grinch profile not present")) {
+    return "blocker_review";
+  }
+  return "explain_cycle";
+};
 
 const truncateText = (value: unknown, maxLength = 180) => {
   const text = String(value ?? "").trim();
@@ -365,6 +393,88 @@ const buildAdvisoryPacket = (snapshot: ResearchRuntimeSnapshot, question: string
   });
 };
 
+const buildOpenClawPacket = (snapshot: ResearchRuntimeSnapshot, question: string): GoTraderAdvisoryPacket => {
+  const latestRun = snapshot.latestResearchCycle.latestRun;
+  const source = snapshot.marketData.activeResearchSource;
+  const grinch = snapshot.latestResearchCycle.activeGrinchProfileSummary;
+  const latestMetrics = snapshot.latestResearchCycle.latestCycleMetrics;
+  const layerMetrics = latestRun?.autoResearchCycle?.grinchComparison?.layerMetrics;
+  const sourceBrokerSymbol = snapshot.mt5ReadOnly.brokerSymbol ?? source.provenance.providerSymbol ?? undefined;
+
+  return {
+    packetId: uid("openclaw_advisory"),
+    timestamp: new Date().toISOString(),
+    source: "gotrader_ai_lab",
+    advisoryMode: advisoryModeForQuestion(question),
+    latestCycle: {
+      cycleId: latestRun?.cycleId,
+      dataSource: snapshot.marketData.activeResearchSourceLabel,
+      provider: source.provider,
+      requestedSymbol: snapshot.marketData.symbol,
+      brokerSymbol: sourceBrokerSymbol,
+      candleCount: source.candleCount,
+      firstTimestamp: source.firstTimestamp,
+      lastTimestamp: source.lastTimestamp,
+      regime: {
+        label: snapshot.regime.label,
+        confidence: snapshot.regime.confidence,
+        dataQuality: snapshot.regime.dataQuality,
+        transitionPending: snapshot.regime.transitionPending
+      },
+      ictThesis: latestRun?.thesisSummary?.summary,
+      grinchProfile: grinch ? `${grinch.profile}/${grinch.state}` : "not_present",
+      grinchBlocker: grinch?.hardGateReason,
+      trades: latestRun?.backtestSummary?.totalTrades ?? latestMetrics?.totalTrades,
+      winRate: latestRun?.backtestSummary?.winRate ?? latestMetrics?.winRate,
+      averageR: latestRun?.backtestSummary?.averageR ?? latestMetrics?.averageR,
+      drawdown: latestRun?.backtestSummary?.maxDrawdown ?? latestMetrics?.maxDrawdownR,
+      profitFactor: latestRun?.backtestSummary?.profitFactor ?? latestMetrics?.profitFactor,
+      readiness: snapshot.readiness.readinessState,
+      evidenceScore: snapshot.evidence.evidenceQualityScore,
+      maturityScore: snapshot.maturity.maturityScore,
+      walkForwardVerdict: snapshot.walkForward.verdict ?? snapshot.walkForward.latestStatus,
+      blockers: blockersFor(snapshot)
+    },
+    layerContribution: {
+      ictFoundationCandidates: layerMetrics?.ictFoundationCandidates,
+      grinchQualifiedCandidates: layerMetrics?.grinchQualifiedCandidates,
+      grinchBlockedCandidates: layerMetrics?.grinchBlockedCandidates,
+      profileInvalidBlocks: layerMetrics?.profileInvalidBlocks,
+      timingExpiredBlocks: layerMetrics?.timingExpiredBlocks,
+      pdArrayInvalidBlocks: layerMetrics?.pdArrayInvalidBlocks,
+      entryConfirmationFailures: layerMetrics?.entryConfirmationFailures,
+      fullStackSetups: layerMetrics?.fullStackSetups,
+      layerContributionSummary:
+        safeArray(layerMetrics?.layerContributionSummary).join(" ") ||
+        "Layer contribution summary is pending; ICT foundation and Grinch refinement remain progressive layers, not competing strategies."
+    },
+    sourceContext: {
+      activeResearchSource: snapshot.marketData.activeResearchSourceLabel,
+      provider: source.provider,
+      requestedSymbol: snapshot.marketData.symbol,
+      brokerSymbol: sourceBrokerSymbol,
+      candleCount: source.candleCount,
+      warning:
+        source.provider === "mt5_read_only"
+          ? "MT5 read-only USTECH is CFD/proxy data for MNQ/NQ-style research, not CME MNQ futures truth."
+          : "Source is research context only; it is not broker truth or execution authority.",
+      authority
+    },
+    safety: {
+      ...authority,
+      constraints: [
+        "OpenClaw advisory is explanation and calibration guidance only.",
+        "OpenClaw cannot change thresholds directly.",
+        "OpenClaw cannot auto-apply self-improvement proposals.",
+        "OpenClaw cannot approve readiness.",
+        "OpenClaw cannot place trades or call broker/order/account/position tools."
+      ]
+    },
+    userQuestion: question,
+    excludedLargeSections: compactExcludedLargeSections
+  };
+};
+
 export function LLMAdvisoryReviewPanel({
   snapshot,
   onAdvisoryEvent
@@ -377,6 +487,9 @@ export function LLMAdvisoryReviewPanel({
     sourceFingerprint?: string
   ) => void;
 }) {
+  const initialProviderSettings = useMemo(() => loadAdvisoryProviderSettings(), []);
+  const [providerMode, setProviderMode] = useState<GoTraderAdvisoryProviderMode>(initialProviderSettings.providerMode);
+  const [openClawUrl, setOpenClawUrl] = useState(initialProviderSettings.openClawAdvisoryUrl);
   const bridgeSnapshot = useMemo(() => getLocalBridgeStatusSnapshot(), [snapshot?.generatedAt]);
   const initialStatus: AdvisoryStatus =
     snapshot?.llm.advisoryPassed || bridgeSnapshot.advisoryCapabilityStatus === "ready"
@@ -412,6 +525,7 @@ export function LLMAdvisoryReviewPanel({
   ]);
   const [lastPayload, setLastPayload] = useState<LastAdvisoryPayload>({
     status: initialStatus,
+    providerMode: initialProviderSettings.providerMode,
     bridgeProcessStatus: initialBridgeProcessStatus,
     advisoryCapabilityStatus: initialAdvisoryCapabilityStatus,
     circuitBreakerStatus: bridgeSnapshot.circuitBreakerStatus,
@@ -450,7 +564,60 @@ export function LLMAdvisoryReviewPanel({
     );
   };
 
+  const persistProviderSettings = (nextProviderMode = providerMode, nextOpenClawUrl = openClawUrl) => {
+    const settings = saveAdvisoryProviderSettings({
+      providerMode: nextProviderMode,
+      openClawAdvisoryUrl: nextOpenClawUrl || OPENCLAW_ADVISORY_DEFAULT_URL
+    });
+    setProviderMode(settings.providerMode);
+    setOpenClawUrl(settings.openClawAdvisoryUrl);
+    setLastPayload((current) => ({
+      ...current,
+      providerMode: settings.providerMode,
+      openClawEndpoint: settings.openClawAdvisoryUrl,
+      checkedAt: new Date().toISOString()
+    }));
+    return settings;
+  };
+
   const checkBridge = async () => {
+    const settings = persistProviderSettings();
+    if (settings.providerMode === "disabled") {
+      const message = "Research Advisor is disabled. Deterministic research remains available.";
+      setStatus("skipped");
+      setBridgeProcessStatus("unknown");
+      setAdvisoryCapabilityStatus("skipped");
+      setLastPayload({
+        status: "skipped",
+        providerMode: "disabled",
+        bridgeProcessStatus: "unknown",
+        advisoryCapabilityStatus: "skipped",
+        circuitBreakerStatus,
+        checkedAt: new Date().toISOString(),
+        warnings: [message]
+      });
+      appendMessage("system", message);
+      return;
+    }
+    if (settings.providerMode === "openclaw") {
+      const message = `OpenClaw advisory endpoint configured at ${settings.openClawAdvisoryUrl}. Capability is verified by a single advisory POST; no execution or readiness authority is exposed.`;
+      setStatus("unknown");
+      setBridgeProcessStatus("unknown");
+      setAdvisoryCapabilityStatus("unknown");
+      setLastPayload({
+        status: "unknown",
+        providerMode: "openclaw",
+        bridgeProcessStatus: "unknown",
+        advisoryCapabilityStatus: "unknown",
+        circuitBreakerStatus,
+        checkedAt: new Date().toISOString(),
+        openClawEndpoint: settings.openClawAdvisoryUrl,
+        warnings: [message]
+      });
+      appendMessage("system", message);
+      onAdvisoryEvent?.("OpenClaw advisory configured", "OpenClaw is selected as advisory provider; deterministic gates remain final authority.", "info");
+      return;
+    }
     setBusy(true);
     setStatus("checking");
     setBridgeProcessStatus("checking");
@@ -463,6 +630,7 @@ export function LLMAdvisoryReviewPanel({
       setCircuitBreakerStatus(health.advisoryCapabilityStatus === "ready" ? "closed" : getLocalBridgeStatusSnapshot().circuitBreakerStatus);
       setLastPayload({
         status: nextStatus,
+        providerMode: "local_llm_bridge",
         bridgeProcessStatus: "online",
         advisoryCapabilityStatus: health.advisoryCapabilityStatus,
         circuitBreakerStatus: health.advisoryCapabilityStatus === "ready" ? "closed" : getLocalBridgeStatusSnapshot().circuitBreakerStatus,
@@ -490,6 +658,7 @@ export function LLMAdvisoryReviewPanel({
       setCircuitBreakerStatus(getLocalBridgeStatusSnapshot().circuitBreakerStatus);
       setLastPayload({
         status: "offline",
+        providerMode: "local_llm_bridge",
         bridgeProcessStatus: "offline",
         advisoryCapabilityStatus: "unavailable",
         circuitBreakerStatus: getLocalBridgeStatusSnapshot().circuitBreakerStatus,
@@ -519,6 +688,7 @@ export function LLMAdvisoryReviewPanel({
       setAdvisoryCapabilityStatus("skipped");
       setLastPayload({
         status: "skipped",
+        providerMode,
         bridgeProcessStatus,
         advisoryCapabilityStatus: "skipped",
         circuitBreakerStatus,
@@ -538,11 +708,109 @@ export function LLMAdvisoryReviewPanel({
       return;
     }
 
+    const settings = persistProviderSettings();
+    if (settings.providerMode === "disabled") {
+      const message = "Research Advisor is disabled. Deterministic research remains available.";
+      setStatus("skipped");
+      setAdvisoryCapabilityStatus("skipped");
+      setLastPayload({
+        status: "skipped",
+        providerMode: "disabled",
+        bridgeProcessStatus,
+        advisoryCapabilityStatus: "skipped",
+        circuitBreakerStatus,
+        checkedAt: new Date().toISOString(),
+        question: trimmedQuestion,
+        reason: "validation",
+        warnings: [message]
+      });
+      appendMessage("assistant", message);
+      return;
+    }
+
     setBusy(true);
     setStatus("running");
     setAdvisoryCapabilityStatus("running");
     appendMessage("system", "Advisory review running...");
     try {
+      if (settings.providerMode === "openclaw") {
+        const packet = buildOpenClawPacket(snapshot, trimmedQuestion);
+        const result = await runOpenClawAdvisory(packet, settings.openClawAdvisoryUrl);
+        if (result.advisoryStatus === "unavailable") {
+          const message = result.warnings.join(" ") || "OpenClaw advisory offline; deterministic research remains available.";
+          const nextBridgeProcessStatus: PanelBridgeProcessStatus = result.reason === "offline" ? "offline" : "online";
+          const nextCapability: PanelAdvisoryCapabilityStatus =
+            result.reason === "timeout" ? "timeout" : result.reason === "offline" ? "unavailable" : "error";
+          setStatus(result.reason === "offline" ? "offline" : "unavailable");
+          setBridgeProcessStatus(nextBridgeProcessStatus);
+          setAdvisoryCapabilityStatus(nextCapability);
+          setLastPayload({
+            packetId: packet.packetId,
+            status: "unavailable",
+            providerMode: "openclaw",
+            bridgeProcessStatus: nextBridgeProcessStatus,
+            advisoryCapabilityStatus: nextCapability,
+            circuitBreakerStatus,
+            checkedAt: new Date().toISOString(),
+            lastAdvisoryRequestAt: new Date().toISOString(),
+            question: trimmedQuestion,
+            reason: result.reason === "timeout" ? "timeout" : result.reason === "offline" ? "bridge_offline" : "request_failed",
+            warnings: result.warnings,
+            lastError: safeArray(result.details).join(" ") || message,
+            payloadBytes: approximatePayloadBytes(packet),
+            includedSections: compactIncludedSections,
+            excludedLargeSections: packet.excludedLargeSections,
+            timeoutMs: result.timeoutMs,
+            openClawEndpoint: result.endpoint
+          });
+          appendMessage("assistant", message);
+          onAdvisoryEvent?.("OpenClaw advisory unavailable", message, "warning", result.endpoint);
+          return;
+        }
+
+        const response = result.response;
+        setStatus("online");
+        setBridgeProcessStatus("online");
+        setAdvisoryCapabilityStatus("ready");
+        setLastPayload({
+          packetId: packet.packetId,
+          status: "online",
+          providerMode: "openclaw",
+          bridgeProcessStatus: "online",
+          advisoryCapabilityStatus: "ready",
+          circuitBreakerStatus,
+          checkedAt: new Date().toISOString(),
+          lastAdvisoryRequestAt: new Date().toISOString(),
+          question: trimmedQuestion,
+          warnings: response.topBlockers,
+          payloadBytes: approximatePayloadBytes(packet),
+          includedSections: compactIncludedSections,
+          excludedLargeSections: packet.excludedLargeSections,
+          timeoutMs: result.timeoutMs,
+          openClawEndpoint: result.endpoint,
+          openClawProposalIntent: response.selfImprovementProposalIntent?.createProposal
+            ? `${response.selfImprovementProposalIntent.proposalTitle ?? "proposal intent"} / auto-apply false`
+            : "none"
+        });
+        appendMessage(
+          "assistant",
+          [
+            response.summary,
+            response.topBlockers.length ? `Top blockers: ${response.topBlockers.join(" ")}` : "Top blockers: none reported by OpenClaw.",
+            response.nextActions.length ? `Next actions: ${response.nextActions.join(" ")}` : "Next actions: continue deterministic research.",
+            response.calibrationRecommendations.length
+              ? `Calibration recommendations: ${response.calibrationRecommendations.join(" ")}`
+              : "Calibration recommendations: none returned.",
+            response.selfImprovementProposalIntent?.createProposal
+              ? `Proposal intent: ${response.selfImprovementProposalIntent.proposalTitle ?? "draft proposal"}; auto-apply allowed: false.`
+              : "Proposal intent: none.",
+            response.riskNotes.length ? `Risk notes: ${response.riskNotes.join(" ")}` : "Risk notes: advisory only; gates remain final authority."
+          ].join("\n\n")
+        );
+        onAdvisoryEvent?.("OpenClaw advisory reviewed", "OpenClaw returned an advisory-only calibration review. Auto-apply remains disabled.", "success", packet.packetId);
+        return;
+      }
+
       const packet = buildAdvisoryPacket(snapshot, trimmedQuestion);
       const diagnostics = packet.payloadDiagnostics;
       const result = await runLocalBridgeAdvisory(packet, undefined, { bypassCircuitBreaker: options.bypassCooldown });
@@ -560,6 +828,7 @@ export function LLMAdvisoryReviewPanel({
         setLastPayload({
           packetId: packet.packetId,
           status: "unavailable",
+          providerMode: "local_llm_bridge",
           bridgeProcessStatus: nextBridgeProcessStatus,
           advisoryCapabilityStatus: nextAdvisoryCapabilityStatus,
           circuitBreakerStatus: statusSnapshot.circuitBreakerStatus,
@@ -594,6 +863,7 @@ export function LLMAdvisoryReviewPanel({
       setLastPayload({
         packetId: packet.packetId,
         status: "online",
+        providerMode: "local_llm_bridge",
         bridgeProcessStatus: "online",
         advisoryCapabilityStatus: "ready",
         circuitBreakerStatus: "closed",
@@ -624,6 +894,7 @@ export function LLMAdvisoryReviewPanel({
       setAdvisoryCapabilityStatus("error");
       setLastPayload({
         status: "error",
+        providerMode: settings.providerMode,
         bridgeProcessStatus,
         advisoryCapabilityStatus: "error",
         circuitBreakerStatus: getLocalBridgeStatusSnapshot().circuitBreakerStatus,
@@ -644,7 +915,7 @@ export function LLMAdvisoryReviewPanel({
     <section className="rounded-xl border border-cyan-300/15 bg-slate-950/85 p-4 shadow-[0_0_45px_rgba(8,145,178,0.07)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">LLM Advisory Review</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Research Advisor</p>
           <h3 className="mt-1 flex items-center gap-2 text-lg font-semibold text-slate-50">
             <Bot className="h-4 w-4 text-cyan-300" aria-hidden="true" />
             Research Advisor
@@ -654,6 +925,7 @@ export function LLMAdvisoryReviewPanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Badge variant="secondary">Provider {providerMode.replace(/_/g, " ")}</Badge>
           <Badge variant={processBadgeVariant(bridgeProcessStatus)}>Bridge {shortStatus(bridgeProcessStatus)}</Badge>
           <Badge variant={advisoryBadgeVariant(advisoryCapabilityStatus)}>Advisory {shortStatus(advisoryCapabilityStatus)}</Badge>
           <Badge variant={circuitBadgeVariant(circuitBreakerStatus)}>Circuit {shortStatus(circuitBreakerStatus)}</Badge>
@@ -664,6 +936,7 @@ export function LLMAdvisoryReviewPanel({
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <MiniAdvisoryReadout label="Advisor provider" value={providerMode.replace(/_/g, " ")} />
         <MiniAdvisoryReadout label="Bridge process" value={bridgeProcessStatus.replace(/_/g, " ")} />
         <MiniAdvisoryReadout label="Advisory capability" value={advisoryCapabilityStatus.replace(/_/g, " ")} />
         <MiniAdvisoryReadout label="Circuit breaker" value={circuitBreakerStatus.replace(/_/g, " ")} />
@@ -738,7 +1011,7 @@ export function LLMAdvisoryReviewPanel({
           {busy ? "Reviewing..." : "Ask"}
         </Button>
         <Button variant="outline" onClick={() => void checkBridge()} disabled={busy} className="h-full justify-center">
-          Check bridge
+          Check provider
         </Button>
       </div>
       <div className="mt-2 flex flex-wrap gap-2">
@@ -758,7 +1031,11 @@ export function LLMAdvisoryReviewPanel({
 
       {status === "offline" || status === "unavailable" || advisoryCapabilityStatus !== "ready" ? (
         <div className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
-          {bridgeProcessStatus === "offline"
+          {providerMode === "openclaw"
+            ? "OpenClaw advisory offline or not yet verified. Deterministic research remains available."
+            : providerMode === "disabled"
+              ? "Research Advisor disabled. Deterministic research remains available."
+              : bridgeProcessStatus === "offline"
             ? "LLM advisory bridge offline. Start npm.cmd run llm:bridge. Deterministic research remains available."
             : advisoryCapabilityStatus === "config_missing"
               ? "LLM bridge online, but advisory provider/model is not configured. Deterministic research remains available."
@@ -782,9 +1059,41 @@ export function LLMAdvisoryReviewPanel({
         title="Advisory payload and status"
         description="Last dashboard advisory request metadata. No secrets or broker controls are included."
       >
+        <div className="mb-4 grid gap-3 md:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)_auto]">
+          <label className="min-w-0 text-xs uppercase tracking-[0.16em] text-slate-500">
+            Provider
+            <Select
+              className="mt-2"
+              value={providerMode}
+              onChange={(event) => {
+                persistProviderSettings(event.target.value as GoTraderAdvisoryProviderMode, openClawUrl);
+              }}
+              options={[
+                { label: "Local LLM bridge", value: "local_llm_bridge" },
+                { label: "OpenClaw", value: "openclaw" },
+                { label: "Disabled", value: "disabled" }
+              ]}
+            />
+          </label>
+          <label className="min-w-0 text-xs uppercase tracking-[0.16em] text-slate-500">
+            OpenClaw advisory URL
+            <Input
+              className="mt-2"
+              value={openClawUrl}
+              onChange={(event) => setOpenClawUrl(event.target.value)}
+              onBlur={() => persistProviderSettings(providerMode, openClawUrl)}
+              placeholder={OPENCLAW_ADVISORY_DEFAULT_URL}
+            />
+          </label>
+          <Button variant="secondary" className="self-end" onClick={() => persistProviderSettings(providerMode, openClawUrl)} disabled={busy}>
+            Save provider
+          </Button>
+        </div>
         <div className="grid gap-3 md:grid-cols-2">
+          <MiniAdvisoryReadout label="Provider" value={lastPayload.providerMode?.replace(/_/g, " ") ?? providerMode.replace(/_/g, " ")} />
           <MiniAdvisoryReadout label="Last checked" value={formatDateTime(lastPayload.checkedAt)} />
-          <MiniAdvisoryReadout label="Bridge URL" value={LLM_LOCAL_BRIDGE_BASE_URL} />
+          <MiniAdvisoryReadout label="Local bridge URL" value={LLM_LOCAL_BRIDGE_BASE_URL} />
+          <MiniAdvisoryReadout label="OpenClaw endpoint" value={lastPayload.openClawEndpoint ?? openClawUrl} />
           <MiniAdvisoryReadout label="Timeout" value={`${lastPayload.timeoutMs ?? LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS}ms`} />
           <MiniAdvisoryReadout label="Model" value={lastPayload.model ?? "reported by bridge after check/request"} />
           <MiniAdvisoryReadout label="Payload size" value={lastPayload.payloadBytes ? `${lastPayload.payloadBytes.toLocaleString()} bytes` : "not sent yet"} />
@@ -801,6 +1110,7 @@ export function LLMAdvisoryReviewPanel({
           <MiniAdvisoryReadout label="Last error" value={lastPayload.lastError ?? "none"} />
           <MiniAdvisoryReadout label="Responses" value={String(lastPayload.responses?.length ?? 0)} />
           <MiniAdvisoryReadout label="Warnings" value={safeArray(lastPayload.warnings).join(" / ") || "none"} />
+          <MiniAdvisoryReadout label="OpenClaw proposal intent" value={lastPayload.openClawProposalIntent ?? "none"} />
           <MiniAdvisoryReadout label="Included sections" value={safeArray(lastPayload.includedSections).join(" / ") || "none"} />
           <MiniAdvisoryReadout label="Excluded large sections" value={safeArray(lastPayload.excludedLargeSections).join(" / ") || "none"} />
         </div>
