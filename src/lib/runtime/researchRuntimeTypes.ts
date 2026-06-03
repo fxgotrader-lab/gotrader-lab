@@ -207,6 +207,8 @@ export interface RuntimeLLMState {
   unsafeRejections: number;
   advisoryPassed: boolean;
   readinessImpact: string;
+  bridgeOfflineReason?: string;
+  bridgeOfflineUntil?: string;
 }
 
 export interface RuntimeProposalState {

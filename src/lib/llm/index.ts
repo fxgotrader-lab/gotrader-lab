@@ -27,10 +27,20 @@ export {
 } from "@/lib/llm/localCommandLLMProvider";
 export {
   checkLocalBridgeHealth,
+  getLocalBridgeStatusSnapshot,
+  LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS,
   LLM_LOCAL_BRIDGE_BASE_URL,
+  LLM_LOCAL_BRIDGE_OFFLINE_COOLDOWN_MS,
   LLM_LOCAL_BRIDGE_HEALTH_URL,
   LLM_LOCAL_BRIDGE_URL,
+  resetLocalBridgeCircuitBreaker,
   runLocalBridgeAdvisory
+} from "@/lib/llm/localBridgeClient";
+export type {
+  LocalBridgeRunResult,
+  LocalBridgeRunUnavailableResult,
+  LocalBridgeStatusSnapshot,
+  LocalBridgeUnavailableReason
 } from "@/lib/llm/localBridgeClient";
 export { mockLLMProvider } from "@/lib/llm/mockLLMProvider";
 export {

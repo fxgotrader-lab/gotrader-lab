@@ -191,6 +191,8 @@ export interface ResearchCycleRun {
   status: ResearchCycleStatus;
   steps: ResearchCycleStepResult[];
   llmBridgeAvailable: boolean;
+  llmAdvisoryUnavailable?: boolean;
+  llmAdvisoryUnavailableReason?: string;
   candidateProgress?: AutoResearchProgressSnapshot;
   autoResearchCheckpoint?: AutoResearchExecutionCheckpoint;
   llmRun?: LLMAdvisoryRun;

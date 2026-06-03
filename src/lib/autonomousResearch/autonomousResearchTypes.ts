@@ -21,6 +21,7 @@ export type AutonomousResearchStopReason =
   | "evidence_quality_too_low"
   | "walk_forward_repeatedly_failed"
   | "regime_mismatch_detected"
+  | "llm_advisory_offline"
   | "user_canceled"
   | "failed"
   | "completed";
@@ -149,6 +150,8 @@ export interface AutonomousLoopIteration {
   bestCandidateLabel?: string;
   latestCandidateResult?: string;
   proposalId?: string;
+  llmAdvisoryUnavailable?: boolean;
+  llmAdvisoryUnavailableReason?: string;
   walkForwardRunId?: string;
   walkForwardVerdict?: string;
   autoApplyEligibility?: AutoApplyEligibility;

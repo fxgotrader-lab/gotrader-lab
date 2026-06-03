@@ -396,6 +396,34 @@ const compactLLMRun = (run?: LLMAdvisoryRun): LLMAdvisoryRun | undefined =>
       }
     : undefined;
 
+const unavailableLLMRun = ({
+  contextPacketId,
+  reason,
+  warnings
+}: {
+  contextPacketId: string;
+  reason: string;
+  warnings: string[];
+}): LLMAdvisoryRun => ({
+  runId: uid("llm_run_unavailable"),
+  timestamp: now(),
+  researchMode: "llm_required",
+  providerMode: "local_command",
+  providerConfigured: false,
+  status: "unavailable",
+  realProvider: false,
+  advisoryPassed: false,
+  contextPacketId,
+  responses: [],
+  validationResults: {},
+  unsafeResponseRejections: 0,
+  readinessImpact: [
+    warnings[0] ?? "LLM advisory bridge offline. Deterministic research continued; advisory unavailable.",
+    `Reason: ${reason}.`
+  ].join(" "),
+  safetyNotice: "LLM agents are advisory only. They cannot execute trades or override readiness gates."
+});
+
 const compactResearchCycleRun = (run: ResearchCycleRun): ResearchCycleRun => ({
   ...run,
   steps: safeArray(run.steps).map((step) => ({ ...step })),
@@ -888,25 +916,51 @@ export async function runResearchCycle({
     } else {
       try {
         const bridgeResult = await runLocalBridgeAdvisory(llmPacket);
-        run.llmBridgeAvailable = true;
-        const importResult = importLLMAgentResponse(JSON.stringify(safeArray(bridgeResult.responses)), llmPacket.packetId);
-        if (!importResult.run || !importResult.valid) {
-          recordLLMUnsafeResponseRejection(Math.max(1, importResult.unsafeResponseRejections));
+        if (bridgeResult.advisoryStatus === "unavailable") {
+          run.llmBridgeAvailable = false;
+          run.llmAdvisoryUnavailable = true;
+          run.llmAdvisoryUnavailableReason = bridgeResult.reason;
+          run.llmRun = unavailableLLMRun({
+            contextPacketId: llmPacket.packetId,
+            reason: bridgeResult.reason,
+            warnings: bridgeResult.warnings
+          });
           warnStep("llm_advisory", {
-            summary: "Local LLM bridge responded, but advisory validation failed.",
-            warning: importResult.errors.join(" ") || "Unsafe or incomplete advisory response."
+            summary: "LLM advisory bridge offline. Deterministic research continued; advisory unavailable.",
+            warning: bridgeResult.warnings.join(" ")
           });
         } else {
-          run.llmRun = importResult.run;
-          recordLLMResponseImport(importResult.run, importResult.run.timestamp);
-          passStep("llm_advisory", {
-            summary: "Configured LLM advisory review passed and was imported.",
-            detail: bridgeResult.responseFile ? `Response file: ${bridgeResult.responseFile}` : undefined
-          });
+          run.llmBridgeAvailable = true;
+          const importResult = importLLMAgentResponse(JSON.stringify(safeArray(bridgeResult.responses)), llmPacket.packetId);
+          if (!importResult.run || !importResult.valid) {
+            recordLLMUnsafeResponseRejection(Math.max(1, importResult.unsafeResponseRejections));
+            warnStep("llm_advisory", {
+              summary: "Local LLM bridge responded, but advisory validation failed.",
+              warning: importResult.errors.join(" ") || "Unsafe or incomplete advisory response."
+            });
+          } else {
+            run.llmRun = importResult.run;
+            recordLLMResponseImport(importResult.run, importResult.run.timestamp);
+            passStep("llm_advisory", {
+              summary: "Configured LLM advisory review passed and was imported.",
+              detail: bridgeResult.responseFile ? `Response file: ${bridgeResult.responseFile}` : undefined
+            });
+          }
         }
       } catch (error) {
+        run.llmBridgeAvailable = false;
+        run.llmAdvisoryUnavailable = true;
+        run.llmAdvisoryUnavailableReason = "request_failed";
+        run.llmRun = unavailableLLMRun({
+          contextPacketId: llmPacket.packetId,
+          reason: "request_failed",
+          warnings: [
+            "LLM advisory bridge offline. Deterministic research continued; advisory unavailable.",
+            error instanceof Error ? error.message : "Local LLM bridge request failed."
+          ]
+        });
         warnStep("llm_advisory", {
-          summary: "Local LLM bridge is unavailable; continued with deterministic simulation steps.",
+          summary: "LLM advisory bridge offline. Deterministic research continued; advisory unavailable.",
           warning: error instanceof Error ? error.message : "Local LLM bridge request failed."
         });
       }

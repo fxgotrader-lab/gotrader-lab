@@ -277,6 +277,13 @@ export function LLMAgentsView({ state }: { state: LabState }) {
       await checkLocalBridgeHealth();
       setBridgeStatus({ state: "running", message: "Bridge running. Sending advisory context to the local LLM bridge." });
       const bridgeResult = await runLocalBridgeAdvisory(packet);
+      if (bridgeResult.advisoryStatus === "unavailable") {
+        setBridgeStatus({
+          state: "error",
+          message: bridgeResult.warnings.join(" ")
+        });
+        return;
+      }
       const responseJson = JSON.stringify(safeArray(bridgeResult.responses), null, 2);
       setImportJson(responseJson);
       const result = importLLMAgentResponse(responseJson, packet.packetId);

@@ -80,7 +80,10 @@ const statusFromStopReason = (reason?: AutonomousResearchStopReason): Autonomous
     ? "failed"
     : reason === "user_canceled"
       ? "canceled"
-      : reason === "regime_mismatch_detected" || reason === "evidence_quality_too_low" || reason === "walk_forward_repeatedly_failed"
+      : reason === "regime_mismatch_detected" ||
+          reason === "evidence_quality_too_low" ||
+          reason === "walk_forward_repeatedly_failed" ||
+          reason === "llm_advisory_offline"
         ? "paused"
         : "completed";
 
@@ -124,6 +127,13 @@ const shouldStopAfterIteration = ({
       stop: true,
       reason: "regime_mismatch_detected",
       detail: "Regime mismatch or insufficient regime evidence paused the autonomous loop."
+    };
+  }
+  if (iteration.llmAdvisoryUnavailable) {
+    return {
+      stop: true,
+      reason: "llm_advisory_offline",
+      detail: "LLM advisory offline - deterministic cycle completed; autonomous loop paused to avoid repeated bridge retries."
     };
   }
   if (snapshot.evidence.evidenceQualityScore < 45) {
@@ -422,6 +432,8 @@ export async function runAutonomousResearchLoop({
       iteration = {
         ...iteration,
         cycleId: cycle.cycleId,
+        llmAdvisoryUnavailable: cycle.llmAdvisoryUnavailable,
+        llmAdvisoryUnavailableReason: cycle.llmAdvisoryUnavailableReason,
         autoResearchCycleId: cycle.autoResearchCycle?.cycleId,
         bestCandidateLabel,
         proposalId: proposal?.proposalId,
@@ -429,8 +441,11 @@ export async function runAutonomousResearchLoop({
         notes: [
           ...iteration.notes,
           cycle.resultSummary,
+          cycle.llmAdvisoryUnavailable
+            ? "LLM advisory bridge offline. Deterministic research completed; advisory unavailable."
+            : undefined,
           proposal ? `Proposal ${proposal.proposalId} available for policy review.` : "No proposal was created."
-        ]
+        ].filter((note): note is string => Boolean(note))
       } as AutonomousLoopIteration;
 
       let walkForwardRun;

@@ -17,6 +17,7 @@ export type LLMAdvisoryRunStatus =
   | "mock_complete"
   | "fallback_complete"
   | "complete"
+  | "unavailable"
   | "rejected"
   | "error";
 

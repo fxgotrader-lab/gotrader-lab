@@ -3,6 +3,7 @@ import { latestAutoResearchCycle, loadAutoResearchState, AUTO_RESEARCH_STORAGE_K
 import { buildEvidenceLedger } from "@/lib/evidence";
 import {
   getLLMReadinessImpact,
+  getLocalBridgeStatusSnapshot,
   latestLLMAdvisoryRun,
   LLM_RESEARCH_STORAGE_KEY,
   loadLLMResearchState,
@@ -592,6 +593,7 @@ export async function resolveResearchRuntimeSnapshot(
   const llmState = loadLLMResearchState();
   const latestLLMRun = latestLLMAdvisoryRun(llmState);
   const providerStatus = providerStatusForMode(llmState.providerMode);
+  const llmBridgeSnapshot = getLocalBridgeStatusSnapshot();
   const importActivation = await resolveImportedCandleActivationState().catch(fallbackImportActivation);
   const preparedCandleSource = options.preparedCandleSource ?? await loadPreparedCandleSource().catch(() => undefined);
   const source = preparedCandleSource ?? {
@@ -1070,14 +1072,19 @@ export async function resolveResearchRuntimeSnapshot(
       latestRun: latestCycle
     },
     llm: {
-      bridgeStatus: options.bridgeStatus ?? "not_checked",
+      bridgeStatus: options.bridgeStatus ?? (llmBridgeSnapshot.status === "offline" ? "not_running" : "not_checked"),
       providerStatus,
       providerConfigured: providerStatus.configured || Boolean(latestLLMRun?.providerConfigured),
       latestLLMRun,
       missingReviewers: missingReviewersFor(latestLLMRun),
       unsafeRejections: llmState.unsafeResponseRejections ?? 0,
       advisoryPassed: Boolean(latestLLMRun?.advisoryPassed),
-      readinessImpact: getLLMReadinessImpact(llmState)
+      readinessImpact:
+        llmBridgeSnapshot.status === "offline"
+          ? "LLM advisory bridge offline. Deterministic research continued; advisory unavailable."
+          : getLLMReadinessImpact(llmState),
+      bridgeOfflineReason: llmBridgeSnapshot.reason,
+      bridgeOfflineUntil: llmBridgeSnapshot.offlineUntil
     },
     proposal: {
       latestProposalId: latestProposal?.proposalId,
