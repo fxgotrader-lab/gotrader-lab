@@ -228,6 +228,7 @@ export interface LLMResearchContextPacket {
   timestamp: string;
   source: "gotrader_ai_lab";
   mode: "advisory_only";
+  advisoryResponseMode?: "full_reviewer_set" | "compact_dashboard_review";
   researchMode: LLMResearchMode;
   providerMode: LLMProviderMode;
   executionAuthority: LLMAuthority;
@@ -259,6 +260,18 @@ export interface LLMResearchContextPacket {
   simulationRunbookStatus?: LLMSimulationRunbookSummary;
   riskNotes?: string;
   safetyConstraints: string[];
+  payloadDiagnostics?: {
+    approximateBytes: number;
+    includedSections: string[];
+    excludedLargeSections: string[];
+    compactMode: boolean;
+    timeoutMs: number;
+    model?: string;
+  };
+  dashboardAdvisoryRequest?: {
+    question: string;
+    status: "plain_language_review";
+  };
 }
 
 export interface LLMAgentResponse {

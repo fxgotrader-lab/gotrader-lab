@@ -62,6 +62,7 @@ export type {
   LLMAdvisoryRunStatus,
   LLMAuthority,
   LLMBaselineDebateSummary,
+  LLMEvidenceQualitySummary,
   LLMICTContextSummary,
   LLMProceedRecommendation,
   LLMProvider,

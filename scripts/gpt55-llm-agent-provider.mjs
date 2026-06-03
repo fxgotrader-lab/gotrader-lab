@@ -5,7 +5,7 @@ import path from "node:path";
 
 const OPENAI_RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses";
 const DEFAULT_MODEL = "gpt-5.5";
-const DEFAULT_ADVISORY_TIMEOUT_MS = 20_000;
+const DEFAULT_ADVISORY_TIMEOUT_MS = 30_000;
 
 const requiredAgents = [
   {
@@ -79,6 +79,7 @@ const requiredAgents = [
     role: "Review missing DOM, footprint, delta, cumulative delta, and large-print evidence as planned later context only."
   }
 ];
+const compactDashboardAgent = requiredAgents.find((agent) => agent.agentId === "llm-cio-synthesis-reviewer") ?? requiredAgents[0];
 
 const allowedBiases = new Set(["bullish", "bearish", "neutral", "no_opinion"]);
 const allowedRecommendations = new Set([
@@ -122,7 +123,8 @@ Usage:
 
 Environment:
   OPENAI_API_KEY             Required. Never commit this value.
-  GOTRADER_LLM_MODEL         Optional. Defaults to ${DEFAULT_MODEL}.
+  LLM_ADVISORY_MODEL         Optional. Overrides the advisory model.
+  GOTRADER_LLM_MODEL         Optional fallback model. Defaults to ${DEFAULT_MODEL}.
   LLM_ADVISORY_TIMEOUT_MS    Optional. Defaults to ${DEFAULT_ADVISORY_TIMEOUT_MS}.
 
 Safety:
@@ -158,6 +160,11 @@ function positiveIntegerEnv(name, fallback) {
 }
 
 const advisoryTimeoutMs = () => positiveIntegerEnv("LLM_ADVISORY_TIMEOUT_MS", DEFAULT_ADVISORY_TIMEOUT_MS);
+const advisoryModel = () => process.env.LLM_ADVISORY_MODEL || process.env.GOTRADER_LLM_MODEL || DEFAULT_MODEL;
+
+const isCompactDashboardReview = (packet) =>
+  packet?.advisoryResponseMode === "compact_dashboard_review" ||
+  packet?.dashboardAdvisoryRequest?.status === "plain_language_review";
 
 function fail(message) {
   process.stderr.write(`GPT-5.5 LLM provider error: ${sanitizeError(message)}\n`);
@@ -319,7 +326,11 @@ function freeTextFieldsFor(response) {
 
 function isSafelyNegated(text, matchIndex) {
   const prefix = text.slice(Math.max(0, matchIndex - 32), matchIndex).toLowerCase();
-  return /\b(?:no|not|cannot|can not|must not|do not|does not|without)\s+[\w\s-]*$/.test(prefix);
+  const suffix = text.slice(matchIndex, matchIndex + 96).toLowerCase();
+  return (
+    /\b(?:no|not|cannot|can not|must not|do not|does not|without)\s+[\w\s-]*$/.test(prefix) ||
+    /\b(?:disabled|locked|blocked|unavailable|not\s+available|not\s+implemented|not\s+permitted|none)\b/.test(suffix)
+  );
 }
 
 function unsafeLanguageFindings(response) {
@@ -398,11 +409,12 @@ function validateAgentResponse(response) {
   return { errors, rejectedFields };
 }
 
-function validateProviderResponses(responses, debugContext = {}) {
+function validateProviderResponses(responses, debugContext = {}, packet = {}) {
   if (!Array.isArray(responses)) {
     throw new ProviderValidationError("model output must contain a responses array", debugContext);
   }
-  const requiredIds = new Set(requiredAgents.map((agent) => agent.agentId));
+  const requiredSet = isCompactDashboardReview(packet) ? [compactDashboardAgent] : requiredAgents;
+  const requiredIds = new Set(requiredSet.map((agent) => agent.agentId));
   const seenIds = new Set();
   const errors = [];
   const rejectedFields = [];
@@ -454,7 +466,9 @@ function normalizeModelOutput(parsed) {
   throw new Error("model output did not include advisory responses");
 }
 
-function responseSchema() {
+function responseSchema(packet = {}) {
+  const compact = isCompactDashboardReview(packet);
+  const responseAgents = compact ? [compactDashboardAgent] : requiredAgents;
   const agentResponseSchema = {
     type: "object",
     additionalProperties: false,
@@ -476,7 +490,7 @@ function responseSchema() {
       "safetyNotes"
     ],
     properties: {
-      agentId: { type: "string", enum: requiredAgents.map((agent) => agent.agentId) },
+      agentId: { type: "string", enum: responseAgents.map((agent) => agent.agentId) },
       agentName: { type: "string" },
       mode: { type: "string", enum: ["advisory_only"] },
       executionAuthority: { type: "string", enum: ["none"] },
@@ -501,15 +515,17 @@ function responseSchema() {
     properties: {
       responses: {
         type: "array",
-        minItems: requiredAgents.length,
-        maxItems: requiredAgents.length,
+        minItems: responseAgents.length,
+        maxItems: responseAgents.length,
         items: agentResponseSchema
       }
     }
   };
 }
 
-function buildSystemPrompt() {
+function buildSystemPrompt(packet = {}) {
+  const compact = isCompactDashboardReview(packet);
+  const responseAgents = compact ? [compactDashboardAgent] : requiredAgents;
   return [
     "You are the GPT-5.5 advisory provider for GoTrader AI Lab.",
     "You review simulation-only trading research context and return structured JSON only.",
@@ -518,14 +534,16 @@ function buildSystemPrompt() {
     "Avoid free-text words and phrases such as execute, place trade, open position, close position, send order, broker control, override readiness, or approve trade.",
     "Use proceedRecommendation only as one of: continue_research, rerun_validation, paper_demo_candidate_review.",
     "paper_demo_candidate_review means review readiness only. It is not approval to trade, execute, route, or enable paper/demo/live trading.",
-    `Return exactly ${requiredAgents.length} responses, one response for each required LLM agent ID listed below.`,
-    "Do not omit futures market-context reviewers.",
+    compact
+      ? "This is a compact Dashboard LLM Advisory Review. Return exactly one CIO synthesis reviewer response for the user's dashboard question."
+      : `Return exactly ${requiredAgents.length} responses, one response for each required LLM agent ID listed below.`,
+    compact ? "Do not expand into the full reviewer panel unless the packet asks for full_reviewer_set." : "Do not omit futures market-context reviewers.",
     "Order-flow planning reviewer is planning/advisory only. It should flag missing order-flow evidence and must not require live DOM, footprint, delta, cumulative delta, or large-print feeds.",
     "Prefer stability and evidence quality over profit-only conclusions.",
     "If evidence is missing, recommend continue_research or rerun_validation.",
     "",
     "Required agents:",
-    ...requiredAgents.map((agent) => `- ${agent.agentId}: ${agent.agentName}. ${agent.role}`),
+    ...responseAgents.map((agent) => `- ${agent.agentId}: ${agent.agentName}. ${agent.role}`),
     "",
     "Every response must include mode advisory_only and all authority fields set to none."
   ].join("\n");
@@ -537,7 +555,7 @@ function buildResponsesPayload(model, packet) {
     input: [
       {
         role: "system",
-        content: [{ type: "input_text", text: buildSystemPrompt() }]
+        content: [{ type: "input_text", text: buildSystemPrompt(packet) }]
       },
       {
         role: "user",
@@ -549,7 +567,7 @@ function buildResponsesPayload(model, packet) {
         type: "json_schema",
         name: "gotrader_llm_advisory_responses",
         strict: true,
-        schema: responseSchema()
+        schema: responseSchema(packet)
       }
     },
     store: false
@@ -648,7 +666,7 @@ async function main() {
   const packet = parseJson(raw, "request");
   validateRequestPacket(packet);
 
-  const model = process.env.GOTRADER_LLM_MODEL || DEFAULT_MODEL;
+  const model = advisoryModel();
 
   if (args.dryRun) {
     process.stderr.write(
@@ -664,7 +682,7 @@ async function main() {
   validateProviderResponses(responses, {
     source: "openai_response",
     rawModelResponse: outputText
-  });
+  }, packet);
 
   await writeProviderOutput(args, responses);
 }

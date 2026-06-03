@@ -12,6 +12,7 @@ import {
   resetLocalBridgeCircuitBreaker,
   runLocalBridgeAdvisory,
   type LLMAgentResponse,
+  type LLMEvidenceQualitySummary,
   type LLMResearchContextPacket,
   type LocalBridgeAdvisoryCapabilityStatus,
   type LocalBridgeCircuitBreakerStatus,
@@ -51,6 +52,11 @@ type LastAdvisoryPayload = {
   lastAdvisoryRequestAt?: string;
   lastError?: string;
   cooldownRemainingMs?: number;
+  payloadBytes?: number;
+  includedSections?: string[];
+  excludedLargeSections?: string[];
+  timeoutMs?: number;
+  model?: string;
 };
 
 const authority = {
@@ -64,6 +70,30 @@ const promptButtons = [
   "Why is this blocked?",
   "What should I test next?",
   "Why is Grinch profile not present?"
+];
+
+const compactIncludedSections = [
+  "latest cycle id/status",
+  "active source summary",
+  "regime summary",
+  "ICT thesis summary",
+  "Grinch profile summary",
+  "readiness/evidence/maturity scores",
+  "walk-forward verdict",
+  "top blockers",
+  "authority fields"
+];
+
+const compactExcludedLargeSections = [
+  "candle arrays",
+  "full runtime snapshot",
+  "full canonical source objects",
+  "raw agent logs",
+  "raw evidence ledger",
+  "Research Flow Tape history",
+  "raw JSON diagnostics",
+  "screenshots/base64",
+  "imported OHLCV arrays"
 ];
 
 const unsafeRequestPattern =
@@ -99,7 +129,7 @@ const advisoryMessageForUnavailable = (
   if (reason === "timeout") {
     return (
       detail ||
-      `LLM advisory timed out after ${Math.round(LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS / 1000)} seconds. Deterministic research remains available.`
+      `LLM advisory timed out after ${Math.round(LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS / 1000)} seconds. Try compact mode or check provider. Deterministic research remains available.`
     );
   }
   if (reason === "config_missing") {
@@ -176,22 +206,76 @@ const blockersFor = (snapshot?: ResearchRuntimeSnapshot) =>
     5
   );
 
-const buildAdvisoryPacket = (snapshot: ResearchRuntimeSnapshot, question: string): LLMResearchContextPacket & {
-  dashboardAdvisoryRequest: {
-    question: string;
-    status: "plain_language_review";
+const truncateText = (value: unknown, maxLength = 180) => {
+  const text = String(value ?? "").trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
+};
+
+const approximatePayloadBytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
+
+const compactEvidenceSummaryFor = (snapshot: ResearchRuntimeSnapshot): LLMEvidenceQualitySummary => {
+  const summary = snapshot.evidence.evidenceLedgerSummary;
+  const entries = safeTopN(
+    [
+      summary.weakestEvidenceArea,
+      summary.strongestRealEvidence,
+      ...safeArray(summary.entries)
+    ].filter((entry): entry is NonNullable<typeof summary.weakestEvidenceArea> => Boolean(entry)),
+    5
+  );
+
+  return {
+    overallScore: summary.overallScore,
+    realEvidenceCoverage: summary.realEvidenceCoverage,
+    weakestEvidenceCategories: safeTopN(summary.weakestEvidenceCategories, 5),
+    readinessEvidenceWarnings: safeTopN(summary.readinessEvidenceWarnings.map((warning) => truncateText(warning, 160)), 5),
+    entries: entries.map((entry) => ({
+      category: entry.category,
+      sourceType: entry.sourceType,
+      qualityScore: entry.qualityScore,
+      limitations: safeTopN(safeArray(entry.limitations).map((limitation) => truncateText(limitation, 140)), 2)
+    }))
   };
-} => {
+};
+
+const withPayloadDiagnostics = (packet: LLMResearchContextPacket): LLMResearchContextPacket => {
+  const firstPass = approximatePayloadBytes(packet);
+  const diagnosticPacket: LLMResearchContextPacket = {
+    ...packet,
+    payloadDiagnostics: {
+      approximateBytes: firstPass,
+      includedSections: compactIncludedSections,
+      excludedLargeSections: compactExcludedLargeSections,
+      compactMode: packet.advisoryResponseMode === "compact_dashboard_review",
+      timeoutMs: LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS
+    }
+  };
+  return {
+    ...diagnosticPacket,
+    payloadDiagnostics: {
+      includedSections: compactIncludedSections,
+      excludedLargeSections: compactExcludedLargeSections,
+      compactMode: packet.advisoryResponseMode === "compact_dashboard_review",
+      timeoutMs: LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS,
+      approximateBytes: approximatePayloadBytes(diagnosticPacket)
+    }
+  };
+};
+
+const buildAdvisoryPacket = (snapshot: ResearchRuntimeSnapshot, question: string): LLMResearchContextPacket => {
   const latestRun = snapshot.latestResearchCycle.latestRun;
   const grinch = snapshot.latestResearchCycle.activeGrinchProfileSummary;
   const source = snapshot.marketData.activeResearchSource;
   const blockers = blockersFor(snapshot);
+  const latestMetrics = snapshot.latestResearchCycle.latestCycleMetrics;
+  const sourceBrokerSymbol = snapshot.mt5ReadOnly.brokerSymbol ?? source.provenance.providerSymbol ?? undefined;
 
-  return {
+  return withPayloadDiagnostics({
     packetId: uid("dashboard_advisory"),
     timestamp: new Date().toISOString(),
     source: "gotrader_ai_lab",
     mode: "advisory_only",
+    advisoryResponseMode: "compact_dashboard_review",
     researchMode: "llm_required",
     providerMode: "local_command",
     ...authority,
@@ -207,22 +291,25 @@ const buildAdvisoryPacket = (snapshot: ResearchRuntimeSnapshot, question: string
       warnings: safeTopN(snapshot.regime.warnings, 6),
       recommendedBehavior: snapshot.regime.recommendedBehavior
     },
-    evidenceQualitySummary: snapshot.evidence.evidenceLedgerSummary,
+    evidenceQualitySummary: compactEvidenceSummaryFor(snapshot),
     deterministicICTFacts: [
       `Dashboard question: ${question}`,
       `Active research source: ${snapshot.marketData.activeResearchSourceLabel}`,
       `Provider: ${source.provider}`,
       `Requested symbol: ${snapshot.marketData.symbol}`,
-      `Broker/provider symbol: ${snapshot.mt5ReadOnly.brokerSymbol ?? source.provenance.providerSymbol ?? "n/a"}`,
+      `Broker/provider symbol: ${sourceBrokerSymbol ?? "n/a"}`,
       `Candle count: ${source.candleCount}`,
+      `First/last timestamp: ${source.firstTimestamp ?? "n/a"} -> ${source.lastTimestamp ?? "n/a"}`,
       `Source eligibility reasons: ${safeArray(source.eligibilityReasons).join("; ") || "none"}`,
       `Regime: ${snapshot.regime.label} / ${Math.round(snapshot.regime.confidence * 100)}% / ${snapshot.regime.dataQuality}`,
       `Grinch profile: ${grinch ? `${grinch.profile}/${grinch.state}/${grinch.hardGateReason ?? "no hard gate"}` : "not available"}`,
       `Readiness: ${snapshot.readiness.readinessState}`,
       `Evidence score: ${snapshot.evidence.evidenceQualityScore}`,
       `Maturity score: ${snapshot.maturity.maturityScore}`,
+      `Walk-forward verdict: ${snapshot.walkForward.verdict ?? snapshot.walkForward.latestStatus ?? "not available"}`,
       `Latest cycle: ${latestRun?.cycleId ?? "none"} / ${latestRun?.status ?? "not run"}`,
       `Latest backtest: trades ${latestRun?.backtestSummary?.totalTrades ?? 0}; average R ${latestRun?.backtestSummary?.averageR ?? "n/a"}; drawdown ${latestRun?.backtestSummary?.maxDrawdown ?? "n/a"}`,
+      `Top metrics: average R ${latestMetrics?.averageR ?? "n/a"}; profit factor ${latestMetrics?.profitFactor ?? "n/a"}; max drawdown R ${latestMetrics?.maxDrawdownR ?? "n/a"}`,
       `Current blockers: ${blockers.join("; ") || "none"}`
     ],
     internalBaselineAgentDebate: [],
@@ -235,7 +322,16 @@ const buildAdvisoryPacket = (snapshot: ResearchRuntimeSnapshot, question: string
           reasoningSummary: `Dashboard advisory review for ${question}`
         }
       : undefined,
-    validationSummary: latestRun?.validationSummary,
+    validationSummary: latestRun?.validationSummary
+      ? {
+          validationId: latestRun.validationSummary.validationId,
+          generatedAt: latestRun.validationSummary.generatedAt,
+          readinessStatus: latestRun.validationSummary.readinessStatus,
+          readinessScore: latestRun.validationSummary.readinessScore,
+          conservativeScenarioStatus: latestRun.validationSummary.weakestScenario,
+          confidenceCalibration: latestRun.validationSummary.recommendedConfidenceThreshold
+        }
+      : undefined,
     researchQualityGrade: latestRun?.researchQualitySummary
       ? {
           reviewId: latestRun.researchQualitySummary.reviewId,
@@ -266,7 +362,7 @@ const buildAdvisoryPacket = (snapshot: ResearchRuntimeSnapshot, question: string
       question,
       status: "plain_language_review"
     }
-  };
+  });
 };
 
 export function LLMAdvisoryReviewPanel({
@@ -372,6 +468,8 @@ export function LLMAdvisoryReviewPanel({
         circuitBreakerStatus: health.advisoryCapabilityStatus === "ready" ? "closed" : getLocalBridgeStatusSnapshot().circuitBreakerStatus,
         checkedAt: new Date().toISOString(),
         lastHealthCheckAt: health.healthCheckedAt,
+        timeoutMs: health.advisoryTimeoutMs ?? LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS,
+        model: health.model,
         warnings: [`${health.service} ${health.mode}`, health.statusMessage ?? ""].filter(Boolean)
       });
       const message =
@@ -446,6 +544,7 @@ export function LLMAdvisoryReviewPanel({
     appendMessage("system", "Advisory review running...");
     try {
       const packet = buildAdvisoryPacket(snapshot, trimmedQuestion);
+      const diagnostics = packet.payloadDiagnostics;
       const result = await runLocalBridgeAdvisory(packet, undefined, { bypassCircuitBreaker: options.bypassCooldown });
       if (result.advisoryStatus === "unavailable") {
         const warning = result.warnings.join(" ");
@@ -470,7 +569,11 @@ export function LLMAdvisoryReviewPanel({
           reason: result.reason,
           warnings: result.warnings,
           lastError: detail || warning,
-          cooldownRemainingMs: statusSnapshot.cooldownRemainingMs
+          cooldownRemainingMs: statusSnapshot.cooldownRemainingMs,
+          payloadBytes: diagnostics?.approximateBytes,
+          includedSections: diagnostics?.includedSections,
+          excludedLargeSections: diagnostics?.excludedLargeSections,
+          timeoutMs: result.timeoutMs ?? diagnostics?.timeoutMs ?? LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS
         });
         const message = advisoryMessageForUnavailable(result.reason, result.warnings, nextBridgeProcessStatus);
         appendMessage("assistant", message);
@@ -498,7 +601,12 @@ export function LLMAdvisoryReviewPanel({
         lastAdvisoryRequestAt: new Date().toISOString(),
         question: trimmedQuestion,
         responses: result.responses,
-        warnings: summary.topBlockers
+        warnings: summary.topBlockers,
+        payloadBytes: diagnostics?.approximateBytes,
+        includedSections: diagnostics?.includedSections,
+        excludedLargeSections: diagnostics?.excludedLargeSections,
+        timeoutMs: result.advisoryTimeoutMs ?? diagnostics?.timeoutMs ?? LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS,
+        model: result.model
       });
       appendMessage(
         "assistant",
@@ -549,6 +657,7 @@ export function LLMAdvisoryReviewPanel({
           <Badge variant={processBadgeVariant(bridgeProcessStatus)}>Bridge {shortStatus(bridgeProcessStatus)}</Badge>
           <Badge variant={advisoryBadgeVariant(advisoryCapabilityStatus)}>Advisory {shortStatus(advisoryCapabilityStatus)}</Badge>
           <Badge variant={circuitBadgeVariant(circuitBreakerStatus)}>Circuit {shortStatus(circuitBreakerStatus)}</Badge>
+          <Badge variant="secondary">compact advisory</Badge>
           <Badge variant="danger">execution none</Badge>
           <Badge variant="secondary">readiness override none</Badge>
         </div>
@@ -656,7 +765,7 @@ export function LLMAdvisoryReviewPanel({
               : advisoryCapabilityStatus === "cooldown"
                 ? "LLM bridge online, advisory retry paused after a recent failure. Use Retry advisory for one explicit attempt."
                 : advisoryCapabilityStatus === "timeout"
-                  ? `Bridge online, advisory timed out after ${Math.round(LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS / 1000)} seconds. Deterministic research remains available.`
+                  ? `Bridge online, advisory timed out after ${Math.round(LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS / 1000)} seconds. Try compact mode or check provider. Deterministic research remains available.`
                   : advisoryCapabilityStatus === "error" || advisoryCapabilityStatus === "unavailable"
                     ? "LLM bridge process may be online, but advisory is unavailable. Deterministic research remains available."
                     : "LLM advisory status is not ready yet. Deterministic research remains available."}
@@ -676,7 +785,10 @@ export function LLMAdvisoryReviewPanel({
         <div className="grid gap-3 md:grid-cols-2">
           <MiniAdvisoryReadout label="Last checked" value={formatDateTime(lastPayload.checkedAt)} />
           <MiniAdvisoryReadout label="Bridge URL" value={LLM_LOCAL_BRIDGE_BASE_URL} />
-          <MiniAdvisoryReadout label="Timeout" value={`${LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS}ms`} />
+          <MiniAdvisoryReadout label="Timeout" value={`${lastPayload.timeoutMs ?? LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS}ms`} />
+          <MiniAdvisoryReadout label="Model" value={lastPayload.model ?? "reported by bridge after check/request"} />
+          <MiniAdvisoryReadout label="Payload size" value={lastPayload.payloadBytes ? `${lastPayload.payloadBytes.toLocaleString()} bytes` : "not sent yet"} />
+          <MiniAdvisoryReadout label="Payload mode" value="compact dashboard advisory" />
           <MiniAdvisoryReadout label="Last health" value={lastPayload.lastHealthCheckAt ? formatDateTime(lastPayload.lastHealthCheckAt) : "none"} />
           <MiniAdvisoryReadout label="Last advisory request" value={lastPayload.lastAdvisoryRequestAt ? formatDateTime(lastPayload.lastAdvisoryRequestAt) : "none"} />
           <MiniAdvisoryReadout label="Bridge process" value={lastPayload.bridgeProcessStatus?.replace(/_/g, " ") ?? bridgeProcessStatus} />
@@ -689,6 +801,8 @@ export function LLMAdvisoryReviewPanel({
           <MiniAdvisoryReadout label="Last error" value={lastPayload.lastError ?? "none"} />
           <MiniAdvisoryReadout label="Responses" value={String(lastPayload.responses?.length ?? 0)} />
           <MiniAdvisoryReadout label="Warnings" value={safeArray(lastPayload.warnings).join(" / ") || "none"} />
+          <MiniAdvisoryReadout label="Included sections" value={safeArray(lastPayload.includedSections).join(" / ") || "none"} />
+          <MiniAdvisoryReadout label="Excluded large sections" value={safeArray(lastPayload.excludedLargeSections).join(" / ") || "none"} />
         </div>
         <div className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-300/15 bg-emerald-300/5 p-3 text-xs text-emerald-100/80">
           <ShieldCheck className="h-4 w-4 shrink-0" aria-hidden="true" />

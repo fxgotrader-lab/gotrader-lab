@@ -8,7 +8,7 @@ import path from "node:path";
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 8787;
 const DEFAULT_MODEL = "gpt-5.5";
-const DEFAULT_ADVISORY_TIMEOUT_MS = 20_000;
+const DEFAULT_ADVISORY_TIMEOUT_MS = 30_000;
 const HEALTH_TIMEOUT_MS = 2_000;
 const PROVIDER_SCRIPT = path.join("scripts", "gpt55-llm-agent-provider.mjs");
 const LATEST_RESPONSE_FILE = path.join("llm", "responses", "latest-llm-response.json");
@@ -25,10 +25,11 @@ function positiveIntegerEnv(name, fallback) {
 }
 
 const advisoryTimeoutMs = () => positiveIntegerEnv("LLM_ADVISORY_TIMEOUT_MS", DEFAULT_ADVISORY_TIMEOUT_MS);
+const advisoryModel = () => process.env.LLM_ADVISORY_MODEL || process.env.GOTRADER_LLM_MODEL || DEFAULT_MODEL;
 
 function healthPayload() {
   const advisoryProviderConfigured = Boolean(process.env.OPENAI_API_KEY);
-  const model = process.env.GOTRADER_LLM_MODEL || DEFAULT_MODEL;
+  const model = advisoryModel();
   const modelConfigured = Boolean(model);
   const advisoryEndpointAvailable = true;
   const advisoryCapabilityStatus =
@@ -81,7 +82,8 @@ Usage:
 
 Environment:
   OPENAI_API_KEY       Required for POST /llm/run-advisory.
-  GOTRADER_LLM_MODEL   Optional. Defaults inside the provider to gpt-5.5.
+  LLM_ADVISORY_MODEL   Optional. Overrides the advisory model for this bridge.
+  GOTRADER_LLM_MODEL   Optional fallback model. Defaults inside the provider to gpt-5.5.
   LLM_ADVISORY_TIMEOUT_MS Optional. Defaults to ${DEFAULT_ADVISORY_TIMEOUT_MS}.
 
 Endpoint:
@@ -308,6 +310,10 @@ async function handleRunAdvisory(request, response, origin) {
     {
       responses,
       responseFile: LATEST_RESPONSE_FILE,
+      advisoryResponseMode: packet.advisoryResponseMode ?? "full_reviewer_set",
+      payloadDiagnostics: packet.payloadDiagnostics,
+      model: advisoryModel(),
+      advisoryTimeoutMs: advisoryTimeoutMs(),
       mode: "advisory_only",
       executionAuthority: "none",
       brokerAuthority: "none",

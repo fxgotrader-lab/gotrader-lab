@@ -3,7 +3,7 @@ import type { LLMAgentResponse, LLMResearchContextPacket } from "@/lib/llm/llmTy
 export const LLM_LOCAL_BRIDGE_BASE_URL = "http://127.0.0.1:8787";
 export const LLM_LOCAL_BRIDGE_HEALTH_URL = `${LLM_LOCAL_BRIDGE_BASE_URL}/health`;
 export const LLM_LOCAL_BRIDGE_URL = `${LLM_LOCAL_BRIDGE_BASE_URL}/llm/run-advisory`;
-const DEFAULT_LLM_ADVISORY_TIMEOUT_MS = 20_000;
+const DEFAULT_LLM_ADVISORY_TIMEOUT_MS = 30_000;
 const readAdvisoryTimeoutMs = () => {
   const raw = import.meta.env?.LLM_ADVISORY_TIMEOUT_MS ?? import.meta.env?.VITE_LLM_ADVISORY_TIMEOUT_MS;
   const parsed = Number(raw);
@@ -66,6 +66,9 @@ export interface LocalBridgeRunSuccessResult {
   advisoryStatus: "available";
   responses: LLMAgentResponse[];
   responseFile?: string;
+  model?: string;
+  advisoryTimeoutMs?: number;
+  advisoryResponseMode?: LLMResearchContextPacket["advisoryResponseMode"];
 }
 
 export interface LocalBridgeRunUnavailableResult {
@@ -100,7 +103,7 @@ const userWarningFor = (reason: LocalBridgeUnavailableReason, message: string, t
     case "bridge_offline":
       return "LLM advisory bridge offline. Start npm.cmd run llm:bridge.";
     case "timeout":
-      return `LLM advisory timed out after ${Math.round(timeoutMs / 1000)} seconds. Deterministic research remains available.`;
+      return `LLM advisory timed out after ${Math.round(timeoutMs / 1000)} seconds. Try compact mode or check provider. Deterministic research remains available.`;
     case "circuit_open":
       return "LLM bridge advisory retry is paused after a recent failure.";
     case "config_missing":
@@ -376,6 +379,9 @@ export async function runLocalBridgeAdvisory(
   const bridgePayload = payload as {
     responses?: LLMAgentResponse[];
     responseFile?: string;
+    model?: string;
+    advisoryTimeoutMs?: number;
+    advisoryResponseMode?: LLMResearchContextPacket["advisoryResponseMode"];
   };
   if (!Array.isArray(bridgePayload.responses)) {
     return unavailableResult(
@@ -392,6 +398,9 @@ export async function runLocalBridgeAdvisory(
   return {
     advisoryStatus: "available",
     responses: bridgePayload.responses,
-    responseFile: bridgePayload.responseFile
+    responseFile: bridgePayload.responseFile,
+    model: bridgePayload.model,
+    advisoryTimeoutMs: bridgePayload.advisoryTimeoutMs,
+    advisoryResponseMode: bridgePayload.advisoryResponseMode
   };
 }
