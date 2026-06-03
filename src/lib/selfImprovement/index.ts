@@ -28,6 +28,14 @@ export {
   summarizeValidationMetrics
 } from "@/lib/selfImprovement/evaluateCalibrationProposal";
 export {
+  buildGrinchCalibrationProposalIntentDetails,
+  calibrationMetricsFromCanonicalPerformance,
+  createGrinchCalibrationDraftProposal,
+  grinchCalibrationRequiredValidationSteps,
+  selectBestGrinchCalibrationRow,
+  type GrinchCalibrationSourceContext
+} from "@/lib/selfImprovement/grinchCalibrationProposalIntent";
+export {
   attachProposalMetricsSnapshot,
   createProposalMetricsSnapshot,
   effectiveProposalComparison,
@@ -51,6 +59,9 @@ export type {
   CalibrationProposalIntent,
   CalibrationProposalMetricsSnapshot,
   CalibrationProposalMetrics,
+  CalibrationProposalIntentDetails,
+  CalibrationProposalValidationRequirement,
+  CalibrationProposalValidationRequirementId,
   CalibrationProposalSource,
   CalibrationProposalStatus,
   CalibrationTargetProblem,

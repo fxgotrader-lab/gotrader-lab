@@ -9,7 +9,49 @@ import type { ValidationReadinessStatus } from "@/lib/validation";
 
 export type CalibrationProposalSource = "openclaw" | "hermes" | "internal";
 export type CalibrationProposalStatus = "proposed" | "testing" | "accepted" | "rejected" | "reverted";
-export type CalibrationProposalIntent = "research_calibration_candidate" | "paper_demo_candidate_review";
+export type CalibrationProposalIntent =
+  | "research_calibration_candidate"
+  | "paper_demo_candidate_review"
+  | "grinch_profile_calibration_intent";
+
+export type CalibrationProposalValidationRequirementId =
+  | "ai_research_cycle"
+  | "walk_forward"
+  | "evidence_quality"
+  | "maturity_check"
+  | "regime_consistency";
+
+export interface CalibrationProposalValidationRequirement {
+  requirementId: CalibrationProposalValidationRequirementId;
+  label: string;
+  status: "required";
+  detail: string;
+}
+
+export interface CalibrationProposalIntentDetails {
+  title: string;
+  targetSubsystem: string;
+  candidateFamily: string;
+  reason: string;
+  draftOnly: true;
+  autoApplyAllowed: false;
+  nearMissScore?: number;
+  sourceProfile?: string;
+  firstFailedGate?: string;
+  sourceReportTitle?: string;
+  sourceReportFinding?: string;
+  sourceContext?: {
+    provider?: string;
+    dataSourceLabel?: string;
+    requestedSymbol?: string;
+    brokerSymbol?: string;
+    timeframe?: string;
+    candleCount?: number;
+    regimeLabel?: string;
+    regimeDataQuality?: string;
+  };
+  requiredValidationSteps: CalibrationProposalValidationRequirement[];
+}
 
 export type CalibrationTargetProblem =
   | "high_drawdown"
@@ -141,6 +183,7 @@ export interface CalibrationProposal {
   qualityGatesPassed?: string[];
   sourceCandidateId?: string;
   sourceCandidateLabel?: string;
+  proposalIntentDetails?: CalibrationProposalIntentDetails;
   sourceAdaptivePassNumber?: number;
   improvementSummary?: string[];
   notReadyReasons?: string[];

@@ -14,8 +14,11 @@ import {
   applyAcceptedCalibrationToActiveBaseline,
   attachProposalMetricsSnapshot,
   approveCalibrationProposal,
+  buildGrinchCalibrationProposalIntentDetails,
+  calibrationMetricsFromCanonicalPerformance,
   canApproveProposal,
   createCalibrationProposal,
+  createGrinchCalibrationDraftProposal,
   effectiveProposalComparison,
   evaluateCalibrationProposal,
   hasMaterialProposalMetricChange,
@@ -26,6 +29,7 @@ import {
   resolveActiveBacktestConfig,
   revertCalibrationProposal,
   SELF_IMPROVEMENT_UPDATED_EVENT,
+  summarizeValidationMetrics,
   upsertCalibrationProposal
 } from "@/lib/selfImprovement";
 import type { CalibrationProposal, CalibrationProposalMetrics, SelfImprovementState } from "@/lib/selfImprovement";
@@ -45,6 +49,7 @@ import {
   type ResearchRuntimeSnapshot
 } from "@/lib/runtime";
 import { labStorage } from "@/lib/storage";
+import { buildGrinchProfileEvidenceDiagnostics } from "@/lib/strategyLibrary";
 import { formatPercent, safeArray } from "@/lib/utils";
 import { loadLatestResearchQualityReview } from "@/lib/researchQuality";
 import { loadLatestValidationReport } from "@/lib/validation";
@@ -59,6 +64,8 @@ const intentLabel = (value?: string) =>
     ? "Paper-demo candidate review"
     : value === "research_calibration_candidate"
       ? "Research calibration candidate"
+      : value === "grinch_profile_calibration_intent"
+        ? "Grinch profile calibration intent"
       : "Manual calibration proposal";
 const statusVariant = (status?: string) =>
   status === "accepted" ? "success" : status === "rejected" || status === "reverted" ? "danger" : status === "testing" ? "warning" : "muted";
@@ -164,6 +171,15 @@ const ChangeList = ({ proposal }: { proposal?: CalibrationProposal }) => {
     ["Agent weights", changes.agentWeights ? Object.entries(changes.agentWeights).map(([key, value]) => `${key}: ${value}`).join(", ") : undefined],
     ["ICT scoring weights", changes.ictScoringWeights ? Object.entries(changes.ictScoringWeights).map(([key, value]) => `${key}: ${value}`).join(", ") : undefined]
   ].filter(([, value]) => value !== undefined);
+
+  if (!rows.length) {
+    return (
+      <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+        Draft proposal only. No simulation config changes, Grinch thresholds, timing windows, profile gates, or trading
+        logic are proposed by this intent.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2">
@@ -521,6 +537,108 @@ export function SelfImprovementView() {
   );
   const baselineConfig = runtimeSnapshot?.activeConfig.resolvedBacktestConfig ?? baselineResolution.config;
   const latestAdvisory = labStorage.load().advisoryResponses?.[0];
+  const latestBacktest = runtimeSnapshot?.latestResearchCycle.latestBacktestSummary;
+  const latestGrinchScore =
+    runtimeSnapshot?.latestResearchCycle.grinchStrategyScore ?? latestBacktest?.grinchSummary?.latestScore;
+  const grinchProfileDiagnostics = useMemo(
+    () =>
+      buildGrinchProfileEvidenceDiagnostics({
+        phase1: runtimeSnapshot?.latestResearchCycle.grinchPhase1Summary,
+        reversal: runtimeSnapshot?.latestResearchCycle.grinchPhase2ReversalSummary,
+        consolidation: runtimeSnapshot?.latestResearchCycle.grinchPhase3ConsolidationSummary,
+        score: latestGrinchScore,
+        profileCandidateCounts: latestBacktest?.grinchSummary?.profileCandidateCounts,
+        noValidProfileCount: latestBacktest?.grinchSummary?.noValidProfileSignals,
+        regimeLabel: runtimeSnapshot?.regime.label,
+        regimeDataQuality: runtimeSnapshot?.regime.dataQuality
+      }),
+    [
+      latestBacktest?.grinchSummary?.noValidProfileSignals,
+      latestBacktest?.grinchSummary?.profileCandidateCounts,
+      latestGrinchScore,
+      runtimeSnapshot?.latestResearchCycle.grinchPhase1Summary,
+      runtimeSnapshot?.latestResearchCycle.grinchPhase2ReversalSummary,
+      runtimeSnapshot?.latestResearchCycle.grinchPhase3ConsolidationSummary,
+      runtimeSnapshot?.regime.dataQuality,
+      runtimeSnapshot?.regime.label
+    ]
+  );
+  const grinchCalibrationSourceContext = useMemo(
+    () => ({
+      provider: runtimeSnapshot?.marketData.activeResearchSource.provider,
+      dataSourceLabel:
+        runtimeSnapshot?.marketData.activeResearchSource.provenance.sourceLabel ??
+        latestCycleCanonicalMetrics?.dataSource,
+      requestedSymbol: runtimeSnapshot?.marketData.symbol ?? latestCycleCanonicalMetrics?.symbol,
+      brokerSymbol:
+        runtimeSnapshot?.marketData.activeResearchSource.provenance.providerSymbol ??
+        runtimeSnapshot?.marketData.activeResearchSource.symbol,
+      timeframe: runtimeSnapshot?.marketData.activeResearchSource.timeframe ?? latestCycleCanonicalMetrics?.timeframe,
+      candleCount: runtimeSnapshot?.marketData.activeResearchSource.candleCount ?? latestCycleCanonicalMetrics?.rawCandleCount,
+      regimeLabel: runtimeSnapshot?.regime.label,
+      regimeDataQuality: runtimeSnapshot?.regime.dataQuality
+    }),
+    [
+      latestCycleCanonicalMetrics?.dataSource,
+      latestCycleCanonicalMetrics?.rawCandleCount,
+      latestCycleCanonicalMetrics?.symbol,
+      latestCycleCanonicalMetrics?.timeframe,
+      runtimeSnapshot?.marketData.activeResearchSource.candleCount,
+      runtimeSnapshot?.marketData.activeResearchSource.provider,
+      runtimeSnapshot?.marketData.activeResearchSource.provenance.providerSymbol,
+      runtimeSnapshot?.marketData.activeResearchSource.provenance.sourceLabel,
+      runtimeSnapshot?.marketData.activeResearchSource.symbol,
+      runtimeSnapshot?.marketData.activeResearchSource.timeframe,
+      runtimeSnapshot?.marketData.symbol,
+      runtimeSnapshot?.regime.dataQuality,
+      runtimeSnapshot?.regime.label
+    ]
+  );
+  const grinchCalibrationIntent = useMemo(
+    () =>
+      latestGrinchScore?.noValidProfile
+        ? buildGrinchCalibrationProposalIntentDetails({
+            report: grinchProfileDiagnostics.calibrationReport,
+            sourceContext: grinchCalibrationSourceContext
+          })
+        : undefined,
+    [grinchCalibrationSourceContext, grinchProfileDiagnostics.calibrationReport, latestGrinchScore?.noValidProfile]
+  );
+  const grinchDraftBeforeMetrics = useMemo(
+    () =>
+      latestCycleCanonicalMetrics
+        ? calibrationMetricsFromCanonicalPerformance(latestCycleCanonicalMetrics)
+        : latestValidation
+          ? summarizeValidationMetrics(latestValidation)
+          : undefined,
+    [latestCycleCanonicalMetrics, latestValidation]
+  );
+  const grinchCalibrationDraftProposal = useMemo(
+    () =>
+      grinchCalibrationIntent && grinchDraftBeforeMetrics
+        ? createGrinchCalibrationDraftProposal({
+            baselineConfig,
+            beforeMetrics: grinchDraftBeforeMetrics,
+            report: grinchProfileDiagnostics.calibrationReport,
+            sourceContext: grinchCalibrationSourceContext
+          })
+        : undefined,
+    [
+      baselineConfig,
+      grinchCalibrationIntent,
+      grinchDraftBeforeMetrics,
+      grinchProfileDiagnostics.calibrationReport,
+      grinchCalibrationSourceContext
+    ]
+  );
+  const existingGrinchDraftProposal = grinchCalibrationIntent
+    ? safeArray(state.proposals).find(
+        (proposal) =>
+          proposal.proposalIntent === "grinch_profile_calibration_intent" &&
+          proposal.proposalIntentDetails?.candidateFamily === grinchCalibrationIntent.candidateFamily &&
+          proposal.status === "proposed"
+      )
+    : undefined;
   const storedQueryProposal = queryProposalId
     ? safeArray(state.proposals).find((proposal) => proposal.proposalId === queryProposalId)
     : undefined;
@@ -686,6 +804,30 @@ export function SelfImprovementView() {
     const proposal = createCalibrationProposal(latestAdvisory?.advisoryAgent === "Hermes" ? "hermes" : "openclaw");
     setState(upsertCalibrationProposal(proposal, "created", "Created calibration proposal from latest validation weakness data."));
     setActionMessage("");
+  };
+
+  const createGrinchDraftProposal = () => {
+    if (existingGrinchDraftProposal) {
+      setSearchParams({ proposalId: existingGrinchDraftProposal.proposalId });
+      setActionMessage(`Opened existing Grinch draft proposal ${existingGrinchDraftProposal.proposalId}.`);
+      return;
+    }
+    if (!grinchCalibrationDraftProposal) {
+      setActionMessage(
+        grinchCalibrationIntent
+          ? "Run an AI Research Cycle first so the draft can attach real baseline metrics."
+          : "No active Grinch no-valid-profile calibration report is available."
+      );
+      return;
+    }
+    const nextState = upsertCalibrationProposal(
+      grinchCalibrationDraftProposal,
+      "created",
+      "Created draft Grinch profile calibration proposal intent. No thresholds or trading logic were changed."
+    );
+    setState(nextState);
+    setSearchParams({ proposalId: grinchCalibrationDraftProposal.proposalId });
+    setActionMessage(`Created draft Grinch calibration proposal ${grinchCalibrationDraftProposal.proposalId}.`);
   };
 
   const importLatestCycleProposal = () => {
@@ -1040,6 +1182,80 @@ export function SelfImprovementView() {
         </Card>
       ) : null}
 
+      <Card className="border-amber-300/25 bg-amber-300/10">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Grinch Calibration Proposal Intent</CardTitle>
+              <CardDescription>
+                Draft proposal only. It chooses the strongest Grinch near-miss family for controlled research, not auto-apply.
+              </CardDescription>
+            </div>
+            <Badge variant={grinchCalibrationIntent ? "warning" : "secondary"}>
+              {grinchCalibrationIntent ? "draft available" : "no active no-valid-profile report"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm text-amber-50">
+          {grinchCalibrationIntent ? (
+            <>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-lg border border-amber-300/20 bg-background/35 p-3">
+                  <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Title</p>
+                  <p className="mt-1 font-semibold text-foreground">{grinchCalibrationIntent.title}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{grinchCalibrationIntent.targetSubsystem}</p>
+                </div>
+                <div className="rounded-lg border border-amber-300/20 bg-background/35 p-3">
+                  <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Candidate family</p>
+                  <p className="mt-1 font-mono text-sm text-foreground">{grinchCalibrationIntent.candidateFamily.replace(/_/g, " ")}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Near miss {grinchCalibrationIntent.nearMissScore ?? "n/a"}/100
+                  </p>
+                </div>
+                <div className="rounded-lg border border-amber-300/20 bg-background/35 p-3">
+                  <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Source context</p>
+                  <p className="mt-1 font-mono text-sm text-foreground">
+                    {grinchCalibrationIntent.sourceContext?.brokerSymbol ?? "unknown broker symbol"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Requested {grinchCalibrationIntent.sourceContext?.requestedSymbol ?? "unknown"} / {grinchCalibrationIntent.sourceContext?.candleCount ?? 0} candles
+                  </p>
+                </div>
+                <div className="rounded-lg border border-amber-300/20 bg-background/35 p-3">
+                  <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Auto-apply</p>
+                  <p className="mt-1 font-mono text-sm text-foreground">blocked</p>
+                  <p className="mt-1 text-xs text-muted-foreground">No thresholds or profile gates changed.</p>
+                </div>
+              </div>
+              <div className="rounded-lg border border-amber-300/20 bg-background/35 p-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Reason</p>
+                <p className="mt-1 text-foreground">{grinchCalibrationIntent.reason}</p>
+              </div>
+              <div className="grid gap-2 md:grid-cols-5">
+                {grinchCalibrationIntent.requiredValidationSteps.map((step) => (
+                  <div key={step.requirementId} className="rounded-lg border border-amber-300/20 bg-background/35 p-3">
+                    <p className="text-xs font-medium text-amber-100">{step.label}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{step.detail}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button onClick={createGrinchDraftProposal} disabled={!grinchCalibrationDraftProposal && !existingGrinchDraftProposal}>
+                  {existingGrinchDraftProposal ? "Open existing Grinch draft" : "Create Grinch draft proposal"}
+                </Button>
+                <Badge variant="warning">draft proposal only</Badge>
+                <Badge variant="muted">authority none</Badge>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-lg border border-border bg-background/45 p-3 text-sm text-muted-foreground">
+              No Grinch no-valid-profile calibration report is active. Run an MT5 research cycle that produces a Grinch
+              profile report before creating a draft proposal intent.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {generatedProposalId ? (
         <Card className={generatedProposalStored ? "border-emerald-300/25 bg-emerald-300/10" : "border-amber-300/25 bg-amber-300/10"}>
           <CardHeader>
@@ -1186,6 +1402,8 @@ export function SelfImprovementView() {
                   ? "Research calibration candidate only. It is not approved and does not mark Paper-Demo Candidate readiness."
                   : effectiveProposalIntent === "paper_demo_candidate_review"
                     ? "Paper-demo candidate review only. It still cannot enable demo execution or bypass readiness."
+                    : effectiveProposalIntent === "grinch_profile_calibration_intent"
+                      ? "Grinch profile calibration intent only. It is a draft investigation target and does not change strategy thresholds."
                     : "Manual proposal. It still requires simulation testing and explicit approval."
                 : "No proposal has been created yet."}
             </p>
@@ -1211,9 +1429,44 @@ export function SelfImprovementView() {
                 ? "Auto-applied as a research-only calibration. Rerun validation and readiness before any further review."
                 : latestProposal?.autoApplyStatus === "blocked"
                   ? `Blocked: ${latestProposal.autoApplyBlockedReasons?.[0] ?? "autonomy safety policy did not allow auto-apply."}`
-                  : "No autonomous auto-apply decision has been recorded for this proposal."}
+                : "No autonomous auto-apply decision has been recorded for this proposal."}
             </p>
           </div>
+          {latestProposal?.proposalIntentDetails ? (
+            <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 md:col-span-2">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.14em] text-amber-100/75">Draft intent details</p>
+                  <p className="mt-1 text-base font-semibold text-amber-50">{latestProposal.proposalIntentDetails.title}</p>
+                  <p className="mt-1 text-sm text-amber-100/80">{latestProposal.proposalIntentDetails.reason}</p>
+                </div>
+                <Badge variant="warning">draft proposal only</Badge>
+              </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-3">
+                <div className="rounded-md border border-amber-300/20 bg-background/35 p-2">
+                  <p className="text-xs text-muted-foreground">Target subsystem</p>
+                  <p className="mt-1 text-sm text-foreground">{latestProposal.proposalIntentDetails.targetSubsystem}</p>
+                </div>
+                <div className="rounded-md border border-amber-300/20 bg-background/35 p-2">
+                  <p className="text-xs text-muted-foreground">Candidate family</p>
+                  <p className="mt-1 font-mono text-sm text-foreground">
+                    {latestProposal.proposalIntentDetails.candidateFamily.replace(/_/g, " ")}
+                  </p>
+                </div>
+                <div className="rounded-md border border-amber-300/20 bg-background/35 p-2">
+                  <p className="text-xs text-muted-foreground">Auto-apply</p>
+                  <p className="mt-1 font-mono text-sm text-foreground">
+                    {latestProposal.proposalIntentDetails.autoApplyAllowed ? "allowed" : "blocked"}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-1">
+                {latestProposal.proposalIntentDetails.requiredValidationSteps.map((step) => (
+                  <Badge key={step.requirementId} variant="secondary">{step.label} required</Badge>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

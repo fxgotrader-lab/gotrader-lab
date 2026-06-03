@@ -86,6 +86,7 @@ import {
 import { buildGrinchProfileEvidenceDiagnostics } from "@/lib/strategyLibrary";
 import { RESEARCH_CYCLE_UPDATED_EVENT } from "@/lib/researchCycle";
 import {
+  buildGrinchCalibrationProposalIntentDetails,
   ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
   SELF_IMPROVEMENT_UPDATED_EVENT
 } from "@/lib/selfImprovement";
@@ -908,6 +909,23 @@ export function MissionControlShell({ state }: { state: LabState }) {
     regimeLabel: runtimeSnapshot?.regime.label,
     regimeDataQuality: runtimeSnapshot?.regime.dataQuality
   });
+  const grinchCalibrationProposalIntent = latestGrinchScore?.noValidProfile
+    ? buildGrinchCalibrationProposalIntentDetails({
+        report: grinchProfileDiagnostics.calibrationReport,
+        sourceContext: {
+          provider: runtimeSnapshot?.marketData.activeResearchSource.provider,
+          dataSourceLabel: runtimeSnapshot?.marketData.activeResearchSource.provenance.sourceLabel,
+          requestedSymbol: runtimeSnapshot?.marketData.symbol,
+          brokerSymbol:
+            runtimeSnapshot?.marketData.activeResearchSource.provenance.providerSymbol ??
+            runtimeSnapshot?.marketData.activeResearchSource.symbol,
+          timeframe: runtimeSnapshot?.marketData.activeResearchSource.timeframe,
+          candleCount: runtimeSnapshot?.marketData.activeResearchSource.candleCount,
+          regimeLabel: runtimeSnapshot?.regime.label,
+          regimeDataQuality: runtimeSnapshot?.regime.dataQuality
+        }
+      })
+    : undefined;
   const canonicalMetrics = runtimeSnapshot?.performance.canonicalPerformanceMetrics;
   const latestGrinchComparison = runtimeSnapshot?.latestResearchCycle.latestRun?.autoResearchCycle?.grinchComparison ?? latestAutoResearch?.grinchComparison;
   const layerMetrics = latestGrinchComparison?.layerMetrics;
@@ -1601,6 +1619,39 @@ export function MissionControlShell({ state }: { state: LabState }) {
               <MiniReadout label="Regime guidance" value={runtimeSnapshot?.regime.label.replace(/_/g, " ") ?? "unknown"} detail={grinchProfileDiagnostics.calibrationReport.regimeGuidance} />
               <MiniReadout label="Session-local timing" value="required" detail={grinchProfileDiagnostics.calibrationReport.sessionLocalTimeGuidance} />
             </div>
+            {grinchCalibrationProposalIntent ? (
+              <div className="mt-4 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">Draft Proposal Intent</p>
+                    <h4 className="mt-1 text-sm font-semibold text-amber-50">{grinchCalibrationProposalIntent.title}</h4>
+                    <p className="mt-1 max-w-3xl text-xs text-amber-100/80">{grinchCalibrationProposalIntent.reason}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="warning">draft proposal only</Badge>
+                    <Badge variant="muted">auto-apply blocked</Badge>
+                    <Link
+                      to="/self-improvement"
+                      className="inline-flex h-8 items-center justify-center rounded-md border border-amber-300/30 bg-amber-300/10 px-3 text-xs font-medium text-amber-50 transition-colors hover:bg-amber-300/15"
+                    >
+                      Open Self-Improvement
+                    </Link>
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-2 text-xs md:grid-cols-5">
+                  {grinchCalibrationProposalIntent.requiredValidationSteps.map((step) => (
+                    <div key={step.requirementId} className="rounded-md border border-amber-300/15 bg-slate-950/35 p-2">
+                      <p className="font-medium text-amber-100">{step.label}</p>
+                      <p className="mt-1 text-slate-400">{step.status}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs text-amber-100/75">
+                  Target subsystem: {grinchCalibrationProposalIntent.targetSubsystem}. Candidate family:{" "}
+                  {grinchCalibrationProposalIntent.candidateFamily.replace(/_/g, " ")}. Authority remains none.
+                </p>
+              </div>
+            ) : null}
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <MiniReadout label="Hard gate" value={grinchProfileDiagnostics.hardGateReason} detail={grinchProfileDiagnostics.noValidProfileReason} />
               <MiniReadout label="Timing status" value={latestGrinchScore?.timingGrade?.replace(/_/g, " ") ?? "unknown"} detail={grinchProfileDiagnostics.timingWindowStatus} />
