@@ -7,6 +7,7 @@ import {
   createSeriesMarkers,
   type IChartApi,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
   type LineData,
   type Time
 } from "lightweight-charts";
@@ -50,17 +51,62 @@ export function TradingChart({
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<"Candlestick", Time> | null>(null);
+  const markerApiRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const overlaySeriesRef = useRef<ISeriesApi<"Line", Time>[]>([]);
+  const lastDataFingerprintRef = useRef<string | undefined>(undefined);
+  const lastSourceIdentityRef = useRef<string | undefined>(undefined);
   const [chartError, setChartError] = useState<string>();
   const [overlayVisibility, setOverlayVisibility] = useState<Record<string, boolean>>(() => {
     const entries = [...lineOverlays, ...zoneOverlays].map((overlay) => [overlay.id, overlay.visibleByDefault !== false] as const);
     return Object.fromEntries(entries);
   });
 
+  const sourceKey = source.sourceKey ?? source.dataFingerprint ?? `${source.sourceType}|${source.sourceLabel}|${source.candleCount}|${source.lastTimestamp ?? "none"}`;
+  const dataFingerprint = source.dataFingerprint ?? sourceKey;
+  const sourceIdentityKey = `${source.sourceType}|${source.sourceLabel}|${source.symbol}|${source.timeframe}`;
   const sortedCandles = useMemo(
     () => safeArray(candles).slice().sort((a, b) => Number(a.time) - Number(b.time)),
     [candles]
   );
-  const sourceKey = source.sourceKey ?? source.dataFingerprint ?? `${source.sourceType}|${source.sourceLabel}|${source.candleCount}|${source.lastTimestamp ?? "none"}`;
+  const chartCandleData = useMemo(
+    () =>
+      sortedCandles.map((candle: TradingChartCandle) => ({
+        close: candle.close,
+        high: candle.high,
+        low: candle.low,
+        open: candle.open,
+        time: candle.time
+      })),
+    // The fingerprint intentionally owns chart data identity. Parent snapshots can rebuild arrays
+    // without changing the actual candle series; avoid repainting for those no-op renders.
+    [dataFingerprint]
+  );
+  const markerFingerprint = useMemo(
+    () => safeArray(markers).map((marker) => `${marker.id}:${marker.time}:${marker.price ?? ""}:${marker.label}`).join("|"),
+    [markers]
+  );
+  const markerData = useMemo(() => safeArray(markers).map(toLightweightMarker), [markerFingerprint]);
+  const overlayFingerprint = useMemo(() => {
+    const lineSignature = safeArray(lineOverlays)
+      .map((overlay) => {
+        const first = overlay.data[0];
+        const last = overlay.data[overlay.data.length - 1];
+        return `${overlay.id}:${overlay.type}:${overlay.data.length}:${first?.time ?? ""}:${first?.value ?? ""}:${last?.time ?? ""}:${last?.value ?? ""}:${overlay.color ?? ""}:${overlay.lineStyle ?? ""}:${overlay.lineWidth ?? ""}`;
+      })
+      .join("|");
+    const zoneSignature = safeArray(zoneOverlays)
+      .map((zone) => {
+        const topFirst = zone.top.data[0];
+        const topLast = zone.top.data[zone.top.data.length - 1];
+        const bottomFirst = zone.bottom.data[0];
+        const bottomLast = zone.bottom.data[zone.bottom.data.length - 1];
+        return `${zone.id}:${zone.type}:${zone.top.data.length}:${topFirst?.time ?? ""}:${topFirst?.value ?? ""}:${topLast?.time ?? ""}:${topLast?.value ?? ""}:${zone.bottom.data.length}:${bottomFirst?.time ?? ""}:${bottomFirst?.value ?? ""}:${bottomLast?.time ?? ""}:${bottomLast?.value ?? ""}`;
+      })
+      .join("|");
+    return `${lineSignature}::${zoneSignature}`;
+  }, [lineOverlays, zoneOverlays]);
+  const hasCandles = sortedCandles.length > 0;
 
   useEffect(() => {
     setOverlayVisibility((current) => {
@@ -78,18 +124,17 @@ export function TradingChart({
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || !sortedCandles.length) {
+    if (!container || !hasCandles) {
       return undefined;
     }
 
-    let chart: IChartApi | null = null;
     let disposed = false;
     let resizeFrame: number | undefined;
 
     try {
       setChartError(undefined);
       container.replaceChildren();
-      chart = createChart(container, {
+      const chart = createChart(container, {
         ...missionChartOptions,
         height: Math.max(220, container.clientHeight),
         width: Math.max(320, container.clientWidth)
@@ -97,45 +142,10 @@ export function TradingChart({
       chartRef.current = chart;
 
       const candleSeries = chart.addSeries(CandlestickSeries, missionCandlestickOptions);
-      candleSeries.setData([]);
-      candleSeries.setData(
-        sortedCandles.map((candle: TradingChartCandle) => ({
-          close: candle.close,
-          high: candle.high,
-          low: candle.low,
-          open: candle.open,
-          time: candle.time
-        }))
-      );
-
-      const markerApi = createSeriesMarkers(candleSeries, safeArray(markers).map(toLightweightMarker), {
+      candleSeriesRef.current = candleSeries;
+      markerApiRef.current = createSeriesMarkers(candleSeries, [], {
         zOrder: "top"
       });
-
-      const addLine = (overlay: TradingChartLineOverlay) => {
-        if (!overlayVisibility[overlay.id] || !chart) {
-          return;
-        }
-        const lineSeries: ISeriesApi<"Line", Time> = chart.addSeries(LineSeries, {
-          color: overlay.color ?? "#38bdf8",
-          crosshairMarkerVisible: false,
-          lastValueVisible: false,
-          lineStyle: lineStyleFor(overlay.lineStyle),
-          lineWidth: overlay.lineWidth ?? 1,
-          priceLineVisible: false
-        });
-        lineSeries.setData(lineDataFor(overlay));
-      };
-
-      for (const overlay of lineOverlays) {
-        addLine(overlay);
-      }
-      for (const zone of zoneOverlays) {
-        if (overlayVisibility[zone.id]) {
-          addLine(zone.top);
-          addLine(zone.bottom);
-        }
-      }
 
       const observer = new ResizeObserver((entries) => {
         const entry = entries[0];
@@ -157,8 +167,6 @@ export function TradingChart({
       });
       observer.observe(container);
 
-      chart.timeScale().fitContent();
-
       return () => {
         disposed = true;
         if (resizeFrame !== undefined) {
@@ -166,29 +174,111 @@ export function TradingChart({
         }
         observer.disconnect();
         try {
-          markerApi.setMarkers([]);
+          markerApiRef.current?.setMarkers([]);
         } catch {
           // Lightweight Charts may already have detached marker primitives during route transitions.
         }
         try {
-          chart?.remove();
+          chart.remove();
         } catch {
           // Chart cleanup must never block React Router from rendering the next page.
         }
+        markerApiRef.current = null;
+        candleSeriesRef.current = null;
+        overlaySeriesRef.current = [];
+        lastDataFingerprintRef.current = undefined;
+        lastSourceIdentityRef.current = undefined;
         chartRef.current = null;
-        chart = null;
       };
     } catch (error) {
-      setChartError(error instanceof Error ? error.message : "Chart renderer failed to initialize.");
+      setChartError(`Chart render failed. Source remains available. ${error instanceof Error ? error.message : "Chart renderer failed to initialize."}`);
       try {
-        chart?.remove();
+        chartRef.current?.remove();
       } catch {
         // Keep the page navigable even if the renderer failed mid-initialization.
       }
+      markerApiRef.current = null;
+      candleSeriesRef.current = null;
+      overlaySeriesRef.current = [];
       chartRef.current = null;
       return undefined;
     }
-  }, [lineOverlays, markers, overlayVisibility, sortedCandles, sourceKey, zoneOverlays]);
+  }, [hasCandles]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const candleSeries = candleSeriesRef.current;
+    if (!chart || !candleSeries || !chartCandleData.length) {
+      return;
+    }
+    try {
+      setChartError(undefined);
+      candleSeries.setData(chartCandleData);
+      const firstDataLoad = !lastDataFingerprintRef.current;
+      const sourceSwitched = lastSourceIdentityRef.current !== sourceIdentityKey;
+      if (firstDataLoad || sourceSwitched) {
+        chart.timeScale().fitContent();
+      }
+      lastDataFingerprintRef.current = dataFingerprint;
+      lastSourceIdentityRef.current = sourceIdentityKey;
+    } catch (error) {
+      setChartError(`Chart render failed. Source remains available. ${error instanceof Error ? error.message : "Unable to update candle data."}`);
+    }
+  }, [chartCandleData, dataFingerprint, sourceIdentityKey]);
+
+  useEffect(() => {
+    try {
+      markerApiRef.current?.setMarkers(markerData);
+    } catch (error) {
+      setChartError(`Chart render failed. Source remains available. ${error instanceof Error ? error.message : "Unable to update markers."}`);
+    }
+  }, [markerData, markerFingerprint]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) {
+      return;
+    }
+
+    for (const series of overlaySeriesRef.current) {
+      try {
+        chart.removeSeries(series);
+      } catch {
+        // Series may already be detached during route transitions.
+      }
+    }
+    overlaySeriesRef.current = [];
+
+    const addLine = (overlay: TradingChartLineOverlay) => {
+      if (!overlayVisibility[overlay.id]) {
+        return;
+      }
+      const lineSeries: ISeriesApi<"Line", Time> = chart.addSeries(LineSeries, {
+        color: overlay.color ?? "#38bdf8",
+        crosshairMarkerVisible: false,
+        lastValueVisible: false,
+        lineStyle: lineStyleFor(overlay.lineStyle),
+        lineWidth: overlay.lineWidth ?? 1,
+        priceLineVisible: false
+      });
+      lineSeries.setData(lineDataFor(overlay));
+      overlaySeriesRef.current.push(lineSeries);
+    };
+
+    try {
+      for (const overlay of lineOverlays) {
+        addLine(overlay);
+      }
+      for (const zone of zoneOverlays) {
+        if (overlayVisibility[zone.id]) {
+          addLine(zone.top);
+          addLine(zone.bottom);
+        }
+      }
+    } catch (error) {
+      setChartError(`Chart render failed. Source remains available. ${error instanceof Error ? error.message : "Unable to update overlays."}`);
+    }
+  }, [overlayFingerprint, overlayVisibility]);
 
   const onToggleOverlay = (id: string) => {
     setOverlayVisibility((current) => ({
@@ -256,7 +346,7 @@ export function TradingChart({
         zoneOverlays={zoneOverlays}
       />
       <div className={`relative ${heightClassName}`}>
-        <div className="absolute inset-0" key={sourceKey} ref={containerRef} />
+        <div className="absolute inset-0" ref={containerRef} />
         <ChartOverlays
           lineOverlays={lineOverlays}
           markers={markers}

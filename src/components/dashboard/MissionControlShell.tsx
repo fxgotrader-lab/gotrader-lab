@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Component, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Activity, ExternalLink, Lock, RadioTower, ShieldCheck, Zap } from "lucide-react";
 
@@ -156,6 +156,41 @@ type CommandCenterDataEvent = {
   title: string;
 };
 
+class DashboardChartErrorBoundary extends Component<
+  { children: ReactNode; resetKey: string },
+  { error?: string }
+> {
+  state: { error?: string } = {};
+
+  static getDerivedStateFromError(error: unknown) {
+    return {
+      error: error instanceof Error ? error.message : "Unknown chart render error."
+    };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.warn("Dashboard chart render failed", error, info.componentStack);
+  }
+
+  componentDidUpdate(previousProps: { resetKey: string }) {
+    if (previousProps.resetKey !== this.props.resetKey && this.state.error) {
+      this.setState({ error: undefined });
+    }
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex h-[360px] items-center justify-center px-4 text-center text-sm text-amber-100">
+          Chart render failed. Source remains available. {this.state.error}
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 const buildCommandCenterChartData = (snapshot?: ResearchRuntimeSnapshot) => {
   const tradingViewFeed = loadActiveTradingViewMcpChartFeed();
   const mt5Feed = loadActiveMt5ReadOnlyCandleFeed();
@@ -187,6 +222,8 @@ const buildCommandCenterChartData = (snapshot?: ResearchRuntimeSnapshot) => {
 };
 
 export function MissionControlShell({ state }: { state: LabState }) {
+  const dashboardRenderCount = useRef(0);
+  dashboardRenderCount.current += 1;
   const [autonomyState, setAutonomyState] = useState<AutonomousResearchState>(() => loadAutonomousResearchState());
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
   const [liveRun, setLiveRun] = useState<AutonomousResearchRun>();
@@ -838,6 +875,15 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const actionItems = useMemo(() => buildActionItems(runtimeSnapshot, latestRun), [runtimeSnapshot, latestRun]);
   const feedItems = useMemo(() => buildFeedItems(runtimeSnapshot, latestRun, dataConnectionEvents), [dataConnectionEvents, latestRun, runtimeSnapshot]);
   const commandCenterChart = useMemo(() => buildCommandCenterChartData(runtimeSnapshot), [runtimeSnapshot]);
+  const commandCenterChartFingerprint =
+    commandCenterChart?.source.dataFingerprint ?? commandCenterChart?.source.sourceKey ?? "no-chart-source";
+  const commandCenterChartIdentity = commandCenterChart
+    ? `${commandCenterChart.source.sourceType}|${commandCenterChart.source.symbol}|${commandCenterChart.source.timeframe}`
+    : "no-chart-source";
+  const shortCommandCenterChartFingerprint =
+    commandCenterChartFingerprint.length > 46
+      ? `${commandCenterChartFingerprint.slice(0, 24)}...${commandCenterChartFingerprint.slice(-14)}`
+      : commandCenterChartFingerprint;
   const warnings = selectRuntimeWarnings(runtimeSnapshot);
   const latestAutoResearch = useMemo(
     () => runtimeSnapshot?.latestResearchCycle.latestRun?.autoResearchCycle ?? latestAutoResearchCycle(loadAutoResearchState()),
@@ -1009,7 +1055,9 @@ export function MissionControlShell({ state }: { state: LabState }) {
           </div>
           <div className="mt-3 overflow-hidden rounded-lg border border-white/10 bg-black/25">
             {commandCenterChart ? (
-              <TradingChart key={commandCenterChart.source.sourceKey} {...commandCenterChart} heightClassName="h-[360px]" />
+              <DashboardChartErrorBoundary resetKey={commandCenterChartIdentity}>
+                <TradingChart {...commandCenterChart} heightClassName="h-[360px]" />
+              </DashboardChartErrorBoundary>
             ) : (
               <div className="flex h-[360px] items-center justify-center text-sm text-slate-500">
                 No chart data loaded. Connect MT5 Read-Only or activate imported candles.
@@ -1514,6 +1562,28 @@ export function MissionControlShell({ state }: { state: LabState }) {
               {sourceContextRows.map((row) => (
                 <MiniReadout key={row.label} label={row.label} value={row.value} detail={row.detail} />
               ))}
+            </div>
+          </section>
+          <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">Dashboard Performance</p>
+                <h3 className="mt-1 text-base font-semibold text-slate-50">Chart Stability Diagnostics</h3>
+                <p className="mt-1 text-sm text-slate-400">
+                  Chart remounts are avoided unless the source identity changes; candle data updates follow the data fingerprint.
+                </p>
+              </div>
+              <Badge variant={commandCenterChart ? "success" : "secondary"}>{commandCenterChart ? "chart source resolved" : "no chart source"}</Badge>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <MiniReadout label="Dashboard renders" value={dashboardRenderCount.current.toLocaleString()} detail="Diagnostic render counter" />
+              <MiniReadout label="Chart source identity" value={commandCenterChartIdentity} detail="Provider / symbol / timeframe" />
+              <MiniReadout label="Candle fingerprint" value={shortCommandCenterChartFingerprint} detail={commandCenterChart?.source.lastTimestamp ? `Last candle ${formatDateTime(commandCenterChart.source.lastTimestamp)}` : "No candle timestamp"} />
+              <MiniReadout label="Chart candles" value={(commandCenterChart?.source.candleCount ?? 0).toLocaleString()} detail={commandCenterChart?.source.sourceLabel ?? "No active chart"} />
+              <MiniReadout label="TV auto-refresh" value={formatToken(tradingViewAutoRefresh.status)} detail={`Interval ${tradingViewAutoRefresh.refreshIntervalSeconds}s; limit ${tradingViewAutoRefresh.candleLimit}`} />
+              <MiniReadout label="Refresh in progress" value={tradingViewAutoRefresh.refreshInProgress ? "yes" : "no"} detail={`Skipped overlaps ${tradingViewAutoRefresh.skippedRefreshCount.toLocaleString()}`} />
+              <MiniReadout label="Last checked" value={tradingViewAutoRefresh.lastCheckedAt ? formatDateTime(tradingViewAutoRefresh.lastCheckedAt) : "none"} detail={tradingViewAutoRefresh.lastRefreshAt ? `Last refresh ${formatDateTime(tradingViewAutoRefresh.lastRefreshAt)}` : "No successful refresh"} />
+              <MiniReadout label="Storage write" value={tradingViewAutoRefresh.lastStorageWriteSkipped ? "skipped unchanged" : "write allowed"} detail={tradingViewAutoRefresh.lastStorageWriteSkippedAt ? formatDateTime(tradingViewAutoRefresh.lastStorageWriteSkippedAt) : "No skip recorded"} />
             </div>
           </section>
           <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
