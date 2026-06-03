@@ -397,6 +397,53 @@ const reportGrinch = (backtestResult) => {
   };
 };
 
+const compactReplayDiagnostics = (diagnostics) => ({
+  title: diagnostics?.title,
+  generatedAt: diagnostics?.generatedAt,
+  timingDate: diagnostics?.timingDate,
+  timingZone: diagnostics?.timingZone,
+  sourceTimestampZone: diagnostics?.sourceTimestampZone,
+  sessionModel: diagnostics?.sessionModel,
+  twelveAmOpen: diagnostics?.twelveAmOpen,
+  sundayOpen: diagnostics?.sundayOpen,
+  londonInteraction: diagnostics?.londonInteraction,
+  expansionWindow: diagnostics?.expansionWindow,
+  expansionTest: diagnostics?.expansionTest,
+  failureReason: diagnostics?.expansionTest?.failureReason,
+  nearMissScore: diagnostics?.nearMissScore,
+  recommendation: diagnostics?.recommendation,
+  candidateCandles: safeArray(diagnostics?.candidateCandles).slice(0, 16),
+  overlaySummary: diagnostics?.overlaySummary,
+  safetyNotice: diagnostics?.safetyNotice
+});
+
+const buildExpansionReplayDiagnostics = ({ candles, modules }) => {
+  const latest = candles[candles.length - 1];
+  const options = {
+    symbol: config.requestedSymbol,
+    timeframe: config.timeframe,
+    currentTimestamp: latest?.timestamp,
+    sourceProvider: "mt5_read_only",
+    requestedSymbol: config.requestedSymbol,
+    brokerSymbol: config.brokerSymbol
+  };
+  const phase1 = modules.analyzeGrinchPhase1({
+    candles,
+    options
+  });
+  const reversal = modules.analyzeGrinchPhase2Reversal({
+    candles,
+    phase1,
+    options
+  });
+  return modules.buildGrinchExpansionReplayDiagnostics({
+    candles,
+    phase1,
+    reversal,
+    sessionTimeMapping: phase1.sessionTimeMapping
+  });
+};
+
 const summarizeBacktest = (result) => ({
   trades: result.summary.totalTrades,
   directionalTrades: result.summary.directionalTrades,
@@ -514,7 +561,8 @@ const summarizeCandidate = ({
   readiness,
   metrics,
   comparison,
-  scoreBreakdown
+  scoreBreakdown,
+  expansionReplayDiagnostics
 }) => {
   const grinch = reportGrinch(backtestResult);
   return {
@@ -548,6 +596,7 @@ const summarizeCandidate = ({
     evidenceScore: "unavailable_in_headless_runner",
     maturityScore: "unavailable_in_headless_runner",
     walkForwardVerdict: "not_run",
+    expansionReplayDiagnostics,
     validationReadinessStatus: metrics.readinessStatus,
     stabilityScore: metrics.stabilityScore,
     scoreBreakdown: {
@@ -635,6 +684,7 @@ const main = async () => {
   debug("importing research modules");
   const backtesting = await bundle.importLib("backtesting/index.js");
   const { generateCandidateConfigs } = await bundle.importLib("autoResearch/generateCandidateConfigs.js");
+  const strategyLibrary = await bundle.importLib("strategyLibrary/index.js");
   const fullValidationModules = config.validationMode === "full"
     ? {
         ...(await bundle.importLib("autoResearch/scoreCandidateConfig.js")),
@@ -653,6 +703,12 @@ const main = async () => {
     symbol: config.requestedSymbol,
     timeframe: config.timeframe
   });
+  const expansionReplayDiagnostics = compactReplayDiagnostics(
+    buildExpansionReplayDiagnostics({
+      candles,
+      modules: strategyLibrary
+    })
+  );
 
   debug("generating candidates");
   const allCandidates = generateCandidateConfigs(baselineConfig, "deep", config.maxCandidates);
@@ -748,7 +804,8 @@ const main = async () => {
       readiness,
       metrics,
       comparison,
-      scoreBreakdown
+      scoreBreakdown,
+      expansionReplayDiagnostics
     });
   });
 
@@ -802,7 +859,8 @@ const main = async () => {
       metrics: baselineMetrics,
       readiness: baselineReadiness.state,
       metricSource: config.validationMode === "full" ? "validation_suite" : "direct_backtest",
-      grinch: reportGrinch(baselineBacktest)
+      grinch: reportGrinch(baselineBacktest),
+      expansionReplayDiagnostics
     },
     candidateCount: candidateReports.length,
     bestCandidate: bestCandidate
@@ -815,6 +873,7 @@ const main = async () => {
         }
       : undefined,
     candidates: candidateReports,
+    expansionReplayDiagnostics,
     guardrails: [
       "Runner is research-only.",
       "Auto-apply remains disabled.",

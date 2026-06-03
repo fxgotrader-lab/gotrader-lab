@@ -71,7 +71,14 @@ import {
 } from "@/lib/integrations/mt5";
 import { mt5ExecutionAdapterPlan } from "@/lib/brokers/mt5";
 import { tradovateExecutionAdapterPlan } from "@/lib/brokers/tradovate";
-import { buildVwapOverlay, createTradingChartData } from "@/lib/charting";
+import {
+  buildVwapOverlay,
+  createTradingChartData,
+  horizontalOverlay,
+  toChartTime,
+  type TradingChartLineOverlay,
+  type TradingChartMarker
+} from "@/lib/charting";
 import {
   buildBenchmarkDisplayRows,
   buildExpandedResearchMetricRows,
@@ -134,6 +141,7 @@ const formatCountdown = (timestamp?: string, nowMs = Date.now()) => {
 
 const canonicalMt5SourceFrom = (snapshot?: ResearchRuntimeSnapshot) =>
   snapshot?.marketData.allAvailableSources.find((source) => source.provider === "mt5_read_only" && source.candleCount > 0);
+const isTradingChartLineOverlay = (overlay: TradingChartLineOverlay | undefined): overlay is TradingChartLineOverlay => Boolean(overlay);
 
 const mt5ResearchEligibleFrom = (snapshot?: ResearchRuntimeSnapshot) => {
   const canonicalMt5Source = canonicalMt5SourceFrom(snapshot);
@@ -205,6 +213,36 @@ const buildCommandCenterChartData = (snapshot?: ResearchRuntimeSnapshot) => {
     return undefined;
   }
   const vwap = buildVwapOverlay(candles);
+  const researchCandles = displaySource.activeResearchCandleSource.length ? displaySource.activeResearchCandleSource : candles;
+  const grinchProfileDiagnostics = buildGrinchProfileEvidenceDiagnostics({
+    candles: researchCandles,
+    phase1: snapshot.latestResearchCycle.grinchPhase1Summary,
+    reversal: snapshot.latestResearchCycle.grinchPhase2ReversalSummary,
+    consolidation: snapshot.latestResearchCycle.grinchPhase3ConsolidationSummary,
+    score: snapshot.latestResearchCycle.grinchStrategyScore ?? snapshot.latestResearchCycle.latestBacktestSummary?.grinchSummary?.latestScore,
+    profileCandidateCounts: snapshot.latestResearchCycle.latestBacktestSummary?.grinchSummary?.profileCandidateCounts,
+    noValidProfileCount: snapshot.latestResearchCycle.latestBacktestSummary?.grinchSummary?.noValidProfileSignals,
+    regimeLabel: snapshot.regime.label,
+    regimeDataQuality: snapshot.regime.dataQuality,
+    sessionTimeMapping: snapshot.latestResearchCycle.grinchPhase1Summary?.sessionTimeMapping
+  });
+  const replayDiagnostics = grinchProfileDiagnostics.expansionReplayDiagnostics;
+  const openingOverlays = [
+    horizontalOverlay(candles, replayDiagnostics.twelveAmOpen.price, "dashboard-grinch-12am-open", "12AM Open", "#38bdf8", "liquidity_level", {
+      lineWidth: 2
+    }),
+    horizontalOverlay(candles, replayDiagnostics.sundayOpen.price, "dashboard-grinch-sunday-open", "Sunday Open", "#a78bfa", "liquidity_level", {
+      lineWidth: 2
+    })
+  ].filter(isTradingChartLineOverlay);
+  const replayMarkers: TradingChartMarker[] = replayDiagnostics.overlayMarkers.map((marker) => ({
+    direction: marker.direction,
+    id: marker.id,
+    label: marker.label,
+    price: marker.price,
+    time: toChartTime(marker.rawTimestamp),
+    type: marker.markerType
+  }));
   return {
     ...createTradingChartData({
       candles,
@@ -221,7 +259,8 @@ const buildCommandCenterChartData = (snapshot?: ResearchRuntimeSnapshot) => {
           ? tradingViewFeed?.timeframe ?? snapshot.marketData.timeframe
           : snapshot.marketData.timeframe
     }),
-    lineOverlays: vwap ? [vwap] : [],
+    lineOverlays: [vwap, ...openingOverlays].filter(isTradingChartLineOverlay),
+    markers: replayMarkers,
     stateLabel: `${formatToken(snapshot.latestResearchCycle.latestCycleStatus)} / broker disabled`
   };
 };
@@ -890,6 +929,14 @@ export function MissionControlShell({ state }: { state: LabState }) {
     commandCenterChartFingerprint.length > 46
       ? `${commandCenterChartFingerprint.slice(0, 24)}...${commandCenterChartFingerprint.slice(-14)}`
       : commandCenterChartFingerprint;
+  const grinchDiagnosticCandles = useMemo(() => {
+    const tradingViewFeed = loadActiveTradingViewMcpChartFeed();
+    const mt5Feed = loadActiveMt5ReadOnlyCandleFeed();
+    const displaySource = runtimeSnapshot
+      ? resolveChartDisplayCandleSource(runtimeSnapshot.marketData.preparedSource, tradingViewFeed, mt5Feed)
+      : undefined;
+    return displaySource?.activeResearchCandleSource ?? [];
+  }, [commandCenterChartFingerprint, runtimeSnapshot]);
   const warnings = selectRuntimeWarnings(runtimeSnapshot);
   const latestAutoResearch = useMemo(
     () => runtimeSnapshot?.latestResearchCycle.latestRun?.autoResearchCycle ?? latestAutoResearchCycle(loadAutoResearchState()),
@@ -902,6 +949,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const latestGrinchScore =
     runtimeSnapshot?.latestResearchCycle.grinchStrategyScore ?? latestBacktest?.grinchSummary?.latestScore;
   const grinchProfileDiagnostics = buildGrinchProfileEvidenceDiagnostics({
+    candles: grinchDiagnosticCandles,
     phase1: runtimeSnapshot?.latestResearchCycle.grinchPhase1Summary,
     reversal: runtimeSnapshot?.latestResearchCycle.grinchPhase2ReversalSummary,
     consolidation: runtimeSnapshot?.latestResearchCycle.grinchPhase3ConsolidationSummary,
@@ -909,8 +957,10 @@ export function MissionControlShell({ state }: { state: LabState }) {
     profileCandidateCounts: latestBacktest?.grinchSummary?.profileCandidateCounts,
     noValidProfileCount: latestBacktest?.grinchSummary?.noValidProfileSignals,
     regimeLabel: runtimeSnapshot?.regime.label,
-    regimeDataQuality: runtimeSnapshot?.regime.dataQuality
+    regimeDataQuality: runtimeSnapshot?.regime.dataQuality,
+    sessionTimeMapping: runtimeSnapshot?.latestResearchCycle.grinchPhase1Summary?.sessionTimeMapping
   });
+  const expansionReplay = grinchProfileDiagnostics.expansionReplayDiagnostics;
   const grinchCalibrationProposalIntent = latestGrinchScore?.noValidProfile
     ? buildGrinchCalibrationProposalIntentDetails({
         report: grinchProfileDiagnostics.calibrationReport,
@@ -1701,6 +1751,106 @@ export function MissionControlShell({ state }: { state: LabState }) {
                   detail={`Local ${reference.localTimestamp}; price ${reference.price}; relation ${reference.relation}; fallback ${reference.fallbackMethod}; source zone ${reference.sourceTimestampZone}; ${reference.missingEvidence[0] ?? "reference available"}`}
                 />
               ))}
+            </div>
+            <div className="mt-4 rounded-lg border border-amber-300/15 bg-slate-950/45 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">Timing / Expansion Replay</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Diagnostic-only replay of the Reversal expansion gate. Opening-price lines and replay markers appear on the Dashboard chart when candle timestamps are available.
+                  </p>
+                </div>
+                <Badge variant={expansionReplay.expansionTest.failedRule === "passed_diagnostic_check" ? "success" : "warning"}>
+                  {expansionReplay.expansionTest.failedRule.replace(/_/g, " ")}
+                </Badge>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <MiniReadout
+                  label="12AM Open"
+                  value={expansionReplay.twelveAmOpen.rawTimestamp}
+                  detail={`Local ${expansionReplay.twelveAmOpen.localTimestamp}; price ${
+                    typeof expansionReplay.twelveAmOpen.price === "number" ? expansionReplay.twelveAmOpen.price.toFixed(2) : "not found"
+                  }; fallback ${expansionReplay.twelveAmOpen.fallbackMethod}.`}
+                />
+                <MiniReadout
+                  label="Sunday Open"
+                  value={expansionReplay.sundayOpen.rawTimestamp}
+                  detail={`Local ${expansionReplay.sundayOpen.localTimestamp}; price ${
+                    typeof expansionReplay.sundayOpen.price === "number" ? expansionReplay.sundayOpen.price.toFixed(2) : "not found"
+                  }; fallback ${expansionReplay.sundayOpen.fallbackMethod}.`}
+                />
+                <MiniReadout
+                  label="London interaction"
+                  value={`${expansionReplay.londonInteraction.candleCount.toLocaleString()} candles / ${expansionReplay.londonInteraction.relationTo12am}`}
+                  detail={`${expansionReplay.londonInteraction.windowStartLocal}-${expansionReplay.londonInteraction.windowEndLocal}; interacted ${
+                    expansionReplay.londonInteraction.interacted ? "yes" : "no"
+                  }; ${expansionReplay.londonInteraction.interactionTimestamps.join(" / ") || "no exact interaction candle"}.`}
+                />
+                <MiniReadout
+                  label="Expansion window"
+                  value={`${expansionReplay.expansionWindow.evaluatedCandleCount.toLocaleString()} candles`}
+                  detail={`Timing date ${expansionReplay.timingDate}; ${expansionReplay.expansionWindow.windowStartLocal}-${expansionReplay.expansionWindow.windowEndLocal}; first ${
+                    expansionReplay.expansionWindow.firstLocalTimestamp ?? "n/a"
+                  }; last ${expansionReplay.expansionWindow.lastLocalTimestamp ?? "n/a"}.`}
+                />
+                <MiniReadout
+                  label="Expected direction"
+                  value={expansionReplay.expansionTest.expectedDirection.replace(/_/g, " ")}
+                  detail={`Distance ${expansionReplay.expansionTest.expansionDistance.toFixed(2)} vs required ${expansionReplay.expansionTest.requiredExpansionDistance.toFixed(
+                    2
+                  )}; pass ${formatBool(expansionReplay.expansionTest.distancePass)}.`}
+                />
+                <MiniReadout
+                  label="Displacement / chop"
+                  value={`${expansionReplay.expansionTest.displacementScore}/100 / ${expansionReplay.expansionTest.chopScore}/100`}
+                  detail={`Clean side ${formatBool(expansionReplay.expansionTest.cleanSideMaintained)}; near miss ${expansionReplay.nearMissScore}/100.`}
+                />
+                <MiniReadout
+                  label="Failure reason"
+                  value={expansionReplay.expansionTest.failureReason}
+                  detail={expansionReplay.recommendation}
+                />
+                <MiniReadout
+                  label="Overlay support"
+                  value={expansionReplay.overlaySummary.candidateMarkers ? "markers available" : "no markers"}
+                  detail={expansionReplay.overlaySummary.note}
+                />
+              </div>
+              <div className="mt-3 overflow-x-auto rounded-lg border border-amber-300/10">
+                <table className="min-w-full divide-y divide-amber-300/10 text-left text-xs">
+                  <thead className="bg-amber-300/10 text-amber-100">
+                    <tr>
+                      <th className="px-3 py-2 font-semibold">Role</th>
+                      <th className="px-3 py-2 font-semibold">Local time</th>
+                      <th className="px-3 py-2 font-semibold">Raw timestamp</th>
+                      <th className="px-3 py-2 font-semibold">O/H/L/C</th>
+                      <th className="px-3 py-2 font-semibold">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-300/10 bg-slate-950/35 text-slate-300">
+                    {expansionReplay.candidateCandles.length ? (
+                      expansionReplay.candidateCandles.map((candle) => (
+                        <tr key={`${candle.role}-${candle.rawTimestamp}`}>
+                          <td className="px-3 py-2 font-semibold text-slate-100">{candle.role.replace(/_/g, " ")}</td>
+                          <td className="px-3 py-2">{candle.localTimestamp}</td>
+                          <td className="px-3 py-2 font-mono">{candle.rawTimestamp}</td>
+                          <td className="px-3 py-2 font-mono">
+                            {candle.open.toFixed(2)} / {candle.high.toFixed(2)} / {candle.low.toFixed(2)} / {candle.close.toFixed(2)}
+                          </td>
+                          <td className="px-3 py-2">{candle.reason}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td className="px-3 py-4 text-slate-400" colSpan={5}>
+                          No replay candidate candles were available in this window.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-3 text-xs text-amber-100/75">{expansionReplay.safetyNotice}</p>
             </div>
             <div className="mt-4 overflow-x-auto rounded-lg border border-amber-300/15">
               <table className="min-w-full divide-y divide-amber-300/10 text-left text-xs">

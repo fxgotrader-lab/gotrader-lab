@@ -7,6 +7,9 @@ import type {
   GrinchStrategyScore,
   GrinchTimingGrade
 } from "@/lib/strategyLibrary/grinchStrategyTypes";
+import { buildGrinchExpansionReplayDiagnostics, type GrinchExpansionReplayDiagnostics } from "@/lib/strategyLibrary/grinchExpansionReplayDiagnostics";
+import type { SessionTimeMapping } from "@/lib/sessions";
+import type { Candle } from "@/lib/types";
 
 export interface GrinchProfileEvidenceRow {
   profile: Exclude<GrinchActiveProfile, "none">;
@@ -43,9 +46,11 @@ export interface GrinchProfileEvidenceDiagnostics {
   sessionTimezoneAssumption: string;
   noValidProfileCount: number;
   calibrationReport: GrinchProfileCalibrationReport;
+  expansionReplayDiagnostics: GrinchExpansionReplayDiagnostics;
 }
 
 export interface GrinchProfileEvidenceDiagnosticsInput {
+  candles?: Candle[];
   phase1?: GrinchPhase1ModelOutput;
   reversal?: GrinchPhase2ReversalModelOutput;
   consolidation?: GrinchPhase3ConsolidationModelOutput;
@@ -54,6 +59,7 @@ export interface GrinchProfileEvidenceDiagnosticsInput {
   noValidProfileCount?: number;
   regimeLabel?: string;
   regimeDataQuality?: string;
+  sessionTimeMapping?: SessionTimeMapping;
 }
 
 export type GrinchCalibrationCandidateFamily =
@@ -315,6 +321,7 @@ const buildCalibrationReport = ({
 };
 
 export function buildGrinchProfileEvidenceDiagnostics({
+  candles = [],
   consolidation,
   noValidProfileCount,
   phase1,
@@ -322,7 +329,8 @@ export function buildGrinchProfileEvidenceDiagnostics({
   regimeDataQuality,
   regimeLabel,
   reversal,
-  score
+  score,
+  sessionTimeMapping
 }: GrinchProfileEvidenceDiagnosticsInput): GrinchProfileEvidenceDiagnostics {
   const evaluatedProfiles = score?.evaluatedProfiles ?? [];
   const evaluatedFor = (profile: Exclude<GrinchActiveProfile, "none">) =>
@@ -401,6 +409,12 @@ export function buildGrinchProfileEvidenceDiagnostics({
     reversal,
     rows
   });
+  const expansionReplayDiagnostics = buildGrinchExpansionReplayDiagnostics({
+    candles,
+    phase1,
+    reversal,
+    sessionTimeMapping: sessionTimeMapping ?? phase1?.sessionTimeMapping
+  });
 
   return {
     rows,
@@ -417,6 +431,7 @@ export function buildGrinchProfileEvidenceDiagnostics({
         ? `Timing zone ${phase1.sessionTimeMapping.timingZone}; source timestamp zone ${phase1.sessionTimeMapping.sourceTimestampZone}; session model ${phase1.sessionTimeMapping.sessionModel}. ${phase1.sessionTimeMapping.warnings[0] ?? ""}`
         : "Grinch timing is using the default literal candle timestamp clock.",
     noValidProfileCount: noValidProfileCount ?? 0,
-    calibrationReport
+    calibrationReport,
+    expansionReplayDiagnostics
   };
 }

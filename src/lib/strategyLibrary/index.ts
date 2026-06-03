@@ -2,9 +2,18 @@ export { analyzeGrinchPhase1, summarizeGrinchPhase1 } from "@/lib/strategyLibrar
 export { analyzeGrinchPhase2Reversal, summarizeGrinchReversalProfile } from "@/lib/strategyLibrary/grinchPhase2ReversalModel";
 export { analyzeGrinchPhase3Consolidation, summarizeGrinchConsolidationProfile } from "@/lib/strategyLibrary/grinchPhase3ConsolidationModel";
 export { analyzeGrinchPhase4Smt, summarizeGrinchSmtIntermarket } from "@/lib/strategyLibrary/grinchPhase4SmtModel";
+export { buildGrinchExpansionReplayDiagnostics } from "@/lib/strategyLibrary/grinchExpansionReplayDiagnostics";
 export { buildGrinchProfileEvidenceDiagnostics } from "@/lib/strategyLibrary/grinchProfileDiagnostics";
 export { calculateGrinchStrategyScore, summarizeGrinchStrategyScore } from "@/lib/strategyLibrary/grinchStrategyScore";
 export { resolveGrinchActiveProfile } from "@/lib/strategyLibrary/grinchProfileSelection";
+export type {
+  GrinchExpansionExpectedDirection,
+  GrinchExpansionReplayDiagnostics,
+  GrinchExpansionReplayMarker,
+  GrinchOpeningReplayReference,
+  GrinchReplayCandleDiagnostic,
+  GrinchReplayCandleRole
+} from "@/lib/strategyLibrary/grinchExpansionReplayDiagnostics";
 export type {
   GrinchActiveProfile,
   GrinchConsolidationEntryIntent,

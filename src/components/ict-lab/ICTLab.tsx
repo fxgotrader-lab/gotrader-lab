@@ -14,7 +14,9 @@ import {
   buildVwapOverlay,
   createTradingChartData,
   horizontalOverlay,
-  type TradingChartLineOverlay
+  toChartTime,
+  type TradingChartLineOverlay,
+  type TradingChartMarker
 } from "@/lib/charting";
 import {
   detectBOS,
@@ -270,15 +272,18 @@ export function ICTLab() {
   const grinchProfileDiagnostics = useMemo(
     () =>
       buildGrinchProfileEvidenceDiagnostics({
+        candles: activeCandles,
         phase1: analysis.grinchPhase1,
         reversal: analysis.grinchReversalProfile,
         consolidation: analysis.grinchConsolidationProfile,
         score: analysis.grinchStrategyScore,
         regimeLabel: regimeClassification.stableLabel,
-        regimeDataQuality: regimeClassification.dataQuality
+        regimeDataQuality: regimeClassification.dataQuality,
+        sessionTimeMapping
       }),
-    [analysis, regimeClassification.dataQuality, regimeClassification.stableLabel]
+    [activeCandles, analysis, regimeClassification.dataQuality, regimeClassification.stableLabel, sessionTimeMapping]
   );
+  const expansionReplay = grinchProfileDiagnostics.expansionReplayDiagnostics;
 
   useEffect(() => {
     const refreshTradingViewStatus = () => {
@@ -392,14 +397,28 @@ export function ICTLab() {
       ...buildSwingLevelOverlays(activeCandles, analysis.swings, 6)
     ].filter((overlay): overlay is TradingChartLineOverlay => Boolean(overlay));
 
+    const replayMarkers: TradingChartMarker[] = expansionReplay.overlayMarkers.map((marker) => ({
+      direction: marker.direction,
+      id: marker.id,
+      label: marker.label,
+      price: marker.price,
+      time: toChartTime(marker.rawTimestamp),
+      type: marker.markerType
+    }));
+
     return {
       ...base,
       bias: chartBias,
       lineOverlays: overlays,
-      markers: visualOnlyTradingViewChart || visualOnlyMt5Chart ? [] : buildIctMarkers({
-        structureEvents: analysis.structureEvents.slice(-18) as MarketStructureEvent[],
-        sweeps: analysis.sweeps.slice(-14)
-      }),
+      markers: visualOnlyTradingViewChart || visualOnlyMt5Chart
+        ? replayMarkers
+        : [
+            ...buildIctMarkers({
+              structureEvents: analysis.structureEvents.slice(-18) as MarketStructureEvent[],
+              sweeps: analysis.sweeps.slice(-14)
+            }),
+            ...replayMarkers
+          ],
       stateLabel: visualOnlyTradingViewChart
         ? "visual only / tradingview_mcp_chart"
         : visualOnlyMt5Chart
@@ -415,6 +434,7 @@ export function ICTLab() {
     chartLatestCandle?.timeframe,
     chartSourceLabel,
     chartSourceType,
+    expansionReplay.overlayMarkers,
     latestStructure?.direction,
     mt5ResearchEligible,
     sourceType,
@@ -648,6 +668,104 @@ export function ICTLab() {
           <div className="rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-xs text-amber-100">
             {grinchProfileDiagnostics.calibrationReport.timingWindowAssessment}{" "}
             {grinchProfileDiagnostics.calibrationReport.doNotAutoApplyNotice}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-amber-300/20 bg-amber-300/5">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Grinch Timing / Expansion Replay</CardTitle>
+              <CardDescription>
+                Diagnostic-only replay of the Reversal expansion gate. The chart adds opening-price lines and replay markers; strategy gates are unchanged.
+              </CardDescription>
+            </div>
+            <Badge variant={expansionReplay.expansionTest.failedRule === "passed_diagnostic_check" ? "success" : "warning"}>
+              {expansionReplay.expansionTest.failedRule.replace(/_/g, " ")}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <InfoBox
+              title="12AM Open"
+              body={`Raw ${expansionReplay.twelveAmOpen.rawTimestamp}; local ${expansionReplay.twelveAmOpen.localTimestamp}; price ${
+                typeof expansionReplay.twelveAmOpen.price === "number" ? expansionReplay.twelveAmOpen.price.toFixed(2) : "not found"
+              }; fallback ${expansionReplay.twelveAmOpen.fallbackMethod}.`}
+            />
+            <InfoBox
+              title="Sunday Open"
+              body={`Raw ${expansionReplay.sundayOpen.rawTimestamp}; local ${expansionReplay.sundayOpen.localTimestamp}; price ${
+                typeof expansionReplay.sundayOpen.price === "number" ? expansionReplay.sundayOpen.price.toFixed(2) : "not found"
+              }; fallback ${expansionReplay.sundayOpen.fallbackMethod}.`}
+            />
+            <InfoBox
+              title="Timing model"
+              body={`Timing date ${expansionReplay.timingDate}; timing zone ${expansionReplay.timingZone}; source zone ${expansionReplay.sourceTimestampZone}; model ${expansionReplay.sessionModel}. ${expansionReplay.sessionWarning}`}
+            />
+            <InfoBox title="Overlay behavior" body={expansionReplay.overlaySummary.note} />
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <InfoBox
+              title="London interaction"
+              body={`${expansionReplay.londonInteraction.candleCount} candles from ${expansionReplay.londonInteraction.windowStartLocal}-${expansionReplay.londonInteraction.windowEndLocal}; relation ${expansionReplay.londonInteraction.relationTo12am}; interacted ${expansionReplay.londonInteraction.interacted ? "yes" : "no"}. ${
+                expansionReplay.londonInteraction.interactionTimestamps.join(" / ") || "No exact interaction candle."
+              }`}
+            />
+            <InfoBox
+              title="Expansion window"
+              body={`${expansionReplay.expansionWindow.evaluatedCandleCount} candles from ${expansionReplay.expansionWindow.windowStartLocal}-${expansionReplay.expansionWindow.windowEndLocal}; first ${expansionReplay.expansionWindow.firstLocalTimestamp ?? "n/a"}; last ${expansionReplay.expansionWindow.lastLocalTimestamp ?? "n/a"}.`}
+            />
+            <InfoBox
+              title="Expansion distance"
+              body={`${expansionReplay.expansionTest.expansionDistance.toFixed(2)} vs required ${expansionReplay.expansionTest.requiredExpansionDistance.toFixed(2)}; expected ${expansionReplay.expansionTest.expectedDirection.replace(/_/g, " ")}; clean side ${expansionReplay.expansionTest.cleanSideMaintained ? "yes" : "no"}.`}
+            />
+            <InfoBox
+              title="Displacement / chop"
+              body={`Displacement ${expansionReplay.expansionTest.displacementScore}/100; chop ${expansionReplay.expansionTest.chopScore}/100; near miss ${expansionReplay.nearMissScore}/100.`}
+            />
+          </div>
+          <div className="rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
+            <p className="font-medium">Failure reason</p>
+            <p className="mt-1 text-amber-100/80">{expansionReplay.expansionTest.failureReason}</p>
+            <p className="mt-2 font-medium">Recommendation</p>
+            <p className="mt-1 text-amber-100/80">{expansionReplay.recommendation}</p>
+            <p className="mt-2 text-xs text-amber-100/70">{expansionReplay.safetyNotice}</p>
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-amber-300/15">
+            <table className="min-w-full divide-y divide-amber-300/10 text-left text-xs">
+              <thead className="bg-amber-300/10 text-amber-100">
+                <tr>
+                  <th className="px-3 py-2 font-semibold">Role</th>
+                  <th className="px-3 py-2 font-semibold">Local time</th>
+                  <th className="px-3 py-2 font-semibold">Raw timestamp</th>
+                  <th className="px-3 py-2 font-semibold">O/H/L/C</th>
+                  <th className="px-3 py-2 font-semibold">Reason</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-amber-300/10 bg-background/35 text-muted-foreground">
+                {expansionReplay.candidateCandles.length ? (
+                  expansionReplay.candidateCandles.map((candle) => (
+                    <tr key={`${candle.role}-${candle.rawTimestamp}`}>
+                      <td className="px-3 py-2 font-medium text-foreground">{candle.role.replace(/_/g, " ")}</td>
+                      <td className="px-3 py-2">{candle.localTimestamp}</td>
+                      <td className="px-3 py-2 font-mono">{candle.rawTimestamp}</td>
+                      <td className="px-3 py-2 font-mono">
+                        {candle.open.toFixed(2)} / {candle.high.toFixed(2)} / {candle.low.toFixed(2)} / {candle.close.toFixed(2)}
+                      </td>
+                      <td className="px-3 py-2">{candle.reason}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td className="px-3 py-4 text-muted-foreground" colSpan={5}>
+                      No replay candidate candles were available in this window.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </CardContent>
       </Card>
