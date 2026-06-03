@@ -26,6 +26,8 @@ llm/errors/*.json
 !llm/errors/.gitkeep
 .gotrader/journal/
 .gotrader/imports/
+.gotrader/local-stack.json
+.gotrader/local-stack-logs/
 public/local-imports/*.json
 !public/local-imports/.gitkeep
 *.jsonl

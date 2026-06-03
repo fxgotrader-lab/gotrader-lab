@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "start:local-stack": "node scripts/start-local-stack.mjs",
+    "stop:local-stack": "node scripts/stop-local-stack.mjs",
+    "restart:local-stack": "node scripts/restart-local-stack.mjs",
+    "diagnose:local-stack": "node scripts/diagnose-local-stack.mjs",
     "llm:bridge": "node scripts/llm-local-bridge-server.mjs",
     "tradingview:mcp-bridge": "node scripts/start-tradingview-mcp-bridge.mjs",
     "tradingview:mcp-diagnose-port": "node scripts/diagnose-tradingview-bridge-port.mjs",
