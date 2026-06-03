@@ -101,7 +101,7 @@ const stepDefinitions: Array<Pick<ResearchCycleStepResult, "stepId" | "label" | 
   {
     stepId: "backtest",
     label: "Backtest",
-    summary: "Waiting to run mock candle backtest."
+    summary: "Waiting to run the active research-source backtest."
   },
   {
     stepId: "llm_advisory",
