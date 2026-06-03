@@ -35,6 +35,7 @@
     "test:tradingview-mcp": "node scripts/test-tradingview-mcp-bridge.mjs",
     "test:mt5-readonly": "node scripts/test-mt5-readonly-bridge.mjs",
     "test:mt5-readonly-safety": "node scripts/test-mt5-readonly-safety.mjs",
+    "test:auto-research-candidate": "node scripts/run-auto-research-candidate.mjs",
     "test:regime-classifier": "node scripts/test-regime-classifier.mjs"
   },
   "dependencies": {
