@@ -83,6 +83,7 @@ import {
   formatPercentMetric,
   formatR
 } from "@/lib/researchMetrics";
+import { buildGrinchProfileEvidenceDiagnostics } from "@/lib/strategyLibrary";
 import { RESEARCH_CYCLE_UPDATED_EVENT } from "@/lib/researchCycle";
 import {
   ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
@@ -895,6 +896,16 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const autoRefreshCountdown = formatCountdown(tradingViewAutoRefresh.nextRefreshAt, autoRefreshClock);
   const latestBacktest = runtimeSnapshot?.latestResearchCycle.latestBacktestSummary;
   const grinch = runtimeSnapshot?.latestResearchCycle.activeGrinchProfileSummary;
+  const latestGrinchScore =
+    runtimeSnapshot?.latestResearchCycle.grinchStrategyScore ?? latestBacktest?.grinchSummary?.latestScore;
+  const grinchProfileDiagnostics = buildGrinchProfileEvidenceDiagnostics({
+    phase1: runtimeSnapshot?.latestResearchCycle.grinchPhase1Summary,
+    reversal: runtimeSnapshot?.latestResearchCycle.grinchPhase2ReversalSummary,
+    consolidation: runtimeSnapshot?.latestResearchCycle.grinchPhase3ConsolidationSummary,
+    score: latestGrinchScore,
+    profileCandidateCounts: latestBacktest?.grinchSummary?.profileCandidateCounts,
+    noValidProfileCount: latestBacktest?.grinchSummary?.noValidProfileSignals
+  });
   const canonicalMetrics = runtimeSnapshot?.performance.canonicalPerformanceMetrics;
   const latestGrinchComparison = runtimeSnapshot?.latestResearchCycle.latestRun?.autoResearchCycle?.grinchComparison ?? latestAutoResearch?.grinchComparison;
   const layerMetrics = latestGrinchComparison?.layerMetrics;
@@ -1567,6 +1578,66 @@ export function MissionControlShell({ state }: { state: LabState }) {
               {sourceContextRows.map((row) => (
                 <MiniReadout key={row.label} label={row.label} value={row.value} detail={row.detail} />
               ))}
+            </div>
+          </section>
+          <section className="rounded-xl border border-amber-300/20 bg-amber-300/5 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300">Grinch Profile Diagnostics</p>
+                <h3 className="mt-1 text-base font-semibold text-slate-50">No-Valid-Profile Evidence</h3>
+                <p className="mt-1 text-sm text-slate-400">
+                  Latest-cycle evidence for Model 1, Reversal, and Consolidation. Thresholds and gates are unchanged.
+                </p>
+              </div>
+              <Badge variant={latestGrinchScore?.noValidProfile ? "warning" : latestGrinchScore ? "success" : "secondary"}>
+                {latestGrinchScore?.noValidProfile ? "no valid profile" : latestGrinchScore ? "profile scored" : "not available"}
+              </Badge>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <MiniReadout label="Hard gate" value={grinchProfileDiagnostics.hardGateReason} detail={grinchProfileDiagnostics.noValidProfileReason} />
+              <MiniReadout label="Timing status" value={latestGrinchScore?.timingGrade?.replace(/_/g, " ") ?? "unknown"} detail={grinchProfileDiagnostics.timingWindowStatus} />
+              <MiniReadout label="Candidate counts" value={grinchProfileDiagnostics.candidateSummary} detail={`No-valid-profile signals ${grinchProfileDiagnostics.noValidProfileCount.toLocaleString()}`} />
+              <MiniReadout label="Session clock" value="literal timestamp HH:mm" detail={grinchProfileDiagnostics.sessionTimezoneAssumption} />
+              {grinchProfileDiagnostics.openingReferences.map((reference) => (
+                <MiniReadout
+                  key={reference.label}
+                  label={`${reference.label} timestamp`}
+                  value={reference.timestamp}
+                  detail={`Price ${reference.price}; relation ${reference.relation}; ${reference.missingEvidence[0] ?? "reference available"}`}
+                />
+              ))}
+            </div>
+            <div className="mt-4 overflow-x-auto rounded-lg border border-amber-300/15">
+              <table className="min-w-full divide-y divide-amber-300/10 text-left text-xs">
+                <thead className="bg-amber-300/10 text-amber-100">
+                  <tr>
+                    <th className="px-3 py-2 font-semibold">Profile</th>
+                    <th className="px-3 py-2 font-semibold">State / timing</th>
+                    <th className="px-3 py-2 font-semibold">Candidates</th>
+                    <th className="px-3 py-2 font-semibold">Selectable</th>
+                    <th className="px-3 py-2 font-semibold">Gate reason</th>
+                    <th className="px-3 py-2 font-semibold">Missing evidence</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-amber-300/10 bg-slate-950/35 text-slate-300">
+                  {grinchProfileDiagnostics.rows.map((row) => {
+                    const evidenceText =
+                      row.missingEvidence.slice(0, 3).join(" / ") || row.reasons.slice(0, 2).join(" / ") || "No missing evidence listed.";
+                    return (
+                      <tr key={row.profile}>
+                        <td className="px-3 py-2 font-semibold text-slate-100">{row.label}</td>
+                        <td className="px-3 py-2">
+                          {row.state.replace(/_/g, " ")} / {row.timingGrade.replace(/_/g, " ")}
+                        </td>
+                        <td className="px-3 py-2 font-mono">{row.candidateCount.toLocaleString()}</td>
+                        <td className="px-3 py-2">{row.selectable ? "yes" : "no"}</td>
+                        <td className="px-3 py-2">{row.blockReason}</td>
+                        <td className="px-3 py-2">{evidenceText}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </section>
           <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">

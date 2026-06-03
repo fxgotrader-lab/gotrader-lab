@@ -52,6 +52,7 @@ import {
   analyzeGrinchPhase2Reversal,
   analyzeGrinchPhase3Consolidation,
   analyzeGrinchPhase4Smt,
+  buildGrinchProfileEvidenceDiagnostics,
   calculateGrinchStrategyScore
 } from "@/lib/strategyLibrary";
 import type { Candle, MarketBias, MarketStructureEvent, SessionContext } from "@/lib/types";
@@ -224,6 +225,16 @@ export function ICTLab() {
     counts[session.session] = (counts[session.session] ?? 0) + 1;
     return counts;
   }, {});
+  const grinchProfileDiagnostics = useMemo(
+    () =>
+      buildGrinchProfileEvidenceDiagnostics({
+        phase1: analysis.grinchPhase1,
+        reversal: analysis.grinchReversalProfile,
+        consolidation: analysis.grinchConsolidationProfile,
+        score: analysis.grinchStrategyScore
+      }),
+    [analysis]
+  );
 
   useEffect(() => {
     const refreshTradingViewStatus = () => {
@@ -517,6 +528,71 @@ export function ICTLab() {
               </div>
             </div>
           ) : null}
+        </CardContent>
+      </Card>
+
+      <Card className="border-amber-300/20 bg-amber-300/5">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Grinch Profile Evidence</CardTitle>
+              <CardDescription>
+                Explains why the latest ICT foundation did or did not become a Grinch-qualified setup.
+              </CardDescription>
+            </div>
+            <Badge variant={analysis.grinchStrategyScore.noValidProfile ? "warning" : "success"}>
+              {analysis.grinchStrategyScore.noValidProfile ? "no valid profile" : "profile evidence present"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <InfoBox title="No-valid-profile reason" body={grinchProfileDiagnostics.noValidProfileReason} />
+            <InfoBox title="Timing window" body={grinchProfileDiagnostics.timingWindowStatus} />
+            <InfoBox title="Session clock assumption" body={grinchProfileDiagnostics.sessionTimezoneAssumption} />
+            <InfoBox title="Hard gate" body={grinchProfileDiagnostics.hardGateReason} />
+            {grinchProfileDiagnostics.openingReferences.map((reference) => (
+              <InfoBox
+                key={reference.label}
+                title={`${reference.label} timestamp used`}
+                body={`${reference.timestamp}; price ${reference.price}; relation ${reference.relation}. ${
+                  reference.missingEvidence[0] ?? "Reference available."
+                }`}
+              />
+            ))}
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-amber-300/20">
+            <table className="min-w-full divide-y divide-amber-300/15 text-left text-xs">
+              <thead className="bg-amber-300/10 text-amber-100">
+                <tr>
+                  <th className="px-3 py-2 font-semibold">Profile</th>
+                  <th className="px-3 py-2 font-semibold">State / timing</th>
+                  <th className="px-3 py-2 font-semibold">Candidates</th>
+                  <th className="px-3 py-2 font-semibold">Selectable</th>
+                  <th className="px-3 py-2 font-semibold">Gate reason</th>
+                  <th className="px-3 py-2 font-semibold">Missing evidence</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-amber-300/10 bg-background/35 text-muted-foreground">
+                {grinchProfileDiagnostics.rows.map((row) => {
+                  const evidenceText =
+                    row.missingEvidence.slice(0, 3).join(" / ") || row.reasons.slice(0, 2).join(" / ") || "No missing evidence listed.";
+                  return (
+                    <tr key={row.profile}>
+                      <td className="px-3 py-2 font-medium text-foreground">{row.label}</td>
+                      <td className="px-3 py-2">
+                        {row.state.replace(/_/g, " ")} / {row.timingGrade.replace(/_/g, " ")}
+                      </td>
+                      <td className="px-3 py-2 font-mono">{row.candidateCount}</td>
+                      <td className="px-3 py-2">{row.selectable ? "yes" : "no"}</td>
+                      <td className="px-3 py-2">{row.blockReason}</td>
+                      <td className="px-3 py-2">{evidenceText}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </CardContent>
       </Card>
 
