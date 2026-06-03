@@ -28,6 +28,23 @@ export interface CalibrationProposalValidationRequirement {
   detail: string;
 }
 
+export type CalibrationProposalReplayReviewStatus =
+  | "not_reviewed"
+  | "supportive"
+  | "evidence_not_supportive"
+  | "rejected_for_current_window";
+
+export interface CalibrationProposalReplayReview {
+  reviewed: boolean;
+  status: CalibrationProposalReplayReviewStatus;
+  failedRule?: string;
+  failureReason?: string;
+  nearMissScore?: number;
+  recommendation: string;
+  timingDate?: string;
+  timingZone?: string;
+}
+
 export interface CalibrationProposalIntentDetails {
   title: string;
   targetSubsystem: string;
@@ -47,6 +64,7 @@ export interface CalibrationProposalIntentDetails {
   closestAutoResearchFamilies: string[];
   executableStatusReason: string;
   nextImplementationStep: string;
+  replayReview?: CalibrationProposalReplayReview;
   sourceReportTitle?: string;
   sourceReportFinding?: string;
   sourceContext?: {

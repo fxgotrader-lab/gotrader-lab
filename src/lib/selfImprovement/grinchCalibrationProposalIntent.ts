@@ -6,10 +6,12 @@ import type {
   GrinchProfileCalibrationReport,
   GrinchProfileCalibrationRow
 } from "@/lib/strategyLibrary/grinchProfileDiagnostics";
+import type { GrinchExpansionReplayDiagnostics } from "@/lib/strategyLibrary/grinchExpansionReplayDiagnostics";
 import type {
   CalibrationProposal,
   CalibrationProposalIntentDetails,
   CalibrationProposalMetrics,
+  CalibrationProposalReplayReview,
   CalibrationProposalValidationRequirement
 } from "@/lib/selfImprovement/selfImprovementTypes";
 import { uid } from "@/lib/utils";
@@ -158,6 +160,54 @@ const statusLabelFor = (status: GrinchCalibrationExecutableStatus) =>
       ? "planned, not implemented"
       : "diagnostic only";
 
+const hardExpansionReplayRules = new Set([
+  "missing_12am_open",
+  "missing_london_window",
+  "london_interacted_with_12am",
+  "unclear_london_relation",
+  "too_few_expansion_candles",
+  "insufficient_expansion_distance",
+  "clean_side_violation",
+  "chop_around_12am"
+]);
+
+const buildExpansionReplayReview = (
+  diagnostics?: GrinchExpansionReplayDiagnostics
+): CalibrationProposalReplayReview | undefined => {
+  if (!diagnostics) {
+    return undefined;
+  }
+
+  const failedRule = diagnostics.expansionTest.failedRule;
+  const nearMissScore = diagnostics.nearMissScore;
+  const hardExpansionFailure = hardExpansionReplayRules.has(failedRule);
+  const status =
+    nearMissScore === 0 && hardExpansionFailure
+      ? "rejected_for_current_window"
+      : hardExpansionFailure
+        ? "evidence_not_supportive"
+        : failedRule === "passed_diagnostic_check"
+          ? "supportive"
+          : "evidence_not_supportive";
+  const recommendation =
+    status === "rejected_for_current_window"
+      ? "Reject this calibration family for the current window; wait for a cleaner setup with supportive London/12AM expansion evidence."
+      : status === "evidence_not_supportive"
+        ? "Keep the family executable, but do not recommend it for this current window until replay evidence improves."
+        : "Replay evidence is supportive enough for controlled research testing; normal validation gates still apply.";
+
+  return {
+    reviewed: true,
+    status,
+    failedRule,
+    failureReason: diagnostics.expansionTest.failureReason,
+    nearMissScore,
+    recommendation,
+    timingDate: diagnostics.timingDate,
+    timingZone: diagnostics.timingZone
+  };
+};
+
 const compactFingerprintPart = (value: unknown) =>
   String(value ?? "")
     .replace(/[^a-zA-Z0-9_.:-]+/g, "-")
@@ -220,9 +270,11 @@ export const selectBestGrinchCalibrationRow = (
     .sort((left, right) => right.nearMissScore - left.nearMissScore || right.candidateCount - left.candidateCount)[0];
 
 export function buildGrinchCalibrationProposalIntentDetails({
+  expansionReplayDiagnostics,
   report,
   sourceContext
 }: {
+  expansionReplayDiagnostics?: GrinchExpansionReplayDiagnostics;
   report: GrinchProfileCalibrationReport;
   sourceContext?: GrinchCalibrationSourceContext;
 }): CalibrationProposalIntentDetails {
@@ -234,6 +286,16 @@ export function buildGrinchCalibrationProposalIntentDetails({
   const profileText = bestRow?.label ?? candidateFamily.replace(/_/g, " ");
   const reportFingerprint = reportFingerprintFor(report);
   const sourceFingerprint = sourceContext?.sourceFingerprint;
+  const replayReview = buildExpansionReplayReview(expansionReplayDiagnostics);
+  const replayRejectedCurrentWindow =
+    candidateFamily === "reversal_expansion_confirmation" &&
+    replayReview?.status === "rejected_for_current_window";
+  const reason = replayRejectedCurrentWindow
+    ? `${profileText} remains the strongest current near-miss (${nearMissText}), but replay evidence rejects ${candidateFamily.replace(/_/g, " ")} for this window: ${replayReview.failedRule?.replace(/_/g, " ") ?? "hard expansion rule"} with replay near-miss ${replayReview.nearMissScore ?? "n/a"}/100. Keep the family executable and wait for a cleaner setup.`
+    : `${profileText} has the strongest current near-miss score (${nearMissText}); use ${candidateFamily.replace(/_/g, " ")} as the first controlled research family.`;
+  const nextImplementationStep = replayRejectedCurrentWindow
+    ? "Do not recommend this family for the current window. Keep reversal expansion confirmation executable for future Auto Research runs and wait for clean London/12AM expansion replay evidence."
+    : executionInfo.nextImplementationStep;
 
   return {
     title,
@@ -242,7 +304,7 @@ export function buildGrinchCalibrationProposalIntentDetails({
     generatedAt: new Date().toISOString(),
     reportFingerprint,
     sourceFingerprint,
-    reason: `${profileText} has the strongest current near-miss score (${nearMissText}); use ${candidateFamily.replace(/_/g, " ")} as the first controlled research family.`,
+    reason,
     draftOnly: true,
     autoApplyAllowed: false,
     nearMissScore: bestRow?.nearMissScore,
@@ -253,7 +315,8 @@ export function buildGrinchCalibrationProposalIntentDetails({
     executableAutoResearchFamilies: executionInfo.executableAutoResearchFamilies,
     closestAutoResearchFamilies: executionInfo.closestAutoResearchFamilies,
     executableStatusReason: executionInfo.reason,
-    nextImplementationStep: executionInfo.nextImplementationStep,
+    nextImplementationStep,
+    replayReview,
     sourceReportTitle: report.title,
     sourceReportFinding: report.primaryFinding,
     sourceContext,
@@ -287,15 +350,18 @@ export function calibrationMetricsFromCanonicalPerformance(
 export function createGrinchCalibrationDraftProposal({
   baselineConfig,
   beforeMetrics,
+  expansionReplayDiagnostics,
   report,
   sourceContext
 }: {
   baselineConfig: ResolvedBacktestConfig;
   beforeMetrics: CalibrationProposalMetrics;
+  expansionReplayDiagnostics?: GrinchExpansionReplayDiagnostics;
   report: GrinchProfileCalibrationReport;
   sourceContext?: GrinchCalibrationSourceContext;
 }): CalibrationProposal {
-  const intentDetails = buildGrinchCalibrationProposalIntentDetails({ report, sourceContext });
+  const intentDetails = buildGrinchCalibrationProposalIntentDetails({ expansionReplayDiagnostics, report, sourceContext });
+  const replayRejectedCurrentWindow = intentDetails.replayReview?.status === "rejected_for_current_window";
 
   return {
     proposalId: uid("grinch_calibration_intent"),
@@ -311,7 +377,9 @@ export function createGrinchCalibrationDraftProposal({
     targetProblem: "trade_generation_blocked",
     proposedChanges: {},
     expectedImprovement:
-      intentDetails.executableStatus === "executable"
+      replayRejectedCurrentWindow
+        ? "Expansion replay evidence is not supportive for the current window. Keep the candidate family executable for future evidence, but do not use this draft as the current recommended calibration path."
+        : intentDetails.executableStatus === "executable"
         ? "Run the mapped executable Auto Research candidate family through controlled validation. This draft does not change thresholds, timing windows, profile gates, or trading logic."
         : "Create an executable Auto Research candidate from the strongest current Grinch near-miss family. This draft does not change thresholds, timing windows, profile gates, or trading logic.",
     safetyNotes: [
@@ -319,6 +387,11 @@ export function createGrinchCalibrationDraftProposal({
       intentDetails.executableStatus === "executable"
         ? `Executable mapping available: ${intentDetails.executableAutoResearchFamilies.join(", ")}.`
         : "Draft only: candidate family is not executable by Auto Research yet.",
+      ...(intentDetails.replayReview?.reviewed
+        ? [
+            `Expansion replay reviewed: ${intentDetails.replayReview.failedRule?.replace(/_/g, " ") ?? "no failed rule"} with near-miss ${intentDetails.replayReview.nearMissScore ?? "n/a"}/100.`
+          ]
+        : []),
       "No thresholds, timing windows, profile gates, or trading logic are changed by this intent.",
       "Auto-apply is blocked; manual research validation is required before any concrete calibration patch can exist.",
       "AI Research Cycle, walk-forward, evidence quality, maturity, and regime consistency checks are required.",
@@ -333,10 +406,12 @@ export function createGrinchCalibrationDraftProposal({
       `Draft target: ${intentDetails.title}.`,
       `Candidate family: ${intentDetails.candidateFamily.replace(/_/g, " ")}.`,
       `Executable status: ${intentDetails.executableStatusLabel}.`,
+      ...(replayRejectedCurrentWindow ? ["Replay evidence rejects this family for the current window."] : []),
       "No production rule or threshold change has been proposed."
     ],
     notReadyReasons: [
       "Draft proposal only; no concrete calibration patch exists.",
+      ...(replayRejectedCurrentWindow ? ["Expansion replay evidence is not supportive for the current window."] : []),
       intentDetails.executableStatus === "executable"
         ? "Executable candidate mapping still requires AI Research, walk-forward, evidence, maturity, and regime checks."
         : "Candidate family is not executable by Auto Research yet.",
@@ -351,6 +426,7 @@ export function createGrinchCalibrationDraftProposal({
       intentDetails.executableStatus === "executable"
         ? "Executable candidate mapping has not completed required validation checks."
         : "Recommended calibration family is not executable by Auto Research yet.",
+      ...(replayRejectedCurrentWindow ? ["Replay evidence rejected this family for the current window."] : []),
       "Required validation checks have not been completed."
     ]
   };

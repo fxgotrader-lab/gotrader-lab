@@ -39,6 +39,9 @@ import { evidenceScoreVariant, selectEvidenceReadinessImpact, selectWeakestEvide
 import { maturityGradeLabel, maturityGradeVariant, selectMaturityNextRequirement } from "@/lib/maturity";
 import { canonicalMetricsForRun, type CanonicalPerformanceMetrics } from "@/lib/performance/canonicalMetrics";
 import { latestResearchCycleRun } from "@/lib/researchCycle";
+import { loadActiveMt5ReadOnlyCandleFeed } from "@/lib/integrations/mt5";
+import { loadActiveTradingViewMcpChartFeed } from "@/lib/integrations/tradingview";
+import { resolveChartDisplayCandleSource } from "@/lib/marketData";
 import {
   resolveResearchRuntimeSnapshot,
   selectRuntimeConfigSummary,
@@ -83,6 +86,14 @@ const verdictVariant = (verdict?: string) =>
         : "muted";
 const executableStatusVariant = (status?: string) =>
   status === "executable" ? "success" : status === "diagnostic_only" ? "secondary" : "warning";
+const replayReviewVariant = (status?: string) =>
+  status === "supportive"
+    ? "success"
+    : status === "rejected_for_current_window"
+      ? "danger"
+      : status === "evidence_not_supportive"
+        ? "warning"
+        : "secondary";
 const formatToken = (value?: string) => (value ?? "not tested").replace(/_/g, " ");
 const tradeQualityTargets = new Set([
   "high_drawdown",
@@ -542,9 +553,21 @@ export function SelfImprovementView() {
   const latestBacktest = runtimeSnapshot?.latestResearchCycle.latestBacktestSummary;
   const latestGrinchScore =
     runtimeSnapshot?.latestResearchCycle.grinchStrategyScore ?? latestBacktest?.grinchSummary?.latestScore;
+  const grinchDiagnosticCandles = useMemo(() => {
+    const tradingViewFeed = loadActiveTradingViewMcpChartFeed();
+    const mt5Feed = loadActiveMt5ReadOnlyCandleFeed();
+    const displaySource = runtimeSnapshot
+      ? resolveChartDisplayCandleSource(runtimeSnapshot.marketData.preparedSource, tradingViewFeed, mt5Feed)
+      : undefined;
+    return displaySource?.activeResearchCandleSource ?? [];
+  }, [
+    runtimeSnapshot?.marketData.activeResearchSource.fingerprint,
+    runtimeSnapshot?.marketData.preparedSource
+  ]);
   const grinchProfileDiagnostics = useMemo(
     () =>
       buildGrinchProfileEvidenceDiagnostics({
+        candles: grinchDiagnosticCandles,
         phase1: runtimeSnapshot?.latestResearchCycle.grinchPhase1Summary,
         reversal: runtimeSnapshot?.latestResearchCycle.grinchPhase2ReversalSummary,
         consolidation: runtimeSnapshot?.latestResearchCycle.grinchPhase3ConsolidationSummary,
@@ -552,9 +575,11 @@ export function SelfImprovementView() {
         profileCandidateCounts: latestBacktest?.grinchSummary?.profileCandidateCounts,
         noValidProfileCount: latestBacktest?.grinchSummary?.noValidProfileSignals,
         regimeLabel: runtimeSnapshot?.regime.label,
-        regimeDataQuality: runtimeSnapshot?.regime.dataQuality
+        regimeDataQuality: runtimeSnapshot?.regime.dataQuality,
+        sessionTimeMapping: runtimeSnapshot?.latestResearchCycle.grinchPhase1Summary?.sessionTimeMapping
       }),
     [
+      grinchDiagnosticCandles,
       latestBacktest?.grinchSummary?.noValidProfileSignals,
       latestBacktest?.grinchSummary?.profileCandidateCounts,
       latestGrinchScore,
@@ -604,11 +629,17 @@ export function SelfImprovementView() {
     () =>
       latestGrinchScore?.noValidProfile
         ? buildGrinchCalibrationProposalIntentDetails({
+            expansionReplayDiagnostics: grinchProfileDiagnostics.expansionReplayDiagnostics,
             report: grinchProfileDiagnostics.calibrationReport,
             sourceContext: grinchCalibrationSourceContext
           })
         : undefined,
-    [grinchCalibrationSourceContext, grinchProfileDiagnostics.calibrationReport, latestGrinchScore?.noValidProfile]
+    [
+      grinchCalibrationSourceContext,
+      grinchProfileDiagnostics.calibrationReport,
+      grinchProfileDiagnostics.expansionReplayDiagnostics,
+      latestGrinchScore?.noValidProfile
+    ]
   );
   const grinchDraftBeforeMetrics = useMemo(
     () =>
@@ -625,6 +656,7 @@ export function SelfImprovementView() {
         ? createGrinchCalibrationDraftProposal({
             baselineConfig,
             beforeMetrics: grinchDraftBeforeMetrics,
+            expansionReplayDiagnostics: grinchProfileDiagnostics.expansionReplayDiagnostics,
             report: grinchProfileDiagnostics.calibrationReport,
             sourceContext: grinchCalibrationSourceContext
           })
@@ -634,6 +666,7 @@ export function SelfImprovementView() {
       grinchCalibrationIntent,
       grinchDraftBeforeMetrics,
       grinchProfileDiagnostics.calibrationReport,
+      grinchProfileDiagnostics.expansionReplayDiagnostics,
       grinchCalibrationSourceContext
     ]
   );
@@ -1233,6 +1266,11 @@ export function SelfImprovementView() {
                   <Badge className="mt-2" variant={executableStatusVariant(grinchCalibrationIntent.executableStatus)}>
                     {grinchCalibrationIntent.executableStatusLabel}
                   </Badge>
+                  {grinchCalibrationIntent.replayReview ? (
+                    <Badge className="mt-2" variant={replayReviewVariant(grinchCalibrationIntent.replayReview.status)}>
+                      replay {grinchCalibrationIntent.replayReview.status.replace(/_/g, " ")}
+                    </Badge>
+                  ) : null}
                 </div>
                 <div className="rounded-lg border border-amber-300/20 bg-background/35 p-3">
                   <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Source context</p>
@@ -1260,6 +1298,36 @@ export function SelfImprovementView() {
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">{grinchCalibrationIntent.nextImplementationStep}</p>
               </div>
+              {grinchCalibrationIntent.replayReview ? (
+                <div className="rounded-lg border border-amber-300/20 bg-background/35 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Expansion replay review</p>
+                    <Badge variant={replayReviewVariant(grinchCalibrationIntent.replayReview.status)}>
+                      {grinchCalibrationIntent.replayReview.status.replace(/_/g, " ")}
+                    </Badge>
+                  </div>
+                  <div className="mt-2 grid gap-2 text-xs md:grid-cols-4">
+                    <div>
+                      <p className="text-muted-foreground">Reviewed</p>
+                      <p className="mt-1 text-foreground">{grinchCalibrationIntent.replayReview.reviewed ? "yes" : "no"}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Failed rule</p>
+                      <p className="mt-1 text-foreground">{formatToken(grinchCalibrationIntent.replayReview.failedRule)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Replay near-miss</p>
+                      <p className="mt-1 font-mono text-foreground">{grinchCalibrationIntent.replayReview.nearMissScore ?? "n/a"}/100</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Timing zone</p>
+                      <p className="mt-1 text-foreground">{grinchCalibrationIntent.replayReview.timingZone ?? "unknown"}</p>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">{grinchCalibrationIntent.replayReview.failureReason}</p>
+                  <p className="mt-1 text-xs text-amber-100">{grinchCalibrationIntent.replayReview.recommendation}</p>
+                </div>
+              ) : null}
               <div className="grid gap-2 text-xs md:grid-cols-2">
                 <div className="rounded-lg border border-amber-300/20 bg-background/35 p-3">
                   <p className="text-xs uppercase tracking-[0.14em] text-amber-100/70">Intent generated</p>
@@ -1495,6 +1563,11 @@ export function SelfImprovementView() {
                   <Badge variant={executableStatusVariant(latestProposal.proposalIntentDetails.executableStatus)}>
                     {latestProposal.proposalIntentDetails.executableStatusLabel}
                   </Badge>
+                  {latestProposal.proposalIntentDetails.replayReview ? (
+                    <Badge variant={replayReviewVariant(latestProposal.proposalIntentDetails.replayReview.status)}>
+                      replay {latestProposal.proposalIntentDetails.replayReview.status.replace(/_/g, " ")}
+                    </Badge>
+                  ) : null}
                 </div>
               </div>
               <div className="mt-3 grid gap-2 md:grid-cols-4">
@@ -1539,6 +1612,23 @@ export function SelfImprovementView() {
                   Source fingerprint: {latestProposal.proposalIntentDetails.sourceFingerprint ?? "unknown"}
                 </p>
               </div>
+              {latestProposal.proposalIntentDetails.replayReview ? (
+                <div className="mt-3 rounded-md border border-amber-300/20 bg-background/35 p-2 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-muted-foreground">Expansion replay review</p>
+                    <Badge variant={replayReviewVariant(latestProposal.proposalIntentDetails.replayReview.status)}>
+                      {latestProposal.proposalIntentDetails.replayReview.status.replace(/_/g, " ")}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-foreground">
+                    Replay evidence reviewed: {latestProposal.proposalIntentDetails.replayReview.reviewed ? "yes" : "no"}.
+                    Failed rule: {formatToken(latestProposal.proposalIntentDetails.replayReview.failedRule)}.
+                    Near miss: {latestProposal.proposalIntentDetails.replayReview.nearMissScore ?? "n/a"}/100.
+                  </p>
+                  <p className="mt-1 text-muted-foreground">{latestProposal.proposalIntentDetails.replayReview.failureReason}</p>
+                  <p className="mt-1 text-amber-100">{latestProposal.proposalIntentDetails.replayReview.recommendation}</p>
+                </div>
+              ) : null}
               <div className="mt-3 flex flex-wrap gap-1">
                 {latestProposal.proposalIntentDetails.requiredValidationSteps.map((step) => (
                   <Badge key={step.requirementId} variant="secondary">{step.label} required</Badge>

@@ -120,6 +120,14 @@ const pct = (value?: number) =>
 const formatToken = (value?: string) => (value ?? "idle").replace(/_/g, " ");
 const executableStatusVariant = (status?: string) =>
   status === "executable" ? "success" : status === "diagnostic_only" ? "secondary" : "warning";
+const replayReviewVariant = (status?: string) =>
+  status === "supportive"
+    ? "success"
+    : status === "rejected_for_current_window"
+      ? "danger"
+      : status === "evidence_not_supportive"
+        ? "warning"
+        : "secondary";
 const formatBool = (value?: boolean) => (typeof value === "boolean" ? (value ? "yes" : "no") : "unknown");
 const tradingViewAutoRefreshIntervalOptions = tradingViewMcpAutoRefreshIntervalOptions.map((value) => ({
   label: `${value}s`,
@@ -963,6 +971,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const expansionReplay = grinchProfileDiagnostics.expansionReplayDiagnostics;
   const grinchCalibrationProposalIntent = latestGrinchScore?.noValidProfile
     ? buildGrinchCalibrationProposalIntentDetails({
+        expansionReplayDiagnostics: expansionReplay,
         report: grinchProfileDiagnostics.calibrationReport,
         sourceContext: {
           provider: runtimeSnapshot?.marketData.activeResearchSource.provider,
@@ -1690,6 +1699,11 @@ export function MissionControlShell({ state }: { state: LabState }) {
                     <Badge variant={executableStatusVariant(grinchCalibrationProposalIntent.executableStatus)}>
                       {grinchCalibrationProposalIntent.executableStatusLabel}
                     </Badge>
+                    {grinchCalibrationProposalIntent.replayReview ? (
+                      <Badge variant={replayReviewVariant(grinchCalibrationProposalIntent.replayReview.status)}>
+                        replay {grinchCalibrationProposalIntent.replayReview.status.replace(/_/g, " ")}
+                      </Badge>
+                    ) : null}
                     <Link
                       to="/self-improvement"
                       className="inline-flex h-8 items-center justify-center rounded-md border border-amber-300/30 bg-amber-300/10 px-3 text-xs font-medium text-amber-50 transition-colors hover:bg-amber-300/15"
@@ -1717,6 +1731,23 @@ export function MissionControlShell({ state }: { state: LabState }) {
                     </p>
                     <p className="mt-1 text-amber-100/80">{grinchCalibrationProposalIntent.nextImplementationStep}</p>
                   </div>
+                  {grinchCalibrationProposalIntent.replayReview ? (
+                    <div className="rounded-md border border-amber-300/15 bg-slate-950/35 p-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-medium text-amber-100">Expansion replay review</p>
+                        <Badge variant={replayReviewVariant(grinchCalibrationProposalIntent.replayReview.status)}>
+                          {grinchCalibrationProposalIntent.replayReview.status.replace(/_/g, " ")}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-slate-300">
+                        Replay evidence reviewed: {grinchCalibrationProposalIntent.replayReview.reviewed ? "yes" : "no"}.
+                        Failed rule: {grinchCalibrationProposalIntent.replayReview.failedRule?.replace(/_/g, " ") ?? "none"}.
+                        Near miss: {grinchCalibrationProposalIntent.replayReview.nearMissScore ?? "n/a"}/100.
+                      </p>
+                      <p className="mt-1 text-slate-400">{grinchCalibrationProposalIntent.replayReview.failureReason}</p>
+                      <p className="mt-1 text-amber-100/80">{grinchCalibrationProposalIntent.replayReview.recommendation}</p>
+                    </div>
+                  ) : null}
                   <div className="rounded-md border border-amber-300/15 bg-slate-950/35 p-2">
                     <p className="font-medium text-amber-100">Report/source fingerprint</p>
                     <p className="mt-1 truncate font-mono text-slate-300" title={grinchCalibrationProposalIntent.reportFingerprint}>

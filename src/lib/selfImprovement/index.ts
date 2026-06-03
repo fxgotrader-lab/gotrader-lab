@@ -65,6 +65,8 @@ export type {
   CalibrationProposalMetricsSnapshot,
   CalibrationProposalMetrics,
   CalibrationProposalIntentDetails,
+  CalibrationProposalReplayReview,
+  CalibrationProposalReplayReviewStatus,
   CalibrationProposalValidationRequirement,
   CalibrationProposalValidationRequirementId,
   CalibrationProposalSource,
