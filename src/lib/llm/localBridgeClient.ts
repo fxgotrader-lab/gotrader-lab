@@ -3,8 +3,14 @@ import type { LLMAgentResponse, LLMResearchContextPacket } from "@/lib/llm/llmTy
 export const LLM_LOCAL_BRIDGE_BASE_URL = "http://127.0.0.1:8787";
 export const LLM_LOCAL_BRIDGE_HEALTH_URL = `${LLM_LOCAL_BRIDGE_BASE_URL}/health`;
 export const LLM_LOCAL_BRIDGE_URL = `${LLM_LOCAL_BRIDGE_BASE_URL}/llm/run-advisory`;
-export const LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS = 2000;
-export const LLM_LOCAL_BRIDGE_HEALTH_TIMEOUT_MS = 1200;
+const DEFAULT_LLM_ADVISORY_TIMEOUT_MS = 20_000;
+const readAdvisoryTimeoutMs = () => {
+  const raw = import.meta.env?.LLM_ADVISORY_TIMEOUT_MS ?? import.meta.env?.VITE_LLM_ADVISORY_TIMEOUT_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 2_000 ? Math.round(parsed) : DEFAULT_LLM_ADVISORY_TIMEOUT_MS;
+};
+export const LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS = readAdvisoryTimeoutMs();
+export const LLM_LOCAL_BRIDGE_HEALTH_TIMEOUT_MS = 2_000;
 export const LLM_LOCAL_BRIDGE_OFFLINE_COOLDOWN_MS = 60_000;
 
 export type LocalBridgeProcessStatus = "online" | "offline" | "unknown";
@@ -25,6 +31,8 @@ export interface LocalBridgeHealthResult {
   advisoryCapabilityStatus: LocalBridgeAdvisoryCapabilityStatus;
   advisoryEndpointAvailable: boolean;
   advisoryProviderConfigured: boolean;
+  advisoryTimeoutMs?: number;
+  healthTimeoutMs?: number;
   modelConfigured: boolean;
   model?: string;
   statusMessage?: string;
@@ -65,7 +73,9 @@ export interface LocalBridgeRunUnavailableResult {
   reason: LocalBridgeUnavailableReason;
   confidence: 0;
   warnings: string[];
+  details?: string[];
   offlineUntil?: string;
+  timeoutMs?: number;
 }
 
 export type LocalBridgeRunResult = LocalBridgeRunSuccessResult | LocalBridgeRunUnavailableResult;
@@ -85,12 +95,12 @@ const isCircuitOpen = () => offlineUntilMs > nowMs();
 
 const abortErrorName = "AbortError";
 
-const userWarningFor = (reason: LocalBridgeUnavailableReason, message: string) => {
+const userWarningFor = (reason: LocalBridgeUnavailableReason, message: string, timeoutMs = LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS) => {
   switch (reason) {
     case "bridge_offline":
       return "LLM advisory bridge offline. Start npm.cmd run llm:bridge.";
     case "timeout":
-      return "LLM advisory timed out. Deterministic research remains available.";
+      return `LLM advisory timed out after ${Math.round(timeoutMs / 1000)} seconds. Deterministic research remains available.`;
     case "circuit_open":
       return "LLM bridge advisory retry is paused after a recent failure.";
     case "config_missing":
@@ -107,7 +117,8 @@ const userWarningFor = (reason: LocalBridgeUnavailableReason, message: string) =
 const unavailableResult = (
   reason: LocalBridgeUnavailableReason,
   message: string,
-  cooldownMs = LLM_LOCAL_BRIDGE_OFFLINE_COOLDOWN_MS
+  cooldownMs = LLM_LOCAL_BRIDGE_OFFLINE_COOLDOWN_MS,
+  options: { timeoutMs?: number } = {}
 ): LocalBridgeRunUnavailableResult => {
   lastCheckedAt = new Date().toISOString();
   if (reason === "bridge_offline" || reason === "timeout" || reason === "circuit_open") {
@@ -122,15 +133,15 @@ const unavailableResult = (
     lastKnownBridgeProcessStatus = "online";
     lastKnownAdvisoryCapabilityStatus = reason === "config_missing" ? "config_missing" : reason === "invalid_response" ? "error" : "error";
   }
+  const displayMessage = userWarningFor(reason, message, options.timeoutMs);
   return {
     advisoryStatus: "unavailable",
     reason,
     confidence: 0,
-    warnings: [
-      userWarningFor(reason, message),
-      message
-    ],
-    offlineUntil: isoOrUndefined(offlineUntilMs)
+    warnings: [displayMessage],
+    details: message && message !== displayMessage ? [message] : [],
+    offlineUntil: isoOrUndefined(offlineUntilMs),
+    timeoutMs: options.timeoutMs
   };
 };
 
@@ -204,12 +215,11 @@ export async function checkLocalBridgeHealth(
     }, LLM_LOCAL_BRIDGE_HEALTH_TIMEOUT_MS);
   } catch (error) {
     const timedOut = error instanceof Error && error.name === abortErrorName;
-    unavailableResult(
-      timedOut ? "timeout" : "bridge_offline",
-      timedOut
-        ? "Local LLM bridge health check timed out."
-        : "Local LLM bridge server is not running."
-    );
+    lastCheckedAt = new Date().toISOString();
+    offlineReason = timedOut ? "timeout" : "bridge_offline";
+    offlineMessage = timedOut ? "Local LLM bridge health check timed out after 2 seconds." : "Local LLM bridge server is not running.";
+    lastKnownBridgeProcessStatus = timedOut ? "unknown" : "offline";
+    lastKnownAdvisoryCapabilityStatus = timedOut ? "timeout" : "unavailable";
     throw new Error(timedOut ? "Local LLM bridge health check timed out." : "Local LLM bridge server is not running.");
   }
 
@@ -263,6 +273,8 @@ export async function checkLocalBridgeHealth(
     advisoryEndpointAvailable,
     advisoryProviderConfigured,
     modelConfigured,
+    advisoryTimeoutMs: health.advisoryTimeoutMs,
+    healthTimeoutMs: health.healthTimeoutMs,
     model: health.model,
     statusMessage:
       health.statusMessage ??
@@ -319,8 +331,10 @@ export async function runLocalBridgeAdvisory(
     return unavailableResult(
       timedOut ? "timeout" : "bridge_offline",
       timedOut
-        ? "Local LLM bridge advisory request timed out after 2 seconds."
-        : "Local LLM bridge server is not running. Start it with npm.cmd run llm:bridge when advisory review is needed."
+        ? `Local LLM bridge advisory request timed out after ${Math.round(LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS / 1000)} seconds.`
+        : "Local LLM bridge server is not running. Start it with npm.cmd run llm:bridge when advisory review is needed.",
+      LLM_LOCAL_BRIDGE_OFFLINE_COOLDOWN_MS,
+      timedOut ? { timeoutMs: LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS } : {}
     );
   }
 
@@ -336,16 +350,26 @@ export async function runLocalBridgeAdvisory(
   }
 
   if (!response.ok) {
-    const errorPayload = payload as { error?: string; message?: string };
+    const errorPayload = payload as {
+      error?: string;
+      message?: string;
+      advisoryCapabilityStatus?: LocalBridgeAdvisoryCapabilityStatus;
+      advisoryTimeoutMs?: number;
+    };
     const message = errorPayload.message ?? errorPayload.error ?? "Local LLM bridge request failed.";
     const reason: LocalBridgeUnavailableReason =
-      response.status === 503 && /OPENAI_API_KEY|provider|model|configured/i.test(message)
+      response.status === 504 || errorPayload.advisoryCapabilityStatus === "timeout"
+        ? "timeout"
+        : response.status === 503 && /OPENAI_API_KEY|provider|model|configured/i.test(message)
         ? "config_missing"
         : "request_failed";
     return unavailableResult(
       reason,
       message,
-      0
+      reason === "timeout" ? LLM_LOCAL_BRIDGE_OFFLINE_COOLDOWN_MS : 0,
+      reason === "timeout"
+        ? { timeoutMs: errorPayload.advisoryTimeoutMs ?? LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS }
+        : {}
     );
   }
 

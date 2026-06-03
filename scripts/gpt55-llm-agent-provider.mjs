@@ -5,6 +5,7 @@ import path from "node:path";
 
 const OPENAI_RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses";
 const DEFAULT_MODEL = "gpt-5.5";
+const DEFAULT_ADVISORY_TIMEOUT_MS = 20_000;
 
 const requiredAgents = [
   {
@@ -122,6 +123,7 @@ Usage:
 Environment:
   OPENAI_API_KEY             Required. Never commit this value.
   GOTRADER_LLM_MODEL         Optional. Defaults to ${DEFAULT_MODEL}.
+  LLM_ADVISORY_TIMEOUT_MS    Optional. Defaults to ${DEFAULT_ADVISORY_TIMEOUT_MS}.
 
 Safety:
   Advisory only. No execution authority. No broker control. No readiness override.
@@ -149,6 +151,13 @@ function sanitizeError(value) {
     .replace(/Bearer\s+[A-Za-z0-9._\-]+/g, "Bearer [redacted]")
     .replace(/\bsk-[A-Za-z0-9._\-]{16,}\b/g, "sk-[redacted]");
 }
+
+function positiveIntegerEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value >= 2_000 ? Math.round(value) : fallback;
+}
+
+const advisoryTimeoutMs = () => positiveIntegerEnv("LLM_ADVISORY_TIMEOUT_MS", DEFAULT_ADVISORY_TIMEOUT_MS);
 
 function fail(message) {
   process.stderr.write(`GPT-5.5 LLM provider error: ${sanitizeError(message)}\n`);
@@ -573,14 +582,28 @@ async function callOpenAI(apiKey, model, packet) {
     throw new Error("native fetch is required. Use Node 18 or newer.");
   }
 
-  const response = await fetch(OPENAI_RESPONSES_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`
-    },
-    body: JSON.stringify(buildResponsesPayload(model, packet))
-  });
+  const timeoutMs = advisoryTimeoutMs();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let response;
+  try {
+    response = await fetch(OPENAI_RESPONSES_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(buildResponsesPayload(model, packet)),
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`OpenAI advisory request timed out after ${Math.round(timeoutMs / 1000)} seconds.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");

@@ -94,15 +94,18 @@ const advisoryMessageForUnavailable = (
     return "LLM advisory bridge offline. Start npm.cmd run llm:bridge. Deterministic research remains available.";
   }
   if (reason === "circuit_open") {
-    return `LLM bridge ${bridgeProcessStatus === "online" ? "online, but " : ""}advisory retry paused after a recent failure. ${detail}`;
+    return detail || `LLM bridge ${bridgeProcessStatus === "online" ? "online, but " : ""}advisory retry paused after a recent failure.`;
   }
   if (reason === "timeout") {
-    return `LLM advisory timed out. Deterministic research remains available. ${detail}`;
+    return (
+      detail ||
+      `LLM advisory timed out after ${Math.round(LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS / 1000)} seconds. Deterministic research remains available.`
+    );
   }
   if (reason === "config_missing") {
-    return `LLM bridge online, but advisory provider/model is not configured. ${detail}`;
+    return detail || "LLM bridge online, but advisory provider/model is not configured.";
   }
-  return `${bridgeProcessStatus === "online" ? "Bridge online, advisory request failed" : "LLM advisory unavailable"}: ${detail}`;
+  return detail || `${bridgeProcessStatus === "online" ? "Bridge online, advisory request failed" : "LLM advisory unavailable"}.`;
 };
 
 const capabilityFromUnavailableReason = (reason: LocalBridgeUnavailableReason): PanelAdvisoryCapabilityStatus => {
@@ -440,11 +443,13 @@ export function LLMAdvisoryReviewPanel({
     setBusy(true);
     setStatus("running");
     setAdvisoryCapabilityStatus("running");
+    appendMessage("system", "Advisory review running...");
     try {
       const packet = buildAdvisoryPacket(snapshot, trimmedQuestion);
       const result = await runLocalBridgeAdvisory(packet, undefined, { bypassCircuitBreaker: options.bypassCooldown });
       if (result.advisoryStatus === "unavailable") {
         const warning = result.warnings.join(" ");
+        const detail = safeArray(result.details).join(" ");
         const statusSnapshot = getLocalBridgeStatusSnapshot();
         const nextBridgeProcessStatus: PanelBridgeProcessStatus =
           result.reason === "bridge_offline" ? "offline" : statusSnapshot.bridgeProcessStatus === "offline" ? "offline" : "online";
@@ -464,7 +469,7 @@ export function LLMAdvisoryReviewPanel({
           question: trimmedQuestion,
           reason: result.reason,
           warnings: result.warnings,
-          lastError: warning,
+          lastError: detail || warning,
           cooldownRemainingMs: statusSnapshot.cooldownRemainingMs
         });
         const message = advisoryMessageForUnavailable(result.reason, result.warnings, nextBridgeProcessStatus);
@@ -651,7 +656,7 @@ export function LLMAdvisoryReviewPanel({
               : advisoryCapabilityStatus === "cooldown"
                 ? "LLM bridge online, advisory retry paused after a recent failure. Use Retry advisory for one explicit attempt."
                 : advisoryCapabilityStatus === "timeout"
-                  ? "LLM advisory timed out. Deterministic research remains available."
+                  ? `Bridge online, advisory timed out after ${Math.round(LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS / 1000)} seconds. Deterministic research remains available.`
                   : advisoryCapabilityStatus === "error" || advisoryCapabilityStatus === "unavailable"
                     ? "LLM bridge process may be online, but advisory is unavailable. Deterministic research remains available."
                     : "LLM advisory status is not ready yet. Deterministic research remains available."}

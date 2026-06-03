@@ -8,6 +8,8 @@ import path from "node:path";
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 8787;
 const DEFAULT_MODEL = "gpt-5.5";
+const DEFAULT_ADVISORY_TIMEOUT_MS = 20_000;
+const HEALTH_TIMEOUT_MS = 2_000;
 const PROVIDER_SCRIPT = path.join("scripts", "gpt55-llm-agent-provider.mjs");
 const LATEST_RESPONSE_FILE = path.join("llm", "responses", "latest-llm-response.json");
 const allowedOrigins = new Set(
@@ -16,6 +18,13 @@ const allowedOrigins = new Set(
     `http://localhost:${port}`
   ])
 );
+
+function positiveIntegerEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value >= 2_000 ? Math.round(value) : fallback;
+}
+
+const advisoryTimeoutMs = () => positiveIntegerEnv("LLM_ADVISORY_TIMEOUT_MS", DEFAULT_ADVISORY_TIMEOUT_MS);
 
 function healthPayload() {
   const advisoryProviderConfigured = Boolean(process.env.OPENAI_API_KEY);
@@ -32,6 +41,8 @@ function healthPayload() {
     advisoryCapabilityStatus,
     advisoryEndpointAvailable,
     advisoryProviderConfigured,
+    advisoryTimeoutMs: advisoryTimeoutMs(),
+    healthTimeoutMs: HEALTH_TIMEOUT_MS,
     modelConfigured,
     model,
     statusMessage:
@@ -71,6 +82,7 @@ Usage:
 Environment:
   OPENAI_API_KEY       Required for POST /llm/run-advisory.
   GOTRADER_LLM_MODEL   Optional. Defaults inside the provider to gpt-5.5.
+  LLM_ADVISORY_TIMEOUT_MS Optional. Defaults to ${DEFAULT_ADVISORY_TIMEOUT_MS}.
 
 Endpoint:
   GET  http://127.0.0.1:8787/
@@ -186,6 +198,7 @@ function parseJson(raw, label) {
 
 function runProviderWithContext(packet) {
   return new Promise((resolve, reject) => {
+    const timeoutMs = advisoryTimeoutMs();
     const child = spawn(
       process.execPath,
       [PROVIDER_SCRIPT, "--output-file", LATEST_RESPONSE_FILE],
@@ -199,6 +212,27 @@ function runProviderWithContext(packet) {
 
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      child.kill();
+      const error = new Error(`LLM advisory provider timed out after ${Math.round(timeoutMs / 1000)} seconds.`);
+      error.statusCode = 504;
+      error.code = "LLM_ADVISORY_TIMEOUT";
+      reject(error);
+    }, timeoutMs);
+
+    const settle = (callback) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      callback();
+    };
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
@@ -208,22 +242,26 @@ function runProviderWithContext(packet) {
     child.stderr.on("data", (chunk) => {
       stderr += chunk;
     });
-    child.on("error", reject);
+    child.on("error", (error) => {
+      settle(() => reject(error));
+    });
     child.on("close", async (code) => {
-      if (code !== 0) {
-        const error = new Error(sanitizeError(stderr || stdout || `provider exited with code ${code}`));
-        error.statusCode = 502;
-        reject(error);
-        return;
-      }
+      settle(async () => {
+        if (code !== 0) {
+          const error = new Error(sanitizeError(stderr || stdout || `provider exited with code ${code}`));
+          error.statusCode = 502;
+          reject(error);
+          return;
+        }
 
-      try {
-        const responseJson = await fs.readFile(LATEST_RESPONSE_FILE, "utf8");
-        resolve(parseJson(responseJson, "provider response"));
-      } catch (error) {
-        error.statusCode = 502;
-        reject(error);
-      }
+        try {
+          const responseJson = await fs.readFile(LATEST_RESPONSE_FILE, "utf8");
+          resolve(parseJson(responseJson, "provider response"));
+        } catch (error) {
+          error.statusCode = 502;
+          reject(error);
+        }
+      });
     });
 
     child.stdin.end(JSON.stringify(packet));
@@ -246,6 +284,8 @@ async function handleRunAdvisory(request, response, origin) {
         advisoryCapabilityStatus: "config_missing",
         advisoryEndpointAvailable: true,
         advisoryProviderConfigured: false,
+        advisoryTimeoutMs: advisoryTimeoutMs(),
+        healthTimeoutMs: HEALTH_TIMEOUT_MS,
         modelConfigured: true,
         mode: "advisory_only",
         executionAuthority: "none",
@@ -361,6 +401,12 @@ async function handleRequest(request, response) {
       {
         error: sanitizeError(error.message ?? error),
         errorPath,
+        bridgeProcessStatus: "online",
+        advisoryCapabilityStatus: statusCode === 504 || error.code === "LLM_ADVISORY_TIMEOUT" ? "timeout" : "error",
+        advisoryEndpointAvailable: true,
+        advisoryProviderConfigured: Boolean(process.env.OPENAI_API_KEY),
+        advisoryTimeoutMs: advisoryTimeoutMs(),
+        healthTimeoutMs: HEALTH_TIMEOUT_MS,
         mode: "advisory_only",
         executionAuthority: "none",
         brokerAuthority: "none",
