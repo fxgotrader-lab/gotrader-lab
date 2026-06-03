@@ -99,6 +99,7 @@ import { safeArray, safeTopN, uid } from "@/lib/utils";
 import { WALK_FORWARD_UPDATED_EVENT } from "@/lib/walkForward";
 
 import { formatDateTime } from "./dashboardFormatters";
+import { LLMAdvisoryReviewPanel } from "./LLMAdvisoryReviewPanel";
 import type { MissionActionItem } from "./MissionControlActionPanel";
 import { MissionControlDataFeed, type MissionFeedItem } from "./MissionControlDataFeed";
 import { MissionControlPipeline, type MissionPipelineStage } from "./MissionControlPipeline";
@@ -286,7 +287,8 @@ export function MissionControlShell({ state }: { state: LabState }) {
         (nextEvent.title.includes("auto-refresh") ||
           nextEvent.title.includes("TradingView quote") ||
           nextEvent.title.includes("TradingView candles") ||
-          nextEvent.title.includes("TradingView chart source refreshed"))
+          nextEvent.title.includes("TradingView chart source refreshed") ||
+          nextEvent.title.includes("LLM advisory"))
           ? [{ ...nextEvent, id: events[0].id }, ...events.slice(1)]
           : [nextEvent, ...events],
         16
@@ -1027,6 +1029,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
       </section>
 
       <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.8fr)]">
+        <div className="space-y-4">
         <div className="rounded-xl border border-cyan-300/15 bg-slate-950/85 p-4 shadow-[0_0_45px_rgba(8,145,178,0.08)]">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
@@ -1078,6 +1081,8 @@ export function MissionControlShell({ state }: { state: LabState }) {
               detail={`${mt5ReadOnlyCandleCount.toLocaleString()} candles; execution none`}
             />
           </div>
+        </div>
+        <LLMAdvisoryReviewPanel snapshot={runtimeSnapshot} onAdvisoryEvent={addDataConnectionEvent} />
         </div>
 
         <div className="space-y-4">
