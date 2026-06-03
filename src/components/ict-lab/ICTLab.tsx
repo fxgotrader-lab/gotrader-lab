@@ -56,6 +56,7 @@ import {
   buildGrinchProfileEvidenceDiagnostics,
   calculateGrinchStrategyScore
 } from "@/lib/strategyLibrary";
+import { classifyMarketRegime } from "@/lib/regime";
 import type { Candle, MarketBias, MarketStructureEvent, SessionContext } from "@/lib/types";
 
 const formatTime = (timestamp: string) => timestamp.slice(11, 16);
@@ -256,15 +257,27 @@ export function ICTLab() {
     counts[session.session] = (counts[session.session] ?? 0) + 1;
     return counts;
   }, {});
+  const regimeClassification = useMemo(
+    () =>
+      classifyMarketRegime({
+        candles: activeCandles,
+        symbol: latestCandle?.symbol,
+        timeframe: latestCandle?.timeframe,
+        timestamp: latestCandle?.timestamp
+      }),
+    [activeCandles, latestCandle?.symbol, latestCandle?.timeframe, latestCandle?.timestamp]
+  );
   const grinchProfileDiagnostics = useMemo(
     () =>
       buildGrinchProfileEvidenceDiagnostics({
         phase1: analysis.grinchPhase1,
         reversal: analysis.grinchReversalProfile,
         consolidation: analysis.grinchConsolidationProfile,
-        score: analysis.grinchStrategyScore
+        score: analysis.grinchStrategyScore,
+        regimeLabel: regimeClassification.stableLabel,
+        regimeDataQuality: regimeClassification.dataQuality
       }),
-    [analysis]
+    [analysis, regimeClassification.dataQuality, regimeClassification.stableLabel]
   );
 
   useEffect(() => {
@@ -566,9 +579,9 @@ export function ICTLab() {
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <CardTitle>Grinch Profile Evidence</CardTitle>
+              <CardTitle>Grinch Profile Calibration Report</CardTitle>
               <CardDescription>
-                Explains why the latest ICT foundation did or did not become a Grinch-qualified setup.
+                Explains why the latest ICT foundation did or did not become a Grinch-qualified setup. No thresholds are changed here.
               </CardDescription>
             </div>
             <Badge variant={analysis.grinchStrategyScore.noValidProfile ? "warning" : "success"}>
@@ -577,6 +590,12 @@ export function ICTLab() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <InfoBox title="Primary finding" body={grinchProfileDiagnostics.calibrationReport.primaryFinding} />
+            <InfoBox title="Recommended first family" body={grinchProfileDiagnostics.calibrationReport.recommendedFirstFamily.replace(/_/g, " ")} />
+            <InfoBox title="Regime guidance" body={grinchProfileDiagnostics.calibrationReport.regimeGuidance} />
+            <InfoBox title="Session-local timing" body={grinchProfileDiagnostics.calibrationReport.sessionLocalTimeGuidance} />
+          </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <InfoBox title="No-valid-profile reason" body={grinchProfileDiagnostics.noValidProfileReason} />
             <InfoBox title="Timing window" body={grinchProfileDiagnostics.timingWindowStatus} />
@@ -597,32 +616,38 @@ export function ICTLab() {
               <thead className="bg-amber-300/10 text-amber-100">
                 <tr>
                   <th className="px-3 py-2 font-semibold">Profile</th>
-                  <th className="px-3 py-2 font-semibold">State / timing</th>
+                  <th className="px-3 py-2 font-semibold">Profile evidence</th>
+                  <th className="px-3 py-2 font-semibold">Timing status</th>
+                  <th className="px-3 py-2 font-semibold">Missing conditions</th>
+                  <th className="px-3 py-2 font-semibold">Near miss</th>
+                  <th className="px-3 py-2 font-semibold">First failed gate</th>
                   <th className="px-3 py-2 font-semibold">Candidates</th>
-                  <th className="px-3 py-2 font-semibold">Selectable</th>
-                  <th className="px-3 py-2 font-semibold">Gate reason</th>
-                  <th className="px-3 py-2 font-semibold">Missing evidence</th>
+                  <th className="px-3 py-2 font-semibold">Calibration family</th>
+                  <th className="px-3 py-2 font-semibold">Do-not-change notes</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-amber-300/10 bg-background/35 text-muted-foreground">
-                {grinchProfileDiagnostics.rows.map((row) => {
-                  const evidenceText =
-                    row.missingEvidence.slice(0, 3).join(" / ") || row.reasons.slice(0, 2).join(" / ") || "No missing evidence listed.";
+                {grinchProfileDiagnostics.calibrationReport.rows.map((row) => {
                   return (
                     <tr key={row.profile}>
                       <td className="px-3 py-2 font-medium text-foreground">{row.label}</td>
-                      <td className="px-3 py-2">
-                        {row.state.replace(/_/g, " ")} / {row.timingGrade.replace(/_/g, " ")}
-                      </td>
+                      <td className="px-3 py-2">{row.profileEvidence}</td>
+                      <td className="px-3 py-2">{row.timingStatus}</td>
+                      <td className="px-3 py-2">{row.missingConditions.join(" / ") || "No missing conditions listed."}</td>
+                      <td className="px-3 py-2 font-mono">{row.nearMissScore}/100</td>
+                      <td className="px-3 py-2">{row.firstFailedGate.replace(/_/g, " ")}</td>
                       <td className="px-3 py-2 font-mono">{row.candidateCount}</td>
-                      <td className="px-3 py-2">{row.selectable ? "yes" : "no"}</td>
-                      <td className="px-3 py-2">{row.blockReason}</td>
-                      <td className="px-3 py-2">{evidenceText}</td>
+                      <td className="px-3 py-2">{row.recommendedCalibrationFamily.replace(/_/g, " ")}</td>
+                      <td className="px-3 py-2">{row.doNotChangeNotes.join(" / ")}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+          </div>
+          <div className="rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-xs text-amber-100">
+            {grinchProfileDiagnostics.calibrationReport.timingWindowAssessment}{" "}
+            {grinchProfileDiagnostics.calibrationReport.doNotAutoApplyNotice}
           </div>
         </CardContent>
       </Card>

@@ -904,7 +904,9 @@ export function MissionControlShell({ state }: { state: LabState }) {
     consolidation: runtimeSnapshot?.latestResearchCycle.grinchPhase3ConsolidationSummary,
     score: latestGrinchScore,
     profileCandidateCounts: latestBacktest?.grinchSummary?.profileCandidateCounts,
-    noValidProfileCount: latestBacktest?.grinchSummary?.noValidProfileSignals
+    noValidProfileCount: latestBacktest?.grinchSummary?.noValidProfileSignals,
+    regimeLabel: runtimeSnapshot?.regime.label,
+    regimeDataQuality: runtimeSnapshot?.regime.dataQuality
   });
   const canonicalMetrics = runtimeSnapshot?.performance.canonicalPerformanceMetrics;
   const latestGrinchComparison = runtimeSnapshot?.latestResearchCycle.latestRun?.autoResearchCycle?.grinchComparison ?? latestAutoResearch?.grinchComparison;
@@ -1584,14 +1586,20 @@ export function MissionControlShell({ state }: { state: LabState }) {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300">Grinch Profile Diagnostics</p>
-                <h3 className="mt-1 text-base font-semibold text-slate-50">No-Valid-Profile Evidence</h3>
+                <h3 className="mt-1 text-base font-semibold text-slate-50">Grinch Profile Calibration Report</h3>
                 <p className="mt-1 text-sm text-slate-400">
-                  Latest-cycle evidence for Model 1, Reversal, and Consolidation. Thresholds and gates are unchanged.
+                  Profile-specific evidence gaps and research-only candidate families. Thresholds and gates are unchanged.
                 </p>
               </div>
               <Badge variant={latestGrinchScore?.noValidProfile ? "warning" : latestGrinchScore ? "success" : "secondary"}>
                 {latestGrinchScore?.noValidProfile ? "no valid profile" : latestGrinchScore ? "profile scored" : "not available"}
               </Badge>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <MiniReadout label="Primary finding" value={grinchProfileDiagnostics.calibrationReport.primaryFinding} detail={grinchProfileDiagnostics.calibrationReport.doNotAutoApplyNotice} />
+              <MiniReadout label="Recommended first family" value={grinchProfileDiagnostics.calibrationReport.recommendedFirstFamily.replace(/_/g, " ")} detail="Research-only calibration candidate" />
+              <MiniReadout label="Regime guidance" value={runtimeSnapshot?.regime.label.replace(/_/g, " ") ?? "unknown"} detail={grinchProfileDiagnostics.calibrationReport.regimeGuidance} />
+              <MiniReadout label="Session-local timing" value="required" detail={grinchProfileDiagnostics.calibrationReport.sessionLocalTimeGuidance} />
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <MiniReadout label="Hard gate" value={grinchProfileDiagnostics.hardGateReason} detail={grinchProfileDiagnostics.noValidProfileReason} />
@@ -1616,32 +1624,37 @@ export function MissionControlShell({ state }: { state: LabState }) {
                 <thead className="bg-amber-300/10 text-amber-100">
                   <tr>
                     <th className="px-3 py-2 font-semibold">Profile</th>
-                    <th className="px-3 py-2 font-semibold">State / timing</th>
+                    <th className="px-3 py-2 font-semibold">Profile evidence</th>
+                    <th className="px-3 py-2 font-semibold">Timing status</th>
+                    <th className="px-3 py-2 font-semibold">Missing conditions</th>
+                    <th className="px-3 py-2 font-semibold">Near miss</th>
+                    <th className="px-3 py-2 font-semibold">First failed gate</th>
                     <th className="px-3 py-2 font-semibold">Candidates</th>
-                    <th className="px-3 py-2 font-semibold">Selectable</th>
-                    <th className="px-3 py-2 font-semibold">Gate reason</th>
-                    <th className="px-3 py-2 font-semibold">Missing evidence</th>
+                    <th className="px-3 py-2 font-semibold">Calibration family</th>
+                    <th className="px-3 py-2 font-semibold">Do-not-change notes</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-amber-300/10 bg-slate-950/35 text-slate-300">
-                  {grinchProfileDiagnostics.rows.map((row) => {
-                    const evidenceText =
-                      row.missingEvidence.slice(0, 3).join(" / ") || row.reasons.slice(0, 2).join(" / ") || "No missing evidence listed.";
+                  {grinchProfileDiagnostics.calibrationReport.rows.map((row) => {
                     return (
                       <tr key={row.profile}>
                         <td className="px-3 py-2 font-semibold text-slate-100">{row.label}</td>
-                        <td className="px-3 py-2">
-                          {row.state.replace(/_/g, " ")} / {row.timingGrade.replace(/_/g, " ")}
-                        </td>
+                        <td className="px-3 py-2">{row.profileEvidence}</td>
+                        <td className="px-3 py-2">{row.timingStatus}</td>
+                        <td className="px-3 py-2">{row.missingConditions.join(" / ") || "No missing conditions listed."}</td>
+                        <td className="px-3 py-2 font-mono">{row.nearMissScore}/100</td>
+                        <td className="px-3 py-2">{row.firstFailedGate.replace(/_/g, " ")}</td>
                         <td className="px-3 py-2 font-mono">{row.candidateCount.toLocaleString()}</td>
-                        <td className="px-3 py-2">{row.selectable ? "yes" : "no"}</td>
-                        <td className="px-3 py-2">{row.blockReason}</td>
-                        <td className="px-3 py-2">{evidenceText}</td>
+                        <td className="px-3 py-2">{row.recommendedCalibrationFamily.replace(/_/g, " ")}</td>
+                        <td className="px-3 py-2">{row.doNotChangeNotes.join(" / ")}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
+            </div>
+            <div className="mt-3 rounded-lg border border-amber-300/15 bg-amber-300/10 p-3 text-xs text-amber-100">
+              {grinchProfileDiagnostics.calibrationReport.timingWindowAssessment}
             </div>
           </section>
           <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
