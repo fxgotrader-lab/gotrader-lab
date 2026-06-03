@@ -37,6 +37,10 @@ export {
   runLocalBridgeAdvisory
 } from "@/lib/llm/localBridgeClient";
 export type {
+  LocalBridgeAdvisoryCapabilityStatus,
+  LocalBridgeCircuitBreakerStatus,
+  LocalBridgeHealthResult,
+  LocalBridgeProcessStatus,
   LocalBridgeRunResult,
   LocalBridgeRunUnavailableResult,
   LocalBridgeStatusSnapshot,

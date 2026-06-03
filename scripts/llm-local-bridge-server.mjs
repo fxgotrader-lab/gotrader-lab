@@ -7,6 +7,7 @@ import path from "node:path";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 8787;
+const DEFAULT_MODEL = "gpt-5.5";
 const PROVIDER_SCRIPT = path.join("scripts", "gpt55-llm-agent-provider.mjs");
 const LATEST_RESPONSE_FILE = path.join("llm", "responses", "latest-llm-response.json");
 const allowedOrigins = new Set(
@@ -16,14 +17,33 @@ const allowedOrigins = new Set(
   ])
 );
 
-const healthPayload = {
-  status: "ok",
-  service: "gotrader_llm_bridge",
-  mode: "advisory_only",
-  executionAuthority: "none",
-  brokerAuthority: "none",
-  readinessOverrideAuthority: "none"
-};
+function healthPayload() {
+  const advisoryProviderConfigured = Boolean(process.env.OPENAI_API_KEY);
+  const model = process.env.GOTRADER_LLM_MODEL || DEFAULT_MODEL;
+  const modelConfigured = Boolean(model);
+  const advisoryEndpointAvailable = true;
+  const advisoryCapabilityStatus =
+    advisoryProviderConfigured && modelConfigured && advisoryEndpointAvailable ? "ready" : "config_missing";
+  return {
+    status: "ok",
+    service: "gotrader_llm_bridge",
+    mode: "advisory_only",
+    bridgeProcessStatus: "online",
+    advisoryCapabilityStatus,
+    advisoryEndpointAvailable,
+    advisoryProviderConfigured,
+    modelConfigured,
+    model,
+    statusMessage:
+      advisoryCapabilityStatus === "ready"
+        ? "LLM advisory bridge is online and the advisory provider is configured."
+        : "LLM advisory bridge is online, but OPENAI_API_KEY is not configured for POST /llm/run-advisory.",
+    healthCheckedAt: new Date().toISOString(),
+    executionAuthority: "none",
+    brokerAuthority: "none",
+    readinessOverrideAuthority: "none"
+  };
+}
 
 function parseArgs(argv) {
   const valueAfter = (flag) => {
@@ -222,6 +242,11 @@ async function handleRunAdvisory(request, response, origin) {
       {
         error: "Local LLM bridge is missing OPENAI_API_KEY.",
         errorPath,
+        bridgeProcessStatus: "online",
+        advisoryCapabilityStatus: "config_missing",
+        advisoryEndpointAvailable: true,
+        advisoryProviderConfigured: false,
+        modelConfigured: true,
         mode: "advisory_only",
         executionAuthority: "none",
         brokerAuthority: "none",
@@ -290,7 +315,7 @@ async function handleRequest(request, response) {
   const requestUrl = new URL(request.url ?? "/", `http://${host || `${DEFAULT_HOST}:${DEFAULT_PORT}`}`);
 
   if (request.method === "GET" && requestUrl.pathname === "/health") {
-    sendJson(response, 200, healthPayload, origin);
+    sendJson(response, 200, healthPayload(), origin);
     return;
   }
 
@@ -302,7 +327,7 @@ async function handleRequest(request, response) {
         status: "ok",
         message: "GoTrader AI Lab local LLM bridge is running. Use POST /llm/run-advisory.",
         health: "/health",
-        ...healthPayload
+        ...healthPayload()
       },
       origin
     );

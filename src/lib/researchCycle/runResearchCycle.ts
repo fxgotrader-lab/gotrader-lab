@@ -917,6 +917,10 @@ export async function runResearchCycle({
       try {
         const bridgeResult = await runLocalBridgeAdvisory(llmPacket);
         if (bridgeResult.advisoryStatus === "unavailable") {
+          const advisoryUnavailableSummary =
+            bridgeResult.reason === "bridge_offline"
+              ? "LLM advisory bridge offline. Deterministic research continued; advisory unavailable."
+              : "LLM advisory unavailable. Deterministic research continued.";
           run.llmBridgeAvailable = false;
           run.llmAdvisoryUnavailable = true;
           run.llmAdvisoryUnavailableReason = bridgeResult.reason;
@@ -926,7 +930,7 @@ export async function runResearchCycle({
             warnings: bridgeResult.warnings
           });
           warnStep("llm_advisory", {
-            summary: "LLM advisory bridge offline. Deterministic research continued; advisory unavailable.",
+            summary: advisoryUnavailableSummary,
             warning: bridgeResult.warnings.join(" ")
           });
         } else {

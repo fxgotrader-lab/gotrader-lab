@@ -7,10 +7,15 @@ import { Button } from "@/components/ui/button";
 import {
   checkLocalBridgeHealth,
   getLocalBridgeStatusSnapshot,
+  LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS,
+  LLM_LOCAL_BRIDGE_BASE_URL,
   resetLocalBridgeCircuitBreaker,
   runLocalBridgeAdvisory,
   type LLMAgentResponse,
   type LLMResearchContextPacket,
+  type LocalBridgeAdvisoryCapabilityStatus,
+  type LocalBridgeCircuitBreakerStatus,
+  type LocalBridgeProcessStatus,
   type LocalBridgeUnavailableReason
 } from "@/lib/llm";
 import type { ResearchRuntimeSnapshot } from "@/lib/runtime";
@@ -20,6 +25,9 @@ import { formatDateTime } from "./dashboardFormatters";
 import type { MissionFeedItem } from "./MissionControlDataFeed";
 
 type AdvisoryStatus = "unknown" | "online" | "offline" | "unavailable" | "skipped" | "error" | "checking" | "running";
+type PanelBridgeProcessStatus = LocalBridgeProcessStatus | "checking";
+type PanelAdvisoryCapabilityStatus = LocalBridgeAdvisoryCapabilityStatus | "unknown" | "running" | "skipped";
+type PanelCircuitBreakerStatus = LocalBridgeCircuitBreakerStatus;
 
 type AdvisoryMessage = {
   id: string;
@@ -31,11 +39,18 @@ type AdvisoryMessage = {
 type LastAdvisoryPayload = {
   packetId?: string;
   status: AdvisoryStatus;
+  bridgeProcessStatus?: PanelBridgeProcessStatus;
+  advisoryCapabilityStatus?: PanelAdvisoryCapabilityStatus;
+  circuitBreakerStatus?: PanelCircuitBreakerStatus;
   question?: string;
   reason?: LocalBridgeUnavailableReason | "unsafe_request" | "validation";
   responses?: LLMAgentResponse[];
   warnings?: string[];
   checkedAt: string;
+  lastHealthCheckAt?: string;
+  lastAdvisoryRequestAt?: string;
+  lastError?: string;
+  cooldownRemainingMs?: number;
 };
 
 const authority = {
@@ -54,16 +69,57 @@ const promptButtons = [
 const unsafeRequestPattern =
   /\b(place|send|submit|execute|buy|sell|open|close|modify|cancel|route|enable)\b.*\b(trade|order|position|live|broker|market)\b/i;
 
-const statusBadgeVariant = (status: AdvisoryStatus) =>
-  status === "online"
-    ? "success"
-    : status === "offline" || status === "unavailable" || status === "error"
-      ? "warning"
-      : status === "running" || status === "checking"
-        ? "secondary"
-        : "muted";
+const shortStatus = (status: string) => status.replace(/_/g, " ");
 
-const shortStatus = (status: AdvisoryStatus) => status.replace(/_/g, " ");
+const processBadgeVariant = (status: PanelBridgeProcessStatus) =>
+  status === "online" ? "success" : status === "offline" ? "warning" : "secondary";
+
+const advisoryBadgeVariant = (status: PanelAdvisoryCapabilityStatus) =>
+  status === "ready"
+    ? "success"
+    : status === "config_missing" || status === "timeout" || status === "cooldown" || status === "error" || status === "unavailable"
+      ? "warning"
+      : "secondary";
+
+const circuitBadgeVariant = (status: PanelCircuitBreakerStatus) =>
+  status === "closed" ? "success" : "warning";
+
+const advisoryMessageForUnavailable = (
+  reason: LocalBridgeUnavailableReason,
+  warnings: string[],
+  bridgeProcessStatus: PanelBridgeProcessStatus
+) => {
+  const detail = warnings.filter(Boolean).join(" ");
+  if (reason === "bridge_offline") {
+    return "LLM advisory bridge offline. Start npm.cmd run llm:bridge. Deterministic research remains available.";
+  }
+  if (reason === "circuit_open") {
+    return `LLM bridge ${bridgeProcessStatus === "online" ? "online, but " : ""}advisory retry paused after a recent failure. ${detail}`;
+  }
+  if (reason === "timeout") {
+    return `LLM advisory timed out. Deterministic research remains available. ${detail}`;
+  }
+  if (reason === "config_missing") {
+    return `LLM bridge online, but advisory provider/model is not configured. ${detail}`;
+  }
+  return `${bridgeProcessStatus === "online" ? "Bridge online, advisory request failed" : "LLM advisory unavailable"}: ${detail}`;
+};
+
+const capabilityFromUnavailableReason = (reason: LocalBridgeUnavailableReason): PanelAdvisoryCapabilityStatus => {
+  if (reason === "timeout") {
+    return "timeout";
+  }
+  if (reason === "circuit_open") {
+    return "cooldown";
+  }
+  if (reason === "config_missing") {
+    return "config_missing";
+  }
+  if (reason === "bridge_offline") {
+    return "unavailable";
+  }
+  return "error";
+};
 
 const summarizeReviewerResponses = (responses: LLMAgentResponse[]) => {
   const cio = responses.find((response) => response.agentId === "llm-cio-synthesis-reviewer") ?? responses[0];
@@ -224,12 +280,25 @@ export function LLMAdvisoryReviewPanel({
 }) {
   const bridgeSnapshot = useMemo(() => getLocalBridgeStatusSnapshot(), [snapshot?.generatedAt]);
   const initialStatus: AdvisoryStatus =
-    snapshot?.llm.bridgeStatus === "running" || snapshot?.llm.advisoryPassed
+    snapshot?.llm.advisoryPassed || bridgeSnapshot.advisoryCapabilityStatus === "ready"
       ? "online"
       : bridgeSnapshot.status === "offline"
         ? "offline"
         : "unknown";
+  const initialBridgeProcessStatus: PanelBridgeProcessStatus =
+    bridgeSnapshot.bridgeProcessStatus === "online" || snapshot?.llm.bridgeStatus === "running"
+      ? "online"
+      : bridgeSnapshot.bridgeProcessStatus === "offline"
+        ? "offline"
+        : "unknown";
+  const initialAdvisoryCapabilityStatus: PanelAdvisoryCapabilityStatus =
+    bridgeSnapshot.advisoryCapabilityStatus === "unknown" && snapshot?.llm.advisoryPassed
+      ? "ready"
+      : bridgeSnapshot.advisoryCapabilityStatus;
   const [status, setStatus] = useState<AdvisoryStatus>(initialStatus);
+  const [bridgeProcessStatus, setBridgeProcessStatus] = useState<PanelBridgeProcessStatus>(initialBridgeProcessStatus);
+  const [advisoryCapabilityStatus, setAdvisoryCapabilityStatus] = useState<PanelAdvisoryCapabilityStatus>(initialAdvisoryCapabilityStatus);
+  const [circuitBreakerStatus, setCircuitBreakerStatus] = useState<PanelCircuitBreakerStatus>(bridgeSnapshot.circuitBreakerStatus);
   const [input, setInput] = useState("Explain this cycle");
   const [busy, setBusy] = useState(false);
   const [messages, setMessages] = useState<AdvisoryMessage[]>([
@@ -244,8 +313,12 @@ export function LLMAdvisoryReviewPanel({
   ]);
   const [lastPayload, setLastPayload] = useState<LastAdvisoryPayload>({
     status: initialStatus,
+    bridgeProcessStatus: initialBridgeProcessStatus,
+    advisoryCapabilityStatus: initialAdvisoryCapabilityStatus,
+    circuitBreakerStatus: bridgeSnapshot.circuitBreakerStatus,
     checkedAt: new Date().toISOString(),
-    reason: bridgeSnapshot.reason
+    reason: bridgeSnapshot.reason,
+    cooldownRemainingMs: bridgeSnapshot.cooldownRemainingMs
   });
 
   const latestRun = snapshot?.latestResearchCycle.latestRun;
@@ -281,25 +354,49 @@ export function LLMAdvisoryReviewPanel({
   const checkBridge = async () => {
     setBusy(true);
     setStatus("checking");
+    setBridgeProcessStatus("checking");
     try {
-      resetLocalBridgeCircuitBreaker();
-      const health = await checkLocalBridgeHealth();
-      setStatus("online");
+      const health = await checkLocalBridgeHealth(undefined, { bypassCircuitBreaker: true });
+      const nextStatus = health.advisoryCapabilityStatus === "ready" ? "online" : "unavailable";
+      setStatus(nextStatus);
+      setBridgeProcessStatus("online");
+      setAdvisoryCapabilityStatus(health.advisoryCapabilityStatus);
+      setCircuitBreakerStatus(health.advisoryCapabilityStatus === "ready" ? "closed" : getLocalBridgeStatusSnapshot().circuitBreakerStatus);
       setLastPayload({
-        status: "online",
+        status: nextStatus,
+        bridgeProcessStatus: "online",
+        advisoryCapabilityStatus: health.advisoryCapabilityStatus,
+        circuitBreakerStatus: health.advisoryCapabilityStatus === "ready" ? "closed" : getLocalBridgeStatusSnapshot().circuitBreakerStatus,
         checkedAt: new Date().toISOString(),
-        warnings: [`${health.service} ${health.mode}`]
+        lastHealthCheckAt: health.healthCheckedAt,
+        warnings: [`${health.service} ${health.mode}`, health.statusMessage ?? ""].filter(Boolean)
       });
-      appendMessage("system", "LLM advisory bridge online. Advisory review remains explanation-only.");
-      onAdvisoryEvent?.("LLM advisory bridge online", "Advisory bridge health check passed. Execution authority remains none.", "success");
+      const message =
+        health.advisoryCapabilityStatus === "ready"
+          ? "LLM advisory bridge ready. Advisory review remains explanation-only."
+          : health.statusMessage ?? "LLM bridge process is online, but advisory readiness is unavailable.";
+      appendMessage("system", message);
+      onAdvisoryEvent?.(
+        health.advisoryCapabilityStatus === "ready" ? "LLM advisory ready" : "LLM advisory unavailable",
+        message,
+        health.advisoryCapabilityStatus === "ready" ? "success" : "warning"
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : "LLM advisory bridge is offline.";
       setStatus("offline");
+      setBridgeProcessStatus("offline");
+      setAdvisoryCapabilityStatus("unavailable");
+      setCircuitBreakerStatus(getLocalBridgeStatusSnapshot().circuitBreakerStatus);
       setLastPayload({
         status: "offline",
+        bridgeProcessStatus: "offline",
+        advisoryCapabilityStatus: "unavailable",
+        circuitBreakerStatus: getLocalBridgeStatusSnapshot().circuitBreakerStatus,
         checkedAt: new Date().toISOString(),
         reason: "bridge_offline",
-        warnings: [message]
+        warnings: [message],
+        lastError: message,
+        cooldownRemainingMs: getLocalBridgeStatusSnapshot().cooldownRemainingMs
       });
       appendMessage("system", "LLM advisory bridge offline. Deterministic research remains available.");
       onAdvisoryEvent?.("LLM advisory bridge offline", message, "warning");
@@ -308,7 +405,7 @@ export function LLMAdvisoryReviewPanel({
     }
   };
 
-  const askAdvisor = async (question = input) => {
+  const askAdvisor = async (question = input, options: { bypassCooldown?: boolean } = {}) => {
     const trimmedQuestion = question.trim();
     if (!trimmedQuestion) {
       return;
@@ -318,8 +415,12 @@ export function LLMAdvisoryReviewPanel({
     if (unsafeRequestPattern.test(trimmedQuestion)) {
       const refusal = "Execution is disabled. This advisor can explain research, blockers, and next tests only; it cannot place trades or control readiness.";
       setStatus("skipped");
+      setAdvisoryCapabilityStatus("skipped");
       setLastPayload({
         status: "skipped",
+        bridgeProcessStatus,
+        advisoryCapabilityStatus: "skipped",
+        circuitBreakerStatus,
         checkedAt: new Date().toISOString(),
         question: trimmedQuestion,
         reason: "unsafe_request",
@@ -338,31 +439,58 @@ export function LLMAdvisoryReviewPanel({
 
     setBusy(true);
     setStatus("running");
+    setAdvisoryCapabilityStatus("running");
     try {
       const packet = buildAdvisoryPacket(snapshot, trimmedQuestion);
-      const result = await runLocalBridgeAdvisory(packet);
+      const result = await runLocalBridgeAdvisory(packet, undefined, { bypassCircuitBreaker: options.bypassCooldown });
       if (result.advisoryStatus === "unavailable") {
         const warning = result.warnings.join(" ");
-        setStatus(result.reason === "bridge_offline" || result.reason === "timeout" || result.reason === "circuit_open" ? "offline" : "unavailable");
+        const statusSnapshot = getLocalBridgeStatusSnapshot();
+        const nextBridgeProcessStatus: PanelBridgeProcessStatus =
+          result.reason === "bridge_offline" ? "offline" : statusSnapshot.bridgeProcessStatus === "offline" ? "offline" : "online";
+        const nextAdvisoryCapabilityStatus = capabilityFromUnavailableReason(result.reason);
+        setStatus(result.reason === "bridge_offline" ? "offline" : "unavailable");
+        setBridgeProcessStatus(nextBridgeProcessStatus);
+        setAdvisoryCapabilityStatus(nextAdvisoryCapabilityStatus);
+        setCircuitBreakerStatus(statusSnapshot.circuitBreakerStatus);
         setLastPayload({
           packetId: packet.packetId,
           status: "unavailable",
+          bridgeProcessStatus: nextBridgeProcessStatus,
+          advisoryCapabilityStatus: nextAdvisoryCapabilityStatus,
+          circuitBreakerStatus: statusSnapshot.circuitBreakerStatus,
           checkedAt: new Date().toISOString(),
+          lastAdvisoryRequestAt: new Date().toISOString(),
           question: trimmedQuestion,
           reason: result.reason,
-          warnings: result.warnings
+          warnings: result.warnings,
+          lastError: warning,
+          cooldownRemainingMs: statusSnapshot.cooldownRemainingMs
         });
-        appendMessage("assistant", "LLM advisory bridge offline. Deterministic research remains available.");
-        onAdvisoryEvent?.("LLM advisory bridge offline", warning, "warning", result.offlineUntil);
+        const message = advisoryMessageForUnavailable(result.reason, result.warnings, nextBridgeProcessStatus);
+        appendMessage("assistant", message);
+        onAdvisoryEvent?.(
+          result.reason === "bridge_offline" ? "LLM advisory bridge offline" : "LLM advisory unavailable",
+          message,
+          "warning",
+          result.offlineUntil
+        );
         return;
       }
 
       const summary = summarizeReviewerResponses(result.responses);
       setStatus("online");
+      setBridgeProcessStatus("online");
+      setAdvisoryCapabilityStatus("ready");
+      setCircuitBreakerStatus("closed");
       setLastPayload({
         packetId: packet.packetId,
         status: "online",
+        bridgeProcessStatus: "online",
+        advisoryCapabilityStatus: "ready",
+        circuitBreakerStatus: "closed",
         checkedAt: new Date().toISOString(),
+        lastAdvisoryRequestAt: new Date().toISOString(),
         question: trimmedQuestion,
         responses: result.responses,
         warnings: summary.topBlockers
@@ -380,14 +508,19 @@ export function LLMAdvisoryReviewPanel({
     } catch (error) {
       const message = error instanceof Error ? error.message : "LLM advisory request failed.";
       setStatus("error");
+      setAdvisoryCapabilityStatus("error");
       setLastPayload({
         status: "error",
+        bridgeProcessStatus,
+        advisoryCapabilityStatus: "error",
+        circuitBreakerStatus: getLocalBridgeStatusSnapshot().circuitBreakerStatus,
         checkedAt: new Date().toISOString(),
         question: trimmedQuestion,
         reason: "request_failed",
-        warnings: [message]
+        warnings: [message],
+        lastError: message
       });
-      appendMessage("assistant", "LLM advisory bridge unavailable. Deterministic research continued; advisory unavailable.");
+      appendMessage("assistant", `Bridge ${bridgeProcessStatus === "online" ? "online, but " : ""}advisory request failed: ${message}`);
       onAdvisoryEvent?.("LLM advisory unavailable", message, "warning");
     } finally {
       setBusy(false);
@@ -408,13 +541,18 @@ export function LLMAdvisoryReviewPanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Badge variant={statusBadgeVariant(status)}>{shortStatus(status)}</Badge>
+          <Badge variant={processBadgeVariant(bridgeProcessStatus)}>Bridge {shortStatus(bridgeProcessStatus)}</Badge>
+          <Badge variant={advisoryBadgeVariant(advisoryCapabilityStatus)}>Advisory {shortStatus(advisoryCapabilityStatus)}</Badge>
+          <Badge variant={circuitBadgeVariant(circuitBreakerStatus)}>Circuit {shortStatus(circuitBreakerStatus)}</Badge>
           <Badge variant="danger">execution none</Badge>
           <Badge variant="secondary">readiness override none</Badge>
         </div>
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <MiniAdvisoryReadout label="Bridge process" value={bridgeProcessStatus.replace(/_/g, " ")} />
+        <MiniAdvisoryReadout label="Advisory capability" value={advisoryCapabilityStatus.replace(/_/g, " ")} />
+        <MiniAdvisoryReadout label="Circuit breaker" value={circuitBreakerStatus.replace(/_/g, " ")} />
         <MiniAdvisoryReadout label="Source context" value={sourceContext} />
         <MiniAdvisoryReadout
           label="Regime / profile"
@@ -489,10 +627,34 @@ export function LLMAdvisoryReviewPanel({
           Check bridge
         </Button>
       </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => void askAdvisor(input || "Explain this cycle", { bypassCooldown: true })}
+          disabled={busy || !input.trim()}
+          title="Reset the local advisory cooldown and attempt one advisory request."
+        >
+          Retry advisory
+        </Button>
+        <span className="self-center text-xs text-slate-500">
+          Retry bypasses cooldown once; it still cannot change readiness or execution state.
+        </span>
+      </div>
 
-      {status === "offline" || status === "unavailable" ? (
+      {status === "offline" || status === "unavailable" || advisoryCapabilityStatus !== "ready" ? (
         <div className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
-          LLM advisory bridge offline. Deterministic research remains available.
+          {bridgeProcessStatus === "offline"
+            ? "LLM advisory bridge offline. Start npm.cmd run llm:bridge. Deterministic research remains available."
+            : advisoryCapabilityStatus === "config_missing"
+              ? "LLM bridge online, but advisory provider/model is not configured. Deterministic research remains available."
+              : advisoryCapabilityStatus === "cooldown"
+                ? "LLM bridge online, advisory retry paused after a recent failure. Use Retry advisory for one explicit attempt."
+                : advisoryCapabilityStatus === "timeout"
+                  ? "LLM advisory timed out. Deterministic research remains available."
+                  : advisoryCapabilityStatus === "error" || advisoryCapabilityStatus === "unavailable"
+                    ? "LLM bridge process may be online, but advisory is unavailable. Deterministic research remains available."
+                    : "LLM advisory status is not ready yet. Deterministic research remains available."}
         </div>
       ) : null}
 
@@ -508,9 +670,18 @@ export function LLMAdvisoryReviewPanel({
       >
         <div className="grid gap-3 md:grid-cols-2">
           <MiniAdvisoryReadout label="Last checked" value={formatDateTime(lastPayload.checkedAt)} />
+          <MiniAdvisoryReadout label="Bridge URL" value={LLM_LOCAL_BRIDGE_BASE_URL} />
+          <MiniAdvisoryReadout label="Timeout" value={`${LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS}ms`} />
+          <MiniAdvisoryReadout label="Last health" value={lastPayload.lastHealthCheckAt ? formatDateTime(lastPayload.lastHealthCheckAt) : "none"} />
+          <MiniAdvisoryReadout label="Last advisory request" value={lastPayload.lastAdvisoryRequestAt ? formatDateTime(lastPayload.lastAdvisoryRequestAt) : "none"} />
+          <MiniAdvisoryReadout label="Bridge process" value={lastPayload.bridgeProcessStatus?.replace(/_/g, " ") ?? bridgeProcessStatus} />
+          <MiniAdvisoryReadout label="Advisory capability" value={lastPayload.advisoryCapabilityStatus?.replace(/_/g, " ") ?? advisoryCapabilityStatus} />
+          <MiniAdvisoryReadout label="Circuit breaker" value={lastPayload.circuitBreakerStatus?.replace(/_/g, " ") ?? circuitBreakerStatus} />
+          <MiniAdvisoryReadout label="Cooldown remaining" value={`${Math.ceil((lastPayload.cooldownRemainingMs ?? 0) / 1000)}s`} />
           <MiniAdvisoryReadout label="Packet" value={lastPayload.packetId ?? "none"} />
           <MiniAdvisoryReadout label="Question" value={lastPayload.question ?? "none"} />
           <MiniAdvisoryReadout label="Reason" value={lastPayload.reason?.replace(/_/g, " ") ?? "none"} />
+          <MiniAdvisoryReadout label="Last error" value={lastPayload.lastError ?? "none"} />
           <MiniAdvisoryReadout label="Responses" value={String(lastPayload.responses?.length ?? 0)} />
           <MiniAdvisoryReadout label="Warnings" value={safeArray(lastPayload.warnings).join(" / ") || "none"} />
         </div>

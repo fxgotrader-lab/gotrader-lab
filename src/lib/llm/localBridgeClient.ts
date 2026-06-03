@@ -7,10 +7,28 @@ export const LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS = 2000;
 export const LLM_LOCAL_BRIDGE_HEALTH_TIMEOUT_MS = 1200;
 export const LLM_LOCAL_BRIDGE_OFFLINE_COOLDOWN_MS = 60_000;
 
+export type LocalBridgeProcessStatus = "online" | "offline" | "unknown";
+export type LocalBridgeAdvisoryCapabilityStatus =
+  | "ready"
+  | "unavailable"
+  | "timeout"
+  | "config_missing"
+  | "error"
+  | "cooldown";
+export type LocalBridgeCircuitBreakerStatus = "open" | "closed" | "cooldown";
+
 export interface LocalBridgeHealthResult {
   status: "ok";
   service: "gotrader_llm_bridge";
   mode: "advisory_only";
+  bridgeProcessStatus: LocalBridgeProcessStatus;
+  advisoryCapabilityStatus: LocalBridgeAdvisoryCapabilityStatus;
+  advisoryEndpointAvailable: boolean;
+  advisoryProviderConfigured: boolean;
+  modelConfigured: boolean;
+  model?: string;
+  statusMessage?: string;
+  healthCheckedAt?: string;
   executionAuthority: "none";
   brokerAuthority: "none";
   readinessOverrideAuthority: "none";
@@ -20,15 +38,20 @@ export type LocalBridgeUnavailableReason =
   | "bridge_offline"
   | "timeout"
   | "circuit_open"
+  | "config_missing"
   | "request_failed"
   | "invalid_response";
 
 export interface LocalBridgeStatusSnapshot {
   status: "available" | "offline" | "unknown";
+  bridgeProcessStatus: LocalBridgeProcessStatus;
+  advisoryCapabilityStatus: LocalBridgeAdvisoryCapabilityStatus | "unknown";
+  circuitBreakerStatus: LocalBridgeCircuitBreakerStatus;
   reason?: LocalBridgeUnavailableReason;
   message?: string;
   lastCheckedAt?: string;
   offlineUntil?: string;
+  cooldownRemainingMs?: number;
 }
 
 export interface LocalBridgeRunSuccessResult {
@@ -51,6 +74,8 @@ let offlineUntilMs = 0;
 let offlineReason: LocalBridgeUnavailableReason | undefined;
 let offlineMessage: string | undefined;
 let lastCheckedAt: string | undefined;
+let lastKnownBridgeProcessStatus: LocalBridgeProcessStatus = "unknown";
+let lastKnownAdvisoryCapabilityStatus: LocalBridgeAdvisoryCapabilityStatus | "unknown" = "unknown";
 
 const nowMs = () => Date.now();
 
@@ -59,6 +84,25 @@ const isoOrUndefined = (value: number) => (value > 0 ? new Date(value).toISOStri
 const isCircuitOpen = () => offlineUntilMs > nowMs();
 
 const abortErrorName = "AbortError";
+
+const userWarningFor = (reason: LocalBridgeUnavailableReason, message: string) => {
+  switch (reason) {
+    case "bridge_offline":
+      return "LLM advisory bridge offline. Start npm.cmd run llm:bridge.";
+    case "timeout":
+      return "LLM advisory timed out. Deterministic research remains available.";
+    case "circuit_open":
+      return "LLM bridge advisory retry is paused after a recent failure.";
+    case "config_missing":
+      return "LLM bridge online, but advisory provider/model is not configured.";
+    case "invalid_response":
+      return "LLM bridge online, but advisory response was invalid.";
+    case "request_failed":
+      return "LLM bridge online, but advisory request failed.";
+    default:
+      return message;
+  }
+};
 
 const unavailableResult = (
   reason: LocalBridgeUnavailableReason,
@@ -70,13 +114,20 @@ const unavailableResult = (
     offlineUntilMs = Math.max(offlineUntilMs, nowMs() + cooldownMs);
     offlineReason = reason;
     offlineMessage = message;
+    lastKnownAdvisoryCapabilityStatus = reason === "timeout" ? "timeout" : reason === "circuit_open" ? "cooldown" : "unavailable";
+    lastKnownBridgeProcessStatus = reason === "bridge_offline" ? "offline" : lastKnownBridgeProcessStatus;
+  } else {
+    offlineReason = reason;
+    offlineMessage = message;
+    lastKnownBridgeProcessStatus = "online";
+    lastKnownAdvisoryCapabilityStatus = reason === "config_missing" ? "config_missing" : reason === "invalid_response" ? "error" : "error";
   }
   return {
     advisoryStatus: "unavailable",
     reason,
     confidence: 0,
     warnings: [
-      "LLM advisory bridge offline. Deterministic research continued; advisory unavailable.",
+      userWarningFor(reason, message),
       message
     ],
     offlineUntil: isoOrUndefined(offlineUntilMs)
@@ -97,21 +148,30 @@ const fetchWithTimeout = async (endpoint: string, init: RequestInit, timeoutMs: 
 };
 
 export function getLocalBridgeStatusSnapshot(): LocalBridgeStatusSnapshot {
+  const cooldownRemainingMs = Math.max(0, offlineUntilMs - nowMs());
   if (isCircuitOpen()) {
     return {
       status: "offline",
+      bridgeProcessStatus: lastKnownBridgeProcessStatus,
+      advisoryCapabilityStatus: "cooldown",
+      circuitBreakerStatus: "cooldown",
       reason: offlineReason ?? "circuit_open",
       message: offlineMessage ?? "Local LLM advisory bridge is in offline cooldown.",
       lastCheckedAt,
-      offlineUntil: isoOrUndefined(offlineUntilMs)
+      offlineUntil: isoOrUndefined(offlineUntilMs),
+      cooldownRemainingMs
     };
   }
   return {
-    status: offlineReason ? "unknown" : "unknown",
+    status: lastKnownAdvisoryCapabilityStatus === "ready" ? "available" : offlineReason ? "unknown" : "unknown",
+    bridgeProcessStatus: lastKnownBridgeProcessStatus,
+    advisoryCapabilityStatus: lastKnownAdvisoryCapabilityStatus,
+    circuitBreakerStatus: "closed",
     reason: offlineReason,
     message: offlineMessage,
     lastCheckedAt,
-    offlineUntil: isoOrUndefined(offlineUntilMs)
+    offlineUntil: isoOrUndefined(offlineUntilMs),
+    cooldownRemainingMs
   };
 }
 
@@ -119,12 +179,16 @@ export function resetLocalBridgeCircuitBreaker() {
   offlineUntilMs = 0;
   offlineReason = undefined;
   offlineMessage = undefined;
+  if (lastKnownAdvisoryCapabilityStatus === "cooldown") {
+    lastKnownAdvisoryCapabilityStatus = "unknown";
+  }
 }
 
 export async function checkLocalBridgeHealth(
-  endpoint = LLM_LOCAL_BRIDGE_HEALTH_URL
+  endpoint = LLM_LOCAL_BRIDGE_HEALTH_URL,
+  options: { bypassCircuitBreaker?: boolean } = {}
 ): Promise<LocalBridgeHealthResult> {
-  if (isCircuitOpen()) {
+  if (isCircuitOpen() && !options.bypassCircuitBreaker) {
     throw new Error(
       `Local LLM bridge is offline; skipping health check until ${isoOrUndefined(offlineUntilMs) ?? "cooldown ends"}.`
     );
@@ -177,15 +241,62 @@ export async function checkLocalBridgeHealth(
     throw new Error("Local LLM bridge health check returned an unsafe or unexpected payload.");
   }
 
-  resetLocalBridgeCircuitBreaker();
+  const advisoryProviderConfigured = Boolean(health.advisoryProviderConfigured);
+  const advisoryEndpointAvailable = health.advisoryEndpointAvailable !== false;
+  const modelConfigured = health.modelConfigured !== false;
+  const advisoryCapabilityStatus =
+    health.advisoryCapabilityStatus ??
+    (health.advisoryProviderConfigured === undefined
+      ? "unavailable"
+      : !advisoryProviderConfigured || !modelConfigured
+        ? "config_missing"
+        : advisoryEndpointAvailable
+          ? "ready"
+          : "unavailable");
+  const normalizedHealth: LocalBridgeHealthResult = {
+    ...health,
+    status: "ok",
+    service: "gotrader_llm_bridge",
+    mode: "advisory_only",
+    bridgeProcessStatus: "online",
+    advisoryCapabilityStatus,
+    advisoryEndpointAvailable,
+    advisoryProviderConfigured,
+    modelConfigured,
+    model: health.model,
+    statusMessage:
+      health.statusMessage ??
+      (advisoryCapabilityStatus === "ready"
+        ? "LLM bridge process is online and advisory provider is configured."
+        : health.advisoryProviderConfigured === undefined
+          ? "LLM bridge process is online, but this bridge did not report advisory readiness. Restart npm.cmd run llm:bridge to expose provider diagnostics."
+          : "LLM bridge process is online, but advisory provider/model is not configured."),
+    healthCheckedAt: health.healthCheckedAt ?? new Date().toISOString(),
+    executionAuthority: "none",
+    brokerAuthority: "none",
+    readinessOverrideAuthority: "none"
+  };
+
+  lastKnownBridgeProcessStatus = "online";
+  lastKnownAdvisoryCapabilityStatus = normalizedHealth.advisoryCapabilityStatus;
+  if (normalizedHealth.advisoryCapabilityStatus === "ready") {
+    resetLocalBridgeCircuitBreaker();
+  } else {
+    offlineReason = normalizedHealth.advisoryCapabilityStatus === "config_missing" ? "config_missing" : "request_failed";
+    offlineMessage = normalizedHealth.statusMessage;
+  }
   lastCheckedAt = new Date().toISOString();
-  return health as LocalBridgeHealthResult;
+  return normalizedHealth;
 }
 
 export async function runLocalBridgeAdvisory(
   packet: LLMResearchContextPacket,
-  endpoint = LLM_LOCAL_BRIDGE_URL
+  endpoint = LLM_LOCAL_BRIDGE_URL,
+  options: { bypassCircuitBreaker?: boolean } = {}
 ): Promise<LocalBridgeRunResult> {
+  if (options.bypassCircuitBreaker) {
+    resetLocalBridgeCircuitBreaker();
+  }
   if (isCircuitOpen()) {
     return unavailableResult(
       "circuit_open",
@@ -226,9 +337,14 @@ export async function runLocalBridgeAdvisory(
 
   if (!response.ok) {
     const errorPayload = payload as { error?: string; message?: string };
+    const message = errorPayload.message ?? errorPayload.error ?? "Local LLM bridge request failed.";
+    const reason: LocalBridgeUnavailableReason =
+      response.status === 503 && /OPENAI_API_KEY|provider|model|configured/i.test(message)
+        ? "config_missing"
+        : "request_failed";
     return unavailableResult(
-      "request_failed",
-      errorPayload.message ?? errorPayload.error ?? "Local LLM bridge request failed.",
+      reason,
+      message,
       0
     );
   }
@@ -246,6 +362,8 @@ export async function runLocalBridgeAdvisory(
   }
 
   resetLocalBridgeCircuitBreaker();
+  lastKnownBridgeProcessStatus = "online";
+  lastKnownAdvisoryCapabilityStatus = "ready";
   lastCheckedAt = new Date().toISOString();
   return {
     advisoryStatus: "available",
