@@ -64,10 +64,18 @@ import {
   fetchMt5ReadOnlySymbols,
   hydrateActiveMt5ReadOnlyCandleFeed,
   loadActiveMt5ReadOnlyCandleFeed,
+  loadMt5ReadOnlyAutoRefreshState,
   loadMt5ReadOnlySettings,
+  mt5ReadOnlyAutoRefreshCandleLimitOptions,
+  mt5ReadOnlyAutoRefreshIntervalOptions,
+  MT5_READ_ONLY_AUTO_REFRESH_UPDATED_EVENT,
   MT5_READ_ONLY_UPDATED_EVENT,
   saveMt5ReadOnlySettings,
-  updateActiveMt5ReadOnlyCandleFeedMetadata
+  saveMt5ReadOnlyAutoRefreshSettings,
+  startMt5ReadOnlyAutoRefresh,
+  stopMt5ReadOnlyAutoRefresh,
+  updateActiveMt5ReadOnlyCandleFeedMetadata,
+  type Mt5ReadOnlyAutoRefreshState
 } from "@/lib/integrations/mt5";
 import { mt5ExecutionAdapterPlan } from "@/lib/brokers/mt5";
 import { tradovateExecutionAdapterPlan } from "@/lib/brokers/tradovate";
@@ -134,6 +142,14 @@ const tradingViewAutoRefreshIntervalOptions = tradingViewMcpAutoRefreshIntervalO
   value: String(value)
 }));
 const tradingViewAutoRefreshCandleOptions = tradingViewMcpAutoRefreshCandleLimitOptions.map((value) => ({
+  label: `${value.toLocaleString()} candles`,
+  value: String(value)
+}));
+const mt5AutoRefreshIntervalOptions = mt5ReadOnlyAutoRefreshIntervalOptions.map((value) => ({
+  label: value === "manual" ? "Manual" : `${value}s`,
+  value: String(value)
+}));
+const mt5AutoRefreshCandleOptions = mt5ReadOnlyAutoRefreshCandleLimitOptions.map((value) => ({
   label: `${value.toLocaleString()} candles`,
   value: String(value)
 }));
@@ -301,6 +317,13 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const [mt5OperationMessage, setMt5OperationMessage] = useState("MT5 read-only bridge not checked.");
   const [mt5BrokerSymbol, setMt5BrokerSymbol] = useState(() => loadMt5ReadOnlySettings().brokerSymbolOverride ?? "USTECH");
   const [mt5CandleLimit, setMt5CandleLimit] = useState(() => String(Math.max(1000, loadMt5ReadOnlySettings().candleLimit ?? 1000)));
+  const [mt5AutoRefresh, setMt5AutoRefresh] = useState<Mt5ReadOnlyAutoRefreshState>(() =>
+    loadMt5ReadOnlyAutoRefreshState()
+  );
+  const [mt5AutoRefreshBusy, setMt5AutoRefreshBusy] = useState(false);
+  const [mt5AutoRefreshInterval, setMt5AutoRefreshInterval] = useState(() =>
+    String(loadMt5ReadOnlyAutoRefreshState().interval)
+  );
   const [autoRefreshClock, setAutoRefreshClock] = useState(() => Date.now());
   const [dataConnectionEvents, setDataConnectionEvents] = useState<CommandCenterDataEvent[]>([]);
   const latestRun = liveRun ?? latestAutonomousResearchRun(autonomyState);
@@ -339,6 +362,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
           nextEvent.title.includes("TradingView quote") ||
           nextEvent.title.includes("TradingView candles") ||
           nextEvent.title.includes("TradingView chart source refreshed") ||
+          nextEvent.title.includes("MT5 refresh") ||
           nextEvent.title.includes("LLM advisory"))
           ? [{ ...nextEvent, id: events[0].id }, ...events.slice(1)]
           : [nextEvent, ...events],
@@ -679,10 +703,62 @@ export function MissionControlShell({ state }: { state: LabState }) {
   };
 
   const clearMt5ReadOnlySource = async () => {
+    const stopped = stopMt5ReadOnlyAutoRefresh("MT5 cached candles were cleared; auto-refresh stopped to avoid immediately recreating the source.");
+    setMt5AutoRefresh(stopped);
     await clearMt5ReadOnlyCandleFeedCache();
     await resolveAndStoreRuntime().catch(() => undefined);
     setMt5OperationMessage("MT5 read-only cached candles cleared. Falling back to imported/mock sources until MT5 is connected again.");
     addDataConnectionEvent("MT5 cache cleared", "Removed MT5 read-only candle cache only.", "warning");
+  };
+
+  const persistMt5AutoRefreshSettings = (
+    interval = mt5AutoRefreshInterval,
+    candleLimit = mt5CandleLimit
+  ) => {
+    const saved = saveMt5ReadOnlyAutoRefreshSettings({
+      interval,
+      candleLimit: Number(candleLimit)
+    });
+    setMt5AutoRefresh(saved);
+    return saved;
+  };
+
+  const startMt5AutoRefreshLoop = async () => {
+    setMt5AutoRefreshBusy(true);
+    const brokerSymbol = (mt5BrokerSymbol.trim() || loadMt5ReadOnlySettings().brokerSymbolOverride || "USTECH").trim();
+    const intervalLabel = mt5AutoRefreshInterval === "manual" ? "manual" : `${mt5AutoRefreshInterval}s`;
+    setMt5OperationMessage(`Starting MT5 read-only refresh for ${brokerSymbol} ${commandCenterTimeframe} (${intervalLabel})...`);
+    addDataConnectionEvent(
+      "MT5 refresh starting",
+      `Interval ${intervalLabel}, limit ${Number(mt5CandleLimit).toLocaleString()} candles. Data refresh only; no research cycle will run.`,
+      "running",
+      brokerSymbol
+    );
+    try {
+      const refreshState = await startMt5ReadOnlyAutoRefresh({
+        brokerSymbol,
+        candleLimit: Number(mt5CandleLimit),
+        interval: mt5AutoRefreshInterval,
+        requestedSymbol: commandCenterSymbol,
+        timeframe: commandCenterTimeframe,
+        usageMode: runtimeSnapshot?.mt5ReadOnly.activeForResearch ? "research_source" : "chart_only"
+      });
+      setMt5AutoRefresh(refreshState);
+      await resolveAndStoreRuntime().catch(() => undefined);
+      setMt5OperationMessage(
+        refreshState.lastError
+          ? `MT5 refresh warning: ${refreshState.lastError}`
+          : `MT5 refresh checked ${refreshState.lastCandleCount.toLocaleString()} candles. Last candle ${refreshState.lastCandleTimestamp ? formatDateTime(refreshState.lastCandleTimestamp) : "n/a"}.`
+      );
+    } finally {
+      setMt5AutoRefreshBusy(false);
+    }
+  };
+
+  const stopMt5AutoRefreshLoop = () => {
+    const stopped = stopMt5ReadOnlyAutoRefresh("MT5 read-only auto-refresh stopped by user.");
+    setMt5AutoRefresh(stopped);
+    setMt5OperationMessage("MT5 read-only auto-refresh stopped. The current MT5 chart/research source remains loaded.");
   };
 
   const persistAutoRefreshSettings = (intervalSeconds = autoRefreshIntervalSeconds, candleLimit = autoRefreshCandleLimit) => {
@@ -768,6 +844,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
     window.addEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refresh);
     window.addEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refresh);
     window.addEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refresh);
+    window.addEventListener(MT5_READ_ONLY_AUTO_REFRESH_UPDATED_EVENT, refresh);
     window.addEventListener(MT5_READ_ONLY_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
@@ -783,6 +860,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
       window.removeEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refresh);
       window.removeEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refresh);
       window.removeEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refresh);
+      window.removeEventListener(MT5_READ_ONLY_AUTO_REFRESH_UPDATED_EVENT, refresh);
       window.removeEventListener(MT5_READ_ONLY_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
@@ -806,6 +884,26 @@ export function MissionControlShell({ state }: { state: LabState }) {
     };
     window.addEventListener(TRADINGVIEW_MCP_AUTO_REFRESH_UPDATED_EVENT, handleAutoRefreshUpdate);
     return () => window.removeEventListener(TRADINGVIEW_MCP_AUTO_REFRESH_UPDATED_EVENT, handleAutoRefreshUpdate);
+  }, []);
+
+  useEffect(() => {
+    const handleMt5AutoRefreshUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<{ state?: Mt5ReadOnlyAutoRefreshState; event?: Mt5ReadOnlyAutoRefreshState["lastEvent"] }>).detail;
+      const nextState = detail?.state ?? loadMt5ReadOnlyAutoRefreshState();
+      setMt5AutoRefresh(nextState);
+      setMt5AutoRefreshInterval(String(nextState.interval));
+      setMt5CandleLimit(String(nextState.candleLimit));
+      if (detail?.event) {
+        addDataConnectionEvent(
+          detail.event.title,
+          detail.event.detail,
+          detail.event.severity === "failed" ? "failed" : detail.event.severity,
+          detail.event.sourceFingerprint
+        );
+      }
+    };
+    window.addEventListener(MT5_READ_ONLY_AUTO_REFRESH_UPDATED_EVENT, handleMt5AutoRefreshUpdate);
+    return () => window.removeEventListener(MT5_READ_ONLY_AUTO_REFRESH_UPDATED_EVENT, handleMt5AutoRefreshUpdate);
   }, []);
 
   useEffect(() => {
@@ -952,6 +1050,13 @@ export function MissionControlShell({ state }: { state: LabState }) {
   );
   const autoRefreshRunning = tradingViewAutoRefresh.status === "running" && tradingViewAutoRefresh.enabled;
   const autoRefreshCountdown = formatCountdown(tradingViewAutoRefresh.nextRefreshAt, autoRefreshClock);
+  const mt5RefreshRunning = mt5AutoRefresh.status === "running" && mt5AutoRefresh.enabled;
+  const mt5RefreshCountdown = formatCountdown(mt5AutoRefresh.nextRefreshAt, autoRefreshClock);
+  const mt5LatestQuote =
+    mt5AutoRefresh.lastQuote?.mid ??
+    mt5AutoRefresh.lastQuote?.bid ??
+    mt5AutoRefresh.lastQuote?.ask ??
+    runtimeSnapshot?.mt5ReadOnly.latestPrice;
   const latestBacktest = runtimeSnapshot?.latestResearchCycle.latestBacktestSummary;
   const grinch = runtimeSnapshot?.latestResearchCycle.activeGrinchProfileSummary;
   const latestGrinchScore =
@@ -1197,8 +1302,11 @@ export function MissionControlShell({ state }: { state: LabState }) {
                   <Badge variant={mt5ResearchEligible ? "success" : "warning"}>
                     {mt5ResearchEligible ? "research eligible" : "guarded"}
                   </Badge>
+                  <Badge variant={mt5RefreshRunning ? "success" : mt5AutoRefresh.status === "error" ? "danger" : "secondary"}>
+                    refresh {formatToken(mt5AutoRefresh.status)}
+                  </Badge>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
                   <label className="space-y-1 text-xs text-slate-300">
                     MT5 broker symbol
                     <Input
@@ -1211,13 +1319,25 @@ export function MissionControlShell({ state }: { state: LabState }) {
                     />
                   </label>
                   <label className="space-y-1 text-xs text-slate-300">
+                    MT5 refresh
+                    <Select
+                      value={mt5AutoRefreshInterval}
+                      options={mt5AutoRefreshIntervalOptions}
+                      onChange={(event) => {
+                        setMt5AutoRefreshInterval(event.target.value);
+                        persistMt5AutoRefreshSettings(event.target.value, mt5CandleLimit);
+                      }}
+                    />
+                  </label>
+                  <label className="space-y-1 text-xs text-slate-300">
                     MT5 candles
                     <Select
                       value={mt5CandleLimit}
-                      options={tradingViewAutoRefreshCandleOptions}
+                      options={mt5AutoRefreshCandleOptions}
                       onChange={(event) => {
                         setMt5CandleLimit(event.target.value);
                         saveMt5ReadOnlySettings({ candleLimit: Number(event.target.value) });
+                        persistMt5AutoRefreshSettings(mt5AutoRefreshInterval, event.target.value);
                       }}
                     />
                   </label>
@@ -1249,6 +1369,21 @@ export function MissionControlShell({ state }: { state: LabState }) {
                   </Button>
                   <Button
                     variant="secondary"
+                    onClick={() => void startMt5AutoRefreshLoop()}
+                    disabled={mt5AutoRefreshBusy || mt5RefreshRunning}
+                    title="Refreshes MT5 quote and candles only; it does not run AI Research."
+                  >
+                    {mt5RefreshRunning ? "MT5 Refresh Running" : "Start MT5 Refresh"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={stopMt5AutoRefreshLoop}
+                    disabled={!mt5RefreshRunning && mt5AutoRefresh.status !== "error" && mt5AutoRefresh.status !== "paused"}
+                  >
+                    Stop MT5 Refresh
+                  </Button>
+                  <Button
+                    variant="secondary"
                     onClick={() => void useExistingMt5ForChart()}
                     disabled={mt5Busy}
                     title={mt5ChartActionReason}
@@ -1271,6 +1406,28 @@ export function MissionControlShell({ state }: { state: LabState }) {
                   <p>
                     Research action: <span className="text-slate-200">{mt5ResearchActionReason}</span>
                   </p>
+                </div>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                  <MiniReadout
+                    label="MT5 refresh"
+                    value={formatToken(mt5AutoRefresh.status)}
+                    detail={mt5RefreshRunning ? `next ${mt5RefreshCountdown}` : mt5AutoRefresh.interval === "manual" ? "manual" : "stopped"}
+                  />
+                  <MiniReadout
+                    label="Latest quote"
+                    value={mt5LatestQuote !== undefined ? String(mt5LatestQuote) : "n/a"}
+                    detail={mt5AutoRefresh.lastQuote?.timestamp ? formatDateTime(mt5AutoRefresh.lastQuote.timestamp) : "no quote yet"}
+                  />
+                  <MiniReadout
+                    label="Last candle"
+                    value={mt5AutoRefresh.lastCandleTimestamp ? formatDateTime(mt5AutoRefresh.lastCandleTimestamp) : "n/a"}
+                    detail={`${mt5AutoRefresh.lastCandleCount.toLocaleString()} candles`}
+                  />
+                  <MiniReadout
+                    label="Refresh guard"
+                    value={`${mt5AutoRefresh.skippedUnchangedCount.toLocaleString()} unchanged`}
+                    detail={`${mt5AutoRefresh.skippedOverlapCount.toLocaleString()} overlap skips; ${mt5AutoRefresh.failureCount.toLocaleString()} failures`}
+                  />
                 </div>
                 <Button variant="outline" className="mt-2 w-full justify-start" onClick={() => void clearMt5ReadOnlySource()} disabled={mt5Busy}>
                   Clear MT5 cached candles
@@ -1547,6 +1704,38 @@ export function MissionControlShell({ state }: { state: LabState }) {
       >
         <div className="space-y-4">
           <WhyNotReadyCard context="command_center" snapshot={runtimeSnapshot} />
+          <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">MT5 Auto-Refresh Diagnostics</p>
+                <h3 className="mt-1 text-base font-semibold text-slate-50">Read-Only Current Candle Refresh</h3>
+                <p className="mt-1 text-sm text-slate-400">Data refresh only. No AI Research Cycle, broker call, readiness override, or strategy threshold change is triggered.</p>
+              </div>
+              <Badge variant={mt5RefreshRunning ? "success" : mt5AutoRefresh.status === "error" ? "danger" : "secondary"}>
+                {formatToken(mt5AutoRefresh.status)}
+              </Badge>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <MiniReadout label="Interval" value={String(mt5AutoRefresh.interval)} detail={mt5RefreshRunning ? `next ${mt5RefreshCountdown}` : "not scheduled"} />
+              <MiniReadout label="Refresh count" value={mt5AutoRefresh.refreshCount.toLocaleString()} detail={`failures ${mt5AutoRefresh.failureCount.toLocaleString()}`} />
+              <MiniReadout label="Storage write" value={formatToken(mt5AutoRefresh.lastStorageWriteStatus)} detail={`${mt5AutoRefresh.skippedUnchangedCount.toLocaleString()} unchanged skips`} />
+              <MiniReadout label="Last checked" value={mt5AutoRefresh.lastCheckedAt ? formatDateTime(mt5AutoRefresh.lastCheckedAt) : "n/a"} detail={mt5AutoRefresh.lastError ?? "no active error"} />
+            </div>
+            <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
+              <div className="rounded-md border border-white/10 bg-black/20 p-2">
+                <p className="text-slate-500">Last fingerprint</p>
+                <p className="mt-1 truncate font-mono text-slate-300" title={mt5AutoRefresh.lastCandleFingerprint}>
+                  {mt5AutoRefresh.lastCandleFingerprint ?? "none"}
+                </p>
+              </div>
+              <div className="rounded-md border border-white/10 bg-black/20 p-2">
+                <p className="text-slate-500">Last feed</p>
+                <p className="mt-1 truncate font-mono text-slate-300" title={mt5AutoRefresh.lastFeedId}>
+                  {mt5AutoRefresh.lastFeedId ?? "none"}
+                </p>
+              </div>
+            </div>
+          </section>
           <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
