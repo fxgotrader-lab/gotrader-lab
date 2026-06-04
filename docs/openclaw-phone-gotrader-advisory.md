@@ -63,12 +63,20 @@ cd ~/openclaw
 # source .venv/bin/activate
 ```
 
-Start the advisory bridge so it binds to all phone interfaces:
+Copy the runnable bridge script from GoTrader to the phone, then start it so it binds to all phone interfaces:
 
 ```bash
-# example bridge command; replace with the user's actual OpenClaw bridge launcher
-openclaw serve gotrader-advisory --host 0.0.0.0 --port 8797
+node openclaw-phone-advisory-bridge.mjs
 ```
+
+The script defaults to:
+
+```text
+OPENCLAW_PHONE_BRIDGE_HOST=0.0.0.0
+OPENCLAW_PHONE_BRIDGE_PORT=8797
+```
+
+See `docs/openclaw-phone-bridge-runbook.md` for copy, install, token, local test, and desktop test steps.
 
 If the phone setup uses Hermes/Telegram for routing, start Hermes after OpenClaw is available. Hermes may notify or route review text, but GoTrader should still call only the GoTrader advisory endpoint for structured responses.
 

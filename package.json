@@ -10,6 +10,7 @@
     "restart:local-stack": "node scripts/restart-local-stack.mjs",
     "diagnose:local-stack": "node scripts/diagnose-local-stack.mjs",
     "llm:bridge": "node scripts/llm-local-bridge-server.mjs",
+    "openclaw:phone-bridge": "node scripts/openclaw-phone-advisory-bridge.mjs",
     "tradingview:mcp-bridge": "node scripts/start-tradingview-mcp-bridge.mjs",
     "tradingview:mcp-diagnose-port": "node scripts/diagnose-tradingview-bridge-port.mjs",
     "tradingview:mcp-stop": "node scripts/stop-tradingview-mcp-bridge.mjs",
