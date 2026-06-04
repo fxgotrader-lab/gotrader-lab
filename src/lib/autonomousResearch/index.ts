@@ -53,6 +53,7 @@ export type {
   AutonomousResearchBlocker,
   AutonomousResearchRun,
   AutonomousResearchSettings,
+  AutonomousResearchSourceDiagnostics,
   AutonomousResearchState,
   AutonomousResearchStatus,
   AutonomousResearchStopReason,

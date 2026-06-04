@@ -66,6 +66,7 @@ export function AutonomousResearchView({ state }: { state: LabState }) {
   const [advancedFullResearchMode, setAdvancedFullResearchMode] = useState(false);
   const latestRun = liveRun ?? latestAutonomousResearchRun(autonomyState);
   const latestAutoResearch = latestAutoResearchCycle(loadAutoResearchState());
+  const loopSource = latestRun?.sourceDiagnostics;
 
   const refresh = () => {
     setAutonomyState(loadAutonomousResearchState());
@@ -268,10 +269,26 @@ export function AutonomousResearchView({ state }: { state: LabState }) {
             <StatusTile label="Latest blocker" value={formatToken(latestRun?.latestBlocker)} />
             <StatusTile label="Candidate result" value={latestRun?.latestCandidateResult ?? "none"} />
             <StatusTile label="Stop reason" value={latestRun?.stopReason ? formatToken(latestRun.stopReason) : "not stopped"} />
+            <StatusTile label="Autonomous source" value={loopSource?.provider ? formatToken(loopSource.provider) : "not resolved"} />
+            <StatusTile
+              label="Source candles"
+              value={loopSource ? `${loopSource.candleCount.toLocaleString()} candles` : "n/a"}
+            />
             <div className="rounded-lg border border-border bg-background/45 p-3">
               <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Scenario reason</p>
               <p className="mt-1 text-foreground">{latestRun?.latestScenarioReason ?? currentIteration?.scenarioReason ?? "Run the loop to select a scenario family."}</p>
             </div>
+            {loopSource ? (
+              <div className="rounded-lg border border-border bg-background/45 p-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Source guard</p>
+                <p className="mt-1 text-foreground">
+                  {loopSource.requestedSymbol ?? "n/a"} / {loopSource.brokerSymbol ?? "no broker symbol"} / {loopSource.timeframe ?? "n/a"}.
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {loopSource.blocker ?? `Eligible source fingerprint ${loopSource.sourceFingerprint ?? "n/a"}. Mock fallback refused.`}
+                </p>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
 

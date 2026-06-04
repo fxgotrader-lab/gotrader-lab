@@ -264,6 +264,12 @@ export interface ResearchCycleRunOptions {
   candleWindowSettings?: Partial<CandleWindowSettings>;
   advancedFullResearchMode?: boolean;
   skipHeavyAudit?: boolean;
+  sourceGuard?: {
+    requireEligibleResearchSource?: boolean;
+    allowedSourceModes?: CandleDataSourceMode[];
+    minimumCandleCount?: number;
+    messagePrefix?: string;
+  };
   onUpdate?: (run: ResearchCycleRun) => void;
   signal?: AbortSignal;
 }

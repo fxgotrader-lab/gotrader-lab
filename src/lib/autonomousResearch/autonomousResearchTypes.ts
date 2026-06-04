@@ -18,6 +18,7 @@ export type AutonomousResearchStopReason =
   | "no_improvement_limit_reached"
   | "research_ready_stable"
   | "paper_demo_candidate_review_reached"
+  | "active_research_source_ineligible"
   | "evidence_quality_too_low"
   | "walk_forward_repeatedly_failed"
   | "regime_mismatch_detected"
@@ -126,6 +127,27 @@ export interface AutoApplyEligibility {
   maturityScoreAfter?: number;
 }
 
+export interface AutonomousResearchSourceDiagnostics {
+  provider: string;
+  sourceLabel: string;
+  requestedSymbol?: string;
+  brokerSymbol?: string;
+  timeframe?: string;
+  candleCount: number;
+  firstTimestamp?: string;
+  lastTimestamp?: string;
+  sourceFingerprint?: string;
+  eligibility: string;
+  eligibilityReasons: string[];
+  fallbackReason?: string;
+  blocker?: string;
+  authority: {
+    executionAuthority: "none";
+    brokerAuthority: "none";
+    readinessOverrideAuthority: "none";
+  };
+}
+
 export interface AutonomousCalibrationDriftEntry {
   id: string;
   timestamp: string;
@@ -155,6 +177,7 @@ export interface AutonomousLoopIteration {
   walkForwardRunId?: string;
   walkForwardVerdict?: string;
   autoApplyEligibility?: AutoApplyEligibility;
+  sourceDiagnostics?: AutonomousResearchSourceDiagnostics;
   autoAppliedCalibrationId?: string;
   readinessState?: string;
   maturityScore?: number;
@@ -176,6 +199,7 @@ export interface AutonomousResearchRun {
   latestScenarioReason?: string;
   latestCandidateResult?: string;
   latestAutoApplyEligibility?: AutoApplyEligibility;
+  sourceDiagnostics?: AutonomousResearchSourceDiagnostics;
   latestAutoAppliedCalibrationId?: string;
   stopReason?: AutonomousResearchStopReason;
   stopReasonDetail?: string;

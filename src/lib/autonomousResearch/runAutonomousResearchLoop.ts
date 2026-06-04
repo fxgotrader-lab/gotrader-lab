@@ -14,6 +14,7 @@ import { selectNextScenarioSet } from "@/lib/autonomousResearch/selectNextScenar
 import type {
   AutonomousLoopIteration,
   AutonomousLoopStage,
+  AutonomousResearchSourceDiagnostics,
   AutonomousResearchRun,
   AutonomousResearchSettings,
   AutonomousResearchStopReason,
@@ -23,7 +24,7 @@ import { autonomousToSafetyBlockers } from "@/lib/autonomousResearch/autonomousR
 import { recordCommunicationMessage } from "@/lib/communications/communicationSpec";
 import { createHermesNotificationPayload, createPlannedHermesNotificationState } from "@/lib/integrations/hermesNotificationHooks";
 import { createOpenClawMemoryHookPacket, createPlannedOpenClawMemoryHookState } from "@/lib/integrations/openclawMemoryHooks";
-import { resolveResearchRuntimeSnapshot } from "@/lib/runtime";
+import { resolveResearchRuntimeSnapshot, type ResearchRuntimeSnapshot } from "@/lib/runtime";
 import type { CalibrationProposal } from "@/lib/selfImprovement";
 import { safeArray, uid } from "@/lib/utils";
 import { runResearchCycle } from "@/lib/researchCycle";
@@ -80,12 +81,85 @@ const statusFromStopReason = (reason?: AutonomousResearchStopReason): Autonomous
     ? "failed"
     : reason === "user_canceled"
       ? "canceled"
+      : reason === "active_research_source_ineligible"
+        ? "paused"
       : reason === "regime_mismatch_detected" ||
           reason === "evidence_quality_too_low" ||
           reason === "walk_forward_repeatedly_failed" ||
           reason === "llm_advisory_offline"
         ? "paused"
         : "completed";
+
+const RESEARCH_SOURCE_MINIMUM_CANDLES = 400;
+
+const sourceDiagnosticsFor = (
+  snapshot: ResearchRuntimeSnapshot,
+  blocker?: string
+): AutonomousResearchSourceDiagnostics => {
+  const source = snapshot.marketData.activeResearchSource;
+  const mt5 = snapshot.mt5ReadOnly;
+  const eligibility = source.provider === "mt5_read_only"
+    ? mt5.researchEligibility
+    : source.eligibility.researchCycle
+      ? "eligible_for_research_cycle"
+      : source.eligibility.quickAnalysis
+        ? "eligible_for_analysis"
+        : "ineligible";
+  return {
+    provider: source.provider,
+    sourceLabel: source.provenance.sourceLabel,
+    requestedSymbol: source.symbol,
+    brokerSymbol: source.provenance.providerSymbol,
+    timeframe: source.timeframe,
+    candleCount: source.candleCount,
+    firstTimestamp: source.firstTimestamp,
+    lastTimestamp: source.lastTimestamp,
+    sourceFingerprint: source.fingerprint,
+    eligibility,
+    eligibilityReasons: source.provider === "mt5_read_only" ? mt5.eligibilityReasons : source.eligibilityReasons,
+    fallbackReason: source.provider === "mock" && snapshot.marketData.fallbackToMock
+      ? "Runtime prepared source is mock fallback."
+      : snapshot.marketData.chartDisplayWarning,
+    blocker,
+    authority: {
+      executionAuthority: "none",
+      brokerAuthority: "none",
+      readinessOverrideAuthority: "none"
+    }
+  };
+};
+
+const validateAutonomousResearchSource = (snapshot: ResearchRuntimeSnapshot): string | undefined => {
+  const source = snapshot.marketData.activeResearchSource;
+  if (source.provider === "mock") {
+    return "active research source is mock/demo data. Select MT5 read-only or another explicit eligible canonical research source first.";
+  }
+  if (!source.fingerprint) {
+    return "active research source is missing a canonical source fingerprint.";
+  }
+  if (source.candleCount < RESEARCH_SOURCE_MINIMUM_CANDLES) {
+    return `active research source has ${source.candleCount.toLocaleString()} candles; ${RESEARCH_SOURCE_MINIMUM_CANDLES.toLocaleString()} are required.`;
+  }
+  if (!source.eligibility.researchCycle) {
+    return `active research source is not research-cycle eligible: ${source.eligibilityReasons.join(" ")}`;
+  }
+  if (
+    source.authority.executionAuthority !== "none" ||
+    source.authority.brokerAuthority !== "none" ||
+    source.authority.readinessOverrideAuthority !== "none"
+  ) {
+    return "active research source authority is invalid. Execution, broker, and readiness override authority must all be none.";
+  }
+  if (source.provider === "mt5_read_only") {
+    if (!snapshot.marketData.researchUsesMt5ReadOnly || !snapshot.mt5ReadOnly.activeForResearch) {
+      return "MT5 read-only is loaded but not selected as the active research source. Click Use MT5 for Research first.";
+    }
+    if (snapshot.mt5ReadOnly.researchEligibility !== "eligible_for_research_cycle") {
+      return `MT5 read-only is not eligible for autonomous research: ${snapshot.mt5ReadOnly.eligibilityReasons.join(" ")}`;
+    }
+  }
+  return undefined;
+};
 
 const latestProposalFromCycle = (run: Awaited<ReturnType<typeof runResearchCycle>>): CalibrationProposal | undefined =>
   run.latestGeneratedProposal ?? run.autoResearchCycle?.createdProposal;
@@ -320,6 +394,67 @@ export async function runAutonomousResearchLoop({
       emit(run, onUpdate);
 
       const snapshotBefore = await resolveResearchRuntimeSnapshot();
+      const sourceBlocker = validateAutonomousResearchSource(snapshotBefore);
+      const sourceDiagnostics = sourceDiagnosticsFor(snapshotBefore, sourceBlocker);
+      run = {
+        ...run,
+        sourceDiagnostics
+      };
+      if (sourceBlocker) {
+        const detail = `Autonomous Research blocked: active research source is not eligible. ${sourceBlocker}`;
+        const iteration: AutonomousLoopIteration = {
+          iteration: iterationNumber,
+          startedAt: now(),
+          completedAt: now(),
+          blockerDiagnosis: [],
+          status: "failed",
+          sourceDiagnostics,
+          notes: [
+            detail,
+            `Source provider ${sourceDiagnostics.provider}; requested ${sourceDiagnostics.requestedSymbol ?? "n/a"}; broker ${sourceDiagnostics.brokerSymbol ?? "n/a"}; ${sourceDiagnostics.candleCount.toLocaleString()} candles.`,
+            "No mock fallback, broker execution, readiness override, or go-trader handoff was used."
+          ]
+        };
+        run = {
+          ...run,
+          status: "paused",
+          completedAt: now(),
+          stopReason: "active_research_source_ineligible",
+          stopReasonDetail: detail,
+          iterations: [...run.iterations.filter((item) => item.iteration !== iterationNumber), iteration],
+          progress: {
+            ...run.progress,
+            stopReason: "active_research_source_ineligible",
+            stopReasonDetail: detail
+          }
+        };
+        updateProgress({
+          stage: "paused",
+          status: "paused",
+          title: "Source guard blocked",
+          detail
+        });
+        recordCommunicationMessage({
+          source: "openclaw_research_supervisor",
+          agentName: "Autonomous Research Supervisor",
+          category: "openclaw_supervisor_message",
+          severity: "warning",
+          title: "Autonomous Research source guard blocked",
+          summary: detail,
+          body: [
+            `Provider: ${sourceDiagnostics.provider}.`,
+            `Requested symbol: ${sourceDiagnostics.requestedSymbol ?? "n/a"}.`,
+            `Broker symbol: ${sourceDiagnostics.brokerSymbol ?? "n/a"}.`,
+            `Candles: ${sourceDiagnostics.candleCount.toLocaleString()}.`,
+            "Mock fallback was refused; execution authority remained none."
+          ].join(" "),
+          actionRequired: true,
+          requestedAction: "acknowledge_readiness_blocker",
+          resolved: false
+        });
+        emit(run, onUpdate);
+        return run;
+      }
       const blockerSummary = summarizeScenarioEvaluation(snapshotBefore);
       const scenario = selectNextScenarioSet(blockerSummary.blockers, {
         safeImportedDataMode: settings.safeImportedDataMode && snapshotBefore.marketData.isImportedDataActive
@@ -366,10 +501,15 @@ export async function runAutonomousResearchLoop({
         startedAt: now(),
         blockerDiagnosis: blockerSummary.blockers,
         safetyDiagnosis,
+        sourceDiagnostics,
         selectedScenarioFamily: scenario.scenarioFamily,
         scenarioReason: scenario.reason,
         status: "running",
-        notes: [blockerSummary.summary, scenario.reason]
+        notes: [
+          blockerSummary.summary,
+          scenario.reason,
+          `Autonomous source ${sourceDiagnostics.provider}: ${sourceDiagnostics.candleCount.toLocaleString()} candles; fingerprint ${sourceDiagnostics.sourceFingerprint ?? "n/a"}.`
+        ]
       };
 
       run = {
@@ -408,6 +548,12 @@ export async function runAutonomousResearchLoop({
         maxCandidateCount: scenario.maxCandidateCount,
         advancedFullResearchMode: settings.advancedFullResearchMode,
         skipHeavyAudit: settings.safeImportedDataMode,
+        sourceGuard: {
+          requireEligibleResearchSource: true,
+          allowedSourceModes: ["mt5_read_only", "imported", "tradingview_mcp_chart"],
+          minimumCandleCount: RESEARCH_SOURCE_MINIMUM_CANDLES,
+          messagePrefix: "Autonomous Research blocked"
+        },
         signal,
         onUpdate: (cycleRun) => {
           const runningStep = safeArray(cycleRun.steps).find((step) => step.status === "running");
@@ -423,6 +569,32 @@ export async function runAutonomousResearchLoop({
           emit(run, onUpdate);
         }
       });
+      if (cycle.status === "failed" && /active research source|source guard/i.test(cycle.failedStepDetails ?? cycle.resultSummary)) {
+        const detail = cycle.failedStepDetails ?? cycle.resultSummary;
+        iteration = {
+          ...iteration,
+          cycleId: cycle.cycleId,
+          completedAt: now(),
+          status: "failed",
+          notes: [...iteration.notes, detail]
+        };
+        run = {
+          ...run,
+          status: "paused",
+          completedAt: now(),
+          stopReason: "active_research_source_ineligible",
+          stopReasonDetail: detail,
+          iterations: [...run.iterations.filter((item) => item.iteration !== iterationNumber), iteration]
+        };
+        updateProgress({
+          stage: "paused",
+          status: "paused",
+          title: "Source guard blocked",
+          detail
+        });
+        emit(run, onUpdate);
+        return run;
+      }
       const proposal = latestProposalFromCycle(cycle);
       const bestCandidateLabel =
         cycle.bestCandidateSummary?.label ??

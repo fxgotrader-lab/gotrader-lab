@@ -1290,6 +1290,23 @@ export function MissionControlShell({ state }: { state: LabState }) {
     "USTECH";
   const mt5ResearchEligible = mt5ResearchEligibleFrom(runtimeSnapshot);
   const mt5ResearchEligibilityReason = mt5ResearchEligibilityReasonFrom(runtimeSnapshot);
+  const autonomousSource = latestRun?.sourceDiagnostics;
+  const autonomousSourceLabel = autonomousSource
+    ? autonomousSource.provider.replace(/_/g, " ")
+    : runtimeSnapshot?.marketData.activeResearchSource.provider.replace(/_/g, " ") ?? "loading";
+  const autonomousSourceDetail = autonomousSource
+    ? `${autonomousSource.candleCount.toLocaleString()} candles; ${autonomousSource.brokerSymbol ?? autonomousSource.requestedSymbol ?? "no broker symbol"}`
+    : runtimeSnapshot
+      ? `${runtimeSnapshot.marketData.activeResearchSource.candleCount.toLocaleString()} candles; ${
+          runtimeSnapshot.marketData.activeResearchSource.provenance.providerSymbol ??
+          runtimeSnapshot.marketData.activeResearchSource.symbol
+        }`
+      : "Resolving source guard";
+  const autonomousSourceBlocker =
+    autonomousSource?.blocker ??
+    (!runtimeSnapshot?.marketData.activeResearchSource.eligibility.researchCycle
+      ? runtimeSnapshot?.marketData.activeResearchSource.eligibilityReasons[0]
+      : undefined);
   const mt5ChartActionReason = mt5ReadOnlyRegistered
     ? `MT5 chart source can use ${mt5ReadOnlyCandleCount.toLocaleString()} cached candles.`
     : runtimeSnapshot?.mt5ReadOnly.connectionStatus === "degraded" || runtimeSnapshot?.mt5ReadOnly.connectionStatus === "connected"
@@ -1493,6 +1510,18 @@ export function MissionControlShell({ state }: { state: LabState }) {
                   USTECH is MT5 CFD/proxy data for MNQ/NQ-style research, not CME MNQ futures truth. MT5 read-only has no execution authority.
                   Broker authority: none.
                 </p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  <MiniReadout
+                    label="Autonomous source"
+                    value={autonomousSourceLabel}
+                    detail={autonomousSourceDetail}
+                  />
+                  <MiniReadout
+                    label="Autonomous guard"
+                    value={autonomousSourceBlocker ? "blocked" : "eligible"}
+                    detail={autonomousSourceBlocker ?? "Canonical research source will be used; mock fallback refused."}
+                  />
+                </div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <Button onClick={() => void connectMt5ReadOnly({ usageMode: "chart_only" })} disabled={mt5Busy} className="justify-start">
                     <RadioTower className="h-4 w-4" aria-hidden="true" />

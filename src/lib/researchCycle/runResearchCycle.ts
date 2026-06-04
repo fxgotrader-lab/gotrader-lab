@@ -241,6 +241,65 @@ const sourceMetadataFor = ({
   };
 };
 
+const evaluateResearchCycleSourceGuard = ({
+  activeResearchCandleSource,
+  allowedSourceModes,
+  minimumCandleCount = 400,
+  mt5ReadOnlyFeed,
+  tradingViewChartFeed
+}: {
+  activeResearchCandleSource: ReturnType<typeof resolveActiveResearchCandleSource>;
+  allowedSourceModes?: NonNullable<ResearchCycleRunOptions["sourceGuard"]>["allowedSourceModes"];
+  minimumCandleCount?: number;
+  mt5ReadOnlyFeed?: Awaited<ReturnType<typeof hydrateActiveMt5ReadOnlyCandleFeed>>;
+  tradingViewChartFeed?: Awaited<ReturnType<typeof hydrateActiveTradingViewMcpChartFeed>>;
+}) => {
+  const allowedModes = allowedSourceModes ?? ["mt5_read_only", "imported", "tradingview_mcp_chart"];
+  const sourceMode = activeResearchCandleSource.sourceMode;
+  const sourceLabel = activeResearchCandleSource.sourceLabel;
+  const candleCount = activeResearchCandleSource.identity.candleCount;
+
+  if (!allowedModes.includes(sourceMode)) {
+    return `active research source ${sourceMode.replace(/_/g, " ")} is not allowed for this guarded run. Select MT5 read-only or another explicit eligible source.`;
+  }
+  if (sourceMode === "mock") {
+    return "active research source is mock/demo data. Autonomous Research requires an explicit eligible canonical source.";
+  }
+  if (!activeResearchCandleSource.identity.dataFingerprint) {
+    return `active research source ${sourceLabel} is missing a source fingerprint.`;
+  }
+  if (candleCount < minimumCandleCount) {
+    return `active research source ${sourceLabel} has ${candleCount.toLocaleString()} candles; ${minimumCandleCount.toLocaleString()} are required.`;
+  }
+  if (sourceMode === "mt5_read_only") {
+    const eligibility = mt5ReadOnlyFeed?.researchEligibility;
+    if (!mt5ReadOnlyFeed?.activeForResearch || eligibility?.state !== "eligible_for_research_cycle") {
+      return [
+        "MT5 read-only is not active as the guarded research source.",
+        ...(eligibility?.reasons ?? ["Click Use MT5 for Research after fetching eligible MT5 candles."])
+      ].join(" ");
+    }
+    if (
+      mt5ReadOnlyFeed.executionAuthority !== "none" ||
+      mt5ReadOnlyFeed.brokerAuthority !== "none" ||
+      mt5ReadOnlyFeed.readinessOverrideAuthority !== "none"
+    ) {
+      return "MT5 read-only source authority is invalid. Execution, broker, and readiness override authority must all be none.";
+    }
+  }
+  if (sourceMode === "tradingview_mcp_chart") {
+    const eligibility = tradingViewChartFeed?.researchEligibility;
+    if (!tradingViewChartFeed?.activeForResearch || eligibility?.state !== "eligible_for_research_cycle") {
+      return [
+        "TradingView MCP is not active as the guarded research source.",
+        ...(eligibility?.reasons ?? ["Select TradingView for research only after source gates pass."])
+      ].join(" ");
+    }
+  }
+
+  return undefined;
+};
+
 const publish = (state: ResearchCycleState) => {
   if (isBrowser()) {
     try {
@@ -532,6 +591,7 @@ export async function runResearchCycle({
   candleWindowSettings,
   advancedFullResearchMode = false,
   skipHeavyAudit,
+  sourceGuard,
   onUpdate,
   signal
 }: ResearchCycleRunOptions): Promise<ResearchCycleRun> {
@@ -572,6 +632,15 @@ export async function runResearchCycle({
   const activeResearchCandleSource = resolveActiveResearchCandleSource(activeCandleSource, tradingViewChartFeed, mt5ReadOnlyFeed);
   const activeResearchUsesExternalReadOnly =
     activeResearchCandleSource.sourceMode === "tradingview_mcp_chart" || activeResearchCandleSource.sourceMode === "mt5_read_only";
+  const sourceGuardIssue = sourceGuard?.requireEligibleResearchSource
+    ? evaluateResearchCycleSourceGuard({
+        activeResearchCandleSource,
+        allowedSourceModes: sourceGuard.allowedSourceModes,
+        minimumCandleCount: sourceGuard.minimumCandleCount,
+        mt5ReadOnlyFeed,
+        tradingViewChartFeed
+      })
+    : undefined;
   const importedExpectedButMissing =
     !activeResearchUsesExternalReadOnly &&
     activeCandleSource.mode !== "imported" &&
@@ -604,7 +673,11 @@ export async function runResearchCycle({
           : undefined
       ].filter(Boolean) as string[]
     : [];
-  const researchCandles = activeResearchCandleSource.candles.length ? activeResearchCandleSource.candles : mockCandles;
+  const researchCandles = activeResearchCandleSource.candles.length
+    ? activeResearchCandleSource.candles
+    : sourceGuard?.requireEligibleResearchSource
+      ? []
+      : mockCandles;
   const dataSourceLabel = activeResearchCandleSource.sourceLabel;
   const evidenceDataMode = evidenceDataModeFor(activeResearchCandleSource.sourceMode, activeCandleSource.mode);
   const latestResearchCandle = researchCandles[researchCandles.length - 1];
@@ -700,6 +773,26 @@ export async function runResearchCycle({
     setStep(stepId, { status: "skipped", completedAt: now(), summary, detail });
 
   notify();
+
+  if (sourceGuardIssue) {
+    const message = `${sourceGuard?.messagePrefix ?? "Research cycle blocked"}: ${sourceGuardIssue}`;
+    failStep("thesis_generation", message);
+    skipStep("backtest", "Backtest skipped because the active research source did not pass the source guard.");
+    skipStep("llm_advisory", "LLM advisory skipped because the active research source did not pass the source guard.");
+    skipStep("auto_research", "Auto Research skipped because the active research source did not pass the source guard.");
+    skipStep("validation", "Validation skipped because the active research source did not pass the source guard.");
+    skipStep("research_quality", "Research quality skipped because the active research source did not pass the source guard.");
+    skipStep("self_improvement", "Self-improvement skipped because the active research source did not pass the source guard.");
+    skipStep("simulation_verification", "Simulation runbook update skipped because the active research source did not pass the source guard.");
+    skipStep("readiness_gate", "Readiness skipped because the active research source did not pass the source guard.");
+    skipStep("communications_audit", "Communications audit skipped because the active research source did not pass the source guard.");
+    run.status = "failed";
+    run.completedAt = now();
+    run.nextRecommendedAction = "Select and verify an eligible canonical research source, then rerun the research cycle.";
+    run.resultSummary = resultSummaryFor(run);
+    saveResearchCycleRun(snapshot());
+    return snapshot();
+  }
 
   if (importedExpectedButMissing) {
     failStep(
