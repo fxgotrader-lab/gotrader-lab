@@ -4,6 +4,7 @@ import type {
   ResearchDecisionVerdict,
   ResearchReflectionMemory
 } from "@/lib/researchDecisionLog";
+import type { PaperDemoChecklistSummary } from "@/lib/readiness";
 
 import type { ResearchReadinessDistinction } from "./researchReadinessDistinction";
 
@@ -42,6 +43,7 @@ export interface ResearchCommitteeReport {
   bullCase: ResearchCommitteeSection;
   bearCase: ResearchCommitteeSection;
   readinessDistinction: ResearchReadinessDistinction;
+  paperDemoChecklist: PaperDemoChecklistSummary;
   riskCommittee: ResearchRiskCommitteeReport;
   finalResearchChairSynthesis: ResearchChairSynthesis;
   authority: ResearchDecisionAuthority;

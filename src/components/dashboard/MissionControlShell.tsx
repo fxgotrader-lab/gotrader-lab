@@ -143,6 +143,8 @@ const replayReviewVariant = (status?: string) =>
       : status === "evidence_not_supportive"
         ? "warning"
         : "secondary";
+const checklistStatusVariant = (status?: string) =>
+  status === "pass" ? "success" as const : status === "fail" ? "danger" as const : status === "warning" ? "warning" as const : "secondary" as const;
 const formatBool = (value?: boolean) => (typeof value === "boolean" ? (value ? "yes" : "no") : "unknown");
 const tradingViewAutoRefreshIntervalOptions = tradingViewMcpAutoRefreshIntervalOptions.map((value) => ({
   label: `${value}s`,
@@ -1575,6 +1577,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
     [runtimeSnapshot]
   );
   const readinessDistinction = researchCommitteeReport?.readinessDistinction;
+  const paperDemoChecklist = researchCommitteeReport?.paperDemoChecklist;
   const primaryBlocker =
     actionItems[0]?.title ??
     runtimeSnapshot?.readiness.actualBlockers[0] ??
@@ -1961,6 +1964,73 @@ export function MissionControlShell({ state }: { state: LabState }) {
         </div>
       </section>
 
+      {paperDemoChecklist ? (
+        <section className="rounded-xl border border-amber-300/20 bg-amber-300/10 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Paper-Demo Candidate Checklist</p>
+              <h3 className="mt-1 text-lg font-semibold text-amber-50">
+                {paperDemoChecklist.paperDemoCandidate
+                  ? "Candidate review gates clear"
+                  : paperDemoChecklist.researchReady
+                    ? "Research Ready, paper-demo blocked"
+                    : "Research gates still blocked"}
+              </h3>
+              <p className="mt-1 text-xs text-amber-100/75">{paperDemoChecklist.safetyNotice}</p>
+            </div>
+            <Badge variant={paperDemoChecklist.paperDemoCandidate ? "success" : paperDemoChecklist.researchReady ? "warning" : "danger"}>
+              {paperDemoChecklist.paperDemoCandidate ? "paper-demo candidate" : paperDemoChecklist.researchReady ? "research ready only" : "not ready"}
+            </Badge>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <MiniReadout
+              label="Research Ready"
+              value={paperDemoChecklist.researchReady ? "yes" : "no"}
+              detail={runtimeSnapshot?.readiness.readinessState ?? "loading"}
+            />
+            <MiniReadout
+              label="Paper-Demo Candidate"
+              value={paperDemoChecklist.paperDemoCandidate ? "yes" : "no"}
+              detail={paperDemoChecklist.primaryBlocker}
+            />
+            <MiniReadout
+              label="Checklist"
+              value={`${paperDemoChecklist.passCount} pass / ${paperDemoChecklist.failCount} fail`}
+              detail={`${paperDemoChecklist.warningCount} warning(s), ${paperDemoChecklist.notApplicableCount} n/a`}
+            />
+            <MiniReadout
+              label="Evidence / maturity"
+              value={`${runtimeSnapshot?.evidence.evidenceQualityScore ?? 0}/100 / ${runtimeSnapshot?.maturity.maturityScore ?? 0}/100`}
+              detail={`WF ${formatToken(runtimeSnapshot?.walkForward.verdict)}`}
+            />
+            <MiniReadout
+              label="Source"
+              value={formatToken(paperDemoChecklist.sourceContext.provider)}
+              detail={`${paperDemoChecklist.sourceContext.brokerSymbol ?? paperDemoChecklist.sourceContext.requestedSymbol} / ${paperDemoChecklist.sourceContext.candleCount.toLocaleString()} candles`}
+            />
+          </div>
+          <div className="mt-4 rounded-lg border border-amber-300/25 bg-black/20 p-3 text-sm leading-6 text-amber-50">
+            <span className="font-semibold">Current blocker:</span> {paperDemoChecklist.primaryBlocker}
+            <span className="block text-xs text-amber-100/75">Next action: {paperDemoChecklist.nextAction}</span>
+          </div>
+          <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            {(paperDemoChecklist.proposalEligibleBlockers.length
+              ? paperDemoChecklist.proposalEligibleBlockers
+              : safeTopN(paperDemoChecklist.items.filter((entry) => entry.status !== "pass"), 4)
+            ).map((entry) => (
+              <div key={entry.id} className="rounded-lg border border-amber-300/20 bg-background/25 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-100/75">{entry.label}</p>
+                  <Badge variant={checklistStatusVariant(entry.status)}>{entry.status.replace(/_/g, " ")}</Badge>
+                </div>
+                <p className="mt-2 text-sm text-amber-50">{entry.blockerReason}</p>
+                <p className="mt-1 text-xs text-amber-100/70">{entry.nextAction}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="grid gap-4 xl:grid-cols-2">
         <div className="rounded-xl border border-white/10 bg-slate-950/85 p-4">
           <div className="flex items-start justify-between gap-3">
@@ -2173,6 +2243,11 @@ export function MissionControlShell({ state }: { state: LabState }) {
                   detail={`WF ${researchCommitteeReport.readinessDistinction.walkForwardStatus}`}
                 />
                 <MiniReadout
+                  label="Checklist"
+                  value={`${researchCommitteeReport.paperDemoChecklist.passCount}/${researchCommitteeReport.paperDemoChecklist.items.length} pass`}
+                  detail={researchCommitteeReport.paperDemoChecklist.primaryBlocker}
+                />
+                <MiniReadout
                   label="Risk chair"
                   value={researchCommitteeReport.riskCommittee.finalRiskChairVerdict}
                   detail={researchCommitteeReport.safetyNotice}
@@ -2203,6 +2278,63 @@ export function MissionControlShell({ state }: { state: LabState }) {
               <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 text-xs leading-5 text-slate-400">
                 Latest decision excludes candles, raw runtime snapshots, account/order/position data, secrets, raw logs, and screenshots/base64.
                 Authority remains execution none, broker none, readiness override none.
+              </div>
+            </section>
+          ) : null}
+          {paperDemoChecklist ? (
+            <section className="rounded-xl border border-amber-300/20 bg-amber-300/10 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Paper-Demo Candidate Checklist</p>
+                  <h3 className="mt-1 text-base font-semibold text-amber-50">Full Operator Progression Table</h3>
+                  <p className="mt-1 text-sm text-amber-100/75">
+                    Converts readiness, evidence, maturity, walk-forward, risk, runbook, advisory, and source-quality gates into
+                    reporting-only checklist items.
+                  </p>
+                </div>
+                <Badge variant={paperDemoChecklist.paperDemoCandidate ? "success" : "warning"}>
+                  {paperDemoChecklist.paperDemoCandidate ? "candidate review" : "blocked"}
+                </Badge>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <MiniReadout label="Primary blocker" value={paperDemoChecklist.failCount ? "blocked" : "clear"} detail={paperDemoChecklist.primaryBlocker} />
+                <MiniReadout label="Next action" value={paperDemoChecklist.proposalEligibleBlockers.length ? "proposal-targetable" : "operator review"} detail={paperDemoChecklist.nextAction} />
+                <MiniReadout label="Source context" value={formatToken(paperDemoChecklist.sourceContext.provider)} detail={`${paperDemoChecklist.sourceContext.brokerSymbol ?? paperDemoChecklist.sourceContext.requestedSymbol} / ${paperDemoChecklist.sourceContext.timeframe ?? "n/a"} / ${paperDemoChecklist.sourceContext.candleCount.toLocaleString()} candles`} />
+                <MiniReadout label="Authority" value="none" detail={`${paperDemoChecklist.authority.executionAuthority} / ${paperDemoChecklist.authority.brokerAuthority} / ${paperDemoChecklist.authority.readinessOverrideAuthority}`} />
+              </div>
+              <div className="mt-4 overflow-x-auto rounded-lg border border-amber-300/20">
+                <table className="min-w-[960px] w-full text-left text-xs">
+                  <thead className="bg-amber-300/10 text-amber-100">
+                    <tr>
+                      {["Check", "Status", "Current", "Required", "Blocker", "Next action"].map((header) => (
+                        <th key={header} className="px-3 py-2 font-semibold uppercase tracking-[0.12em]">
+                          {header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-300/10">
+                    {paperDemoChecklist.items.map((entry) => (
+                      <tr key={entry.id} className="align-top">
+                        <td className="px-3 py-3 font-medium text-amber-50">{entry.label}</td>
+                        <td className="px-3 py-3">
+                          <Badge variant={checklistStatusVariant(entry.status)}>{entry.status.replace(/_/g, " ")}</Badge>
+                        </td>
+                        <td className="px-3 py-3 text-slate-300">{entry.currentValue}</td>
+                        <td className="px-3 py-3 text-slate-400">{entry.requiredValue}</td>
+                        <td className="px-3 py-3 text-amber-100/85">{entry.blockerReason}</td>
+                        <td className="px-3 py-3 text-cyan-100/80">{entry.nextAction}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 text-xs leading-5 text-amber-100/80">
+                Proposal-eligible blockers:{" "}
+                {paperDemoChecklist.proposalEligibleBlockers.length
+                  ? paperDemoChecklist.proposalEligibleBlockers.map((entry) => entry.label).join(", ")
+                  : "none from the current checklist."}
+                <span className="block pt-1">{paperDemoChecklist.safetyNotice}</span>
               </div>
             </section>
           ) : null}

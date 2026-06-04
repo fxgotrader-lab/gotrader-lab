@@ -95,6 +95,8 @@ const replayReviewVariant = (status?: string) =>
       : status === "evidence_not_supportive"
         ? "warning"
         : "secondary";
+const checklistStatusVariant = (status?: string) =>
+  status === "pass" ? "success" : status === "fail" ? "danger" : status === "warning" ? "warning" : "muted";
 const formatToken = (value?: string) => (value ?? "not tested").replace(/_/g, " ");
 const tradeQualityTargets = new Set([
   "high_drawdown",
@@ -542,6 +544,7 @@ export function SelfImprovementView() {
     () => (runtimeSnapshot ? buildResearchCommitteeReport(runtimeSnapshot) : undefined),
     [runtimeSnapshot]
   );
+  const paperDemoChecklist = researchCommitteeReport?.paperDemoChecklist;
   const generatedProposalId = latestCycleRun?.createdProposalId ?? generatedProposalFromCycle?.proposalId;
   const generatedProposalStored = Boolean(
     generatedProposalId && safeArray(state.proposals).some((proposal) => proposal.proposalId === generatedProposalId)
@@ -1150,6 +1153,42 @@ export function SelfImprovementView() {
                 ))}
               </div>
             </div>
+            {paperDemoChecklist ? (
+              <div className="rounded-lg border border-cyan-300/25 bg-cyan-300/10 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/75">Paper-Demo checklist blockers</p>
+                    <p className="mt-1 text-foreground">
+                      {paperDemoChecklist.paperDemoCandidate
+                        ? "Checklist gates are clear for review, but this panel still cannot promote readiness."
+                        : paperDemoChecklist.primaryBlocker}
+                    </p>
+                  </div>
+                  <Badge variant={paperDemoChecklist.paperDemoCandidate ? "success" : "warning"}>
+                    {paperDemoChecklist.passCount}/{paperDemoChecklist.items.length} pass
+                  </Badge>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-cyan-100/80">
+                  Proposal generation may target eligible checklist blockers only. It cannot auto-apply, enable paper/demo,
+                  or override readiness.
+                </p>
+                <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {(paperDemoChecklist.proposalEligibleBlockers.length
+                    ? paperDemoChecklist.proposalEligibleBlockers
+                    : paperDemoChecklist.items.filter((entry) => entry.status !== "pass").slice(0, 3)
+                  ).map((entry) => (
+                    <div key={entry.id} className="rounded-md border border-cyan-300/20 bg-background/35 p-2 text-xs">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="font-medium text-foreground">{entry.label}</span>
+                        <Badge variant={checklistStatusVariant(entry.status)}>{entry.status.replace(/_/g, " ")}</Badge>
+                      </div>
+                      <p className="mt-1 text-muted-foreground">{entry.nextAction}</p>
+                      <p className="mt-1 text-cyan-100/70">Proposal eligible: {entry.proposalEligible ? "yes" : "no"}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}

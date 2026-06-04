@@ -1,4 +1,5 @@
 import type { ResearchRuntimeSnapshot } from "@/lib/runtime";
+import { buildPaperDemoChecklist } from "@/lib/readiness";
 import {
   buildResearchDecisionLogBundle,
   researchDecisionAuthorityNone,
@@ -111,8 +112,12 @@ export function buildResearchCommitteeReport(snapshot: ResearchRuntimeSnapshot):
   const bullCase = buildBullCase(entry);
   const bearCase = buildBearCase(entry);
   const readinessDistinction = buildResearchReadinessDistinction(entry);
+  const paperDemoChecklist = buildPaperDemoChecklist(snapshot);
   const conservativeStatus = entry.blockers.length ? "blocking" : "cautious";
   const balancedStatus = entry.finalResearchVerdict === "reject_current_setup" ? "blocking" : "cautious";
+  const riskChairChecklistBlocker = paperDemoChecklist.paperDemoCandidate
+    ? "Checklist passes for paper-demo review; readiness still remains reporting-only."
+    : `Checklist blocker: ${paperDemoChecklist.primaryBlocker}`;
 
   return {
     reportId: uid("research_committee"),
@@ -124,6 +129,7 @@ export function buildResearchCommitteeReport(snapshot: ResearchRuntimeSnapshot):
     bullCase,
     bearCase,
     readinessDistinction,
+    paperDemoChecklist,
     riskCommittee: {
       conservativeView: {
         title: "Conservative Risk View",
@@ -153,7 +159,7 @@ export function buildResearchCommitteeReport(snapshot: ResearchRuntimeSnapshot):
       },
       finalRiskChairVerdict:
         !readinessDistinction.paperDemoCandidate
-          ? readinessDistinction.riskChairSummary
+          ? `${readinessDistinction.riskChairSummary} ${riskChairChecklistBlocker}`
           : entry.finalResearchVerdict === "reject_current_setup"
           ? "Risk chair rejects the current setup for this window."
           : "Risk chair permits research-only follow-up under existing gates.",
@@ -168,6 +174,7 @@ export function buildResearchCommitteeReport(snapshot: ResearchRuntimeSnapshot):
         ? nextActionsFor(entry.finalResearchVerdict, entry)
         : [
             "Continue research and collect more evidence before Paper-Demo Candidate review.",
+            paperDemoChecklist.nextAction,
             ...readinessDistinction.recommendedNextWork
           ],
       reproducibilityWarning:

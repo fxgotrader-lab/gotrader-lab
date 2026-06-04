@@ -1,4 +1,5 @@
 export { evaluateReadinessGate, summarizeScenarioForGate } from "@/lib/readiness/readinessGate";
+export { buildPaperDemoChecklist } from "@/lib/readiness/buildPaperDemoChecklist";
 export {
   allowResearchOverride,
   approveDemoCandidate,
@@ -21,3 +22,9 @@ export type {
   ReadinessRequirementSeverity,
   ReadinessState
 } from "@/lib/readiness/readinessTypes";
+export type {
+  PaperDemoChecklistItem,
+  PaperDemoChecklistItemId,
+  PaperDemoChecklistItemStatus,
+  PaperDemoChecklistSummary
+} from "@/lib/readiness/paperDemoChecklistTypes";
