@@ -24,6 +24,7 @@ import {
 } from "@/lib/agentDebate";
 import type { AgentDebateSession, DebatePosition } from "@/lib/agentDebate";
 import { LAB_STORAGE_UPDATED_EVENT, labStorage } from "@/lib/storage";
+import { buildResearchCommitteeReport } from "@/lib/researchCommittee";
 import { resolveResearchRuntimeSnapshot, type ResearchRuntimeSnapshot } from "@/lib/runtime";
 import type { LabState, MarketBias } from "@/lib/types";
 import { formatPercent, safeArray } from "@/lib/utils";
@@ -111,6 +112,10 @@ export function AgentDebateView() {
   const latestThesis = labState.tradeTheses[0];
   const debateEvidenceSource =
     runtimeSnapshot?.evidence.evidenceLedgerSummary.entries.find((item) => item.category === "ICT structure")?.sourceType ?? "unavailable";
+  const researchCommitteeReport = useMemo(
+    () => (runtimeSnapshot ? buildResearchCommitteeReport(runtimeSnapshot) : undefined),
+    [runtimeSnapshot]
+  );
 
   const runDebate = () => {
     const session = debateForLatestThesis(labState);
@@ -190,6 +195,57 @@ export function AgentDebateView() {
           <StatusTile label="Metric status" value={selectedSession ? "simulated" : "insufficient"} />
         </CardContent>
       </Card>
+
+      {researchCommitteeReport ? (
+        <Card className="border-violet-300/20 bg-violet-300/10">
+          <CardHeader className="flex flex-row items-start justify-between gap-3">
+            <div>
+              <CardTitle>Research Committee Report</CardTitle>
+              <CardDescription>
+                Deterministic TradingAgents-inspired committee: Bull Case, Bear Case, Risk Committee, and Research Chair.
+              </CardDescription>
+            </div>
+            <Badge variant="warning">
+              {researchCommitteeReport.finalResearchChairSynthesis.verdict.replace(/_/g, " ")}
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm text-violet-50">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <StatusTile label="Source" value={`${researchCommitteeReport.decisionLogEntry.source.provider}`} />
+              <StatusTile
+                label="Symbol map"
+                value={`${researchCommitteeReport.decisionLogEntry.source.brokerSymbol ?? researchCommitteeReport.decisionLogEntry.source.requestedSymbol} -> ${researchCommitteeReport.decisionLogEntry.source.requestedSymbol}`}
+              />
+              <StatusTile label="Candles" value={researchCommitteeReport.decisionLogEntry.source.candleCount.toLocaleString()} />
+              <StatusTile label="Decision ID" value={researchCommitteeReport.decisionLogEntry.decisionId} />
+            </div>
+            <div className="grid gap-3 lg:grid-cols-2">
+              <CommitteeBox title="Bull Case" items={researchCommitteeReport.bullCase.evidence} />
+              <CommitteeBox title="Bear Case" items={researchCommitteeReport.bearCase.evidence} />
+              <CommitteeBox
+                title="Risk Committee"
+                items={[
+                  researchCommitteeReport.riskCommittee.conservativeView.summary,
+                  researchCommitteeReport.riskCommittee.balancedView.summary,
+                  researchCommitteeReport.riskCommittee.aggressiveView.summary,
+                  researchCommitteeReport.riskCommittee.finalRiskChairVerdict
+                ]}
+              />
+              <CommitteeBox
+                title="Research Chair"
+                items={[
+                  researchCommitteeReport.finalResearchChairSynthesis.summary,
+                  ...researchCommitteeReport.finalResearchChairSynthesis.nextActions,
+                  researchCommitteeReport.finalResearchChairSynthesis.reproducibilityWarning
+                ]}
+              />
+            </div>
+            <div className="rounded-lg border border-violet-300/20 bg-background/35 p-3 text-xs text-violet-100/80">
+              {researchCommitteeReport.safetyNotice} Authority: execution none, broker none, readiness override none.
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Card>
@@ -410,6 +466,27 @@ function DetailList({ title, items }: { title: string; items: string[] }) {
         ) : (
           <div className="rounded-md border border-border bg-card/45 px-2 py-1 text-xs text-muted-foreground">
             None recorded.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CommitteeBox({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="rounded-lg border border-violet-300/20 bg-background/35 p-3">
+      <h3 className="text-sm font-semibold text-violet-50">{title}</h3>
+      <div className="mt-3 space-y-2">
+        {items.length ? (
+          items.map((item) => (
+            <div key={item} className="rounded-md border border-violet-300/15 bg-card/45 px-2 py-1 text-xs text-violet-100/80">
+              {item}
+            </div>
+          ))
+        ) : (
+          <div className="rounded-md border border-violet-300/15 bg-card/45 px-2 py-1 text-xs text-violet-100/80">
+            No committee item recorded.
           </div>
         )}
       </div>

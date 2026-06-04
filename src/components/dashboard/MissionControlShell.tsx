@@ -103,6 +103,7 @@ import {
   formatPercentMetric,
   formatR
 } from "@/lib/researchMetrics";
+import { buildResearchCommitteeReport } from "@/lib/researchCommittee";
 import { buildGrinchProfileEvidenceDiagnostics } from "@/lib/strategyLibrary";
 import { RESEARCH_CYCLE_UPDATED_EVENT } from "@/lib/researchCycle";
 import {
@@ -1413,6 +1414,10 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const expandedResearchMetricRows = useMemo(() => buildExpandedResearchMetricRows(runtimeSnapshot), [runtimeSnapshot]);
   const riskReportRows = useMemo(() => buildRiskReportRows(runtimeSnapshot), [runtimeSnapshot]);
   const proposalImpactRows = useMemo(() => buildProposalImpactRows(runtimeSnapshot), [runtimeSnapshot]);
+  const researchCommitteeReport = useMemo(
+    () => (runtimeSnapshot ? buildResearchCommitteeReport(runtimeSnapshot) : undefined),
+    [runtimeSnapshot]
+  );
   const primaryBlocker =
     actionItems[0]?.title ??
     runtimeSnapshot?.readiness.actualBlockers[0] ??
@@ -1946,6 +1951,63 @@ export function MissionControlShell({ state }: { state: LabState }) {
           <>
         <div className="space-y-4">
           <WhyNotReadyCard context="command_center" snapshot={runtimeSnapshot} />
+          {researchCommitteeReport ? (
+            <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-300">Research Committee</p>
+                  <h3 className="mt-1 text-base font-semibold text-slate-50">Decision Log and Reflection Memory</h3>
+                  <p className="mt-1 text-sm text-slate-400">
+                    TradingAgents-inspired committee report built from deterministic GoTrader outputs only.
+                  </p>
+                </div>
+                <Badge variant="warning">{formatToken(researchCommitteeReport.finalResearchChairSynthesis.verdict)}</Badge>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <MiniReadout
+                  label="Research Chair"
+                  value={formatToken(researchCommitteeReport.finalResearchChairSynthesis.verdict)}
+                  detail={researchCommitteeReport.finalResearchChairSynthesis.summary}
+                />
+                <MiniReadout
+                  label="Decision ID"
+                  value={researchCommitteeReport.decisionLogEntry.decisionId}
+                  detail={researchCommitteeReport.decisionLogEntry.cycleId ?? "no cycle attached"}
+                />
+                <MiniReadout
+                  label="Source"
+                  value={formatToken(String(researchCommitteeReport.decisionLogEntry.source.provider))}
+                  detail={`${researchCommitteeReport.decisionLogEntry.source.brokerSymbol ?? researchCommitteeReport.decisionLogEntry.source.requestedSymbol} / ${researchCommitteeReport.decisionLogEntry.source.candleCount.toLocaleString()} candles`}
+                />
+                <MiniReadout
+                  label="Risk chair"
+                  value={researchCommitteeReport.riskCommittee.finalRiskChairVerdict}
+                  detail={researchCommitteeReport.safetyNotice}
+                />
+              </div>
+              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                <div className="rounded-lg border border-emerald-300/15 bg-emerald-300/5 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-200">Bull Case</p>
+                  <p className="mt-2 text-sm text-emerald-50">{researchCommitteeReport.bullCase.evidence[0]}</p>
+                </div>
+                <div className="rounded-lg border border-amber-300/15 bg-amber-300/5 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-200">Bear Case</p>
+                  <p className="mt-2 text-sm text-amber-50">{researchCommitteeReport.bearCase.evidence[0]}</p>
+                </div>
+                <div className="rounded-lg border border-cyan-300/15 bg-cyan-300/5 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">Reflection Memory</p>
+                  <p className="mt-2 text-sm text-cyan-50">{researchCommitteeReport.reflectionMemory.whatToTestNext}</p>
+                  <p className="mt-2 text-xs text-cyan-100/75">
+                    Proposal support: {formatToken(researchCommitteeReport.reflectionMemory.calibrationProposalSupport.status)}.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 text-xs leading-5 text-slate-400">
+                Latest decision excludes candles, raw runtime snapshots, account/order/position data, secrets, raw logs, and screenshots/base64.
+                Authority remains execution none, broker none, readiness override none.
+              </div>
+            </section>
+          ) : null}
           <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>

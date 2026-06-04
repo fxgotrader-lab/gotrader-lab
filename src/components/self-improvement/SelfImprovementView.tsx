@@ -39,6 +39,7 @@ import { evidenceScoreVariant, selectEvidenceReadinessImpact, selectWeakestEvide
 import { maturityGradeLabel, maturityGradeVariant, selectMaturityNextRequirement } from "@/lib/maturity";
 import { canonicalMetricsForRun, type CanonicalPerformanceMetrics } from "@/lib/performance/canonicalMetrics";
 import { latestResearchCycleRun } from "@/lib/researchCycle";
+import { buildResearchCommitteeReport } from "@/lib/researchCommittee";
 import { loadActiveMt5ReadOnlyCandleFeed } from "@/lib/integrations/mt5";
 import { loadActiveTradingViewMcpChartFeed } from "@/lib/integrations/tradingview";
 import { resolveChartDisplayCandleSource } from "@/lib/marketData";
@@ -537,6 +538,10 @@ export function SelfImprovementView() {
     latestCycleRun?.latestGeneratedProposal ?? latestCycleRun?.autoResearchCycle?.createdProposal;
   const latestCycleCanonicalMetrics = runtimeSnapshot?.performance.canonicalPerformanceMetrics ?? canonicalMetricsForRun(latestCycleRun);
   const runtimeWarnings = selectRuntimeWarnings(runtimeSnapshot);
+  const researchCommitteeReport = useMemo(
+    () => (runtimeSnapshot ? buildResearchCommitteeReport(runtimeSnapshot) : undefined),
+    [runtimeSnapshot]
+  );
   const generatedProposalId = latestCycleRun?.createdProposalId ?? generatedProposalFromCycle?.proposalId;
   const generatedProposalStored = Boolean(
     generatedProposalId && safeArray(state.proposals).some((proposal) => proposal.proposalId === generatedProposalId)
@@ -1054,6 +1059,67 @@ export function SelfImprovementView() {
           </div>
         </CardContent>
       </Card>
+
+      {researchCommitteeReport ? (
+        <Card className="border-violet-300/20 bg-violet-300/10">
+          <CardHeader>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle>Reflection Memory</CardTitle>
+                <CardDescription>
+                  Deterministic proposal support check from the latest Research Decision Log. No LLM or auto-apply required.
+                </CardDescription>
+              </div>
+              <Badge
+                variant={
+                  researchCommitteeReport.reflectionMemory.calibrationProposalSupport.status === "supported"
+                    ? "success"
+                    : researchCommitteeReport.reflectionMemory.calibrationProposalSupport.status === "not_supported"
+                      ? "danger"
+                      : "warning"
+                }
+              >
+                {researchCommitteeReport.reflectionMemory.calibrationProposalSupport.status.replace(/_/g, " ")}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm text-violet-50">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-lg border border-violet-300/20 bg-background/35 p-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-violet-100/70">Current proposal</p>
+                <p className="mt-1 break-all font-mono text-xs text-foreground">{latestProposal?.proposalId ?? "none selected"}</p>
+              </div>
+              <div className="rounded-lg border border-violet-300/20 bg-background/35 p-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-violet-100/70">Research verdict</p>
+                <p className="mt-1 font-mono text-sm text-foreground">
+                  {researchCommitteeReport.finalResearchChairSynthesis.verdict.replace(/_/g, " ")}
+                </p>
+              </div>
+              <div className="rounded-lg border border-violet-300/20 bg-background/35 p-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-violet-100/70">Repeated blocker</p>
+                <p className="mt-1 text-sm text-foreground">
+                  {researchCommitteeReport.reflectionMemory.repeatedBlocker?.replace(/_/g, " ") ?? "none recorded"}
+                </p>
+              </div>
+              <div className="rounded-lg border border-violet-300/20 bg-background/35 p-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-violet-100/70">Decision log</p>
+                <p className="mt-1 break-all font-mono text-xs text-foreground">
+                  {researchCommitteeReport.decisionLogEntry.decisionId}
+                </p>
+              </div>
+            </div>
+            <div className="rounded-lg border border-violet-300/20 bg-background/35 p-3">
+              <p className="text-xs uppercase tracking-[0.14em] text-violet-100/70">Proposal support</p>
+              <p className="mt-1 text-foreground">
+                {researchCommitteeReport.reflectionMemory.calibrationProposalSupport.reason}
+              </p>
+              <p className="mt-2 text-xs text-violet-100/75">
+                Next test: {researchCommitteeReport.reflectionMemory.whatToTestNext}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card className={metricSourceWarningActive ? "border-amber-300/25 bg-amber-300/10" : "border-emerald-300/25 bg-emerald-300/10"}>
         <CardHeader>
