@@ -3,6 +3,8 @@ export {
   loadAdvisoryProviderSettings,
   OPENCLAW_ADVISORY_DEFAULT_URL,
   OPENCLAW_ADVISORY_TIMEOUT_MS,
+  openClawAdvisoryTimeoutMsFromEnv,
+  openClawEndpointHostLabel,
   openClawAdvisoryUrlFromEnv,
   runOpenClawAdvisory,
   saveAdvisoryProviderSettings

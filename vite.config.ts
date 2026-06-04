@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import path from "node:path";
 
 export default defineConfig({
-  envPrefix: ["VITE_", "LLM_ADVISORY_TIMEOUT_MS", "OPENCLAW_ADVISORY_URL"],
+  envPrefix: ["VITE_", "LLM_ADVISORY_TIMEOUT_MS", "OPENCLAW_ADVISORY_URL", "OPENCLAW_ADVISORY_TIMEOUT_MS"],
   plugins: [react()],
   resolve: {
     alias: {

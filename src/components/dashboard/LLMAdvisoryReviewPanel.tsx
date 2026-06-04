@@ -13,6 +13,7 @@ import {
   OPENCLAW_ADVISORY_DEFAULT_URL,
   LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS,
   LLM_LOCAL_BRIDGE_BASE_URL,
+  openClawEndpointHostLabel,
   resetLocalBridgeCircuitBreaker,
   runOpenClawAdvisory,
   runLocalBridgeAdvisory,
@@ -600,7 +601,7 @@ export function LLMAdvisoryReviewPanel({
       return;
     }
     if (settings.providerMode === "openclaw") {
-      const message = `OpenClaw advisory endpoint configured at ${settings.openClawAdvisoryUrl}. Capability is verified by a single advisory POST; no execution or readiness authority is exposed.`;
+      const message = `OpenClaw phone/local-network advisory endpoint configured at ${openClawEndpointHostLabel(settings.openClawAdvisoryUrl)}. Capability is verified by a single advisory POST; no execution or readiness authority is exposed.`;
       setStatus("unknown");
       setBridgeProcessStatus("unknown");
       setAdvisoryCapabilityStatus("unknown");
@@ -1034,7 +1035,7 @@ export function LLMAdvisoryReviewPanel({
       {status === "offline" || status === "unavailable" || advisoryCapabilityStatus !== "ready" ? (
         <div className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
           {providerMode === "openclaw"
-            ? "OpenClaw advisory offline or not yet verified. Deterministic research remains available."
+            ? "OpenClaw phone/local-network advisory is offline or not yet verified. Deterministic research remains available."
             : providerMode === "disabled"
               ? "Research Advisor disabled. Deterministic research remains available."
               : bridgeProcessStatus === "offline"
@@ -1095,7 +1096,7 @@ export function LLMAdvisoryReviewPanel({
           <MiniAdvisoryReadout label="Provider" value={lastPayload.providerMode?.replace(/_/g, " ") ?? providerMode.replace(/_/g, " ")} />
           <MiniAdvisoryReadout label="Last checked" value={formatDateTime(lastPayload.checkedAt)} />
           <MiniAdvisoryReadout label="Local bridge URL" value={LLM_LOCAL_BRIDGE_BASE_URL} />
-          <MiniAdvisoryReadout label="OpenClaw endpoint" value={lastPayload.openClawEndpoint ?? openClawUrl} />
+          <MiniAdvisoryReadout label="OpenClaw endpoint host" value={openClawEndpointHostLabel(lastPayload.openClawEndpoint ?? openClawUrl)} />
           <MiniAdvisoryReadout label="Timeout" value={`${lastPayload.timeoutMs ?? LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS}ms`} />
           <MiniAdvisoryReadout label="Model" value={lastPayload.model ?? "reported by bridge after check/request"} />
           <MiniAdvisoryReadout label="Payload size" value={lastPayload.payloadBytes ? `${lastPayload.payloadBytes.toLocaleString()} bytes` : "not sent yet"} />

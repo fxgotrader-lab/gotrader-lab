@@ -6,7 +6,20 @@ import type {
 
 export const ADVISORY_PROVIDER_SETTINGS_STORAGE_KEY = "gotrader-ai-lab-advisory-provider-settings";
 export const OPENCLAW_ADVISORY_DEFAULT_URL = "http://127.0.0.1:8797/gotrader/advisory";
-export const OPENCLAW_ADVISORY_TIMEOUT_MS = 30_000;
+
+const parsePositiveInteger = (value: unknown, fallback: number) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : fallback;
+};
+
+export const openClawAdvisoryTimeoutMsFromEnv = () =>
+  parsePositiveInteger(
+    import.meta.env?.OPENCLAW_ADVISORY_TIMEOUT_MS ??
+      import.meta.env?.VITE_OPENCLAW_ADVISORY_TIMEOUT_MS,
+    30_000
+  );
+
+export const OPENCLAW_ADVISORY_TIMEOUT_MS = openClawAdvisoryTimeoutMsFromEnv();
 
 export interface AdvisoryProviderSettings {
   providerMode: GoTraderAdvisoryProviderMode;
@@ -43,6 +56,15 @@ export const openClawAdvisoryUrlFromEnv = () =>
   import.meta.env?.OPENCLAW_ADVISORY_URL ??
   import.meta.env?.VITE_OPENCLAW_ADVISORY_URL ??
   OPENCLAW_ADVISORY_DEFAULT_URL;
+
+export const openClawEndpointHostLabel = (endpoint: string) => {
+  try {
+    const url = new URL(endpoint);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return endpoint ? "custom endpoint" : "not configured";
+  }
+};
 
 export function loadAdvisoryProviderSettings(): AdvisoryProviderSettings {
   const defaults: AdvisoryProviderSettings = {
