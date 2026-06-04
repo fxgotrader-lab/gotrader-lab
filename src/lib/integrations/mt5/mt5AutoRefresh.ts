@@ -5,8 +5,7 @@ import {
   loadActiveMt5ReadOnlyCandleFeed,
   loadMt5ReadOnlySettings,
   saveMt5ReadOnlySettings,
-  storeActiveMt5ReadOnlyCandleFeed,
-  updateActiveMt5ReadOnlyCandleFeedMetadata
+  storeActiveMt5ReadOnlyCandleFeed
 } from "@/lib/integrations/mt5/mt5ReadOnlyClient";
 import {
   buildMt5ReadOnlyCandleFingerprint,
@@ -28,6 +27,7 @@ export type Mt5ReadOnlyAutoRefreshInterval = (typeof mt5ReadOnlyAutoRefreshInter
 export type Mt5ReadOnlyAutoRefreshStatus = "idle" | "running" | "paused" | "error" | "stopped";
 export type Mt5ReadOnlyStorageWriteStatus = "none" | "written" | "skipped_unchanged" | "session_only" | "error";
 export type Mt5ReadOnlyAutoRefreshEventSeverity = "info" | "success" | "warning" | "failed" | "running";
+export type Mt5ReadOnlyManualRefreshResult = "updated" | "unchanged" | "failed" | "skipped_overlap";
 
 export interface Mt5ReadOnlyAutoRefreshEvent {
   eventId: string;
@@ -59,6 +59,13 @@ export interface Mt5ReadOnlyAutoRefreshState {
   lastCandleCount: number;
   lastCandleUpdateAt?: string;
   lastStorageWriteStatus: Mt5ReadOnlyStorageWriteStatus;
+  lastManualRefreshAt?: string;
+  lastManualRefreshDurationMs?: number;
+  lastManualRefreshResult?: Mt5ReadOnlyManualRefreshResult;
+  lastManualRefreshCandleCount?: number;
+  lastManualRefreshSourceRegistered?: boolean;
+  lastManualRefreshStorageWriteStatus?: Mt5ReadOnlyStorageWriteStatus;
+  lastManualRefreshError?: string;
   lastFeedId?: string;
   lastBrokerSymbol?: string;
   lastRequestedSymbol?: string;
@@ -76,6 +83,7 @@ export interface Mt5ReadOnlyAutoRefreshRequest {
   usageMode?: Mt5ReadOnlyFeedUsageMode;
   activateLoop?: boolean;
   emitStartEvent?: boolean;
+  trigger?: "auto" | "manual";
 }
 
 const isBrowser = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
@@ -316,6 +324,34 @@ const emitFailureState = ({
 export async function refreshMt5ReadOnlyNow(
   request: Mt5ReadOnlyAutoRefreshRequest = {}
 ): Promise<Mt5ReadOnlyAutoRefreshState> {
+  const startedAtMs = Date.now();
+  const isManualRefresh = request.trigger === "manual" || request.activateLoop === false;
+  const buildManualDiagnostics = ({
+    candleCount,
+    error,
+    result,
+    sourceRegistered,
+    storageWriteStatus,
+    timestamp = now()
+  }: {
+    candleCount?: number;
+    error?: string;
+    result: Mt5ReadOnlyManualRefreshResult;
+    sourceRegistered?: boolean;
+    storageWriteStatus?: Mt5ReadOnlyStorageWriteStatus;
+    timestamp?: string;
+  }): Partial<Mt5ReadOnlyAutoRefreshState> =>
+    isManualRefresh
+      ? {
+          lastManualRefreshAt: timestamp,
+          lastManualRefreshDurationMs: Math.max(0, Date.now() - startedAtMs),
+          lastManualRefreshResult: result,
+          lastManualRefreshCandleCount: candleCount,
+          lastManualRefreshSourceRegistered: sourceRegistered,
+          lastManualRefreshStorageWriteStatus: storageWriteStatus,
+          lastManualRefreshError: error
+        }
+      : {};
   const baseState = saveMt5ReadOnlyAutoRefreshSettings({
     candleLimit: request.candleLimit,
     interval: request.interval
@@ -334,6 +370,10 @@ export async function refreshMt5ReadOnlyNow(
         refreshInProgress: true,
         skippedOverlapCount: skippedCount,
         lastError: "Previous MT5 refresh is still running.",
+        ...buildManualDiagnostics({
+          error: "Previous MT5 refresh is still running.",
+          result: "skipped_overlap"
+        }),
         updatedAt: now()
       },
       skippedCount === 1
@@ -369,7 +409,14 @@ export async function refreshMt5ReadOnlyNow(
     const status = await checkMt5ReadOnlyStatus(resolved.settings);
     if (status.connectionStatus !== "connected" && status.connectionStatus !== "degraded") {
       return emitFailureState({
-        state: refreshStarted,
+        state: {
+          ...refreshStarted,
+          ...buildManualDiagnostics({
+            error: `MT5 read-only bridge disconnected: ${status.message}`,
+            result: "failed",
+            timestamp: now()
+          })
+        },
         title: "MT5 refresh failed",
         detail: `MT5 read-only bridge disconnected: ${status.message}`,
         sourceFingerprint: resolved.brokerSymbol
@@ -391,7 +438,19 @@ export async function refreshMt5ReadOnlyNow(
     );
     if (!candlesResponse.candles.length) {
       return emitFailureState({
-        state: loadMt5ReadOnlyAutoRefreshState(),
+        state: {
+          ...loadMt5ReadOnlyAutoRefreshState(),
+          ...buildManualDiagnostics({
+            candleCount: 0,
+            error:
+              candlesResponse.missingEvidence.join(" ") ||
+              "MT5 read-only wrapper returned zero candles. Keeping the previous source visible.",
+            result: "failed",
+            sourceRegistered: false,
+            storageWriteStatus: "none",
+            timestamp: now()
+          })
+        },
         title: "MT5 candle refresh failed",
         detail:
           candlesResponse.missingEvidence.join(" ") ||
@@ -421,14 +480,7 @@ export async function refreshMt5ReadOnlyNow(
 
     if (canSkipCandleWrite && existingFeed) {
       storageWriteStatus = "skipped_unchanged";
-      feed = updateActiveMt5ReadOnlyCandleFeedMetadata(existingFeed, {
-        candleFingerprint,
-        fetchedAt: checkedAt,
-        latestClose: candidateFeed.latestClose,
-        latestQuote: quote,
-        spread: quote.spread,
-        usageMode: candidateFeed.usageMode
-      });
+      feed = existingFeed;
     } else {
       feed = await storeActiveMt5ReadOnlyCandleFeed({
         ...candidateFeed,
@@ -474,6 +526,13 @@ export async function refreshMt5ReadOnlyNow(
         consecutiveFailures: 0,
         lastError: undefined,
         lastStorageWriteStatus: storageWriteStatus,
+        ...buildManualDiagnostics({
+          candleCount: feed.candleCount,
+          result: canSkipCandleWrite ? "unchanged" : "updated",
+          sourceRegistered: Boolean(feed.feedId && feed.activeForChart),
+          storageWriteStatus,
+          timestamp: checkedAt
+        }),
         lastFeedId: feed.feedId,
         lastBrokerSymbol: feed.brokerSymbol ?? resolved.brokerSymbol,
         lastRequestedSymbol: feed.requestedSymbol,
@@ -483,10 +542,18 @@ export async function refreshMt5ReadOnlyNow(
       shouldEmitSuccessEvent ? buildEvent(successTitle, successDetail, canSkipCandleWrite ? "info" : "success", feed.candleFingerprint) : undefined
     );
   } catch (error) {
+    const detail = error instanceof Error ? error.message : "MT5 read-only refresh failed.";
     return emitFailureState({
-      state: loadMt5ReadOnlyAutoRefreshState(),
+      state: {
+        ...loadMt5ReadOnlyAutoRefreshState(),
+        ...buildManualDiagnostics({
+          error: detail,
+          result: "failed",
+          timestamp: now()
+        })
+      },
       title: "MT5 refresh failed",
-      detail: error instanceof Error ? error.message : "MT5 read-only refresh failed.",
+      detail,
       sourceFingerprint: resolved.brokerSymbol
     });
   } finally {
