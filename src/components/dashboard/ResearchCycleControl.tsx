@@ -25,6 +25,7 @@ import {
 } from "@/lib/researchCycle";
 import type { ResearchCycleRun, ResearchCycleStepResult, ResearchCycleStepStatus } from "@/lib/researchCycle";
 import {
+  resolveChartDisplayCandleSource,
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
   DASHBOARD_IMPORTED_SAFE_WINDOW_SIZE,
   DASHBOARD_IMPORTED_CANDIDATE_LIMIT,
@@ -39,6 +40,17 @@ import {
   type ImportedCandleActivationState,
   type PreparedCandleSource
 } from "@/lib/marketData";
+import {
+  hydrateActiveMt5ReadOnlyCandleFeed,
+  MT5_READ_ONLY_AUTO_REFRESH_UPDATED_EVENT,
+  MT5_READ_ONLY_UPDATED_EVENT,
+  type ActiveMt5ReadOnlyCandleFeed
+} from "@/lib/integrations/mt5";
+import {
+  hydrateActiveTradingViewMcpChartFeed,
+  TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT,
+  type ActiveTradingViewMcpChartFeed
+} from "@/lib/integrations/tradingview";
 import {
   ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
   loadActiveResearchCalibration,
@@ -192,6 +204,8 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
   const [activeCalibration, setActiveCalibration] = useState(() => loadActiveResearchCalibration());
   const [activeConfigResolution, setActiveConfigResolution] = useState(() => resolveActiveBacktestConfig());
   const [activeCandleSource, setActiveCandleSource] = useState<PreparedCandleSource>(fallbackCandleSource);
+  const [activeMt5Feed, setActiveMt5Feed] = useState<ActiveMt5ReadOnlyCandleFeed>();
+  const [activeTradingViewFeed, setActiveTradingViewFeed] = useState<ActiveTradingViewMcpChartFeed>();
   const [importActivation, setImportActivation] = useState<ImportedCandleActivationState>(fallbackImportActivation);
   const [dataSourceMessage, setDataSourceMessage] = useState("");
   const [searchMode, setSearchMode] = useState<AutoResearchSearchMode>("standard");
@@ -201,6 +215,15 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
   const [autoResearchState, setAutoResearchState] = useState(() => loadAutoResearchState());
   const [liveCheckpoint, setLiveCheckpoint] = useState<AutoResearchExecutionCheckpoint>();
   const latestRun = activeRun ?? latestResearchCycleRun(cycleState);
+  const resolvedCycleSource = useMemo(
+    () => resolveChartDisplayCandleSource(activeCandleSource, activeTradingViewFeed, activeMt5Feed),
+    [activeCandleSource, activeMt5Feed, activeTradingViewFeed]
+  );
+  const cycleResearchSourceMode = resolvedCycleSource.activeResearchSourceMode;
+  const cycleResearchSource = resolvedCycleSource.activeResearchSource;
+  const cycleResearchUsesMt5 = cycleResearchSourceMode === "mt5_read_only";
+  const cycleResearchUsesTradingView = cycleResearchSourceMode === "tradingview_mcp_chart";
+  const cycleResearchUsesExternal = cycleResearchUsesMt5 || cycleResearchUsesTradingView;
   const activeCheckpoint = liveCheckpoint ?? autoResearchState.activeCheckpoint ?? latestRun?.autoResearchCheckpoint;
   const recoveryCheckpoint = autoResearchState.recoveryCheckpoint;
   const latestProposalSnapshot = latestRun?.latestGeneratedProposal?.metricsSnapshot ?? latestRun?.autoResearchCycle?.createdProposal?.metricsSnapshot;
@@ -286,6 +309,28 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
           setActiveCandleSource(source);
         }
       });
+      hydrateActiveMt5ReadOnlyCandleFeed()
+        .then((feed) => {
+          if (mounted) {
+            setActiveMt5Feed(feed);
+          }
+        })
+        .catch(() => {
+          if (mounted) {
+            setActiveMt5Feed(undefined);
+          }
+        });
+      hydrateActiveTradingViewMcpChartFeed()
+        .then((feed) => {
+          if (mounted) {
+            setActiveTradingViewFeed(feed);
+          }
+        })
+        .catch(() => {
+          if (mounted) {
+            setActiveTradingViewFeed(undefined);
+          }
+        });
     };
     refresh();
     window.addEventListener(RESEARCH_CYCLE_UPDATED_EVENT, refresh);
@@ -293,6 +338,9 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
     window.addEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
     window.addEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
     window.addEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
+    window.addEventListener(MT5_READ_ONLY_UPDATED_EVENT, refresh);
+    window.addEventListener(MT5_READ_ONLY_AUTO_REFRESH_UPDATED_EVENT, refresh);
+    window.addEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
       mounted = false;
@@ -301,6 +349,9 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
       window.removeEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
       window.removeEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
+      window.removeEventListener(MT5_READ_ONLY_UPDATED_EVENT, refresh);
+      window.removeEventListener(MT5_READ_ONLY_AUTO_REFRESH_UPDATED_EVENT, refresh);
+      window.removeEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
   }, [advancedFullResearchMode]);
@@ -316,6 +367,7 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
   }, [latestRun]);
 
   const importedExpectedButMissing =
+    !cycleResearchUsesExternal &&
     activeCandleSource.mode !== "imported" &&
     (importActivation.importedDatasetCount > 0 || importActivation.status === "active_import_missing_stale");
   const latestStoredImport = importActivation.imports[0];
@@ -338,6 +390,12 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
         candleWindowSettings: activeCandleSource.appliedSettings,
         advancedFullResearchMode,
         skipHeavyAudit: activeCandleSource.mode === "imported" && !advancedFullResearchMode,
+        sourceGuard: {
+          requireEligibleResearchSource: true,
+          allowedSourceModes: ["mt5_read_only", "imported", "tradingview_mcp_chart"],
+          minimumCandleCount: 400,
+          messagePrefix: "Dashboard AI Research Cycle blocked"
+        },
         signal: controller.signal,
         onUpdate: (run) => {
           setActiveRun(run);
@@ -431,7 +489,17 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
           className="border-cyan-400/20 bg-cyan-400/10 text-cyan-50"
         />
 
-        {activeCandleSource.mode === "imported" ? (
+        {cycleResearchUsesExternal ? (
+          <div className="rounded-lg border border-emerald-300/25 bg-emerald-300/10 p-3 text-sm text-emerald-100">
+            <p className="font-medium">Current data source: {resolvedCycleSource.activeResearchSourceLabel}.</p>
+            <p className="mt-1">
+              {cycleResearchSource.provider === "mt5_read_only"
+                ? `${cycleResearchSource.provenance.providerSymbol ?? cycleResearchSource.symbol} maps to ${cycleResearchSource.symbol}; ${cycleResearchSource.candleCount.toLocaleString()} ${cycleResearchSource.timeframe} candles.`
+                : `${cycleResearchSource.candleCount.toLocaleString()} ${cycleResearchSource.timeframe} candles.`}{" "}
+              Dashboard cycle guard requires an eligible canonical research source and authority none.
+            </p>
+          </div>
+        ) : activeCandleSource.mode === "imported" ? (
           <div className="rounded-lg border border-emerald-300/25 bg-emerald-300/10 p-3 text-sm text-emerald-100">
             Current data source: Imported historical data. Active import {activeCandleSource.metadata?.sourceLabel ?? "selected"} will be used for the research cycle.
           </div>
@@ -480,12 +548,20 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
               Last run: {formatDateTime(latestRun?.completedAt ?? latestRun?.startedAt)}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-300">
-              <Badge variant={activeCandleSource.mode === "imported" ? "success" : "secondary"}>
-                {activeCandleSource.mode === "imported" ? "Imported historical data active" : "Mock candles active"}
+              <Badge variant={cycleResearchUsesExternal || activeCandleSource.mode === "imported" ? "success" : "secondary"}>
+                {cycleResearchUsesMt5
+                  ? "MT5 read-only active"
+                  : cycleResearchUsesTradingView
+                    ? "TradingView MCP active"
+                    : activeCandleSource.mode === "imported"
+                      ? "Imported historical data active"
+                      : "Mock candles blocked"}
               </Badge>
               <span className="text-slate-400">
-                {activeCandleSource.label}
-                {activeCandleSource.mode === "imported"
+                {cycleResearchUsesExternal ? resolvedCycleSource.activeResearchSourceLabel : activeCandleSource.label}
+                {cycleResearchUsesExternal
+                  ? ` / ${cycleResearchSource.candleCount.toLocaleString()} ${cycleResearchSource.timeframe} candles / ${cycleResearchSource.provenance.providerSymbol ?? cycleResearchSource.symbol} -> ${cycleResearchSource.symbol}`
+                  : activeCandleSource.mode === "imported"
                   ? ` / raw ${activeCandleSource.rawCandleCount.toLocaleString()} / window ${activeCandleSource.researchWindowCandles.toLocaleString()} / ${activeCandleSource.processedCandleCount.toLocaleString()} ${activeCandleSource.appliedSettings.targetTimeframe}`
                   : ""}
               </span>
@@ -494,20 +570,30 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
               <div>
                 <p className="uppercase tracking-[0.14em] text-slate-500">Data source</p>
                 <p className="mt-1 font-mono text-slate-100">
-                  {activeCandleSource.mode === "imported" ? activeCandleSource.metadata?.symbol ?? "Imported" : "Mock"}
+                  {cycleResearchUsesExternal
+                    ? cycleResearchSource.provider
+                    : activeCandleSource.mode === "imported"
+                      ? activeCandleSource.metadata?.symbol ?? "Imported"
+                      : "Mock"}
                 </p>
               </div>
               <div>
                 <p className="uppercase tracking-[0.14em] text-slate-500">Raw candles</p>
-                <p className="mt-1 font-mono text-slate-100">{activeCandleSource.rawCandleCount.toLocaleString()}</p>
+                <p className="mt-1 font-mono text-slate-100">
+                  {(cycleResearchUsesExternal ? cycleResearchSource.candleCount : activeCandleSource.rawCandleCount).toLocaleString()}
+                </p>
               </div>
               <div>
                 <p className="uppercase tracking-[0.14em] text-slate-500">Using window</p>
-                <p className="mt-1 font-mono text-slate-100">{activeCandleSource.researchWindowCandles.toLocaleString()}</p>
+                <p className="mt-1 font-mono text-slate-100">
+                  {(cycleResearchUsesExternal ? resolvedCycleSource.researchIdentity.candleCount : activeCandleSource.researchWindowCandles).toLocaleString()}
+                </p>
               </div>
               <div>
                 <p className="uppercase tracking-[0.14em] text-slate-500">Research timeframe</p>
-                <p className="mt-1 font-mono text-slate-100">{activeCandleSource.appliedSettings.targetTimeframe}</p>
+                <p className="mt-1 font-mono text-slate-100">
+                  {cycleResearchUsesExternal ? cycleResearchSource.timeframe : activeCandleSource.appliedSettings.targetTimeframe}
+                </p>
               </div>
               <div>
                 <p className="uppercase tracking-[0.14em] text-slate-500">Performance mode</p>
@@ -515,7 +601,9 @@ export function ResearchCycleControl({ state, onCycleUpdate }: ResearchCycleCont
               </div>
               <div>
                 <p className="uppercase tracking-[0.14em] text-slate-500">Selected preset</p>
-                <p className="mt-1 font-mono text-slate-100">{dashboardPreset}</p>
+                <p className="mt-1 font-mono text-slate-100">
+                  {cycleResearchUsesMt5 ? "MT5 read-only" : cycleResearchUsesTradingView ? "TradingView MCP" : dashboardPreset}
+                </p>
               </div>
             </div>
             {activeCandleSource.mode === "imported" ? (
