@@ -57,5 +57,12 @@ export type {
   BacktestSourcePreference,
   ResolvedBacktestCandleSource
 } from "@/lib/backtesting/backtestSourceResolver";
+export {
+  clearReplaySnapshotSourceMeta,
+  loadReplaySnapshotSourceMeta,
+  REPLAY_SNAPSHOT_SOURCE_META_KEY,
+  storeReplaySnapshotSourceMeta
+} from "@/lib/backtesting/replaySourceSession";
+export type { ReplaySnapshotSourceMeta } from "@/lib/backtesting/replaySourceSession";
 export { runBacktest, signalText } from "@/lib/backtesting/runBacktest";
 export { createConfiguredReplay, createReplayState, getReplayFrame, jumpReplay, setReplayPlaying, stepReplay } from "@/lib/backtesting/replayEngine";

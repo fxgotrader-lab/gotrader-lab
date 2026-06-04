@@ -119,6 +119,39 @@ export async function loadResolvedBacktestCandleSource({
     return createMockBacktestCandleSource(settings);
   }
 
+  if (preference === "active_research") {
+    const mt5Canonical = await loadActiveMt5CanonicalSource();
+    if (mt5Canonical?.eligibility.researchCycle && mt5Canonical.roles.includes("research")) {
+      return asResolvedBacktestSource(
+        preparedFromCanonical(mt5Canonical, settings),
+        mt5Canonical,
+        "active_research",
+        [
+          "Backtest/Replay is using the active canonical MT5 read-only research source.",
+          "MT5 read-only USTECH is CFD/proxy market data for MNQ-style research, not CME MNQ futures broker truth.",
+          "Authority remains execution none, broker none, readiness override none."
+        ]
+      );
+    }
+
+    const importedOrMock = await loadPreparedCandleSource(settings);
+    const importedOrMockCanonical = canonicalSourceFromPreparedSource(importedOrMock);
+
+    return asResolvedBacktestSource(
+      importedOrMock,
+      importedOrMockCanonical,
+      "active_research",
+      [
+        mt5Canonical?.eligibility.researchCycle && !mt5Canonical.roles.includes("research")
+          ? "MT5 read-only candles are loaded, but MT5 is not selected as the active research source for Backtest/Replay."
+          : "No eligible active canonical MT5 research source was available for Backtest/Replay.",
+        importedOrMockCanonical.provider === "mock"
+          ? "Mock/demo source is labeled explicitly; select MT5 read-only or imported historical for real comparison."
+          : "Imported historical is being used as the explicit fallback source."
+      ]
+    );
+  }
+
   const importedOrMock = await loadPreparedCandleSource(settings);
   const importedOrMockCanonical = canonicalSourceFromPreparedSource(importedOrMock);
 
@@ -133,31 +166,10 @@ export async function loadResolvedBacktestCandleSource({
     );
   }
 
-  const mt5Canonical = await loadActiveMt5CanonicalSource();
-  if (mt5Canonical?.eligibility.researchCycle && mt5Canonical.roles.includes("research")) {
-    return asResolvedBacktestSource(
-      preparedFromCanonical(mt5Canonical, settings),
-      mt5Canonical,
-      "active_research",
-      [
-        "Backtest/Replay is using the active canonical MT5 read-only research source.",
-        "MT5 read-only USTECH is CFD/proxy market data for MNQ-style research, not CME MNQ futures broker truth.",
-        "Authority remains execution none, broker none, readiness override none."
-      ]
-    );
-  }
-
   return asResolvedBacktestSource(
     importedOrMock,
     importedOrMockCanonical,
-    "active_research",
-    [
-      mt5Canonical?.eligibility.researchCycle && !mt5Canonical.roles.includes("research")
-        ? "MT5 read-only candles are loaded, but MT5 is not selected as the active research source for Backtest/Replay."
-        : "No eligible active canonical MT5 research source was available for Backtest/Replay.",
-      importedOrMockCanonical.provider === "mock"
-        ? "Mock/demo source is labeled explicitly; select MT5 read-only or imported historical for real comparison."
-        : "Imported historical is being used as the explicit fallback source."
-    ]
+    "imported_historical",
+    ["Imported historical was requested for Backtest/Replay comparison."]
   );
 }

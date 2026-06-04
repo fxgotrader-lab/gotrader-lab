@@ -2,6 +2,7 @@ import { Component, useEffect, useMemo, useRef, useState, type ErrorInfo, type R
 import { Link } from "react-router-dom";
 import { Activity, ExternalLink, Lock, RadioTower, ShieldCheck, Zap } from "lucide-react";
 
+import { clearReplaySnapshotSourceMeta, loadReplaySnapshotSourceMeta } from "@/lib/backtesting";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import {
   TradingChart,
@@ -160,6 +161,7 @@ const mt5AutoRefreshCandleOptions = mt5ReadOnlyAutoRefreshCandleLimitOptions.map
   value: String(value)
 }));
 const TRADINGVIEW_FEED_INACTIVE_MESSAGE = "TradingView MCP chart feed not active.";
+const BACKTEST_SOURCE_PREFERENCE_KEY = "gotrader-ai-lab-backtest-source-preference";
 
 const formatCountdown = (timestamp?: string, nowMs = Date.now()) => {
   if (!timestamp) {
@@ -172,6 +174,144 @@ const formatCountdown = (timestamp?: string, nowMs = Date.now()) => {
 const canonicalMt5SourceFrom = (snapshot?: ResearchRuntimeSnapshot) =>
   snapshot?.marketData.allAvailableSources.find((source) => source.provider === "mt5_read_only" && source.candleCount > 0);
 const isTradingChartLineOverlay = (overlay: TradingChartLineOverlay | undefined): overlay is TradingChartLineOverlay => Boolean(overlay);
+
+type SourceConsistencyStatus = "consistent" | "different but explicit" | "stale/mismatch";
+type SourceConsistencyRow = {
+  area: string;
+  brokerSymbol?: string;
+  candleCount: number | string;
+  detail: string;
+  fingerprint: string;
+  provider: string;
+  requestedSymbol: string;
+  status: SourceConsistencyStatus;
+};
+
+const compactFingerprint = (value?: string) =>
+  value
+    ? value.length > 46
+      ? `${value.slice(0, 22)}...${value.slice(-12)}`
+      : value
+    : "no fingerprint";
+
+const sourceConsistencyVariant = (status: SourceConsistencyStatus) =>
+  status === "consistent" ? "success" as const : status === "stale/mismatch" ? "danger" as const : "warning" as const;
+
+const readBacktestSourcePreference = () => {
+  if (typeof window === "undefined") {
+    return "active_research";
+  }
+  const stored = window.localStorage.getItem(BACKTEST_SOURCE_PREFERENCE_KEY);
+  return stored === "imported_historical" || stored === "mock_demo" || stored === "active_research"
+    ? stored
+    : "active_research";
+};
+
+const sourceSummaryRow = (
+  area: string,
+  source: ResearchRuntimeSnapshot["marketData"]["activeResearchSource"],
+  status: SourceConsistencyStatus,
+  detail: string
+): SourceConsistencyRow => ({
+  area,
+  brokerSymbol: source.provenance.providerSymbol,
+  candleCount: source.candleCount,
+  detail,
+  fingerprint: compactFingerprint(source.fingerprint),
+  provider: source.provider.replace(/_/g, " "),
+  requestedSymbol: source.symbol,
+  status
+});
+
+const buildSourceConsistencyRows = (snapshot?: ResearchRuntimeSnapshot): SourceConsistencyRow[] => {
+  if (!snapshot) {
+    return [];
+  }
+  const activeResearch = snapshot.marketData.activeResearchSource;
+  const activeChart = snapshot.marketData.activeChartSource;
+  const activeWalkForward = snapshot.marketData.activeWalkForwardSource;
+  const sources = snapshot.marketData.allAvailableSources;
+  const backtestPreference = readBacktestSourcePreference();
+  const explicitBacktestSource =
+    backtestPreference === "imported_historical"
+      ? sources.find((source) => source.provider === "imported_historical")
+      : backtestPreference === "mock_demo"
+        ? sources.find((source) => source.provider === "mock")
+        : activeResearch;
+  const replaySnapshot = loadReplaySnapshotSourceMeta();
+  const researchFingerprint = activeResearch.fingerprint;
+
+  const rowForBacktest = explicitBacktestSource
+    ? sourceSummaryRow(
+        "Backtest",
+        explicitBacktestSource,
+        backtestPreference === "active_research"
+          ? explicitBacktestSource.fingerprint === researchFingerprint
+            ? "consistent"
+            : "stale/mismatch"
+          : "different but explicit",
+        backtestPreference === "active_research"
+          ? "Backtest Lab defaults to the active canonical research source."
+          : `Backtest Lab source override is explicit: ${backtestPreference.replace(/_/g, " ")}.`
+      )
+    : {
+        area: "Backtest",
+        candleCount: "n/a",
+        detail: `Backtest preference ${backtestPreference.replace(/_/g, " ")} is selected, but no matching source summary is available.`,
+        fingerprint: "no fingerprint",
+        provider: "unavailable",
+        requestedSymbol: activeResearch.symbol,
+        status: "stale/mismatch" as const
+      };
+
+  const rowForReplay: SourceConsistencyRow = replaySnapshot
+    ? {
+        area: "Replay",
+        brokerSymbol: replaySnapshot.brokerSymbol,
+        candleCount: replaySnapshot.candleCount,
+        detail:
+          replaySnapshot.sourceFingerprint === researchFingerprint
+            ? `Frozen snapshot created ${formatDateTime(replaySnapshot.createdAt)} from the active research source.`
+            : `Frozen snapshot created ${formatDateTime(replaySnapshot.createdAt)} from explicit ${replaySnapshot.mode.replace(/_/g, " ")} source.`,
+        fingerprint: compactFingerprint(replaySnapshot.sourceFingerprint),
+        provider: replaySnapshot.provider.replace(/_/g, " "),
+        requestedSymbol: replaySnapshot.requestedSymbol,
+        status: replaySnapshot.sourceFingerprint === researchFingerprint ? "consistent" : "different but explicit"
+      }
+    : {
+        area: "Replay",
+        brokerSymbol: activeResearch.provenance.providerSymbol,
+        candleCount: "pending",
+        detail: "No frozen replay snapshot is loaded. Replay will require Create Replay from Active MT5 Source before showing a chart.",
+        fingerprint: compactFingerprint(researchFingerprint),
+        provider: activeResearch.provider.replace(/_/g, " "),
+        requestedSymbol: activeResearch.symbol,
+        status: "different but explicit"
+      };
+
+  return [
+    sourceSummaryRow(
+      "Dashboard chart",
+      activeChart,
+      activeChart.fingerprint === researchFingerprint || activeChart.provider === activeResearch.provider ? "consistent" : "different but explicit",
+      "Dashboard chart uses the canonical active chart source."
+    ),
+    sourceSummaryRow("Research", activeResearch, "consistent", "AI Research Cycle, committee, and advisory packets use the active research source."),
+    rowForBacktest,
+    rowForReplay,
+    sourceSummaryRow(
+      "Walk-forward",
+      activeWalkForward,
+      activeWalkForward.fingerprint === researchFingerprint || activeWalkForward.provider === activeResearch.provider ? "consistent" : "different but explicit",
+      activeWalkForward.provider === "imported_historical"
+        ? "Imported historical remains an explicit deep-history walk-forward source."
+        : "Walk-forward is routed through the canonical active walk-forward source."
+    ),
+    sourceSummaryRow("ICT Lab chart", activeChart, "consistent", "ICT Lab chart resolves through the canonical active chart source."),
+    sourceSummaryRow("Autonomous", activeResearch, "consistent", "Autonomous preflight uses the active research source guard; mock fallback is refused by default."),
+    sourceSummaryRow("Advisory packet", activeResearch, "consistent", "LLM/OpenClaw advisory context is compacted from the active research source metadata.")
+  ];
+};
 
 const mt5ResearchEligibleFrom = (snapshot?: ResearchRuntimeSnapshot) => {
   const canonicalMt5Source = canonicalMt5SourceFrom(snapshot);
@@ -363,6 +503,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const [mt5SourceUpdateSerial, setMt5SourceUpdateSerial] = useState(0);
   const [autoRefreshClock, setAutoRefreshClock] = useState(() => Date.now());
   const [dataConnectionEvents, setDataConnectionEvents] = useState<CommandCenterDataEvent[]>([]);
+  const [sourceConsistencySerial, setSourceConsistencySerial] = useState(0);
   const latestRun = liveRun ?? latestAutonomousResearchRun(autonomyState);
   const currentIteration = latestRun?.iterations.find((iteration) => iteration.iteration === latestRun.currentIteration);
   const recoveryRun = !busy && autonomyState.activeRun?.status === "running" ? autonomyState.activeRun : undefined;
@@ -1422,6 +1563,10 @@ export function MissionControlShell({ state }: { state: LabState }) {
       ? canonicalMetrics.falsePositiveCount / (canonicalMetrics.totalTrades + canonicalMetrics.falsePositiveCount)
       : undefined;
   const sourceContextRows = useMemo(() => buildSourceContextRows(runtimeSnapshot), [runtimeSnapshot]);
+  const sourceConsistencyRows = useMemo(
+    () => buildSourceConsistencyRows(runtimeSnapshot),
+    [runtimeSnapshot, sourceConsistencySerial, dashboardAdvancedOpen]
+  );
   const expandedResearchMetricRows = useMemo(() => buildExpandedResearchMetricRows(runtimeSnapshot), [runtimeSnapshot]);
   const riskReportRows = useMemo(() => buildRiskReportRows(runtimeSnapshot), [runtimeSnapshot]);
   const proposalImpactRows = useMemo(() => buildProposalImpactRows(runtimeSnapshot), [runtimeSnapshot]);
@@ -2830,6 +2975,63 @@ export function MissionControlShell({ state }: { state: LabState }) {
           </section>
           <MissionControlPipeline stages={pipelineStages} />
         </div>
+        <section className="rounded-xl border border-white/10 bg-slate-950/45 p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">Source Consistency</p>
+              <p className="mt-1 text-sm text-slate-400">
+                Canonical source routing across Dashboard, Backtest, Replay, Walk-forward, autonomous research, and advisory context.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                clearReplaySnapshotSourceMeta();
+                setSourceConsistencySerial((value) => value + 1);
+                addDataConnectionEvent(
+                  "Replay snapshot cache cleared",
+                  "Cleared compact replay snapshot metadata only. Imported datasets and MT5 candle cache were not touched.",
+                  "info"
+                );
+              }}
+            >
+              Clear stale replay snapshots
+            </Button>
+          </div>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[980px] text-left text-xs">
+              <thead className="uppercase tracking-[0.14em] text-slate-500">
+                <tr className="border-b border-white/10">
+                  <th className="py-2 pr-3">Surface</th>
+                  <th className="py-2 pr-3">Provider</th>
+                  <th className="py-2 pr-3">Requested</th>
+                  <th className="py-2 pr-3">Broker</th>
+                  <th className="py-2 pr-3">Candles</th>
+                  <th className="py-2 pr-3">Fingerprint</th>
+                  <th className="py-2 pr-3">Status</th>
+                  <th className="py-2 pr-3">Detail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sourceConsistencyRows.map((row) => (
+                  <tr key={row.area} className="border-b border-white/5 align-top">
+                    <td className="py-3 pr-3 font-medium text-slate-100">{row.area}</td>
+                    <td className="py-3 pr-3 font-mono text-slate-300">{row.provider}</td>
+                    <td className="py-3 pr-3 font-mono text-slate-300">{row.requestedSymbol}</td>
+                    <td className="py-3 pr-3 font-mono text-slate-300">{row.brokerSymbol ?? "n/a"}</td>
+                    <td className="py-3 pr-3 font-mono text-slate-300">{typeof row.candleCount === "number" ? row.candleCount.toLocaleString() : row.candleCount}</td>
+                    <td className="py-3 pr-3 break-all font-mono text-slate-500">{row.fingerprint}</td>
+                    <td className="py-3 pr-3">
+                      <Badge variant={sourceConsistencyVariant(row.status)}>{row.status}</Badge>
+                    </td>
+                    <td className="py-3 pr-3 text-slate-400">{row.detail}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {[
             ["Data source", runtimeSnapshot?.marketData.sourceLabel ?? "loading"],

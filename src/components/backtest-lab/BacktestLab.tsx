@@ -181,6 +181,7 @@ export function BacktestLab() {
   const [draftConfig, setDraftConfig] = useState<ResolvedBacktestConfig>(() => resolveActiveBacktestConfig().config);
   const [sourcePreference, setSourcePreference] = useState<BacktestSourcePreference>(() => loadBacktestSourcePreference());
   const [candleSource, setCandleSource] = useState<ResolvedBacktestCandleSource>(() => createMockBacktestCandleSource());
+  const [sourceResolved, setSourceResolved] = useState(false);
   const [result, setResult] = useState(() => runBacktest(candleSource.candles, resolveActiveBacktestConfig().config));
   const [activeCalibration, setActiveCalibration] = useState(() => loadActiveResearchCalibration());
   const [windowSettings, setWindowSettings] = useState<CandleWindowSettings>(() => loadCandleWindowSettings());
@@ -244,6 +245,7 @@ export function BacktestLab() {
     settingsOverride: CandleWindowSettings = loadCandleWindowSettings(),
     preferenceOverride: BacktestSourcePreference = sourcePreference
   ) => {
+    setSourceResolved(false);
     const source = await loadResolvedBacktestCandleSource({ preference: preferenceOverride, settings: settingsOverride });
     const resolved = resolveActiveBacktestConfig(configOverride);
     const sourceConfig = configForSource(resolved.config, source);
@@ -252,6 +254,7 @@ export function BacktestLab() {
     setConfigResolution(sourceResolved);
     setDraftConfig(sourceResolved.config);
     setResult(runBacktest(candlesForSource(source), sourceResolved.config));
+    setSourceResolved(true);
     void resolveResearchRuntimeSnapshot({ preparedCandleSource: source }).then(setRuntimeSnapshot).catch(() => undefined);
   };
 
@@ -300,6 +303,7 @@ export function BacktestLab() {
   useEffect(() => {
     let mounted = true;
     const refresh = () => {
+      setSourceResolved(false);
       setActiveCalibration(loadActiveResearchCalibration());
       const settings = loadCandleWindowSettings();
       const preference = loadBacktestSourcePreference();
@@ -316,6 +320,7 @@ export function BacktestLab() {
         setConfigResolution(sourceResolved);
         setDraftConfig(sourceResolved.config);
         setResult(runBacktest(candlesForSource(source), sourceResolved.config));
+        setSourceResolved(true);
         resolveResearchRuntimeSnapshot({ preparedCandleSource: source })
           .then((snapshot) => {
             if (mounted) {
@@ -354,10 +359,10 @@ export function BacktestLab() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant="warning">Simulation only</Badge>
-          <Badge variant={candleSource.provider === "mt5_read_only" ? "success" : candleSource.provider === "mock" ? "warning" : "muted"}>
-            {candleSource.provider.replace(/_/g, " ")}
+          <Badge variant={!sourceResolved ? "secondary" : candleSource.provider === "mt5_read_only" ? "success" : candleSource.provider === "mock" ? "warning" : "muted"}>
+            {sourceResolved ? candleSource.provider.replace(/_/g, " ") : "resolving source"}
           </Badge>
-          {candleSource.brokerSymbol ? <Badge variant="secondary">{candleSource.brokerSymbol} -&gt; {candleSource.requestedSymbol}</Badge> : null}
+          {sourceResolved && candleSource.brokerSymbol ? <Badge variant="secondary">{candleSource.brokerSymbol} -&gt; {candleSource.requestedSymbol}</Badge> : null}
           <Badge variant="danger">authority none</Badge>
         </div>
       </div>
@@ -412,20 +417,26 @@ export function BacktestLab() {
         </CardContent>
       </Card>
 
-      <Card className={candleSource.provider === "mt5_read_only" ? "border-emerald-300/25 bg-emerald-300/10" : candleSource.provider === "mock" ? "border-amber-300/25 bg-amber-300/10" : ""}>
+      <Card className={sourceResolved && candleSource.provider === "mt5_read_only" ? "border-emerald-300/25 bg-emerald-300/10" : sourceResolved && candleSource.provider === "mock" ? "border-amber-300/25 bg-amber-300/10" : ""}>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <CardTitle className="text-base">Backtest Source</CardTitle>
               <CardDescription>Backtests use the selected canonical source. MT5 read-only remains CFD/proxy data with no execution authority.</CardDescription>
             </div>
-            <Badge variant={candleSource.provider === "mt5_read_only" ? "success" : candleSource.provider === "mock" ? "warning" : "secondary"}>
-              {candleSource.provider.replace(/_/g, " ")}
+            <Badge variant={!sourceResolved ? "secondary" : candleSource.provider === "mt5_read_only" ? "success" : candleSource.provider === "mock" ? "warning" : "secondary"}>
+              {sourceResolved ? candleSource.provider.replace(/_/g, " ") : "resolving"}
             </Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
-          <div className="grid gap-3 md:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
+          {!sourceResolved ? (
+            <div className="rounded-lg border border-border bg-background/45 p-4 text-muted-foreground">
+              Resolving the active canonical source before displaying a backtest preview. Mock/demo output is shown only
+              after that source is selected explicitly.
+            </div>
+          ) : null}
+          <div className={`${sourceResolved ? "grid" : "hidden"} gap-3 md:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]`}>
             <div className="space-y-2">
               <Label htmlFor="backtest-source-preference">Source selector</Label>
               <Select
@@ -851,7 +862,13 @@ export function BacktestLab() {
                   {candleSource.provider.replace(/_/g, " ")}
                 </Badge>
               </div>
-              <TradingChart {...backtestChartData} heightClassName="h-[260px]" />
+              {sourceResolved ? (
+                <TradingChart {...backtestChartData} heightClassName="h-[260px]" />
+              ) : (
+                <div className="flex h-[260px] items-center justify-center rounded-lg border border-border bg-background/45 px-4 text-center text-sm text-muted-foreground">
+                  Backtest preview unavailable while resolving the active canonical source before rendering the chart.
+                </div>
+              )}
             </div>
 
             <div className="rounded-lg border border-border bg-background/45 p-3">

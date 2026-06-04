@@ -68,7 +68,7 @@ export function ChartToolbar({
           ) : null}
           {source.sourceType === "mt5_read_only" ? (
             <span className="rounded-full border border-emerald-300/30 bg-emerald-300/10 px-2 py-0.5 text-[0.65rem] uppercase tracking-[0.16em] text-emerald-100">
-              Read-only, no execution
+              CFD/proxy, not broker truth
             </span>
           ) : null}
           {source.sourceType === "live_placeholder" ? (
