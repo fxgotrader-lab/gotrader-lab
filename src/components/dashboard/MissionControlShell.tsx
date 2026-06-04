@@ -1988,9 +1988,10 @@ export function MissionControlShell({ state }: { state: LabState }) {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-300">Research Committee</p>
-                  <h3 className="mt-1 text-base font-semibold text-slate-50">Decision Log and Reflection Memory</h3>
+                  <h3 className="mt-1 text-base font-semibold text-slate-50">Research Committee Compact Report</h3>
                   <p className="mt-1 text-sm text-slate-400">
-                    TradingAgents-inspired committee report built from deterministic GoTrader outputs only.
+                    TradingAgents-inspired committee report built from deterministic GoTrader outputs only. Includes Bull Case,
+                    Bear Case, Risk Committee, Research Chair, Latest Decision Log, and Reflection Memory.
                   </p>
                 </div>
                 <Badge variant="warning">{formatToken(researchCommitteeReport.finalResearchChairSynthesis.verdict)}</Badge>
@@ -2002,7 +2003,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
                   detail={researchCommitteeReport.finalResearchChairSynthesis.summary}
                 />
                 <MiniReadout
-                  label="Decision ID"
+                  label="Latest Decision Log"
                   value={researchCommitteeReport.decisionLogEntry.decisionId}
                   detail={researchCommitteeReport.decisionLogEntry.cycleId ?? "no cycle attached"}
                 />

@@ -1068,6 +1068,7 @@ export function SelfImprovementView() {
                 <CardTitle>Reflection Memory</CardTitle>
                 <CardDescription>
                   Deterministic proposal support check from the latest Research Decision Log. No LLM or auto-apply required.
+                  Reflection support does not mark Paper-Demo Candidate readiness.
                 </CardDescription>
               </div>
               <Badge
@@ -1102,7 +1103,7 @@ export function SelfImprovementView() {
                 </p>
               </div>
               <div className="rounded-lg border border-violet-300/20 bg-background/35 p-3">
-                <p className="text-xs uppercase tracking-[0.14em] text-violet-100/70">Decision log</p>
+                <p className="text-xs tracking-[0.08em] text-violet-100/70">Latest Decision Log</p>
                 <p className="mt-1 break-all font-mono text-xs text-foreground">
                   {researchCommitteeReport.decisionLogEntry.decisionId}
                 </p>
