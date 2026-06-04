@@ -921,7 +921,7 @@ export function LLMAdvisoryReviewPanel({
             Research Advisor
           </h3>
           <p className="mt-1 text-xs leading-5 text-slate-400">
-            Plain-language review only. Deterministic agents, gates, and readiness stay in control.
+            Plain-language review only. Advisory-only. Does not change readiness. Confidence adjustment is explanatory only.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -930,6 +930,8 @@ export function LLMAdvisoryReviewPanel({
           <Badge variant={advisoryBadgeVariant(advisoryCapabilityStatus)}>Advisory {shortStatus(advisoryCapabilityStatus)}</Badge>
           <Badge variant={circuitBadgeVariant(circuitBreakerStatus)}>Circuit {shortStatus(circuitBreakerStatus)}</Badge>
           <Badge variant="secondary">compact advisory</Badge>
+          <Badge variant="warning">advisory-only</Badge>
+          <Badge variant="secondary">confidence explanatory only</Badge>
           <Badge variant="danger">execution none</Badge>
           <Badge variant="secondary">readiness override none</Badge>
         </div>

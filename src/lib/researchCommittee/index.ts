@@ -1,4 +1,5 @@
 export { buildResearchCommitteeReport } from "./buildResearchCommitteeReport";
+export { buildResearchReadinessDistinction } from "./researchReadinessDistinction";
 export type {
   ResearchChairSynthesis,
   ResearchCommitteeReport,
@@ -6,3 +7,4 @@ export type {
   ResearchCommitteeSectionStatus,
   ResearchRiskCommitteeReport
 } from "./researchCommitteeTypes";
+export type { ResearchReadinessDistinction } from "./researchReadinessDistinction";

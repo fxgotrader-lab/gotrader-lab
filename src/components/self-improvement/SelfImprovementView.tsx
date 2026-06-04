@@ -1117,6 +1117,38 @@ export function SelfImprovementView() {
                 Next test: {researchCommitteeReport.reflectionMemory.whatToTestNext}
               </p>
             </div>
+            <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.14em] text-amber-100/75">Advisory readiness distinction</p>
+                  <p className="mt-1 text-foreground">
+                    {researchCommitteeReport.readinessDistinction.riskChairSummary}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant={researchCommitteeReport.readinessDistinction.researchReady ? "success" : "warning"}>
+                    Research Ready {researchCommitteeReport.readinessDistinction.researchReadyLabel}
+                  </Badge>
+                  <Badge variant={researchCommitteeReport.readinessDistinction.paperDemoCandidate ? "success" : "warning"}>
+                    Paper-Demo Candidate {researchCommitteeReport.readinessDistinction.paperDemoCandidateLabel}
+                  </Badge>
+                </div>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-amber-100/80">
+                Advisory note is non-authoritative. No auto-apply, no readiness promotion, and no threshold change can come from this panel.
+                {` ${researchCommitteeReport.readinessDistinction.confidenceNotice}`}
+              </p>
+              <p className="mt-2 text-xs text-amber-100">
+                Paper-demo blocker: {researchCommitteeReport.readinessDistinction.paperDemoBlocker}
+              </p>
+              <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                {researchCommitteeReport.readinessDistinction.recommendedNextWork.map((item) => (
+                  <div key={item} className="rounded-md border border-amber-300/20 bg-background/35 p-2 text-xs text-foreground">
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
           </CardContent>
         </Card>
       ) : null}

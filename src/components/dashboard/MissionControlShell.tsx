@@ -1418,6 +1418,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
     () => (runtimeSnapshot ? buildResearchCommitteeReport(runtimeSnapshot) : undefined),
     [runtimeSnapshot]
   );
+  const readinessDistinction = researchCommitteeReport?.readinessDistinction;
   const primaryBlocker =
     actionItems[0]?.title ??
     runtimeSnapshot?.readiness.actualBlockers[0] ??
@@ -1867,10 +1868,30 @@ export function MissionControlShell({ state }: { state: LabState }) {
             <MiniReadout label="Maturity" value={`${runtimeSnapshot?.maturity.maturityScore ?? 0}/100`} detail={runtimeSnapshot?.maturity.maturityGrade.replace(/_/g, " ") ?? "untested"} />
             <MiniReadout label="Evidence" value={`${runtimeSnapshot?.evidence.evidenceQualityScore ?? 0}/100`} detail={runtimeSnapshot?.evidence.weakestEvidenceCategories[0]?.replace(/_/g, " ") ?? "ledger pending"} />
             <MiniReadout label="Walk-forward" value={`${runtimeSnapshot?.walkForward.outOfSampleWindowsPassed ?? 0}/${runtimeSnapshot?.walkForward.windowsTested ?? 0}`} detail={runtimeSnapshot?.walkForward.recommendedNextAction ?? "pending"} />
+            <MiniReadout
+              label="Research Ready"
+              value={readinessDistinction?.researchReadyLabel ?? "no"}
+              detail={runtimeSnapshot?.readiness.readinessState ?? "loading"}
+            />
+            <MiniReadout
+              label="Paper-Demo Candidate"
+              value={readinessDistinction?.paperDemoCandidateLabel ?? "no"}
+              detail={readinessDistinction?.paperDemoBlocker ?? "Waiting for readiness evidence."}
+            />
+            <MiniReadout
+              label="WF status"
+              value={readinessDistinction?.walkForwardStatus ?? "unavailable"}
+              detail={`${readinessDistinction?.evidenceScore ?? runtimeSnapshot?.evidence.evidenceQualityScore ?? 0}/100 evidence, ${readinessDistinction?.maturityScore ?? runtimeSnapshot?.maturity.maturityScore ?? 0}/100 maturity`}
+            />
           </div>
-          {runtimeSnapshot?.readiness.actualBlockers.length ? (
+          {readinessDistinction && !readinessDistinction.paperDemoCandidate ? (
             <div className="mt-4 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
-              Insufficient evidence. More valid profile windows needed.
+              Paper-Demo Candidate blocked: {readinessDistinction.paperDemoBlocker}
+            </div>
+          ) : null}
+          {readinessDistinction ? (
+            <div className="mt-3 rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-3 text-xs leading-5 text-cyan-100">
+              {readinessDistinction.confidenceAdjustmentNote} {readinessDistinction.advisoryNotice} {readinessDistinction.confidenceNotice}
             </div>
           ) : null}
         </div>
@@ -1980,10 +2001,30 @@ export function MissionControlShell({ state }: { state: LabState }) {
                   detail={`${researchCommitteeReport.decisionLogEntry.source.brokerSymbol ?? researchCommitteeReport.decisionLogEntry.source.requestedSymbol} / ${researchCommitteeReport.decisionLogEntry.source.candleCount.toLocaleString()} candles`}
                 />
                 <MiniReadout
+                  label="Research Ready"
+                  value={researchCommitteeReport.readinessDistinction.researchReadyLabel}
+                  detail={researchCommitteeReport.decisionLogEntry.readiness.state}
+                />
+                <MiniReadout
+                  label="Paper-Demo Candidate"
+                  value={researchCommitteeReport.readinessDistinction.paperDemoCandidateLabel}
+                  detail={researchCommitteeReport.readinessDistinction.paperDemoBlocker}
+                />
+                <MiniReadout
+                  label="Evidence / maturity"
+                  value={`${researchCommitteeReport.readinessDistinction.evidenceScore ?? 0}/100 / ${researchCommitteeReport.readinessDistinction.maturityScore ?? 0}/100`}
+                  detail={`WF ${researchCommitteeReport.readinessDistinction.walkForwardStatus}`}
+                />
+                <MiniReadout
                   label="Risk chair"
                   value={researchCommitteeReport.riskCommittee.finalRiskChairVerdict}
                   detail={researchCommitteeReport.safetyNotice}
                 />
+              </div>
+              <div className="mt-3 rounded-lg border border-violet-300/15 bg-violet-300/5 p-3 text-xs leading-5 text-violet-100/80">
+                {researchCommitteeReport.readinessDistinction.confidenceAdjustmentNote}{" "}
+                {researchCommitteeReport.readinessDistinction.advisoryNotice}{" "}
+                {researchCommitteeReport.readinessDistinction.confidenceNotice}
               </div>
               <div className="mt-4 grid gap-3 lg:grid-cols-3">
                 <div className="rounded-lg border border-emerald-300/15 bg-emerald-300/5 p-3">

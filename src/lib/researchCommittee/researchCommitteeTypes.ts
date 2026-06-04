@@ -5,6 +5,8 @@ import type {
   ResearchReflectionMemory
 } from "@/lib/researchDecisionLog";
 
+import type { ResearchReadinessDistinction } from "./researchReadinessDistinction";
+
 export type ResearchCommitteeSectionStatus = "supportive" | "cautious" | "blocking" | "insufficient";
 
 export interface ResearchCommitteeSection {
@@ -39,6 +41,7 @@ export interface ResearchCommitteeReport {
   reflectionMemory: ResearchReflectionMemory;
   bullCase: ResearchCommitteeSection;
   bearCase: ResearchCommitteeSection;
+  readinessDistinction: ResearchReadinessDistinction;
   riskCommittee: ResearchRiskCommitteeReport;
   finalResearchChairSynthesis: ResearchChairSynthesis;
   authority: ResearchDecisionAuthority;

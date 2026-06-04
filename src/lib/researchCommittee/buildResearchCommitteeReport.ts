@@ -8,6 +8,7 @@ import {
 import { safeTopN, uid } from "@/lib/utils";
 
 import type { ResearchCommitteeReport, ResearchCommitteeSection } from "./researchCommitteeTypes";
+import { buildResearchReadinessDistinction } from "./researchReadinessDistinction";
 
 const pct = (value: number | null | undefined) =>
   typeof value === "number" && Number.isFinite(value) ? `${Math.round(value * 100)}%` : "n/a";
@@ -109,6 +110,7 @@ export function buildResearchCommitteeReport(snapshot: ResearchRuntimeSnapshot):
   const { entry, reflection } = buildResearchDecisionLogBundle(snapshot);
   const bullCase = buildBullCase(entry);
   const bearCase = buildBearCase(entry);
+  const readinessDistinction = buildResearchReadinessDistinction(entry);
   const conservativeStatus = entry.blockers.length ? "blocking" : "cautious";
   const balancedStatus = entry.finalResearchVerdict === "reject_current_setup" ? "blocking" : "cautious";
 
@@ -121,6 +123,7 @@ export function buildResearchCommitteeReport(snapshot: ResearchRuntimeSnapshot):
     reflectionMemory: reflection,
     bullCase,
     bearCase,
+    readinessDistinction,
     riskCommittee: {
       conservativeView: {
         title: "Conservative Risk View",
@@ -149,15 +152,24 @@ export function buildResearchCommitteeReport(snapshot: ResearchRuntimeSnapshot):
         limitations: ["No buy/sell/order/account/position authority is available from this committee."]
       },
       finalRiskChairVerdict:
-        entry.finalResearchVerdict === "reject_current_setup"
+        !readinessDistinction.paperDemoCandidate
+          ? readinessDistinction.riskChairSummary
+          : entry.finalResearchVerdict === "reject_current_setup"
           ? "Risk chair rejects the current setup for this window."
           : "Risk chair permits research-only follow-up under existing gates.",
       blockers: entry.blockers
     },
     finalResearchChairSynthesis: {
       verdict: entry.finalResearchVerdict,
-      summary: entry.finalResearchVerdictReason,
-      nextActions: nextActionsFor(entry.finalResearchVerdict, entry),
+      summary: readinessDistinction.paperDemoCandidate
+        ? entry.finalResearchVerdictReason
+        : `${entry.finalResearchVerdictReason} ${readinessDistinction.riskChairSummary}`,
+      nextActions: readinessDistinction.paperDemoCandidate
+        ? nextActionsFor(entry.finalResearchVerdict, entry)
+        : [
+            "Continue research and collect more evidence before Paper-Demo Candidate review.",
+            ...readinessDistinction.recommendedNextWork
+          ],
       reproducibilityWarning:
         "This GoTrader-native report is deterministic from the current local runtime. Separate LLM advisory text may vary by provider/model and should be treated as non-reproducible commentary."
     },

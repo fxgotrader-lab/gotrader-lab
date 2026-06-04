@@ -224,7 +224,18 @@ export function AgentDebateView() {
                 value={`${researchCommitteeReport.decisionLogEntry.source.brokerSymbol ?? researchCommitteeReport.decisionLogEntry.source.requestedSymbol} -> ${researchCommitteeReport.decisionLogEntry.source.requestedSymbol}`}
               />
               <StatusTile label="Candles" value={researchCommitteeReport.decisionLogEntry.source.candleCount.toLocaleString()} />
+              <StatusTile label="Research Ready" value={researchCommitteeReport.readinessDistinction.researchReadyLabel} />
+              <StatusTile label="Paper-Demo Candidate" value={researchCommitteeReport.readinessDistinction.paperDemoCandidateLabel} />
+              <StatusTile
+                label="Evidence / maturity"
+                value={`${researchCommitteeReport.readinessDistinction.evidenceScore ?? 0}/100 / ${researchCommitteeReport.readinessDistinction.maturityScore ?? 0}/100`}
+              />
+              <StatusTile label="Walk-forward" value={researchCommitteeReport.readinessDistinction.walkForwardStatus} />
               <StatusTile label="Decision ID" value={researchCommitteeReport.decisionLogEntry.decisionId} />
+            </div>
+            <div className="rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-xs leading-5 text-amber-50">
+              Risk Chair: {researchCommitteeReport.riskCommittee.finalRiskChairVerdict} Paper-demo blocker:{" "}
+              {researchCommitteeReport.readinessDistinction.paperDemoBlocker}
             </div>
             <div className="grid gap-3 lg:grid-cols-2">
               <CommitteeBox title="Bull Case" items={researchCommitteeReport.bullCase.evidence} />
