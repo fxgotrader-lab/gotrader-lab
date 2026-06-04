@@ -545,6 +545,19 @@ export function SelfImprovementView() {
     [runtimeSnapshot]
   );
   const paperDemoChecklist = researchCommitteeReport?.paperDemoChecklist;
+  const paperDemoChecklistBlockers = paperDemoChecklist?.proposalEligibleBlockers.length
+    ? paperDemoChecklist.proposalEligibleBlockers
+    : paperDemoChecklist
+      ? paperDemoChecklist.items.filter((entry) => entry.status !== "pass").slice(0, 3)
+      : [
+          {
+            id: "runtime_pending",
+            label: "Runtime checklist pending",
+            status: "warning",
+            nextAction: "Activate MT5 Research Mode or wait for the runtime snapshot before generating checklist-based proposals.",
+            proposalEligible: false
+          }
+        ];
   const generatedProposalId = latestCycleRun?.createdProposalId ?? generatedProposalFromCycle?.proposalId;
   const generatedProposalStored = Boolean(
     generatedProposalId && safeArray(state.proposals).some((proposal) => proposal.proposalId === generatedProposalId)
@@ -1059,6 +1072,44 @@ export function SelfImprovementView() {
             <div className="mt-1 break-all font-mono">
               {selectRuntimeFingerprintLabel(runtimeSnapshot, latestProposal?.metricsSnapshot ? "proposal_snapshot" : "latest_cycle")}
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-cyan-300/25 bg-cyan-300/10">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Paper-Demo checklist blockers</CardTitle>
+              <CardDescription>
+                Checklist blockers eligible for proposal generation. This panel cannot auto-apply, enable paper/demo,
+                or promote readiness.
+              </CardDescription>
+            </div>
+            <Badge variant={paperDemoChecklist?.paperDemoCandidate ? "success" : paperDemoChecklist ? "warning" : "secondary"}>
+              {paperDemoChecklist ? `${paperDemoChecklist.passCount}/${paperDemoChecklist.items.length} pass` : "runtime pending"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm text-cyan-50">
+          <div className="rounded-lg border border-cyan-300/20 bg-background/35 p-3">
+            <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">Primary blocker</p>
+            <p className="mt-1 text-foreground">{paperDemoChecklist?.primaryBlocker ?? "Runtime snapshot has not resolved yet."}</p>
+            <p className="mt-2 text-xs text-cyan-100/75">
+              No auto-apply. No readiness promotion. Checklist evidence is reporting-only and keeps authority none.
+            </p>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {paperDemoChecklistBlockers.map((entry) => (
+              <div key={entry.id} className="rounded-md border border-cyan-300/20 bg-background/35 p-2 text-xs">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-medium text-foreground">{entry.label}</span>
+                  <Badge variant={checklistStatusVariant(entry.status)}>{entry.status.replace(/_/g, " ")}</Badge>
+                </div>
+                <p className="mt-1 text-muted-foreground">{entry.nextAction}</p>
+                <p className="mt-1 text-cyan-100/70">Proposal eligible: {entry.proposalEligible ? "yes" : "no"}</p>
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>

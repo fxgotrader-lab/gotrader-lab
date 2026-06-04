@@ -146,6 +146,32 @@ const replayReviewVariant = (status?: string) =>
 const checklistStatusVariant = (status?: string) =>
   status === "pass" ? "success" as const : status === "fail" ? "danger" as const : status === "warning" ? "warning" as const : "secondary" as const;
 const formatBool = (value?: boolean) => (typeof value === "boolean" ? (value ? "yes" : "no") : "unknown");
+const pendingPaperDemoChecklistItems = [
+  ["source_quality_valid", "Source quality valid", "Activate MT5 Research Mode or wait for the runtime snapshot to resolve."],
+  ["source_provider_labeled", "MT5/source provider labeled correctly", "Confirm requested symbol, broker symbol, CFD/proxy label, and authority none."],
+  ["minimum_trade_sample", "Minimum trade sample reached", "Run enough research cycles to reach the simulated trade sample threshold."],
+  ["walk_forward_oos_trade_count", "Walk-forward OOS trade count reached", "Run walk-forward once the active source has enough depth and candidate trades."],
+  ["walk_forward_pass_rate", "Walk-forward pass rate acceptable", "Collect out-of-sample evidence before candidate review."],
+  ["evidence_score_threshold", "Evidence score threshold reached", "Improve independent evidence coverage."],
+  ["maturity_score_threshold", "Maturity score threshold reached", "Accumulate mature research cycles before candidate review."],
+  ["regime_evidence_sufficient", "Regime evidence sufficient", "Confirm regime quality and missing inputs."],
+  ["grinch_ict_profile_evidence", "Grinch/ICT profile evidence sufficient", "Wait for valid ICT foundation plus Grinch refinement evidence."],
+  ["conservative_scenario_stable", "Conservative scenario stable", "Pass conservative validation before candidate review."],
+  ["simulation_runbook_complete", "Simulation runbook complete", "Complete simulation runbook checks; this creates no execution authority."],
+  ["false_positive_rate_acceptable", "False-positive rate acceptable", "Run Research Quality and reduce false-positive pressure."],
+  ["risk_policy_complete", "Risk policy complete", "Complete drawdown and conservative risk simulation checks."],
+  ["advisory_reviewed", "Advisory reviewed", "Record advisory review as explanation-only."],
+  ["no_authority_violations", "No authority violations", "Keep executionAuthority, brokerAuthority, and readinessOverrideAuthority as none."]
+].map(([id, label, nextAction]) => ({
+  id,
+  label,
+  status: "warning",
+  currentValue: "Runtime snapshot pending",
+  requiredValue: "Resolved runtime checklist evidence",
+  blockerReason: "Checklist data is waiting for the latest runtime snapshot.",
+  nextAction,
+  proposalEligible: false
+}));
 const tradingViewAutoRefreshIntervalOptions = tradingViewMcpAutoRefreshIntervalOptions.map((value) => ({
   label: `${value}s`,
   value: String(value)
@@ -1578,6 +1604,12 @@ export function MissionControlShell({ state }: { state: LabState }) {
   );
   const readinessDistinction = researchCommitteeReport?.readinessDistinction;
   const paperDemoChecklist = researchCommitteeReport?.paperDemoChecklist;
+  const paperDemoChecklistRows = paperDemoChecklist?.items ?? pendingPaperDemoChecklistItems;
+  const paperDemoChecklistVisibleBlockers = paperDemoChecklist
+    ? paperDemoChecklist.proposalEligibleBlockers.length
+      ? paperDemoChecklist.proposalEligibleBlockers
+      : safeTopN(paperDemoChecklist.items.filter((entry) => entry.status !== "pass"), 4)
+    : safeTopN(pendingPaperDemoChecklistItems, 4);
   const primaryBlocker =
     actionItems[0]?.title ??
     runtimeSnapshot?.readiness.actualBlockers[0] ??
@@ -1964,39 +1996,40 @@ export function MissionControlShell({ state }: { state: LabState }) {
         </div>
       </section>
 
-      {paperDemoChecklist ? (
-        <section className="rounded-xl border border-amber-300/20 bg-amber-300/10 p-4">
+      <section className="rounded-xl border border-amber-300/20 bg-amber-300/10 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Paper-Demo Candidate Checklist</p>
               <h3 className="mt-1 text-lg font-semibold text-amber-50">
-                {paperDemoChecklist.paperDemoCandidate
+                {paperDemoChecklist?.paperDemoCandidate
                   ? "Candidate review gates clear"
-                  : paperDemoChecklist.researchReady
+                  : paperDemoChecklist?.researchReady
                     ? "Research Ready, paper-demo blocked"
-                    : "Research gates still blocked"}
+                    : "Checklist waiting for runtime evidence"}
               </h3>
-              <p className="mt-1 text-xs text-amber-100/75">{paperDemoChecklist.safetyNotice}</p>
+              <p className="mt-1 text-xs text-amber-100/75">
+                {paperDemoChecklist?.safetyNotice ?? "Checklist is reporting-only. It cannot promote readiness, place orders, or override authority."}
+              </p>
             </div>
-            <Badge variant={paperDemoChecklist.paperDemoCandidate ? "success" : paperDemoChecklist.researchReady ? "warning" : "danger"}>
-              {paperDemoChecklist.paperDemoCandidate ? "paper-demo candidate" : paperDemoChecklist.researchReady ? "research ready only" : "not ready"}
+            <Badge variant={paperDemoChecklist?.paperDemoCandidate ? "success" : paperDemoChecklist?.researchReady ? "warning" : "secondary"}>
+              {paperDemoChecklist?.paperDemoCandidate ? "paper-demo candidate" : paperDemoChecklist?.researchReady ? "research ready only" : "pending evidence"}
             </Badge>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <MiniReadout
               label="Research Ready"
-              value={paperDemoChecklist.researchReady ? "yes" : "no"}
+              value={paperDemoChecklist ? (paperDemoChecklist.researchReady ? "yes" : "no") : "pending"}
               detail={runtimeSnapshot?.readiness.readinessState ?? "loading"}
             />
             <MiniReadout
               label="Paper-Demo Candidate"
-              value={paperDemoChecklist.paperDemoCandidate ? "yes" : "no"}
-              detail={paperDemoChecklist.primaryBlocker}
+              value={paperDemoChecklist ? (paperDemoChecklist.paperDemoCandidate ? "yes" : "no") : "pending"}
+              detail={paperDemoChecklist?.primaryBlocker ?? "Runtime snapshot has not resolved yet."}
             />
             <MiniReadout
               label="Checklist"
-              value={`${paperDemoChecklist.passCount} pass / ${paperDemoChecklist.failCount} fail`}
-              detail={`${paperDemoChecklist.warningCount} warning(s), ${paperDemoChecklist.notApplicableCount} n/a`}
+              value={paperDemoChecklist ? `${paperDemoChecklist.passCount} pass / ${paperDemoChecklist.failCount} fail` : "pending"}
+              detail={paperDemoChecklist ? `${paperDemoChecklist.warningCount} warning(s), ${paperDemoChecklist.notApplicableCount} n/a` : "Awaiting runtime checklist values"}
             />
             <MiniReadout
               label="Evidence / maturity"
@@ -2005,19 +2038,22 @@ export function MissionControlShell({ state }: { state: LabState }) {
             />
             <MiniReadout
               label="Source"
-              value={formatToken(paperDemoChecklist.sourceContext.provider)}
-              detail={`${paperDemoChecklist.sourceContext.brokerSymbol ?? paperDemoChecklist.sourceContext.requestedSymbol} / ${paperDemoChecklist.sourceContext.candleCount.toLocaleString()} candles`}
+              value={formatToken(paperDemoChecklist?.sourceContext.provider ?? runtimeSnapshot?.marketData.activeResearchSource.provider)}
+              detail={
+                paperDemoChecklist
+                  ? `${paperDemoChecklist.sourceContext.brokerSymbol ?? paperDemoChecklist.sourceContext.requestedSymbol} / ${paperDemoChecklist.sourceContext.candleCount.toLocaleString()} candles`
+                  : "Awaiting canonical source snapshot"
+              }
             />
           </div>
           <div className="mt-4 rounded-lg border border-amber-300/25 bg-black/20 p-3 text-sm leading-6 text-amber-50">
-            <span className="font-semibold">Current blocker:</span> {paperDemoChecklist.primaryBlocker}
-            <span className="block text-xs text-amber-100/75">Next action: {paperDemoChecklist.nextAction}</span>
+            <span className="font-semibold">Current blocker:</span> {paperDemoChecklist?.primaryBlocker ?? "Runtime snapshot pending."}
+            <span className="block text-xs text-amber-100/75">
+              Next action: {paperDemoChecklist?.nextAction ?? "Activate MT5 Research Mode or wait for the runtime snapshot to resolve."}
+            </span>
           </div>
           <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-            {(paperDemoChecklist.proposalEligibleBlockers.length
-              ? paperDemoChecklist.proposalEligibleBlockers
-              : safeTopN(paperDemoChecklist.items.filter((entry) => entry.status !== "pass"), 4)
-            ).map((entry) => (
+            {paperDemoChecklistVisibleBlockers.map((entry) => (
               <div key={entry.id} className="rounded-lg border border-amber-300/20 bg-background/25 p-3">
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-100/75">{entry.label}</p>
@@ -2029,7 +2065,6 @@ export function MissionControlShell({ state }: { state: LabState }) {
             ))}
           </div>
         </section>
-      ) : null}
 
       <section className="grid gap-4 xl:grid-cols-2">
         <div className="rounded-xl border border-white/10 bg-slate-950/85 p-4">
@@ -2281,8 +2316,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
               </div>
             </section>
           ) : null}
-          {paperDemoChecklist ? (
-            <section className="rounded-xl border border-amber-300/20 bg-amber-300/10 p-4">
+          <section className="rounded-xl border border-amber-300/20 bg-amber-300/10 p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Paper-Demo Candidate Checklist</p>
@@ -2292,15 +2326,39 @@ export function MissionControlShell({ state }: { state: LabState }) {
                     reporting-only checklist items.
                   </p>
                 </div>
-                <Badge variant={paperDemoChecklist.paperDemoCandidate ? "success" : "warning"}>
-                  {paperDemoChecklist.paperDemoCandidate ? "candidate review" : "blocked"}
+                <Badge variant={paperDemoChecklist?.paperDemoCandidate ? "success" : paperDemoChecklist ? "warning" : "secondary"}>
+                  {paperDemoChecklist?.paperDemoCandidate ? "candidate review" : paperDemoChecklist ? "blocked" : "pending"}
                 </Badge>
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <MiniReadout label="Primary blocker" value={paperDemoChecklist.failCount ? "blocked" : "clear"} detail={paperDemoChecklist.primaryBlocker} />
-                <MiniReadout label="Next action" value={paperDemoChecklist.proposalEligibleBlockers.length ? "proposal-targetable" : "operator review"} detail={paperDemoChecklist.nextAction} />
-                <MiniReadout label="Source context" value={formatToken(paperDemoChecklist.sourceContext.provider)} detail={`${paperDemoChecklist.sourceContext.brokerSymbol ?? paperDemoChecklist.sourceContext.requestedSymbol} / ${paperDemoChecklist.sourceContext.timeframe ?? "n/a"} / ${paperDemoChecklist.sourceContext.candleCount.toLocaleString()} candles`} />
-                <MiniReadout label="Authority" value="none" detail={`${paperDemoChecklist.authority.executionAuthority} / ${paperDemoChecklist.authority.brokerAuthority} / ${paperDemoChecklist.authority.readinessOverrideAuthority}`} />
+                <MiniReadout
+                  label="Primary blocker"
+                  value={paperDemoChecklist ? (paperDemoChecklist.failCount ? "blocked" : "clear") : "pending"}
+                  detail={paperDemoChecklist?.primaryBlocker ?? "Runtime snapshot has not resolved yet."}
+                />
+                <MiniReadout
+                  label="Next action"
+                  value={paperDemoChecklist?.proposalEligibleBlockers.length ? "proposal-targetable" : "operator review"}
+                  detail={paperDemoChecklist?.nextAction ?? "Activate MT5 Research Mode or wait for runtime data."}
+                />
+                <MiniReadout
+                  label="Source context"
+                  value={formatToken(paperDemoChecklist?.sourceContext.provider ?? runtimeSnapshot?.marketData.activeResearchSource.provider)}
+                  detail={
+                    paperDemoChecklist
+                      ? `${paperDemoChecklist.sourceContext.brokerSymbol ?? paperDemoChecklist.sourceContext.requestedSymbol} / ${paperDemoChecklist.sourceContext.timeframe ?? "n/a"} / ${paperDemoChecklist.sourceContext.candleCount.toLocaleString()} candles`
+                      : "Awaiting source context"
+                  }
+                />
+                <MiniReadout
+                  label="Authority"
+                  value="none"
+                  detail={
+                    paperDemoChecklist
+                      ? `${paperDemoChecklist.authority.executionAuthority} / ${paperDemoChecklist.authority.brokerAuthority} / ${paperDemoChecklist.authority.readinessOverrideAuthority}`
+                      : "execution / broker / readiness override"
+                  }
+                />
               </div>
               <div className="mt-4 overflow-x-auto rounded-lg border border-amber-300/20">
                 <table className="min-w-[960px] w-full text-left text-xs">
@@ -2314,7 +2372,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-amber-300/10">
-                    {paperDemoChecklist.items.map((entry) => (
+                    {paperDemoChecklistRows.map((entry) => (
                       <tr key={entry.id} className="align-top">
                         <td className="px-3 py-3 font-medium text-amber-50">{entry.label}</td>
                         <td className="px-3 py-3">
@@ -2331,13 +2389,16 @@ export function MissionControlShell({ state }: { state: LabState }) {
               </div>
               <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 text-xs leading-5 text-amber-100/80">
                 Proposal-eligible blockers:{" "}
-                {paperDemoChecklist.proposalEligibleBlockers.length
+                {paperDemoChecklist?.proposalEligibleBlockers.length
                   ? paperDemoChecklist.proposalEligibleBlockers.map((entry) => entry.label).join(", ")
-                  : "none from the current checklist."}
-                <span className="block pt-1">{paperDemoChecklist.safetyNotice}</span>
+                  : paperDemoChecklist
+                    ? "none from the current checklist."
+                    : "pending until the runtime snapshot resolves."}
+                <span className="block pt-1">
+                  {paperDemoChecklist?.safetyNotice ?? "Checklist is reporting-only. It cannot promote readiness, place orders, or override authority."}
+                </span>
               </div>
             </section>
-          ) : null}
           <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
