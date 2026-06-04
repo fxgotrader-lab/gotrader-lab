@@ -13,6 +13,7 @@ import {
   TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT,
   TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT
 } from "@/lib/integrations/tradingview";
+import { MT5_READ_ONLY_UPDATED_EVENT } from "@/lib/integrations/mt5";
 import {
   AGENT_DEBATE_UPDATED_EVENT,
   clearAgentDebateHistory,
@@ -25,6 +26,7 @@ import {
 import type { AgentDebateSession, DebatePosition } from "@/lib/agentDebate";
 import { LAB_STORAGE_UPDATED_EVENT, labStorage } from "@/lib/storage";
 import { buildResearchCommitteeReport } from "@/lib/researchCommittee";
+import { RESEARCH_CYCLE_UPDATED_EVENT } from "@/lib/researchCycle";
 import { resolveResearchRuntimeSnapshot, type ResearchRuntimeSnapshot } from "@/lib/runtime";
 import type { LabState, MarketBias } from "@/lib/types";
 import { formatPercent, safeArray } from "@/lib/utils";
@@ -88,14 +90,19 @@ export function AgentDebateView() {
       setSelectedSessionId((current) => current ?? latestAgentDebateSession(next)?.sessionId);
       void resolveResearchRuntimeSnapshot().then(setRuntimeSnapshot).catch(() => undefined);
     };
+    refresh();
     window.addEventListener(LAB_STORAGE_UPDATED_EVENT, refresh);
     window.addEventListener(AGENT_DEBATE_UPDATED_EVENT, refresh);
+    window.addEventListener(RESEARCH_CYCLE_UPDATED_EVENT, refresh);
+    window.addEventListener(MT5_READ_ONLY_UPDATED_EVENT, refresh);
     window.addEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refresh);
     window.addEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
       window.removeEventListener(LAB_STORAGE_UPDATED_EVENT, refresh);
       window.removeEventListener(AGENT_DEBATE_UPDATED_EVENT, refresh);
+      window.removeEventListener(RESEARCH_CYCLE_UPDATED_EVENT, refresh);
+      window.removeEventListener(MT5_READ_ONLY_UPDATED_EVENT, refresh);
       window.removeEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refresh);
       window.removeEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
