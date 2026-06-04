@@ -14,6 +14,8 @@ import { selectNextScenarioSet } from "@/lib/autonomousResearch/selectNextScenar
 import type {
   AutonomousLoopIteration,
   AutonomousLoopStage,
+  AutonomousPerformanceDiagnostics,
+  AutonomousPerformancePhaseTiming,
   AutonomousResearchSourceDiagnostics,
   AutonomousResearchRun,
   AutonomousResearchSettings,
@@ -26,13 +28,13 @@ import { createHermesNotificationPayload, createPlannedHermesNotificationState }
 import { createOpenClawMemoryHookPacket, createPlannedOpenClawMemoryHookState } from "@/lib/integrations/openclawMemoryHooks";
 import { resolveResearchRuntimeSnapshot, type ResearchRuntimeSnapshot } from "@/lib/runtime";
 import type { CalibrationProposal } from "@/lib/selfImprovement";
-import { safeArray, uid } from "@/lib/utils";
+import { safeArray, safeTopN, uid } from "@/lib/utils";
 import { runResearchCycle } from "@/lib/researchCycle";
 import { runWalkForwardValidation } from "@/lib/walkForward";
 
 const defaultSettings: AutonomousResearchSettings = {
-  maxIterations: 3,
-  noImprovementStop: 2,
+  maxIterations: 1,
+  noImprovementStop: 1,
   safeImportedDataMode: true,
   advancedFullResearchMode: false,
   autoApplyPolicyEnabled: false
@@ -91,6 +93,24 @@ const statusFromStopReason = (reason?: AutonomousResearchStopReason): Autonomous
         : "completed";
 
 const RESEARCH_SOURCE_MINIMUM_CANDLES = 400;
+const AUTONOMOUS_UI_UPDATE_INTERVAL_MS = 750;
+const AUTONOMOUS_CANDIDATE_LIMIT = 2;
+const AUTONOMOUS_RESEARCH_TIMEOUT_MS = 18_000;
+
+const yieldToBrowser = () =>
+  new Promise<void>((resolve) => {
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => resolve());
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
+
+const durationBetween = (startedAt?: string, completedAt?: string) => {
+  if (!startedAt || !completedAt) return undefined;
+  const duration = new Date(completedAt).getTime() - new Date(startedAt).getTime();
+  return Number.isFinite(duration) && duration >= 0 ? duration : undefined;
+};
 
 const sourceDiagnosticsFor = (
   snapshot: ResearchRuntimeSnapshot,
@@ -256,15 +276,33 @@ export async function runAutonomousResearchLoop({
   signal,
   onUpdate
 }: RunAutonomousResearchLoopOptions): Promise<AutonomousResearchRun> {
+  const requestedMaxIterations = Math.max(1, Math.min(8, partialSettings.maxIterations ?? defaultSettings.maxIterations));
   const settings: AutonomousResearchSettings = {
     ...defaultSettings,
     ...partialSettings,
-    maxIterations: Math.max(1, Math.min(8, partialSettings.maxIterations ?? defaultSettings.maxIterations)),
+    maxIterations: partialSettings.advancedFullResearchMode ? requestedMaxIterations : 1,
     noImprovementStop: Math.max(1, Math.min(5, partialSettings.noImprovementStop ?? defaultSettings.noImprovementStop))
   };
   const runId = uid("autonomous_research");
   let noImprovementCount = 0;
   const startedAt = now();
+  const startedAtMs = Date.now();
+  const skippedHeavyDiagnostics = settings.advancedFullResearchMode
+    ? []
+    : [
+        "Full AI Research Cycle deferred in autonomous stability mode.",
+        "Auto Research candidate search deferred.",
+        "Adaptive Auto Research follow-up passes deferred.",
+        "Full walk-forward validation deferred unless Advanced full research mode is enabled.",
+        "Deep audit traces skipped for autonomous stability mode."
+      ];
+  let yieldedStepsCount = 0;
+  let throttledUpdateCount = 0;
+  let storageWriteCount = 0;
+  let lastEmitAt = 0;
+  let currentPhase = "initializing";
+  let cancellationStatus: AutonomousPerformanceDiagnostics["cancellationStatus"] = "running";
+  const phaseTimings: AutonomousPerformancePhaseTiming[] = [];
   let run: AutonomousResearchRun = {
     runId,
     startedAt,
@@ -310,7 +348,93 @@ export async function runAutonomousResearchLoop({
         routeToOpen: "/autonomous-research"
       })
     },
-    safetyNotice: "Autonomous research is simulation-only. It cannot execute trades, approve Paper-Demo Candidate, send go-trader handoffs, or override readiness."
+    safetyNotice: "Autonomous research is simulation-only. It cannot execute trades, approve Paper-Demo Candidate, send go-trader handoffs, or override readiness.",
+    performanceDiagnostics: {
+      lastLoopDurationMs: 0,
+      currentPhase,
+      cancellationStatus,
+      yieldedStepsCount,
+      skippedHeavyDiagnostics,
+      phaseTimings: [],
+      throttledUpdateCount,
+      storageWriteCount
+    }
+  };
+
+  const updatePerformanceDiagnostics = (lastBlocker?: string) => {
+    const slowestPhase = phaseTimings.reduce<AutonomousPerformancePhaseTiming | undefined>(
+      (slowest, timing) => (!slowest || timing.durationMs > slowest.durationMs ? timing : slowest),
+      undefined
+    );
+    run = {
+      ...run,
+      performanceDiagnostics: {
+        lastLoopDurationMs: Math.max(0, Date.now() - startedAtMs),
+        slowestPhase,
+        currentPhase,
+        cancellationStatus,
+        yieldedStepsCount,
+        skippedHeavyDiagnostics,
+        lastBlocker: lastBlocker ?? run.latestBlocker,
+        sourceProvider: run.sourceDiagnostics?.provider,
+        sourceFingerprint: run.sourceDiagnostics?.sourceFingerprint,
+        phaseTimings: safeTopN([...phaseTimings].reverse(), 16),
+        throttledUpdateCount,
+        storageWriteCount
+      }
+    };
+  };
+
+  const recordTiming = (phase: string, startedMs: number, detail?: string, skipped = false) => {
+    const completedMs = Date.now();
+    phaseTimings.push({
+      phase,
+      durationMs: Math.max(0, completedMs - startedMs),
+      startedAt: new Date(startedMs).toISOString(),
+      completedAt: new Date(completedMs).toISOString(),
+      detail,
+      skipped
+    });
+    updatePerformanceDiagnostics();
+  };
+
+  const addCycleStepTimings = (cycle: Awaited<ReturnType<typeof runResearchCycle>>) => {
+    safeArray(cycle.steps).forEach((step) => {
+      const durationMs = durationBetween(step.startedAt, step.completedAt);
+      if (durationMs === undefined) return;
+      phaseTimings.push({
+        phase: `research_cycle.${step.stepId}`,
+        durationMs,
+        startedAt: step.startedAt ?? now(),
+        completedAt: step.completedAt ?? now(),
+        detail: step.summary
+      });
+    });
+    updatePerformanceDiagnostics();
+  };
+
+  const cooperativeYield = async (phase: string) => {
+    currentPhase = phase;
+    yieldedStepsCount += 1;
+    updatePerformanceDiagnostics();
+    await yieldToBrowser();
+    if (signal?.aborted) {
+      cancellationStatus = "canceled";
+      throw new Error("Autonomous research loop canceled by user.");
+    }
+  };
+
+  const publishRun = (force = false) => {
+    updatePerformanceDiagnostics();
+    const shouldPublish = force || run.status !== "running" || Date.now() - lastEmitAt >= AUTONOMOUS_UI_UPDATE_INTERVAL_MS;
+    if (!shouldPublish) {
+      throttledUpdateCount += 1;
+      updatePerformanceDiagnostics();
+      return run;
+    }
+    storageWriteCount += 1;
+    lastEmitAt = Date.now();
+    return emit(run, onUpdate);
   };
 
   const updateProgress = ({
@@ -347,7 +471,7 @@ export async function runAutonomousResearchLoop({
         stopReason: run.stopReason,
         stopReasonDetail: run.stopReasonDetail,
         events: stageChanged
-          ? [
+          ? safeTopN([
               {
                 eventId: uid("autonomy_event"),
                 timestamp,
@@ -356,7 +480,7 @@ export async function runAutonomousResearchLoop({
                 detail
               },
               ...safeArray(previous.events)
-            ]
+            ], 12)
           : safeArray(previous.events)
       }
     };
@@ -374,7 +498,7 @@ export async function runAutonomousResearchLoop({
     resolved: true
   });
 
-  emit(run, onUpdate);
+  publishRun(true);
 
   try {
     for (let iterationNumber = 1; iterationNumber <= settings.maxIterations; iterationNumber += 1) {
@@ -391,15 +515,26 @@ export async function runAutonomousResearchLoop({
         title: "Resolving runtime",
         detail: `Resolving runtime snapshot for iteration ${iterationNumber}/${settings.maxIterations}.`
       });
-      emit(run, onUpdate);
+      publishRun();
 
+      const runtimeStartedMs = Date.now();
+      await cooperativeYield("runtime_snapshot");
       const snapshotBefore = await resolveResearchRuntimeSnapshot();
+      recordTiming("runtime_snapshot", runtimeStartedMs, `Snapshot ${snapshotBefore.snapshotId}.`);
+      const sourceGuardStartedMs = Date.now();
       const sourceBlocker = validateAutonomousResearchSource(snapshotBefore);
       const sourceDiagnostics = sourceDiagnosticsFor(snapshotBefore, sourceBlocker);
       run = {
         ...run,
         sourceDiagnostics
       };
+      recordTiming(
+        "source_guard",
+        sourceGuardStartedMs,
+        sourceBlocker
+          ? `Blocked: ${sourceBlocker}`
+          : `${sourceDiagnostics.provider}; ${sourceDiagnostics.candleCount.toLocaleString()} candles; fingerprint ${sourceDiagnostics.sourceFingerprint ?? "n/a"}.`
+      );
       if (sourceBlocker) {
         const detail = `Autonomous Research blocked: active research source is not eligible. ${sourceBlocker}`;
         const iteration: AutonomousLoopIteration = {
@@ -452,9 +587,11 @@ export async function runAutonomousResearchLoop({
           requestedAction: "acknowledge_readiness_blocker",
           resolved: false
         });
-        emit(run, onUpdate);
+        cancellationStatus = "stopped";
+        publishRun(true);
         return run;
       }
+      const scenarioStartedMs = Date.now();
       const blockerSummary = summarizeScenarioEvaluation(snapshotBefore);
       const scenario = selectNextScenarioSet(blockerSummary.blockers, {
         safeImportedDataMode: settings.safeImportedDataMode && snapshotBefore.marketData.isImportedDataActive
@@ -474,6 +611,7 @@ export async function runAutonomousResearchLoop({
         scenarioSelectionReasoning: scenarioReasoning
       });
       saveAutonomySafetyDiagnosis(safetyDiagnosis);
+      recordTiming("scenario_selection", scenarioStartedMs, scenario.reason);
       run = {
         ...run,
         openClawHooks: {
@@ -528,7 +666,7 @@ export async function runAutonomousResearchLoop({
         title: "Research cycle started",
         detail: `Iteration ${iterationNumber}/${settings.maxIterations}: ${scenario.reason}`
       });
-      emit(run, onUpdate);
+      publishRun();
 
       recordCommunicationMessage({
         source: "openclaw_research_supervisor",
@@ -542,12 +680,66 @@ export async function runAutonomousResearchLoop({
         resolved: true
       });
 
+      if (!settings.advancedFullResearchMode) {
+        const deferredStartedMs = Date.now();
+        recordTiming(
+          "research_cycle",
+          deferredStartedMs,
+          "Deferred in autonomous stability mode; use manual AI Research or enable Advanced full research mode for the full synchronous cycle.",
+          true
+        );
+        iteration = {
+          ...iteration,
+          completedAt: now(),
+          status: "warning",
+          readinessState: snapshotBefore.readiness.readinessState,
+          maturityScore: snapshotBefore.maturity.maturityScore,
+          notes: [
+            ...iteration.notes,
+            "Autonomous stability preflight completed with the canonical MT5 source.",
+            "Full deterministic AI Research Cycle, candidate search, LLM advisory, and walk-forward were deferred to keep the page responsive.",
+            "No mock fallback, auto-apply, broker execution, readiness override, or go-trader handoff was used."
+          ]
+        };
+        run = {
+          ...run,
+          status: "completed_with_warnings",
+          completedAt: now(),
+          stopReason: "completed",
+          stopReasonDetail: "Autonomous stability preflight completed. Run manual AI Research, or enable Advanced full research mode for the full synchronous cycle.",
+          iterations: [...run.iterations.filter((item) => item.iteration !== iterationNumber), iteration],
+          latestBlocker: blockerSummary.topBlocker,
+          readinessTrend: snapshotBefore.readiness.readinessState,
+          maturityTrend: snapshotBefore.maturity.maturitySummary.trendAvailability.message,
+          goTraderHandoffGate: goTraderHandoffGateFor(snapshotBefore)
+        };
+        updateProgress({
+          stage: "completed",
+          status: "completed_with_warnings",
+          title: "Autonomous preflight completed",
+          detail: "Canonical source guard passed; heavy research cycle deferred for page responsiveness."
+        });
+        cancellationStatus = "stopped";
+        publishRun(true);
+        return run;
+      }
+
+      await cooperativeYield("research_cycle");
+      const researchCycleStartedMs = Date.now();
+      const autonomousMaxCandidateCount = settings.advancedFullResearchMode
+        ? scenario.maxCandidateCount
+        : Math.min(AUTONOMOUS_CANDIDATE_LIMIT, scenario.maxCandidateCount);
       const cycle = await runResearchCycle({
         state,
         searchMode: scenario.searchMode,
-        maxCandidateCount: scenario.maxCandidateCount,
+        maxCandidateCount: autonomousMaxCandidateCount,
+        maxAdaptivePasses: settings.advancedFullResearchMode ? undefined : 0,
+        autoResearchTimeoutMs: settings.advancedFullResearchMode ? undefined : AUTONOMOUS_RESEARCH_TIMEOUT_MS,
+        autoResearchCheckpointPersistence: "memory_only",
         advancedFullResearchMode: settings.advancedFullResearchMode,
         skipHeavyAudit: settings.safeImportedDataMode,
+        skipLlmAdvisory: !settings.advancedFullResearchMode,
+        skipAutoResearch: !settings.advancedFullResearchMode,
         sourceGuard: {
           requireEligibleResearchSource: true,
           allowedSourceModes: ["mt5_read_only", "imported", "tradingview_mcp_chart"],
@@ -566,9 +758,15 @@ export async function runAutonomousResearchLoop({
             title: runningStep?.label ?? latestCompletedStep?.label ?? "Research cycle running",
             detail: runningStep?.summary ?? latestCompletedStep?.summary ?? "Research cycle running."
           });
-          emit(run, onUpdate);
+          publishRun();
         }
       });
+      recordTiming(
+        "research_cycle_total",
+        researchCycleStartedMs,
+        `Status ${cycle.status}; data ${cycle.dataSourceMode}; candidates ${cycle.autoResearchCycle?.candidatesTested ?? 0}.`
+      );
+      addCycleStepTimings(cycle);
       if (cycle.status === "failed" && /active research source|source guard/i.test(cycle.failedStepDetails ?? cycle.resultSummary)) {
         const detail = cycle.failedStepDetails ?? cycle.resultSummary;
         iteration = {
@@ -592,7 +790,8 @@ export async function runAutonomousResearchLoop({
           title: "Source guard blocked",
           detail
         });
-        emit(run, onUpdate);
+        cancellationStatus = "stopped";
+        publishRun(true);
         return run;
       }
       const proposal = latestProposalFromCycle(cycle);
@@ -621,19 +820,33 @@ export async function runAutonomousResearchLoop({
       } as AutonomousLoopIteration;
 
       let walkForwardRun;
-      if (proposal) {
+      if (proposal && settings.advancedFullResearchMode) {
         updateProgress({
           stage: "walk_forward",
           title: "Walk-forward validation",
           detail: `Validating proposal ${proposal.proposalId} across walk-forward windows.`
         });
-        emit(run, onUpdate);
+        publishRun();
+        await cooperativeYield("walk_forward");
+        const walkForwardStartedMs = Date.now();
         walkForwardRun = await runWalkForwardValidation({
           mode: settings.safeImportedDataMode ? "safe" : "standard",
           proposalId: proposal.proposalId,
           maxWindows: settings.safeImportedDataMode ? 3 : 5,
           signal
         });
+        recordTiming(
+          "walk_forward",
+          walkForwardStartedMs,
+          `Verdict ${walkForwardRun.stability?.verdict ?? "unknown"}; windows ${walkForwardRun.stability?.windowCount ?? 0}.`
+        );
+      } else if (proposal) {
+        recordTiming(
+          "walk_forward",
+          Date.now(),
+          "Deferred in autonomous stability mode; enable Advanced full research mode to run full walk-forward inside the loop.",
+          true
+        );
       }
 
       updateProgress({
@@ -643,8 +856,10 @@ export async function runAutonomousResearchLoop({
           ? `Evaluating auto-apply eligibility for proposal ${proposal.proposalId}.`
           : "No proposal created; recording policy decision."
       });
-      emit(run, onUpdate);
+      publishRun();
 
+      await cooperativeYield("self_improvement");
+      const selfImprovementStartedMs = Date.now();
       const snapshotAfter = await resolveResearchRuntimeSnapshot();
       const postSafetyDiagnosis = diagnoseAutonomySafety(snapshotAfter, cycle.autoResearchCycle);
       saveAutonomySafetyDiagnosis(postSafetyDiagnosis);
@@ -671,6 +886,13 @@ export async function runAutonomousResearchLoop({
       } else {
         markProposalAutoApplyBlocked(proposal, eligibility);
       }
+      recordTiming(
+        "self_improvement_policy",
+        selfImprovementStartedMs,
+        finalEligibility.applied
+          ? `Applied ${finalEligibility.proposalId ?? "research calibration"}.`
+          : `Blocked: ${finalEligibility.reasons[0] ?? "policy did not allow it"}.`
+      );
 
       noImprovementCount = finalEligibility.applied ? 0 : noImprovementCount + 1;
       const latestNotification = createHermesNotificationPayload({
@@ -747,7 +969,7 @@ export async function runAutonomousResearchLoop({
         title: "Updating readiness and maturity",
         detail: `Readiness ${snapshotAfter.readiness.readinessState}; maturity ${snapshotAfter.maturity.maturityScore}/100.`
       });
-      emit(run, onUpdate);
+      publishRun();
 
       iteration = {
         ...iteration,
@@ -787,8 +1009,10 @@ export async function runAutonomousResearchLoop({
           ? `Research-only calibration ${finalEligibility.proposalId} was auto-applied.`
           : `Auto-apply blocked: ${finalEligibility.reasons[0] ?? "policy did not allow it"}.`
       });
-      emit(run, onUpdate);
+      publishRun();
 
+      await cooperativeYield("audit_communications");
+      const auditStartedMs = Date.now();
       recordCommunicationMessage({
         source: "openclaw_research_supervisor",
         agentName: "Autonomous Research Supervisor",
@@ -810,6 +1034,7 @@ export async function runAutonomousResearchLoop({
         requestedAction: finalEligibility.applied ? undefined : "acknowledge_readiness_blocker",
         resolved: finalEligibility.applied
       });
+      recordTiming("audit_communications", auditStartedMs, "Compact autonomous audit message recorded.");
 
       const stopCheck = shouldStopAfterIteration({
         iteration,
@@ -832,7 +1057,8 @@ export async function runAutonomousResearchLoop({
           title: run.status === "paused" ? "Loop paused" : "Loop completed",
           detail: stopCheck.detail ?? "Autonomous research loop stopped."
         });
-        emit(run, onUpdate);
+        cancellationStatus = "stopped";
+        publishRun(true);
         return run;
       }
     }
@@ -850,10 +1076,12 @@ export async function runAutonomousResearchLoop({
       title: "Loop completed",
       detail: `Reached configured max iterations (${settings.maxIterations}).`
     });
-    emit(run, onUpdate);
+    cancellationStatus = "stopped";
+    publishRun(true);
     return run;
   } catch (error) {
     const canceled = signal?.aborted || (error instanceof Error && error.message.includes("canceled"));
+    cancellationStatus = canceled ? "canceled" : "stopped";
     run = {
       ...run,
       status: canceled ? "canceled" : "failed",
@@ -867,7 +1095,7 @@ export async function runAutonomousResearchLoop({
       title: canceled ? "Loop canceled" : "Loop failed",
       detail: run.stopReasonDetail ?? (canceled ? "Loop canceled." : "Loop failed.")
     });
-    emit(run, onUpdate);
+    publishRun(true);
     return run;
   }
 }

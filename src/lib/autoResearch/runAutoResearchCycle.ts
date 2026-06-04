@@ -1547,6 +1547,7 @@ export async function runAutoResearchCycle(options: AutoResearchRunOptions): Pro
   const startedAt = new Date().toISOString();
   const timeoutMs = options.timeoutMs ?? 45_000;
   const checkpointId = uid("auto_checkpoint");
+  const persistCheckpoints = options.checkpointPersistence !== "memory_only";
   const isCanceled = () =>
     Boolean(options.signal?.aborted) ||
     (isBrowser() && loadAutoResearchState().cancelRequestedCycleId === cycleId);
@@ -1578,7 +1579,9 @@ export async function runAutoResearchCycle(options: AutoResearchRunOptions): Pro
       bestCandidateCategory: partial.bestCandidateCategory,
       message: partial.message
     };
-    publishAutoResearchCheckpoint(nextCheckpoint);
+    if (persistCheckpoints) {
+      publishAutoResearchCheckpoint(nextCheckpoint);
+    }
     options.onCheckpoint?.(nextCheckpoint);
     return nextCheckpoint;
   };

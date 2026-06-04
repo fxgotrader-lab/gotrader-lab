@@ -104,6 +104,30 @@ export interface AutonomousResearchSettings {
   autoApplyPolicyEnabled: boolean;
 }
 
+export interface AutonomousPerformancePhaseTiming {
+  phase: string;
+  durationMs: number;
+  startedAt: string;
+  completedAt: string;
+  detail?: string;
+  skipped?: boolean;
+}
+
+export interface AutonomousPerformanceDiagnostics {
+  lastLoopDurationMs: number;
+  slowestPhase?: AutonomousPerformancePhaseTiming;
+  currentPhase: string;
+  cancellationStatus: "idle" | "running" | "stopping" | "stopped" | "canceled";
+  yieldedStepsCount: number;
+  skippedHeavyDiagnostics: string[];
+  lastBlocker?: string;
+  sourceProvider?: string;
+  sourceFingerprint?: string;
+  phaseTimings: AutonomousPerformancePhaseTiming[];
+  throttledUpdateCount: number;
+  storageWriteCount: number;
+}
+
 export interface ScenarioSetEvaluation {
   scenarioFamily: AutonomousScenarioFamily;
   searchMode: AutoResearchSearchMode;
@@ -200,6 +224,7 @@ export interface AutonomousResearchRun {
   latestCandidateResult?: string;
   latestAutoApplyEligibility?: AutoApplyEligibility;
   sourceDiagnostics?: AutonomousResearchSourceDiagnostics;
+  performanceDiagnostics?: AutonomousPerformanceDiagnostics;
   latestAutoAppliedCalibrationId?: string;
   stopReason?: AutonomousResearchStopReason;
   stopReasonDetail?: string;

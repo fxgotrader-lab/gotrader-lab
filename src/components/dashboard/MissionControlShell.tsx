@@ -315,9 +315,10 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
   const [liveRun, setLiveRun] = useState<AutonomousResearchRun>();
   const [busy, setBusy] = useState(false);
+  const [stoppingAutonomy, setStoppingAutonomy] = useState(false);
   const [abortController, setAbortController] = useState<AbortController>();
-  const [maxIterations, setMaxIterations] = useState("3");
-  const [noImprovementStop, setNoImprovementStop] = useState("2");
+  const [maxIterations, setMaxIterations] = useState("1");
+  const [noImprovementStop, setNoImprovementStop] = useState("1");
   const [autoApplyPolicyEnabled, setAutoApplyPolicyEnabled] = useState(false);
   const [advancedFullResearchMode, setAdvancedFullResearchMode] = useState(false);
   const [tradingViewBusy, setTradingViewBusy] = useState(false);
@@ -1090,6 +1091,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
     };
     setAbortController(controller);
     setBusy(true);
+    setStoppingAutonomy(false);
     setLiveRun(createStartingAutonomyRun(settings));
     try {
       const run = await runAutonomousResearchLoop({
@@ -1103,11 +1105,13 @@ export function MissionControlShell({ state }: { state: LabState }) {
       await resolveResearchRuntimeSnapshot({ labState: state }).then(setRuntimeSnapshot).catch(() => undefined);
     } finally {
       setBusy(false);
+      setStoppingAutonomy(false);
       setAbortController(undefined);
     }
   };
 
   const stopLoop = () => {
+    setStoppingAutonomy(true);
     abortController?.abort();
   };
 
@@ -1684,10 +1688,10 @@ export function MissionControlShell({ state }: { state: LabState }) {
               <div className="grid gap-2 sm:grid-cols-2">
                 <Button variant="secondary" onClick={() => void startLoop()} disabled={busy}>
                   <Activity className="h-4 w-4" aria-hidden="true" />
-                  {busy ? "Research Running" : "Start Autonomous Research"}
+                  {stoppingAutonomy ? "Stopping..." : busy ? "Research Running" : "Start Autonomous Research"}
                 </Button>
                 <Button variant="outline" onClick={stopLoop} disabled={!busy}>
-                  Stop Research
+                  {stoppingAutonomy ? "Stopping..." : "Stop Research"}
                 </Button>
               </div>
             </div>
@@ -1941,6 +1945,49 @@ export function MissionControlShell({ state }: { state: LabState }) {
               </div>
             </div>
           </section>
+          {latestRun?.performanceDiagnostics ? (
+            <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">Autonomous Performance</p>
+                  <h3 className="mt-1 text-base font-semibold text-slate-50">Loop Responsiveness Diagnostics</h3>
+                  <p className="mt-1 text-sm text-slate-400">Measured loop phases, cancellation state, yielded steps, and throttled UI updates.</p>
+                </div>
+                <Badge variant={latestRun.performanceDiagnostics.cancellationStatus === "running" ? "warning" : "secondary"}>
+                  {formatToken(latestRun.performanceDiagnostics.cancellationStatus)}
+                </Badge>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <MiniReadout label="Loop duration" value={`${latestRun.performanceDiagnostics.lastLoopDurationMs}ms`} detail="current or completed run" />
+                <MiniReadout label="Current phase" value={formatToken(latestRun.performanceDiagnostics.currentPhase)} detail="latest cooperative checkpoint" />
+                <MiniReadout
+                  label="Slowest phase"
+                  value={latestRun.performanceDiagnostics.slowestPhase ? `${latestRun.performanceDiagnostics.slowestPhase.durationMs}ms` : "n/a"}
+                  detail={latestRun.performanceDiagnostics.slowestPhase ? formatToken(latestRun.performanceDiagnostics.slowestPhase.phase) : "no phase timing yet"}
+                />
+                <MiniReadout label="Yielded steps" value={latestRun.performanceDiagnostics.yieldedStepsCount.toLocaleString()} detail={`${latestRun.performanceDiagnostics.throttledUpdateCount.toLocaleString()} throttled UI updates`} />
+                <MiniReadout label="Storage writes" value={latestRun.performanceDiagnostics.storageWriteCount.toLocaleString()} detail="autonomous checkpoints only" />
+                <MiniReadout label="Source provider" value={formatToken(latestRun.performanceDiagnostics.sourceProvider)} detail={latestRun.performanceDiagnostics.sourceFingerprint ?? "no fingerprint"} />
+              </div>
+              {latestRun.performanceDiagnostics.skippedHeavyDiagnostics.length ? (
+                <div className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-xs text-amber-100">
+                  {latestRun.performanceDiagnostics.skippedHeavyDiagnostics.join(" ")}
+                </div>
+              ) : null}
+              {latestRun.performanceDiagnostics.phaseTimings.length ? (
+                <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                  {latestRun.performanceDiagnostics.phaseTimings.map((timing) => (
+                    <MiniReadout
+                      key={`${timing.phase}-${timing.startedAt}`}
+                      label={formatToken(timing.phase)}
+                      value={`${timing.durationMs}ms`}
+                      detail={timing.skipped ? `Skipped: ${timing.detail ?? "deferred"}` : timing.detail ?? "measured phase"}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
           <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>

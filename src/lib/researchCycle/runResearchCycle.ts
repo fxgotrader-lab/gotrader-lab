@@ -591,6 +591,11 @@ export async function runResearchCycle({
   candleWindowSettings,
   advancedFullResearchMode = false,
   skipHeavyAudit,
+  skipLlmAdvisory = false,
+  skipAutoResearch = false,
+  maxAdaptivePasses,
+  autoResearchTimeoutMs,
+  autoResearchCheckpointPersistence,
   sourceGuard,
   onUpdate,
   signal
@@ -650,7 +655,7 @@ export async function runResearchCycle({
   const effectiveMaxCandidateCount = importedGuardedMode
     ? Math.min(maxCandidateCount, DASHBOARD_IMPORTED_CANDIDATE_LIMIT)
     : maxCandidateCount;
-  const effectiveMaxAdaptivePasses = importedGuardedMode && importedPreset === "safe" ? 1 : undefined;
+  const effectiveMaxAdaptivePasses = maxAdaptivePasses ?? (importedGuardedMode && importedPreset === "safe" ? 1 : undefined);
   const heavyAuditSkipped = skipHeavyAudit ?? importedGuardedMode;
   const researchPreset =
     activeCandleSource.mode !== "imported"
@@ -971,6 +976,15 @@ export async function runResearchCycle({
     startStep("llm_advisory");
     await yieldToBrowser();
     throwIfCanceled();
+    if (skipLlmAdvisory) {
+      run.llmBridgeAvailable = false;
+      run.llmAdvisoryUnavailable = true;
+      run.llmAdvisoryUnavailableReason = "skipped_for_autonomous_stability";
+      skipStep(
+        "llm_advisory",
+        "LLM advisory skipped for autonomous stability mode; deterministic research continued."
+      );
+    } else {
     const startingRunbook = loadSimulationRunbookState();
     const llmMarketContext = buildMarketContext({
       symbol: activeConfig.symbol,
@@ -1062,11 +1076,18 @@ export async function runResearchCycle({
         });
       }
     }
+    }
 
     startStep("auto_research");
     await yieldToBrowser();
     throwIfCanceled();
     let autoResearchCycle: AutoResearchCycle | undefined;
+    if (skipAutoResearch) {
+      skipStep(
+        "auto_research",
+        "Auto Research candidate search deferred for autonomous stability mode."
+      );
+    } else {
     try {
       autoResearchCycle = await runAutoResearchCycle({
         searchMode: effectiveSearchMode,
@@ -1079,7 +1100,8 @@ export async function runResearchCycle({
         candleWindow: `${activeCandleSource.researchWindowCandles} raw window / ${activeCandleSource.processedCandleCount} processed ${activeCandleSource.appliedSettings.targetTimeframe} candles`,
         activeCalibrationIdUsed: activeResearchConfig.activeCalibrationId,
         signal,
-        timeoutMs: activeCandleSource.mode === "imported" && !advancedFullResearchMode ? 25_000 : 45_000,
+        timeoutMs: autoResearchTimeoutMs ?? (activeCandleSource.mode === "imported" && !advancedFullResearchMode ? 25_000 : 45_000),
+        checkpointPersistence: autoResearchCheckpointPersistence,
         onCandidateEvaluated: (progress) => {
           run.candidateProgress = progress;
           setStep("auto_research", {
@@ -1140,6 +1162,7 @@ export async function runResearchCycle({
         summary: "Auto Research failed safely; downstream validation will continue where possible.",
         warning: `${message} ${error instanceof Error ? error.message : ""}`.trim()
       });
+    }
     }
 
     startStep("validation");

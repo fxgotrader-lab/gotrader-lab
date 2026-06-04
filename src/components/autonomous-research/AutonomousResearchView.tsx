@@ -59,9 +59,10 @@ export function AutonomousResearchView({ state }: { state: LabState }) {
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
   const [liveRun, setLiveRun] = useState<AutonomousResearchRun>();
   const [busy, setBusy] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [abortController, setAbortController] = useState<AbortController>();
-  const [maxIterations, setMaxIterations] = useState("3");
-  const [noImprovementStop, setNoImprovementStop] = useState("2");
+  const [maxIterations, setMaxIterations] = useState("1");
+  const [noImprovementStop, setNoImprovementStop] = useState("1");
   const [autoApplyPolicyEnabled, setAutoApplyPolicyEnabled] = useState(false);
   const [advancedFullResearchMode, setAdvancedFullResearchMode] = useState(false);
   const latestRun = liveRun ?? latestAutonomousResearchRun(autonomyState);
@@ -103,6 +104,7 @@ export function AutonomousResearchView({ state }: { state: LabState }) {
     const controller = new AbortController();
     setAbortController(controller);
     setBusy(true);
+    setStopping(false);
     setLiveRun(undefined);
     try {
       const run = await runAutonomousResearchLoop({
@@ -122,11 +124,13 @@ export function AutonomousResearchView({ state }: { state: LabState }) {
       await resolveResearchRuntimeSnapshot().then(setRuntimeSnapshot).catch(() => undefined);
     } finally {
       setBusy(false);
+      setStopping(false);
       setAbortController(undefined);
     }
   };
 
   const stopLoop = () => {
+    setStopping(true);
     abortController?.abort();
   };
 
@@ -229,12 +233,12 @@ export function AutonomousResearchView({ state }: { state: LabState }) {
           <div className="flex flex-wrap gap-2">
             <Button onClick={startLoop} disabled={busy}>
               <Play className="h-4 w-4" aria-hidden="true" />
-              {busy ? "Running loop" : "Start Autonomous Loop"}
+              {stopping ? "Stopping..." : busy ? "Running loop" : "Start Autonomous Loop"}
             </Button>
             {busy ? (
               <Button variant="destructive" onClick={stopLoop}>
                 <PauseCircle className="h-4 w-4" aria-hidden="true" />
-                Stop loop
+                {stopping ? "Stopping..." : "Stop loop"}
               </Button>
             ) : null}
             <Button variant="outline" onClick={refresh}>
@@ -368,6 +372,37 @@ export function AutonomousResearchView({ state }: { state: LabState }) {
           <StatusTile label="Run fingerprint" value={selectRuntimeFingerprintLabel(runtimeSnapshot)} />
           <StatusTile label="Maturity trend" value={latestRun?.maturityTrend ?? runtimeSnapshot?.maturity.maturitySummary.trendAvailability.message ?? "unknown"} />
         </div>
+        {latestRun?.performanceDiagnostics ? (
+          <div className="mt-3 rounded-lg border border-border bg-background/45 p-3 text-sm">
+            <p className="font-medium">Autonomous Performance</p>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <StatusTile label="Loop duration" value={`${latestRun.performanceDiagnostics.lastLoopDurationMs}ms`} />
+              <StatusTile label="Current phase" value={formatToken(latestRun.performanceDiagnostics.currentPhase)} />
+              <StatusTile label="Slowest phase" value={latestRun.performanceDiagnostics.slowestPhase ? `${formatToken(latestRun.performanceDiagnostics.slowestPhase.phase)} (${latestRun.performanceDiagnostics.slowestPhase.durationMs}ms)` : "n/a"} />
+              <StatusTile label="Cancellation" value={formatToken(latestRun.performanceDiagnostics.cancellationStatus)} />
+              <StatusTile label="Yielded steps" value={latestRun.performanceDiagnostics.yieldedStepsCount.toLocaleString()} />
+              <StatusTile label="Throttled updates" value={latestRun.performanceDiagnostics.throttledUpdateCount.toLocaleString()} />
+            </div>
+            {latestRun.performanceDiagnostics.skippedHeavyDiagnostics.length ? (
+              <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
+                {latestRun.performanceDiagnostics.skippedHeavyDiagnostics.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            ) : null}
+            {latestRun.performanceDiagnostics.phaseTimings.length ? (
+              <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {latestRun.performanceDiagnostics.phaseTimings.map((timing) => (
+                  <StatusTile
+                    key={`${timing.phase}-${timing.startedAt}`}
+                    label={formatToken(timing.phase)}
+                    value={`${timing.durationMs}ms`}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <div className="mt-3 rounded-lg border border-border bg-background/45 p-3 text-sm">
           <p className="font-medium">Calibration drift history</p>
           {safeArray(latestRun?.calibrationDriftHistory).length ? (

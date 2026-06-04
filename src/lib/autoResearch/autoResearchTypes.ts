@@ -401,6 +401,7 @@ export interface AutoResearchRunOptions {
   activeCalibrationIdUsed?: string;
   onCandidateEvaluated?: (progress: AutoResearchProgressSnapshot) => void;
   onCheckpoint?: (checkpoint: AutoResearchExecutionCheckpoint) => void;
+  checkpointPersistence?: "storage" | "memory_only";
   signal?: AbortSignal;
   timeoutMs?: number;
 }

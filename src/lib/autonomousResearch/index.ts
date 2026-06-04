@@ -50,6 +50,8 @@ export type {
   AutonomousLoopStage,
   AutonomousCalibrationDriftEntry,
   AutonomousLoopIteration,
+  AutonomousPerformanceDiagnostics,
+  AutonomousPerformancePhaseTiming,
   AutonomousResearchBlocker,
   AutonomousResearchRun,
   AutonomousResearchSettings,

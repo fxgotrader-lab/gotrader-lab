@@ -264,6 +264,11 @@ export interface ResearchCycleRunOptions {
   candleWindowSettings?: Partial<CandleWindowSettings>;
   advancedFullResearchMode?: boolean;
   skipHeavyAudit?: boolean;
+  skipLlmAdvisory?: boolean;
+  skipAutoResearch?: boolean;
+  maxAdaptivePasses?: number;
+  autoResearchTimeoutMs?: number;
+  autoResearchCheckpointPersistence?: "storage" | "memory_only";
   sourceGuard?: {
     requireEligibleResearchSource?: boolean;
     allowedSourceModes?: CandleDataSourceMode[];
