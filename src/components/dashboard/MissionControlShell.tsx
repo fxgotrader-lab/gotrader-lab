@@ -1357,6 +1357,17 @@ export function MissionControlShell({ state }: { state: LabState }) {
     mt5AutoRefresh.lastQuote?.ask ??
     runtimeSnapshot?.mt5ReadOnly.latestPrice;
   const latestBacktest = runtimeSnapshot?.latestResearchCycle.latestBacktestSummary;
+  const activeResearchSource = runtimeSnapshot?.marketData.activeResearchSource;
+  const activeResearchSourceLabel = activeResearchSource
+    ? `${formatToken(activeResearchSource.provider)} / ${activeResearchSource.symbol}${
+        activeResearchSource.provenance.providerSymbol ? ` via ${activeResearchSource.provenance.providerSymbol}` : ""
+      } / ${activeResearchSource.candleCount.toLocaleString()} candles`
+    : "loading";
+  const activeResearchSourceFingerprint = activeResearchSource?.fingerprint
+    ? activeResearchSource.fingerprint.length > 48
+      ? `${activeResearchSource.fingerprint.slice(0, 24)}...${activeResearchSource.fingerprint.slice(-12)}`
+      : activeResearchSource.fingerprint
+    : "no fingerprint";
   const grinch = runtimeSnapshot?.latestResearchCycle.activeGrinchProfileSummary;
   const latestGrinchScore =
     runtimeSnapshot?.latestResearchCycle.grinchStrategyScore ?? latestBacktest?.grinchSummary?.latestScore;
@@ -2848,6 +2859,14 @@ export function MissionControlShell({ state }: { state: LabState }) {
                 : runtimeSnapshot?.proposal.latestProposalIsHistorical
                   ? `historical: ${runtimeSnapshot.proposal.latestProposalId}`
                   : "no current proposal"
+            ],
+            [
+              "Backtest source default",
+              `${activeResearchSourceLabel}; Backtest Lab uses this active canonical source by default and labels imported/mock overrides explicitly.`
+            ],
+            [
+              "Replay source default",
+              `${activeResearchSourceLabel}; Replay Lab creates a frozen snapshot from active source. Fingerprint ${activeResearchSourceFingerprint}.`
             ],
             [
               "Active Grinch profile",

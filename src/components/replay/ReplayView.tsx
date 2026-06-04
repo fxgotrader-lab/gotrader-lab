@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from "react";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Pause, Play, RotateCcw, ShieldAlert, SkipBack, SkipForward } from "lucide-react";
 import { MetricCard } from "@/components/MetricCard";
 import { TradingChart } from "@/components/charts/TradingChart";
@@ -7,28 +7,65 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
+  createMockBacktestCandleSource,
   createReplayState,
   describeBacktestConfig,
   getReplayFrame,
   jumpReplay,
+  loadResolvedBacktestCandleSource,
   runBacktest,
+  sanitizeBacktestConfig,
   setReplayPlaying,
   stepReplay
 } from "@/lib/backtesting";
-import type { BacktestResult } from "@/lib/backtesting";
+import type { BacktestResult, BacktestSourcePreference, ResolvedBacktestCandleSource } from "@/lib/backtesting";
 import {
   buildIctMarkers,
   buildTradePlanOverlays,
   buildVwapOverlay,
   createTradingChartData,
+  type ChartDataSourceType,
   type TradingChartLineOverlay
 } from "@/lib/charting";
-import { mockCandles } from "@/lib/mockData/mockCandles";
+import { MT5_READ_ONLY_UPDATED_EVENT } from "@/lib/integrations/mt5";
 import { resolveActiveBacktestConfig } from "@/lib/selfImprovement";
-import type { MarketBias, TradeThesis } from "@/lib/types";
+import type { FuturesSymbol, MarketBias, Timeframe, TradeThesis } from "@/lib/types";
 import { formatPercent, formatSigned } from "@/lib/utils";
 
 const formatTime = (timestamp?: string) => timestamp ? timestamp.slice(11, 16) : "n/a";
+const formatDateTime = (timestamp?: string) => timestamp ? timestamp.replace("T", " ").slice(0, 16) : "n/a";
+const formatSource = (value?: string) => (value ?? "unknown").replace(/_/g, " ");
+const supportedReplaySymbols: FuturesSymbol[] = ["ES", "NQ", "MES", "MNQ"];
+const supportedReplayTimeframes: Timeframe[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
+
+const sourceVariant = (source: ResolvedBacktestCandleSource) =>
+  source.provider === "mt5_read_only" ? "success" as const : source.provider === "mock" ? "warning" as const : "secondary" as const;
+
+const sourceTypeForReplay = (source: ResolvedBacktestCandleSource): ChartDataSourceType =>
+  source.provider === "mt5_read_only"
+    ? "mt5_read_only"
+    : source.provider === "imported_historical"
+      ? "imported"
+      : source.provider === "tradingview_mcp"
+        ? "tradingview_mcp_chart"
+        : source.provider === "mock"
+          ? "mock"
+          : "replay";
+
+const supportedReplaySymbol = (symbol?: string): FuturesSymbol =>
+  supportedReplaySymbols.includes(symbol as FuturesSymbol) ? symbol as FuturesSymbol : "MNQ";
+
+const supportedReplayTimeframe = (timeframe?: string): Timeframe =>
+  supportedReplayTimeframes.includes(timeframe as Timeframe) ? timeframe as Timeframe : "5m";
+
+const configForReplaySource = (source: ResolvedBacktestCandleSource) =>
+  sanitizeBacktestConfig({
+    ...resolveActiveBacktestConfig().config,
+    symbol: supportedReplaySymbol(source.requestedSymbol),
+    timeframe: supportedReplayTimeframe(source.candles[0]?.timeframe ?? source.appliedSettings.targetTimeframe)
+  });
+
+const buildReplayBacktest = (source: ResolvedBacktestCandleSource) => runBacktest(source.candles, configForReplaySource(source));
 
 const biasVariant = (bias?: MarketBias) => {
   if (bias === "bullish") {
@@ -40,18 +77,19 @@ const biasVariant = (bias?: MarketBias) => {
   return "warning" as const;
 };
 
-function ReplayTradingChart({ frameCandles, thesis, currentCandle }: {
+function ReplayTradingChart({ frameCandles, source, thesis, currentCandle }: {
   frameCandles: BacktestResult["candles"];
+  source: ResolvedBacktestCandleSource;
   thesis?: TradeThesis;
   currentCandle?: BacktestResult["candles"][number];
 }) {
   const chartData = useMemo(() => {
     const base = createTradingChartData({
       candles: frameCandles,
-      sourceLabel: "Replay candles revealed through current step",
-      sourceType: "replay",
-      symbol: currentCandle?.symbol ?? frameCandles[0]?.symbol,
-      timeframe: currentCandle?.timeframe ?? frameCandles[0]?.timeframe
+      sourceLabel: `Replay snapshot: ${source.label}`,
+      sourceType: sourceTypeForReplay(source),
+      symbol: currentCandle?.symbol ?? frameCandles[0]?.symbol ?? source.requestedSymbol,
+      timeframe: currentCandle?.timeframe ?? frameCandles[0]?.timeframe ?? source.appliedSettings.targetTimeframe
     });
     const vwap = buildVwapOverlay(frameCandles);
     return {
@@ -61,9 +99,9 @@ function ReplayTradingChart({ frameCandles, thesis, currentCandle }: {
         (overlay): overlay is TradingChartLineOverlay => Boolean(overlay)
       ),
       markers: buildIctMarkers({ currentCandle, thesis }),
-      stateLabel: "REPLAY"
+      stateLabel: source.provider === "mt5_read_only" ? "MT5 REPLAY SNAPSHOT" : "REPLAY SNAPSHOT"
     };
-  }, [currentCandle, frameCandles, thesis]);
+  }, [currentCandle, frameCandles, source, thesis]);
 
   return (
     <TradingChart {...chartData} heightClassName="h-[340px]" />
@@ -108,15 +146,53 @@ function ReplayControls({ result, isAtEnd, onSetState }: {
 }
 
 export function ReplayView() {
-  const activeConfig = useMemo(() => resolveActiveBacktestConfig().config, []);
-  const backtest = useMemo(() => runBacktest(mockCandles, activeConfig), [activeConfig]);
+  const [replaySource, setReplaySource] = useState<ResolvedBacktestCandleSource>(() => createMockBacktestCandleSource());
+  const [backtest, setBacktest] = useState<BacktestResult>(() => buildReplayBacktest(createMockBacktestCandleSource()));
   const [replayState, setReplayState] = useState(() => createReplayState(backtest));
+  const [snapshotStatus, setSnapshotStatus] = useState("Replay is loading the active canonical source.");
+  const [snapshotBusy, setSnapshotBusy] = useState(false);
   const frame = useMemo(() => getReplayFrame(backtest, replayState), [backtest, replayState]);
   const progress = backtest.candles.length ? frame.currentIndex / Math.max(1, backtest.candles.length - 1) : 0;
   const activeIct = frame.activeDecision?.ictContext;
   const activeThesis = frame.activeThesis;
   const latestCompleted = frame.completedTrades.slice(-8).reverse();
   const isAtEnd = frame.currentIndex >= backtest.candles.length - 1;
+
+  const createSnapshot = useCallback(async (preference: BacktestSourcePreference = "active_research") => {
+    setSnapshotBusy(true);
+    setReplayState((state) => setReplayPlaying(state, false));
+    try {
+      const source = await loadResolvedBacktestCandleSource({ preference });
+      const nextBacktest = buildReplayBacktest(source);
+      setReplaySource(source);
+      setBacktest(nextBacktest);
+      setReplayState(createReplayState(nextBacktest));
+      setSnapshotStatus(
+        source.provider === "mt5_read_only"
+          ? `Frozen MT5 replay snapshot created: ${source.brokerSymbol ?? "broker symbol"} for ${source.requestedSymbol}, ${source.candles.length.toLocaleString()} candles.`
+          : `Frozen replay snapshot created from ${formatSource(source.provider)}, ${source.candles.length.toLocaleString()} candles.`
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setSnapshotStatus(`Replay source resolution failed: ${message}`);
+    } finally {
+      setSnapshotBusy(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void createSnapshot("active_research");
+  }, [createSnapshot]);
+
+  useEffect(() => {
+    const refreshStatus = () => {
+      if (replaySource.provider === "mt5_read_only") {
+        setSnapshotStatus("MT5 source updated in the background; create a new replay snapshot to refresh this frozen session.");
+      }
+    };
+    window.addEventListener(MT5_READ_ONLY_UPDATED_EVENT, refreshStatus);
+    return () => window.removeEventListener(MT5_READ_ONLY_UPDATED_EVENT, refreshStatus);
+  }, [replaySource.provider]);
 
   useEffect(() => {
     if (!replayState.isPlaying) {
@@ -141,27 +217,77 @@ export function ReplayView() {
           <p className="text-sm uppercase text-primary">Candle-by-candle research replay</p>
           <h2 className="mt-1 text-3xl font-semibold tracking-normal">Replay Lab</h2>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Step through local mock OHLC candles and watch the ICT engine, internal agents, CIO synthesis, and simulated
-            outcomes evolve.
+            Step through a frozen snapshot from the selected canonical source and watch the ICT engine, internal agents,
+            CIO synthesis, and simulated outcomes evolve.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant="warning">Replay simulation</Badge>
-          <Badge variant="muted">Underlying candles are local/mock unless imported replay is added later</Badge>
-          <Badge variant="muted">No execution</Badge>
-          <Badge variant="secondary">{activeConfig.sessionFilter}</Badge>
+          <Badge variant={sourceVariant(replaySource)}>{formatSource(replaySource.provider)}</Badge>
+          {replaySource.brokerSymbol ? <Badge variant="secondary">{replaySource.brokerSymbol} for {replaySource.requestedSymbol}</Badge> : null}
+          <Badge variant="danger">authority none</Badge>
         </div>
       </div>
 
       <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
         <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />
-        Simulation only. No broker connection. No real trades.
+        Simulation only. No broker connection, no execution authority, and no real orders.
       </div>
 
       <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-3 text-sm text-cyan-100">
-        Replay source: replay/mock historical candles. TradingView MCP chart candles are not used for Replay unless a
-        future explicit conversion creates a replay source; this page keeps replay state separate from visual chart feeds.
+        Replay source: frozen snapshot from a canonical source. MT5 read-only snapshots are CFD/proxy market data for
+        MNQ-style research, not CME MNQ futures broker truth.
       </div>
+
+      <Card className={replaySource.provider === "mt5_read_only" ? "border-emerald-300/25 bg-emerald-300/10" : ""}>
+        <CardHeader>
+          <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-start">
+            <div>
+              <CardTitle>Replay Source</CardTitle>
+              <CardDescription>{snapshotStatus}</CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button disabled={snapshotBusy} onClick={() => void createSnapshot("active_research")}>
+                {snapshotBusy ? "Creating..." : "Create Replay from Active Source"}
+              </Button>
+              <Button variant="secondary" disabled={snapshotBusy} onClick={() => void createSnapshot("imported_historical")}>
+                Imported Snapshot
+              </Button>
+              <Button variant="outline" disabled={snapshotBusy} onClick={() => void createSnapshot("mock_demo")}>
+                Mock Demo Snapshot
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard label="Provider" value={formatSource(replaySource.provider)} detail={replaySource.sourceRole.replace(/_/g, " ")} />
+            <MetricCard label="Requested symbol" value={replaySource.requestedSymbol} detail={replaySource.brokerSymbol ? `Broker ${replaySource.brokerSymbol}` : "No broker alias"} />
+            <MetricCard label="Candle count" value={replaySource.candles.length.toLocaleString()} detail={`${formatDateTime(replaySource.firstTimestamp)} to ${formatDateTime(replaySource.lastTimestamp)}`} />
+            <MetricCard label="Authority" value="none" detail="execution none / broker none / readiness override none" />
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-lg border border-border bg-background/45 p-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Source fingerprint</p>
+              <p className="mt-2 break-all font-mono text-xs text-foreground">{replaySource.sourceFingerprint}</p>
+            </div>
+            <div className="rounded-lg border border-border bg-background/45 p-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Replay mode</p>
+              <p className="mt-2 text-foreground">
+                Frozen snapshot. Refreshing MT5 candles does not mutate this replay until a new snapshot is created.
+              </p>
+            </div>
+          </div>
+          {replaySource.sourceWarnings.length ? (
+            <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-amber-100">
+              <p className="font-semibold">Source warnings</p>
+              <ul className="mt-2 space-y-1">
+                {replaySource.sourceWarnings.map((warning) => <li key={warning}>{warning}</li>)}
+              </ul>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <MetricCard label="Replay candle" value={`${frame.currentIndex + 1} / ${backtest.candles.length}`} detail={formatTime(frame.currentCandle?.timestamp)} />
@@ -189,16 +315,16 @@ export function ReplayView() {
         <CardHeader>
           <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-start">
             <div>
-              <CardTitle>Mock Candle Window</CardTitle>
+              <CardTitle>Replay Candle Window</CardTitle>
               <CardDescription>
-                Visible replay window ending at {frame.currentCandle?.symbol ?? "NQ"} {frame.currentCandle?.timeframe ?? "5m"} candle {frame.currentIndex + 1}.
+                Visible replay window ending at {frame.currentCandle?.symbol ?? replaySource.requestedSymbol} {frame.currentCandle?.timeframe ?? replaySource.appliedSettings.targetTimeframe} candle {frame.currentIndex + 1}.
               </CardDescription>
             </div>
             <ReplayControls result={backtest} isAtEnd={isAtEnd} onSetState={setReplayState} />
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <ReplayTradingChart frameCandles={frame.visibleCandles} currentCandle={frame.currentCandle} thesis={activeThesis} />
+          <ReplayTradingChart frameCandles={frame.visibleCandles} source={replaySource} currentCandle={frame.currentCandle} thesis={activeThesis} />
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>Replay progress</span>

@@ -17,18 +17,19 @@ import { ValidationGuideCard } from "@/components/validation/ValidationGuideCard
 import {
   backtestSessionFilters,
   backtestStopModels,
+  createMockBacktestCandleSource,
   defaultBacktestAgentWeights,
   diagnoseTradeGeneration,
   diagnoseTradeQuality,
   describeBacktestConfig,
+  loadResolvedBacktestCandleSource,
   resetBacktestConfig,
   runBacktest,
   sanitizeBacktestConfig,
   saveBacktestConfig
 } from "@/lib/backtesting";
-import type { BacktestAgentWeightId, ResolvedBacktestConfig } from "@/lib/backtesting";
+import type { BacktestAgentWeightId, BacktestSourcePreference, ResolvedBacktestConfig, ResolvedBacktestCandleSource } from "@/lib/backtesting";
 import { buildVwapOverlay, createTradingChartData } from "@/lib/charting";
-import { mockCandles } from "@/lib/mockData/mockCandles";
 import {
   ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT,
   clearActiveResearchCalibration,
@@ -39,13 +40,12 @@ import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
   importedDataPresetSettings,
   loadCandleWindowSettings,
-  loadPreparedCandleSource,
   MARKET_DATA_IMPORT_UPDATED_EVENT,
   safeWindowSizeOptions,
   saveCandleWindowSettings,
-  type CandleWindowSettings,
-  type PreparedCandleSource
+  type CandleWindowSettings
 } from "@/lib/marketData";
+import { MT5_READ_ONLY_UPDATED_EVENT } from "@/lib/integrations/mt5";
 import {
   resolveResearchRuntimeSnapshot,
   selectRuntimeConfigSummary,
@@ -68,6 +68,27 @@ const windowSizeOptions = [
 const sessionOptions = backtestSessionFilters.map((value) => ({ label: value, value }));
 const stopModelOptions = backtestStopModels.map((value) => ({ label: value, value }));
 const regimeOptions = ["trend", "balanced", "volatile", "range", "news-driven", "risk-off", "risk-on"].map((value) => ({ label: value, value }));
+const backtestSourcePreferenceOptions: Array<{ label: string; value: BacktestSourcePreference }> = [
+  { label: "Active canonical research source", value: "active_research" },
+  { label: "Imported historical", value: "imported_historical" },
+  { label: "Mock/demo only", value: "mock_demo" }
+];
+const BACKTEST_SOURCE_PREFERENCE_KEY = "gotrader-ai-lab-backtest-source-preference";
+const loadBacktestSourcePreference = (): BacktestSourcePreference => {
+  if (typeof window === "undefined") {
+    return "active_research";
+  }
+  const stored = window.localStorage.getItem(BACKTEST_SOURCE_PREFERENCE_KEY);
+  return stored === "imported_historical" || stored === "mock_demo" || stored === "active_research"
+    ? stored
+    : "active_research";
+};
+const saveBacktestSourcePreference = (value: BacktestSourcePreference) => {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(BACKTEST_SOURCE_PREFERENCE_KEY, value);
+  }
+  return value;
+};
 
 const agentWeightLabels: Record<BacktestAgentWeightId, string> = {
   "ict-liquidity-agent": "ICT Liquidity",
@@ -133,36 +154,35 @@ const biasVariant = (bias?: string) => {
   return "warning" as const;
 };
 
-const mockCandleSource: PreparedCandleSource = {
-  mode: "mock",
-  label: "Mock candles",
-  candles: mockCandles,
-  rawCandleCount: mockCandles.length,
-  researchWindowCandles: mockCandles.length,
-  processedCandleCount: mockCandles.length,
-  estimatedProcessedCandles: mockCandles.length,
-  appliedSettings: loadCandleWindowSettings(),
-  aggregationApplied: false,
-  performanceMode: "safe",
-  warnings: []
-};
-
-const candlesForSource = (source: PreparedCandleSource) => (source.candles.length ? source.candles : mockCandles);
-const configForSource = (config: ResolvedBacktestConfig, source: PreparedCandleSource) =>
-  source.metadata
+const candlesForSource = (source: ResolvedBacktestCandleSource) => source.candles;
+const sourceTypeForBacktest = (source: ResolvedBacktestCandleSource) =>
+  source.provider === "imported_historical"
+    ? "imported" as const
+    : source.provider === "mt5_read_only"
+      ? "mt5_read_only" as const
+      : source.provider === "tradingview_mcp"
+        ? "tradingview_mcp_chart" as const
+        : "mock" as const;
+const supportedBacktestSymbol = (symbol?: string): FuturesSymbol =>
+  symbolOptions.some((option) => option.value === symbol) ? symbol as FuturesSymbol : "MNQ";
+const supportedBacktestTimeframe = (timeframe?: string): Timeframe =>
+  timeframeOptions.some((option) => option.value === timeframe) ? timeframe as Timeframe : "5m";
+const configForSource = (config: ResolvedBacktestConfig, source: ResolvedBacktestCandleSource) =>
+  source.provider !== "mock"
     ? sanitizeBacktestConfig({
         ...config,
-        symbol: source.metadata.symbol,
-        timeframe: source.appliedSettings.targetTimeframe
+        symbol: supportedBacktestSymbol(source.requestedSymbol),
+        timeframe: supportedBacktestTimeframe(source.candles[0]?.timeframe ?? source.appliedSettings.targetTimeframe)
       })
     : config;
 
 export function BacktestLab() {
   const [configResolution, setConfigResolution] = useState(() => resolveActiveBacktestConfig());
   const [draftConfig, setDraftConfig] = useState<ResolvedBacktestConfig>(() => resolveActiveBacktestConfig().config);
-  const [result, setResult] = useState(() => runBacktest(mockCandles, resolveActiveBacktestConfig().config));
+  const [sourcePreference, setSourcePreference] = useState<BacktestSourcePreference>(() => loadBacktestSourcePreference());
+  const [candleSource, setCandleSource] = useState<ResolvedBacktestCandleSource>(() => createMockBacktestCandleSource());
+  const [result, setResult] = useState(() => runBacktest(candleSource.candles, resolveActiveBacktestConfig().config));
   const [activeCalibration, setActiveCalibration] = useState(() => loadActiveResearchCalibration());
-  const [candleSource, setCandleSource] = useState<PreparedCandleSource>(mockCandleSource);
   const [windowSettings, setWindowSettings] = useState<CandleWindowSettings>(() => loadCandleWindowSettings());
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
   const summary = result.summary;
@@ -184,14 +204,14 @@ export function BacktestLab() {
       ...createTradingChartData({
         candles: previewCandles,
         sourceLabel: candleSource.label,
-        sourceType: candleSource.mode === "imported" ? "imported" : "mock",
+        sourceType: sourceTypeForBacktest(candleSource),
         symbol: result.config.symbol,
         timeframe: result.config.timeframe
       }),
       lineOverlays: vwap ? [vwap] : [],
       stateLabel: "Backtest preview"
     };
-  }, [activeCandles, candleSource.label, candleSource.mode, result.config.symbol, result.config.timeframe]);
+  }, [activeCandles, candleSource, result.config.symbol, result.config.timeframe]);
   const agentWeightTotal = useMemo(
     () => Object.values(draftConfig.agentWeights).reduce((sum, value) => sum + value, 0),
     [draftConfig.agentWeights]
@@ -221,9 +241,10 @@ export function BacktestLab() {
 
   const refreshWithActiveSource = async (
     configOverride?: ResolvedBacktestConfig,
-    settingsOverride: CandleWindowSettings = loadCandleWindowSettings()
+    settingsOverride: CandleWindowSettings = loadCandleWindowSettings(),
+    preferenceOverride: BacktestSourcePreference = sourcePreference
   ) => {
-    const source = await loadPreparedCandleSource(settingsOverride);
+    const source = await loadResolvedBacktestCandleSource({ preference: preferenceOverride, settings: settingsOverride });
     const resolved = resolveActiveBacktestConfig(configOverride);
     const sourceConfig = configForSource(resolved.config, source);
     const sourceResolved = { ...resolved, config: sourceConfig, finalBacktestConfluenceThreshold: sourceConfig.minimumConfluenceThreshold };
@@ -241,12 +262,20 @@ export function BacktestLab() {
   };
 
   const applyImportedPreset = async (preset: "safe" | "standard" | "advanced") => {
+    const preference = saveBacktestSourcePreference("imported_historical");
+    setSourcePreference(preference);
     const saved = saveCandleWindowSettings({
       ...windowSettings,
       ...importedDataPresetSettings[preset]
     });
     setWindowSettings(saved);
-    await refreshWithActiveSource(undefined, saved);
+    await refreshWithActiveSource(undefined, saved, preference);
+  };
+
+  const changeSourcePreference = async (value: BacktestSourcePreference) => {
+    const saved = saveBacktestSourcePreference(value);
+    setSourcePreference(saved);
+    await refreshWithActiveSource(undefined, windowSettings, saved);
   };
 
   const run = async () => {
@@ -273,8 +302,10 @@ export function BacktestLab() {
     const refresh = () => {
       setActiveCalibration(loadActiveResearchCalibration());
       const settings = loadCandleWindowSettings();
+      const preference = loadBacktestSourcePreference();
       setWindowSettings(settings);
-      loadPreparedCandleSource(settings).then((source) => {
+      setSourcePreference(preference);
+      loadResolvedBacktestCandleSource({ preference, settings }).then((source) => {
         if (!mounted) {
           return;
         }
@@ -298,12 +329,14 @@ export function BacktestLab() {
     window.addEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
     window.addEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
     window.addEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
+    window.addEventListener(MT5_READ_ONLY_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
       mounted = false;
       window.removeEventListener(ACTIVE_RESEARCH_CALIBRATION_UPDATED_EVENT, refresh);
       window.removeEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener(MARKET_DATA_IMPORT_UPDATED_EVENT, refresh);
+      window.removeEventListener(MT5_READ_ONLY_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
   }, []);
@@ -321,9 +354,11 @@ export function BacktestLab() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant="warning">Simulation only</Badge>
-          <Badge variant={candleSource.mode === "imported" ? "success" : "muted"}>
-            {candleSource.mode === "imported" ? "Imported historical data active" : "Mock candles"}
+          <Badge variant={candleSource.provider === "mt5_read_only" ? "success" : candleSource.provider === "mock" ? "warning" : "muted"}>
+            {candleSource.provider.replace(/_/g, " ")}
           </Badge>
+          {candleSource.brokerSymbol ? <Badge variant="secondary">{candleSource.brokerSymbol} -&gt; {candleSource.requestedSymbol}</Badge> : null}
+          <Badge variant="danger">authority none</Badge>
         </div>
       </div>
 
@@ -377,26 +412,56 @@ export function BacktestLab() {
         </CardContent>
       </Card>
 
-      <Card className={candleSource.mode === "imported" ? "border-emerald-300/25 bg-emerald-300/10" : ""}>
+      <Card className={candleSource.provider === "mt5_read_only" ? "border-emerald-300/25 bg-emerald-300/10" : candleSource.provider === "mock" ? "border-amber-300/25 bg-amber-300/10" : ""}>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <CardTitle className="text-base">Historical Data Mode</CardTitle>
-              <CardDescription>Backtests use the prepared research window, not the full raw import.</CardDescription>
+              <CardTitle className="text-base">Backtest Source</CardTitle>
+              <CardDescription>Backtests use the selected canonical source. MT5 read-only remains CFD/proxy data with no execution authority.</CardDescription>
             </div>
-            <Badge variant={candleSource.mode === "imported" ? "success" : "secondary"}>
-              {candleSource.mode === "imported" ? "real imported history" : "mock data"}
+            <Badge variant={candleSource.provider === "mt5_read_only" ? "success" : candleSource.provider === "mock" ? "warning" : "secondary"}>
+              {candleSource.provider.replace(/_/g, " ")}
             </Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
-          <div>
-            <p className="font-medium">Active candle source: {candleSource.label}</p>
-            <p className="mt-1 text-muted-foreground">
-              {candleSource.mode === "imported" && candleSource.metadata
-                ? `Raw candles ${candleSource.rawCandleCount.toLocaleString()}; research window ${candleSource.researchWindowCandles.toLocaleString()}; processed ${candleSource.processedCandleCount.toLocaleString()} ${candleSource.appliedSettings.targetTimeframe} candle(s).`
-                : `${mockCandles.length.toLocaleString()} bundled mock candle(s) for simulation research.`}
-            </p>
+          <div className="grid gap-3 md:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
+            <div className="space-y-2">
+              <Label htmlFor="backtest-source-preference">Source selector</Label>
+              <Select
+                id="backtest-source-preference"
+                value={sourcePreference}
+                options={backtestSourcePreferenceOptions}
+                onChange={(event) => void changeSourcePreference(event.target.value as BacktestSourcePreference)}
+              />
+            </div>
+            <div>
+              <p className="font-medium">Active candle source: {candleSource.label}</p>
+              <p className="mt-1 text-muted-foreground">
+                Provider {candleSource.provider.replace(/_/g, " ")}; requested {candleSource.requestedSymbol}
+                {candleSource.brokerSymbol ? ` via broker symbol ${candleSource.brokerSymbol}` : ""}; {candleSource.processedCandleCount.toLocaleString()} candle(s)
+                from {candleSource.firstTimestamp ?? "n/a"} to {candleSource.lastTimestamp ?? "n/a"}.
+              </p>
+              <p className="mt-1 break-all font-mono text-xs text-muted-foreground">Fingerprint: {candleSource.sourceFingerprint}</p>
+            </div>
+          </div>
+          <div className="grid gap-2 md:grid-cols-4">
+            <div className="rounded-md border border-border bg-background/45 p-2">
+              <p className="text-xs text-muted-foreground">Eligibility</p>
+              <p className="mt-1 text-foreground">{candleSource.provider === "mock" ? "demo only" : "canonical source"}</p>
+            </div>
+            <div className="rounded-md border border-border bg-background/45 p-2">
+              <p className="text-xs text-muted-foreground">Data quality</p>
+              <p className="mt-1 text-foreground">{candleSource.dataQuality.replace(/_/g, " ")}</p>
+            </div>
+            <div className="rounded-md border border-border bg-background/45 p-2">
+              <p className="text-xs text-muted-foreground">Authority</p>
+              <p className="mt-1 text-foreground">execution none / broker none</p>
+            </div>
+            <div className="rounded-md border border-border bg-background/45 p-2">
+              <p className="text-xs text-muted-foreground">Storage</p>
+              <p className="mt-1 text-foreground">{candleSource.provider === "mt5_read_only" ? "canonical MT5 cache" : candleSource.mode}</p>
+            </div>
           </div>
           <div className="grid gap-2 md:grid-cols-3">
             <Button variant="secondary" onClick={() => void applyImportedPreset("safe")} className="justify-center">
@@ -453,9 +518,9 @@ export function BacktestLab() {
               Advanced large-window mode
             </label>
           </div>
-          {candleSource.warnings.length ? (
+          {[...candleSource.warnings, ...candleSource.sourceWarnings].length ? (
             <div className="rounded-md border border-amber-300/25 bg-amber-300/10 p-3 text-xs text-amber-100">
-              {candleSource.warnings.join(" ")}
+              {[...candleSource.warnings, ...candleSource.sourceWarnings].join(" ")}
             </div>
           ) : null}
         </CardContent>
@@ -679,7 +744,7 @@ export function BacktestLab() {
                 <div>
                   <p className="text-sm font-semibold">Agent Weights</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Used only inside CIO synthesis for this mock backtest. Total {agentWeightTotal.toFixed(2)}.
+                    Used only inside CIO synthesis for this selected-source backtest. Total {agentWeightTotal.toFixed(2)}.
                   </p>
                 </div>
                 <Button
@@ -782,8 +847,8 @@ export function BacktestLab() {
                     Shared Lightweight Charts engine using the same candle source as this backtest run.
                   </p>
                 </div>
-                <Badge variant={candleSource.mode === "imported" ? "success" : "warning"}>
-                  {candleSource.mode === "imported" ? "IMPORTED" : "MOCK"}
+                <Badge variant={candleSource.provider === "mt5_read_only" ? "success" : candleSource.provider === "mock" ? "warning" : "secondary"}>
+                  {candleSource.provider.replace(/_/g, " ")}
                 </Badge>
               </div>
               <TradingChart {...backtestChartData} heightClassName="h-[260px]" />
