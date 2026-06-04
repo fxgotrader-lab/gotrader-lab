@@ -3,7 +3,11 @@ import { Link } from "react-router-dom";
 import { Activity, ExternalLink, Lock, RadioTower, ShieldCheck, Zap } from "lucide-react";
 
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
-import { TradingChart } from "@/components/charts/TradingChart";
+import {
+  TradingChart,
+  TRADING_CHART_PERFORMANCE_EVENT,
+  type TradingChartPerformanceEvent
+} from "@/components/charts/TradingChart";
 import { WhyNotReadyCard } from "@/components/common/WhyNotReadyCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -194,6 +198,13 @@ type CommandCenterDataEvent = {
   title: string;
 };
 
+type DashboardPerformanceMark = {
+  detail?: string;
+  durationMs: number;
+  phase: string;
+  timestamp: string;
+};
+
 class DashboardChartErrorBoundary extends Component<
   { children: ReactNode; resetKey: string },
   { error?: string }
@@ -229,7 +240,10 @@ class DashboardChartErrorBoundary extends Component<
   }
 }
 
-const buildCommandCenterChartData = (snapshot?: ResearchRuntimeSnapshot) => {
+const buildCommandCenterChartData = (
+  snapshot?: ResearchRuntimeSnapshot,
+  { includeGrinchReplay = false }: { includeGrinchReplay?: boolean } = {}
+) => {
   const tradingViewFeed = loadActiveTradingViewMcpChartFeed();
   const mt5Feed = loadActiveMt5ReadOnlyCandleFeed();
   const displaySource = snapshot ? resolveChartDisplayCandleSource(snapshot.marketData.preparedSource, tradingViewFeed, mt5Feed) : undefined;
@@ -238,36 +252,40 @@ const buildCommandCenterChartData = (snapshot?: ResearchRuntimeSnapshot) => {
     return undefined;
   }
   const vwap = buildVwapOverlay(candles);
-  const researchCandles = displaySource.activeResearchCandleSource.length ? displaySource.activeResearchCandleSource : candles;
-  const grinchProfileDiagnostics = buildGrinchProfileEvidenceDiagnostics({
-    candles: researchCandles,
-    phase1: snapshot.latestResearchCycle.grinchPhase1Summary,
-    reversal: snapshot.latestResearchCycle.grinchPhase2ReversalSummary,
-    consolidation: snapshot.latestResearchCycle.grinchPhase3ConsolidationSummary,
-    score: snapshot.latestResearchCycle.grinchStrategyScore ?? snapshot.latestResearchCycle.latestBacktestSummary?.grinchSummary?.latestScore,
-    profileCandidateCounts: snapshot.latestResearchCycle.latestBacktestSummary?.grinchSummary?.profileCandidateCounts,
-    noValidProfileCount: snapshot.latestResearchCycle.latestBacktestSummary?.grinchSummary?.noValidProfileSignals,
-    regimeLabel: snapshot.regime.label,
-    regimeDataQuality: snapshot.regime.dataQuality,
-    sessionTimeMapping: snapshot.latestResearchCycle.grinchPhase1Summary?.sessionTimeMapping
-  });
-  const replayDiagnostics = grinchProfileDiagnostics.expansionReplayDiagnostics;
-  const openingOverlays = [
-    horizontalOverlay(candles, replayDiagnostics.twelveAmOpen.price, "dashboard-grinch-12am-open", "12AM Open", "#38bdf8", "liquidity_level", {
-      lineWidth: 2
-    }),
-    horizontalOverlay(candles, replayDiagnostics.sundayOpen.price, "dashboard-grinch-sunday-open", "Sunday Open", "#a78bfa", "liquidity_level", {
-      lineWidth: 2
-    })
-  ].filter(isTradingChartLineOverlay);
-  const replayMarkers: TradingChartMarker[] = replayDiagnostics.overlayMarkers.map((marker) => ({
-    direction: marker.direction,
-    id: marker.id,
-    label: marker.label,
-    price: marker.price,
-    time: toChartTime(marker.rawTimestamp),
-    type: marker.markerType
-  }));
+  let openingOverlays: TradingChartLineOverlay[] = [];
+  let replayMarkers: TradingChartMarker[] = [];
+  if (includeGrinchReplay) {
+    const researchCandles = displaySource.activeResearchCandleSource.length ? displaySource.activeResearchCandleSource : candles;
+    const grinchProfileDiagnostics = buildGrinchProfileEvidenceDiagnostics({
+      candles: researchCandles,
+      phase1: snapshot.latestResearchCycle.grinchPhase1Summary,
+      reversal: snapshot.latestResearchCycle.grinchPhase2ReversalSummary,
+      consolidation: snapshot.latestResearchCycle.grinchPhase3ConsolidationSummary,
+      score: snapshot.latestResearchCycle.grinchStrategyScore ?? snapshot.latestResearchCycle.latestBacktestSummary?.grinchSummary?.latestScore,
+      profileCandidateCounts: snapshot.latestResearchCycle.latestBacktestSummary?.grinchSummary?.profileCandidateCounts,
+      noValidProfileCount: snapshot.latestResearchCycle.latestBacktestSummary?.grinchSummary?.noValidProfileSignals,
+      regimeLabel: snapshot.regime.label,
+      regimeDataQuality: snapshot.regime.dataQuality,
+      sessionTimeMapping: snapshot.latestResearchCycle.grinchPhase1Summary?.sessionTimeMapping
+    });
+    const replayDiagnostics = grinchProfileDiagnostics.expansionReplayDiagnostics;
+    openingOverlays = [
+      horizontalOverlay(candles, replayDiagnostics.twelveAmOpen.price, "dashboard-grinch-12am-open", "12AM Open", "#38bdf8", "liquidity_level", {
+        lineWidth: 2
+      }),
+      horizontalOverlay(candles, replayDiagnostics.sundayOpen.price, "dashboard-grinch-sunday-open", "Sunday Open", "#a78bfa", "liquidity_level", {
+        lineWidth: 2
+      })
+    ].filter(isTradingChartLineOverlay);
+    replayMarkers = replayDiagnostics.overlayMarkers.map((marker) => ({
+      direction: marker.direction,
+      id: marker.id,
+      label: marker.label,
+      price: marker.price,
+      time: toChartTime(marker.rawTimestamp),
+      type: marker.markerType
+    }));
+  }
   return {
     ...createTradingChartData({
       candles,
@@ -325,20 +343,42 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const [mt5AutoRefreshInterval, setMt5AutoRefreshInterval] = useState(() =>
     String(loadMt5ReadOnlyAutoRefreshState().interval)
   );
+  const [dashboardAdvancedOpen, setDashboardAdvancedOpen] = useState(false);
+  const [dashboardPerformanceMarks, setDashboardPerformanceMarks] = useState<DashboardPerformanceMark[]>([]);
+  const [chartPerformanceMarks, setChartPerformanceMarks] = useState<TradingChartPerformanceEvent[]>([]);
+  const [mt5SourceUpdateSerial, setMt5SourceUpdateSerial] = useState(0);
   const [autoRefreshClock, setAutoRefreshClock] = useState(() => Date.now());
   const [dataConnectionEvents, setDataConnectionEvents] = useState<CommandCenterDataEvent[]>([]);
   const latestRun = liveRun ?? latestAutonomousResearchRun(autonomyState);
   const currentIteration = latestRun?.iterations.find((iteration) => iteration.iteration === latestRun.currentIteration);
   const recoveryRun = !busy && autonomyState.activeRun?.status === "running" ? autonomyState.activeRun : undefined;
 
+  const recordDashboardPerformance = (phase: string, startedAt: number, detail?: string) => {
+    const mark = {
+      detail,
+      durationMs: Math.max(0, Date.now() - startedAt),
+      phase,
+      timestamp: new Date().toISOString()
+    };
+    setDashboardPerformanceMarks((marks) => safeTopN([mark, ...marks], 12));
+  };
+
   const refresh = () => {
+    const startedAt = Date.now();
     setAutonomyState(loadAutonomousResearchState());
-    void resolveResearchRuntimeSnapshot({ labState: state }).then(setRuntimeSnapshot).catch(() => undefined);
+    void resolveResearchRuntimeSnapshot({ labState: state })
+      .then((snapshot) => {
+        setRuntimeSnapshot(snapshot);
+        recordDashboardPerformance("runtime_snapshot_resolve", startedAt, "event refresh");
+      })
+      .catch(() => undefined);
   };
 
   const resolveAndStoreRuntime = async () => {
+    const startedAt = Date.now();
     const snapshot = await resolveResearchRuntimeSnapshot({ labState: state });
     setRuntimeSnapshot(snapshot);
+    recordDashboardPerformance("runtime_snapshot_resolve", startedAt, "direct action");
     return snapshot;
   };
 
@@ -913,7 +953,6 @@ export function MissionControlShell({ state }: { state: LabState }) {
     window.addEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refresh);
     window.addEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refresh);
     window.addEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refresh);
-    window.addEventListener(MT5_READ_ONLY_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
       window.removeEventListener(AUTONOMOUS_RESEARCH_UPDATED_EVENT, refresh);
@@ -928,7 +967,6 @@ export function MissionControlShell({ state }: { state: LabState }) {
       window.removeEventListener(TRADINGVIEW_MCP_CHART_FEED_UPDATED_EVENT, refresh);
       window.removeEventListener(TRADINGVIEW_MCP_EVIDENCE_UPDATED_EVENT, refresh);
       window.removeEventListener(TRADINGVIEW_MCP_SETTINGS_UPDATED_EVENT, refresh);
-      window.removeEventListener(MT5_READ_ONLY_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
   }, [state]);
@@ -951,6 +989,28 @@ export function MissionControlShell({ state }: { state: LabState }) {
     };
     window.addEventListener(TRADINGVIEW_MCP_AUTO_REFRESH_UPDATED_EVENT, handleAutoRefreshUpdate);
     return () => window.removeEventListener(TRADINGVIEW_MCP_AUTO_REFRESH_UPDATED_EVENT, handleAutoRefreshUpdate);
+  }, []);
+
+  useEffect(() => {
+    const handleChartPerformance = (event: Event) => {
+      const detail = (event as CustomEvent<TradingChartPerformanceEvent>).detail;
+      if (!detail?.phase) {
+        return;
+      }
+      setChartPerformanceMarks((marks) => safeTopN([detail, ...marks], 12));
+    };
+    window.addEventListener(TRADING_CHART_PERFORMANCE_EVENT, handleChartPerformance);
+    return () => window.removeEventListener(TRADING_CHART_PERFORMANCE_EVENT, handleChartPerformance);
+  }, []);
+
+  useEffect(() => {
+    const handleMt5SourceUpdate = () => {
+      const startedAt = Date.now();
+      setMt5SourceUpdateSerial((serial) => serial + 1);
+      recordDashboardPerformance("mt5_source_compact_update", startedAt, "chart/source metadata only");
+    };
+    window.addEventListener(MT5_READ_ONLY_UPDATED_EVENT, handleMt5SourceUpdate);
+    return () => window.removeEventListener(MT5_READ_ONLY_UPDATED_EVENT, handleMt5SourceUpdate);
   }, []);
 
   useEffect(() => {
@@ -1092,7 +1152,10 @@ export function MissionControlShell({ state }: { state: LabState }) {
   );
   const actionItems = useMemo(() => buildActionItems(runtimeSnapshot, latestRun), [runtimeSnapshot, latestRun]);
   const feedItems = useMemo(() => buildFeedItems(runtimeSnapshot, latestRun, dataConnectionEvents), [dataConnectionEvents, latestRun, runtimeSnapshot]);
-  const commandCenterChart = useMemo(() => buildCommandCenterChartData(runtimeSnapshot), [runtimeSnapshot]);
+  const commandCenterChart = useMemo(
+    () => buildCommandCenterChartData(runtimeSnapshot, { includeGrinchReplay: dashboardAdvancedOpen }),
+    [dashboardAdvancedOpen, mt5SourceUpdateSerial, runtimeSnapshot]
+  );
   const commandCenterChartFingerprint =
     commandCenterChart?.source.dataFingerprint ?? commandCenterChart?.source.sourceKey ?? "no-chart-source";
   const commandCenterChartIdentity = commandCenterChart
@@ -1103,13 +1166,16 @@ export function MissionControlShell({ state }: { state: LabState }) {
       ? `${commandCenterChartFingerprint.slice(0, 24)}...${commandCenterChartFingerprint.slice(-14)}`
       : commandCenterChartFingerprint;
   const grinchDiagnosticCandles = useMemo(() => {
+    if (!dashboardAdvancedOpen) {
+      return [];
+    }
     const tradingViewFeed = loadActiveTradingViewMcpChartFeed();
     const mt5Feed = loadActiveMt5ReadOnlyCandleFeed();
     const displaySource = runtimeSnapshot
       ? resolveChartDisplayCandleSource(runtimeSnapshot.marketData.preparedSource, tradingViewFeed, mt5Feed)
       : undefined;
     return displaySource?.activeResearchCandleSource ?? [];
-  }, [commandCenterChartFingerprint, runtimeSnapshot]);
+  }, [dashboardAdvancedOpen, runtimeSnapshot]);
   const warnings = selectRuntimeWarnings(runtimeSnapshot);
   const latestAutoResearch = useMemo(
     () => runtimeSnapshot?.latestResearchCycle.latestRun?.autoResearchCycle ?? latestAutoResearchCycle(loadAutoResearchState()),
@@ -1128,51 +1194,60 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const grinch = runtimeSnapshot?.latestResearchCycle.activeGrinchProfileSummary;
   const latestGrinchScore =
     runtimeSnapshot?.latestResearchCycle.grinchStrategyScore ?? latestBacktest?.grinchSummary?.latestScore;
-  const grinchProfileDiagnostics = buildGrinchProfileEvidenceDiagnostics({
-    candles: grinchDiagnosticCandles,
-    phase1: runtimeSnapshot?.latestResearchCycle.grinchPhase1Summary,
-    reversal: runtimeSnapshot?.latestResearchCycle.grinchPhase2ReversalSummary,
-    consolidation: runtimeSnapshot?.latestResearchCycle.grinchPhase3ConsolidationSummary,
-    score: latestGrinchScore,
-    profileCandidateCounts: latestBacktest?.grinchSummary?.profileCandidateCounts,
-    noValidProfileCount: latestBacktest?.grinchSummary?.noValidProfileSignals,
-    regimeLabel: runtimeSnapshot?.regime.label,
-    regimeDataQuality: runtimeSnapshot?.regime.dataQuality,
-    sessionTimeMapping: runtimeSnapshot?.latestResearchCycle.grinchPhase1Summary?.sessionTimeMapping
-  });
+  const grinchProfileDiagnostics = useMemo(
+    () =>
+      buildGrinchProfileEvidenceDiagnostics({
+        candles: grinchDiagnosticCandles,
+        phase1: runtimeSnapshot?.latestResearchCycle.grinchPhase1Summary,
+        reversal: runtimeSnapshot?.latestResearchCycle.grinchPhase2ReversalSummary,
+        consolidation: runtimeSnapshot?.latestResearchCycle.grinchPhase3ConsolidationSummary,
+        score: latestGrinchScore,
+        profileCandidateCounts: latestBacktest?.grinchSummary?.profileCandidateCounts,
+        noValidProfileCount: latestBacktest?.grinchSummary?.noValidProfileSignals,
+        regimeLabel: runtimeSnapshot?.regime.label,
+        regimeDataQuality: runtimeSnapshot?.regime.dataQuality,
+        sessionTimeMapping: runtimeSnapshot?.latestResearchCycle.grinchPhase1Summary?.sessionTimeMapping
+      }),
+    [grinchDiagnosticCandles, latestBacktest, latestGrinchScore, runtimeSnapshot]
+  );
   const expansionReplay = grinchProfileDiagnostics.expansionReplayDiagnostics;
-  const grinchCalibrationProposalIntent = latestGrinchScore?.noValidProfile
-    ? buildGrinchCalibrationProposalIntentDetails({
-        expansionReplayDiagnostics: expansionReplay,
-        report: grinchProfileDiagnostics.calibrationReport,
-        sourceContext: {
-          provider: runtimeSnapshot?.marketData.activeResearchSource.provider,
-          dataSourceLabel: runtimeSnapshot?.marketData.activeResearchSource.provenance.sourceLabel,
-          requestedSymbol: runtimeSnapshot?.marketData.symbol,
-          brokerSymbol:
-            runtimeSnapshot?.marketData.activeResearchSource.provenance.providerSymbol ??
-            runtimeSnapshot?.marketData.activeResearchSource.symbol,
-          timeframe: runtimeSnapshot?.marketData.activeResearchSource.timeframe,
-          candleCount: runtimeSnapshot?.marketData.activeResearchSource.candleCount,
-          sourceFingerprint: runtimeSnapshot?.marketData.activeResearchSource.fingerprint,
-          regimeLabel: runtimeSnapshot?.regime.label,
-          regimeDataQuality: runtimeSnapshot?.regime.dataQuality
-        }
-      })
-    : undefined;
+  const grinchCalibrationProposalIntent = useMemo(
+    () =>
+      latestGrinchScore?.noValidProfile
+        ? buildGrinchCalibrationProposalIntentDetails({
+            expansionReplayDiagnostics: expansionReplay,
+            report: grinchProfileDiagnostics.calibrationReport,
+            sourceContext: {
+              provider: runtimeSnapshot?.marketData.activeResearchSource.provider,
+              dataSourceLabel: runtimeSnapshot?.marketData.activeResearchSource.provenance.sourceLabel,
+              requestedSymbol: runtimeSnapshot?.marketData.symbol,
+              brokerSymbol:
+                runtimeSnapshot?.marketData.activeResearchSource.provenance.providerSymbol ??
+                runtimeSnapshot?.marketData.activeResearchSource.symbol,
+              timeframe: runtimeSnapshot?.marketData.activeResearchSource.timeframe,
+              candleCount: runtimeSnapshot?.marketData.activeResearchSource.candleCount,
+              sourceFingerprint: runtimeSnapshot?.marketData.activeResearchSource.fingerprint,
+              regimeLabel: runtimeSnapshot?.regime.label,
+              regimeDataQuality: runtimeSnapshot?.regime.dataQuality
+            }
+          })
+        : undefined,
+    [expansionReplay, grinchProfileDiagnostics.calibrationReport, latestGrinchScore?.noValidProfile, runtimeSnapshot]
+  );
   const canonicalMetrics = runtimeSnapshot?.performance.canonicalPerformanceMetrics;
   const latestGrinchComparison = runtimeSnapshot?.latestResearchCycle.latestRun?.autoResearchCycle?.grinchComparison ?? latestAutoResearch?.grinchComparison;
   const layerMetrics = latestGrinchComparison?.layerMetrics;
-  const benchmarkMatrix = safeArray(latestGrinchComparison?.benchmarkMatrix);
-  const benchmarkRows = buildBenchmarkDisplayRows(benchmarkMatrix, latestAutoResearch);
+  const benchmarkMatrix = useMemo(() => safeArray(latestGrinchComparison?.benchmarkMatrix), [latestGrinchComparison?.benchmarkMatrix]);
+  const layerContributionRows = useMemo(() => buildLayerContributionRows(layerMetrics), [layerMetrics]);
+  const benchmarkRows = useMemo(() => buildBenchmarkDisplayRows(benchmarkMatrix, latestAutoResearch), [benchmarkMatrix, latestAutoResearch]);
   const falsePositiveRate =
     canonicalMetrics && canonicalMetrics.totalTrades + canonicalMetrics.falsePositiveCount > 0
       ? canonicalMetrics.falsePositiveCount / (canonicalMetrics.totalTrades + canonicalMetrics.falsePositiveCount)
       : undefined;
-  const sourceContextRows = buildSourceContextRows(runtimeSnapshot);
-  const expandedResearchMetricRows = buildExpandedResearchMetricRows(runtimeSnapshot);
-  const riskReportRows = buildRiskReportRows(runtimeSnapshot);
-  const proposalImpactRows = buildProposalImpactRows(runtimeSnapshot);
+  const sourceContextRows = useMemo(() => buildSourceContextRows(runtimeSnapshot), [runtimeSnapshot]);
+  const expandedResearchMetricRows = useMemo(() => buildExpandedResearchMetricRows(runtimeSnapshot), [runtimeSnapshot]);
+  const riskReportRows = useMemo(() => buildRiskReportRows(runtimeSnapshot), [runtimeSnapshot]);
+  const proposalImpactRows = useMemo(() => buildProposalImpactRows(runtimeSnapshot), [runtimeSnapshot]);
   const primaryBlocker =
     actionItems[0]?.title ??
     runtimeSnapshot?.readiness.actualBlockers[0] ??
@@ -1764,7 +1839,10 @@ export function MissionControlShell({ state }: { state: LabState }) {
       <TechnicalDetails
         title="Advanced details and drill-down controls"
         description="Open for the one-cycle research control, runtime diagnostics, source trace, and direct links to detail pages."
+        onOpenChange={setDashboardAdvancedOpen}
       >
+        {dashboardAdvancedOpen ? (
+          <>
         <div className="space-y-4">
           <WhyNotReadyCard context="command_center" snapshot={runtimeSnapshot} />
           <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
@@ -1798,7 +1876,27 @@ export function MissionControlShell({ state }: { state: LabState }) {
                 value={mt5AutoRefresh.lastManualRefreshStorageWriteStatus ? formatToken(mt5AutoRefresh.lastManualRefreshStorageWriteStatus) : "n/a"}
                 detail={mt5AutoRefresh.lastManualRefreshError ?? "no manual error"}
               />
+              <MiniReadout
+                label="Refresh duration"
+                value={mt5AutoRefresh.lastRefreshDurationMs !== undefined ? `${mt5AutoRefresh.lastRefreshDurationMs}ms` : "n/a"}
+                detail="quote/candle/normalize/store total"
+              />
             </div>
+            {mt5AutoRefresh.lastRefreshPhaseTimings.length ? (
+              <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Measured refresh phases</p>
+                <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {mt5AutoRefresh.lastRefreshPhaseTimings.map((timing) => (
+                    <MiniReadout
+                      key={`${timing.phase}-${timing.durationMs}-${timing.detail ?? ""}`}
+                      label={formatToken(timing.phase)}
+                      value={`${timing.durationMs}ms`}
+                      detail={timing.detail ?? "measured phase"}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
               <div className="rounded-md border border-white/10 bg-black/20 p-2">
                 <p className="text-slate-500">Last fingerprint</p>
@@ -1839,7 +1937,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
               <Badge variant={layerMetrics ? "success" : "secondary"}>{layerMetrics ? "computed" : "awaiting Auto Research"}</Badge>
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {buildLayerContributionRows(layerMetrics).map((row) => (
+              {layerContributionRows.map((row) => (
                 <MiniReadout key={row.label} label={row.label} value={row.value} detail={row.detail} />
               ))}
             </div>
@@ -2209,6 +2307,42 @@ export function MissionControlShell({ state }: { state: LabState }) {
               <MiniReadout label="Last checked" value={tradingViewAutoRefresh.lastCheckedAt ? formatDateTime(tradingViewAutoRefresh.lastCheckedAt) : "none"} detail={tradingViewAutoRefresh.lastRefreshAt ? `Last refresh ${formatDateTime(tradingViewAutoRefresh.lastRefreshAt)}` : "No successful refresh"} />
               <MiniReadout label="Storage write" value={tradingViewAutoRefresh.lastStorageWriteSkipped ? "skipped unchanged" : "write allowed"} detail={tradingViewAutoRefresh.lastStorageWriteSkippedAt ? formatDateTime(tradingViewAutoRefresh.lastStorageWriteSkippedAt) : "No skip recorded"} />
             </div>
+            <div className="mt-4 grid gap-3 xl:grid-cols-2">
+              <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Runtime snapshot timings</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {dashboardPerformanceMarks.length ? (
+                    dashboardPerformanceMarks.slice(0, 6).map((mark) => (
+                      <MiniReadout
+                        key={`${mark.phase}-${mark.timestamp}`}
+                        label={formatToken(mark.phase)}
+                        value={`${mark.durationMs}ms`}
+                        detail={mark.detail ?? mark.timestamp}
+                      />
+                    ))
+                  ) : (
+                    <MiniReadout label="Runtime snapshot" value="n/a" detail="No measured runtime refresh yet" />
+                  )}
+                </div>
+              </div>
+              <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Chart update timings</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {chartPerformanceMarks.length ? (
+                    chartPerformanceMarks.slice(0, 6).map((mark) => (
+                      <MiniReadout
+                        key={`${mark.phase}-${mark.timestamp}`}
+                        label={formatToken(mark.phase)}
+                        value={`${mark.durationMs}ms`}
+                        detail={mark.detail ?? `${mark.candleCount ?? 0} candles`}
+                      />
+                    ))
+                  ) : (
+                    <MiniReadout label="Chart update" value="n/a" detail="No chart timing event yet" />
+                  )}
+                </div>
+              </div>
+            </div>
           </section>
           <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -2441,6 +2575,13 @@ export function MissionControlShell({ state }: { state: LabState }) {
             <div className="mt-3">Source trace: {runtimeSnapshot.diagnostics.sourceTrace.join(" + ")}</div>
           </div>
         ) : null}
+          </>
+        ) : (
+          <div className="rounded-lg border border-white/10 bg-slate-950/55 p-4 text-sm text-slate-400">
+            Advanced diagnostics are deferred until opened so MT5 refresh can keep the Dashboard responsive. Compact MT5 refresh status,
+            chart source, research source, and safety locks remain visible above.
+          </div>
+        )}
       </TechnicalDetails>
     </div>
   );

@@ -29,6 +29,12 @@ export type Mt5ReadOnlyStorageWriteStatus = "none" | "written" | "skipped_unchan
 export type Mt5ReadOnlyAutoRefreshEventSeverity = "info" | "success" | "warning" | "failed" | "running";
 export type Mt5ReadOnlyManualRefreshResult = "updated" | "unchanged" | "failed" | "skipped_overlap";
 
+export interface Mt5ReadOnlyRefreshPhaseTiming {
+  detail?: string;
+  durationMs: number;
+  phase: string;
+}
+
 export interface Mt5ReadOnlyAutoRefreshEvent {
   eventId: string;
   timestamp: string;
@@ -45,6 +51,8 @@ export interface Mt5ReadOnlyAutoRefreshState {
   interval: Mt5ReadOnlyAutoRefreshInterval;
   candleLimit: 400 | 1000;
   lastRefreshAt?: string;
+  lastRefreshDurationMs?: number;
+  lastRefreshPhaseTimings: Mt5ReadOnlyRefreshPhaseTiming[];
   lastCheckedAt?: string;
   nextRefreshAt?: string;
   refreshCount: number;
@@ -128,6 +136,7 @@ const defaultState = (): Mt5ReadOnlyAutoRefreshState => ({
   failureCount: 0,
   consecutiveFailures: 0,
   lastCandleCount: 0,
+  lastRefreshPhaseTimings: [],
   lastStorageWriteStatus: "none",
   updatedAt: now()
 });
@@ -154,6 +163,20 @@ const sanitizeState = (
     failureCount: Math.max(0, Number(state.failureCount ?? 0)),
     consecutiveFailures: Math.max(0, Number(state.consecutiveFailures ?? 0)),
     lastCandleCount: Math.max(0, Number(state.lastCandleCount ?? 0)),
+    lastRefreshDurationMs:
+      state.lastRefreshDurationMs === undefined ? undefined : Math.max(0, Number(state.lastRefreshDurationMs)),
+    lastRefreshPhaseTimings: Array.isArray(state.lastRefreshPhaseTimings)
+      ? state.lastRefreshPhaseTimings
+          .filter((timing): timing is Mt5ReadOnlyRefreshPhaseTiming =>
+            Boolean(timing && typeof timing.phase === "string" && Number.isFinite(Number(timing.durationMs)))
+          )
+          .map((timing) => ({
+            detail: timing.detail,
+            durationMs: Math.max(0, Number(timing.durationMs)),
+            phase: timing.phase
+          }))
+          .slice(-20)
+      : [],
     lastStorageWriteStatus: state.lastStorageWriteStatus ?? "none",
     updatedAt: state.updatedAt ?? now()
   };
@@ -326,6 +349,32 @@ export async function refreshMt5ReadOnlyNow(
 ): Promise<Mt5ReadOnlyAutoRefreshState> {
   const startedAtMs = Date.now();
   const isManualRefresh = request.trigger === "manual" || request.activateLoop === false;
+  const phaseTimings: Mt5ReadOnlyRefreshPhaseTiming[] = [];
+  const nowMs = () => (typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now());
+  const recordPhase = (phase: string, started: number, detail?: string) => {
+    phaseTimings.push({
+      detail,
+      durationMs: Math.round((nowMs() - started) * 10) / 10,
+      phase
+    });
+  };
+  const timePhase = async <T,>(phase: string, fn: () => Promise<T>, detail?: string): Promise<T> => {
+    const started = nowMs();
+    try {
+      return await fn();
+    } finally {
+      recordPhase(phase, started, detail);
+    }
+  };
+  const timeSyncPhase = <T,>(phase: string, fn: () => T, detail?: string): T => {
+    const started = nowMs();
+    try {
+      return fn();
+    } finally {
+      recordPhase(phase, started, detail);
+    }
+  };
+  const refreshDuration = () => Math.max(0, Date.now() - startedAtMs);
   const buildManualDiagnostics = ({
     candleCount,
     error,
@@ -344,7 +393,7 @@ export async function refreshMt5ReadOnlyNow(
     isManualRefresh
       ? {
           lastManualRefreshAt: timestamp,
-          lastManualRefreshDurationMs: Math.max(0, Date.now() - startedAtMs),
+          lastManualRefreshDurationMs: refreshDuration(),
           lastManualRefreshResult: result,
           lastManualRefreshCandleCount: candleCount,
           lastManualRefreshSourceRegistered: sourceRegistered,
@@ -406,11 +455,13 @@ export async function refreshMt5ReadOnlyNow(
   );
 
   try {
-    const status = await checkMt5ReadOnlyStatus(resolved.settings);
+    const status = await timePhase("status_check", () => checkMt5ReadOnlyStatus(resolved.settings), resolved.settings.bridgeUrl);
     if (status.connectionStatus !== "connected" && status.connectionStatus !== "degraded") {
       return emitFailureState({
         state: {
           ...refreshStarted,
+          lastRefreshDurationMs: refreshDuration(),
+          lastRefreshPhaseTimings: phaseTimings,
           ...buildManualDiagnostics({
             error: `MT5 read-only bridge disconnected: ${status.message}`,
             result: "failed",
@@ -423,23 +474,35 @@ export async function refreshMt5ReadOnlyNow(
       });
     }
 
-    const quote = await fetchMt5ReadOnlyQuote(
-      { symbol: resolved.requestedSymbol, brokerSymbol: resolved.brokerSymbol },
-      resolved.settings
+    const quote = await timePhase(
+      "fetch_quote",
+      () =>
+        fetchMt5ReadOnlyQuote(
+          { symbol: resolved.requestedSymbol, brokerSymbol: resolved.brokerSymbol },
+          resolved.settings
+        ),
+      resolved.brokerSymbol
     );
-    const candlesResponse = await fetchMt5ReadOnlyCandles(
-      {
-        symbol: resolved.requestedSymbol,
-        brokerSymbol: resolved.brokerSymbol,
-        timeframe: resolved.timeframe,
-        limit: resolved.candleLimit
-      },
-      resolved.settings
+    const candlesResponse = await timePhase(
+      "fetch_candles",
+      () =>
+        fetchMt5ReadOnlyCandles(
+          {
+            symbol: resolved.requestedSymbol,
+            brokerSymbol: resolved.brokerSymbol,
+            timeframe: resolved.timeframe,
+            limit: resolved.candleLimit
+          },
+          resolved.settings
+        ),
+      `${resolved.brokerSymbol} ${resolved.timeframe} ${resolved.candleLimit}`
     );
     if (!candlesResponse.candles.length) {
       return emitFailureState({
         state: {
           ...loadMt5ReadOnlyAutoRefreshState(),
+          lastRefreshDurationMs: refreshDuration(),
+          lastRefreshPhaseTimings: phaseTimings,
           ...buildManualDiagnostics({
             candleCount: 0,
             error:
@@ -460,19 +523,33 @@ export async function refreshMt5ReadOnlyNow(
     }
 
     const checkedAt = now();
-    const candidateFeed = createActiveMt5ReadOnlyCandleFeed({
-      candlesResponse,
-      gotraderSymbol: resolved.requestedSymbol,
-      gotraderTimeframe: resolved.timeframe,
-      latestQuote: quote,
-      usageMode: resolved.usageMode
-    });
+    const candidateFeed = timeSyncPhase(
+      "normalize_candles",
+      () =>
+        createActiveMt5ReadOnlyCandleFeed({
+          candlesResponse,
+          gotraderSymbol: resolved.requestedSymbol,
+          gotraderTimeframe: resolved.timeframe,
+          latestQuote: quote,
+          usageMode: resolved.usageMode
+        }),
+      `${candlesResponse.candles.length} candles`
+    );
     const candleFingerprint =
-      candidateFeed.candleFingerprint ?? buildMt5ReadOnlyCandleFingerprint(candidateFeed.candles);
-    const existingFeed = loadActiveMt5ReadOnlyCandleFeed();
-    const existingFingerprint =
-      existingFeed?.candleFingerprint ??
-      (existingFeed?.candles.length ? buildMt5ReadOnlyCandleFingerprint(existingFeed.candles) : undefined);
+      candidateFeed.candleFingerprint ??
+      timeSyncPhase(
+        "build_candidate_fingerprint",
+        () => buildMt5ReadOnlyCandleFingerprint(candidateFeed.candles),
+        `${candidateFeed.candles.length} candles`
+      );
+    const existingFeed = timeSyncPhase("load_existing_feed", () => loadActiveMt5ReadOnlyCandleFeed());
+    const existingFingerprint = timeSyncPhase(
+      "fingerprint_compare",
+      () =>
+        existingFeed?.candleFingerprint ??
+        (existingFeed?.candles.length ? buildMt5ReadOnlyCandleFingerprint(existingFeed.candles) : undefined),
+      existingFeed?.feedId
+    );
     const fingerprintChanged = candleFingerprint !== existingFingerprint;
     const canSkipCandleWrite = Boolean(existingFeed?.candles.length && !fingerprintChanged);
     let storageWriteStatus: Mt5ReadOnlyStorageWriteStatus = "none";
@@ -482,12 +559,24 @@ export async function refreshMt5ReadOnlyNow(
       storageWriteStatus = "skipped_unchanged";
       feed = existingFeed;
     } else {
-      feed = await storeActiveMt5ReadOnlyCandleFeed({
-        ...candidateFeed,
-        candleFingerprint,
-        fetchedAt: checkedAt,
-        storedAt: checkedAt
-      });
+      const shouldPersistCandles =
+        !existingFeed?.candlesPersisted || existingFeed.lastTimestamp !== candidateFeed.lastTimestamp;
+      feed = await timePhase(
+        "canonical_source_register",
+        () =>
+          storeActiveMt5ReadOnlyCandleFeed(
+            {
+              ...candidateFeed,
+              candleFingerprint,
+              fetchedAt: checkedAt,
+              storedAt: shouldPersistCandles ? checkedAt : existingFeed?.storedAt ?? checkedAt
+            },
+            {
+              persist: shouldPersistCandles
+            }
+          ),
+        `${candidateFeed.candles.length} candles${shouldPersistCandles ? "" : " session-only"}`
+      );
       storageWriteStatus = feed.candlesPersisted ? "written" : "session_only";
     }
 
@@ -525,6 +614,8 @@ export async function refreshMt5ReadOnlyNow(
         skippedUnchangedCount: latestState.skippedUnchangedCount + (canSkipCandleWrite ? 1 : 0),
         consecutiveFailures: 0,
         lastError: undefined,
+        lastRefreshDurationMs: refreshDuration(),
+        lastRefreshPhaseTimings: phaseTimings,
         lastStorageWriteStatus: storageWriteStatus,
         ...buildManualDiagnostics({
           candleCount: feed.candleCount,
@@ -546,6 +637,8 @@ export async function refreshMt5ReadOnlyNow(
     return emitFailureState({
       state: {
         ...loadMt5ReadOnlyAutoRefreshState(),
+        lastRefreshDurationMs: refreshDuration(),
+        lastRefreshPhaseTimings: phaseTimings,
         ...buildManualDiagnostics({
           error: detail,
           result: "failed",

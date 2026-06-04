@@ -527,10 +527,14 @@ export async function hydrateActiveMt5ReadOnlyCandleFeed(): Promise<ActiveMt5Rea
   }
 }
 
-export async function storeActiveMt5ReadOnlyCandleFeed(feed: ActiveMt5ReadOnlyCandleFeed) {
+export async function storeActiveMt5ReadOnlyCandleFeed(
+  feed: ActiveMt5ReadOnlyCandleFeed,
+  options: { persist?: boolean } = {}
+) {
   if (!isBrowser()) {
     return feed;
   }
+  const shouldPersist = options.persist !== false;
   activeFeedSessionCache = {
     ...feed,
     storageBackend: "session",
@@ -538,6 +542,10 @@ export async function storeActiveMt5ReadOnlyCandleFeed(feed: ActiveMt5ReadOnlyCa
     storageWarnings: feed.storageWarnings ?? []
   };
   writeMetadata(metadataFromFeed(activeFeedSessionCache));
+  if (!shouldPersist) {
+    publish(activeFeedSessionCache);
+    return activeFeedSessionCache;
+  }
   try {
     const persisted = await persistFeed(activeFeedSessionCache);
     publish(persisted);

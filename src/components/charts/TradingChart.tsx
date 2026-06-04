@@ -25,6 +25,17 @@ import type {
 import { toLightweightMarker } from "@/lib/charting";
 import { safeArray } from "@/lib/utils";
 
+export const TRADING_CHART_PERFORMANCE_EVENT = "gotrader-trading-chart-performance";
+
+export interface TradingChartPerformanceEvent {
+  candleCount?: number;
+  detail?: string;
+  durationMs: number;
+  phase: "chart_set_data" | "chart_set_markers" | "chart_set_overlays";
+  sourceKey?: string;
+  timestamp: string;
+}
+
 const lineStyleFor = (style?: TradingChartLineOverlay["lineStyle"]) => style === "dashed" ? LineStyle.Dashed : LineStyle.Solid;
 
 const lineDataFor = (overlay: TradingChartLineOverlay): LineData<Time>[] =>
@@ -65,6 +76,32 @@ export function TradingChart({
   const sourceKey = source.sourceKey ?? source.dataFingerprint ?? `${source.sourceType}|${source.sourceLabel}|${source.candleCount}|${source.lastTimestamp ?? "none"}`;
   const dataFingerprint = source.dataFingerprint ?? sourceKey;
   const sourceIdentityKey = `${source.sourceType}|${source.sourceLabel}|${source.symbol}|${source.timeframe}`;
+  const publishChartTiming = (
+    phase: TradingChartPerformanceEvent["phase"],
+    startedAt: number,
+    detail?: string
+  ) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const detailPayload: TradingChartPerformanceEvent = {
+      candleCount: source.candleCount,
+      detail,
+      durationMs: Math.round(
+        (((typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now()) -
+          startedAt) *
+          10)
+      ) / 10,
+      phase,
+      sourceKey,
+      timestamp: new Date().toISOString()
+    };
+    const target = window as typeof window & {
+      __gotraderChartPerformance?: TradingChartPerformanceEvent[];
+    };
+    target.__gotraderChartPerformance = [detailPayload, ...(target.__gotraderChartPerformance ?? [])].slice(0, 12);
+    window.dispatchEvent(new CustomEvent(TRADING_CHART_PERFORMANCE_EVENT, { detail: detailPayload }));
+  };
   const sortedCandles = useMemo(
     () => safeArray(candles).slice().sort((a, b) => Number(a.time) - Number(b.time)),
     [candles]
@@ -212,6 +249,7 @@ export function TradingChart({
       return;
     }
     try {
+      const startedAt = typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
       setChartError(undefined);
       candleSeries.setData(chartCandleData);
       const firstDataLoad = !lastDataFingerprintRef.current;
@@ -221,6 +259,7 @@ export function TradingChart({
       }
       lastDataFingerprintRef.current = dataFingerprint;
       lastSourceIdentityRef.current = sourceIdentityKey;
+      publishChartTiming("chart_set_data", startedAt, dataFingerprint);
     } catch (error) {
       setChartError(`Chart render failed. Source remains available. ${error instanceof Error ? error.message : "Unable to update candle data."}`);
     }
@@ -228,7 +267,9 @@ export function TradingChart({
 
   useEffect(() => {
     try {
+      const startedAt = typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
       markerApiRef.current?.setMarkers(markerData);
+      publishChartTiming("chart_set_markers", startedAt, `${markerData.length} markers`);
     } catch (error) {
       setChartError(`Chart render failed. Source remains available. ${error instanceof Error ? error.message : "Unable to update markers."}`);
     }
@@ -240,6 +281,7 @@ export function TradingChart({
       return;
     }
 
+    const startedAt = typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
     for (const series of overlaySeriesRef.current) {
       try {
         chart.removeSeries(series);
@@ -275,6 +317,11 @@ export function TradingChart({
           addLine(zone.bottom);
         }
       }
+      publishChartTiming(
+        "chart_set_overlays",
+        startedAt,
+        `${safeArray(lineOverlays).length + safeArray(zoneOverlays).length} overlays`
+      );
     } catch (error) {
       setChartError(`Chart render failed. Source remains available. ${error instanceof Error ? error.message : "Unable to update overlays."}`);
     }

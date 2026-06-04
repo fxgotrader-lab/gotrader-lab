@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -8,6 +8,7 @@ type DisclosureSectionProps = {
   className?: string;
   defaultOpen?: boolean;
   description?: string;
+  onOpenChange?: (open: boolean) => void;
   title: string;
 };
 
@@ -16,15 +17,23 @@ export function DisclosureSection({
   className,
   defaultOpen = false,
   description,
+  onOpenChange,
   title,
 }: DisclosureSectionProps) {
+  const [open, setOpen] = useState(defaultOpen);
+
   return (
     <details
       className={cn(
         "group rounded-lg border border-border bg-card/55 shadow-sm transition-colors open:border-primary/25 open:bg-card/80",
         className
       )}
-      open={defaultOpen}
+      open={open}
+      onToggle={(event) => {
+        const nextOpen = event.currentTarget.open;
+        setOpen(nextOpen);
+        onOpenChange?.(nextOpen);
+      }}
     >
       <summary className="flex cursor-pointer list-none items-start justify-between gap-3 px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <span>

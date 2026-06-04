@@ -6,6 +6,7 @@ type TechnicalDetailsProps = {
   children: ReactNode;
   defaultOpen?: boolean;
   description?: string;
+  onOpenChange?: (open: boolean) => void;
   title?: string;
 };
 
@@ -13,10 +14,11 @@ export function TechnicalDetails({
   children,
   defaultOpen = false,
   description = "Open for raw metrics, full tables, JSON, command snippets, or debug inputs.",
+  onOpenChange,
   title = "Advanced details",
 }: TechnicalDetailsProps) {
   return (
-    <DisclosureSection title={title} description={description} defaultOpen={defaultOpen}>
+    <DisclosureSection title={title} description={description} defaultOpen={defaultOpen} onOpenChange={onOpenChange}>
       {children}
     </DisclosureSection>
   );
