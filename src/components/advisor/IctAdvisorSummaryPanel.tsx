@@ -18,6 +18,14 @@ const pct = (value?: number) => (typeof value === "number" ? `${Math.round(value
 const compactPrice = (value?: number) => (typeof value === "number" && Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "n/a");
 const entryZoneLabel = (entryZone?: IctAdvisorPacket["recommendedSignal"]["entryZone"]) =>
   entryZone ? `${compactPrice(entryZone.low)} - ${compactPrice(entryZone.high)} (${compactPrice(entryZone.midpoint)} mid)` : "n/a";
+const statusVariant = (status?: IctAdvisorPacket["approvedProfileDecision"]["status"]) =>
+  status === "approved_research_candidate"
+    ? "success"
+    : status === "watchlist_candidate"
+      ? "warning"
+      : status === "rejected_candidate"
+        ? "danger"
+        : "secondary";
 
 export function IctAdvisorSummaryPanel({
   mode = "full",
@@ -97,21 +105,19 @@ export function IctAdvisorSummaryPanel({
               Deterministic strategy summary
             </h3>
           </div>
-          <Badge variant={recommended?.decision === "research_only" ? "success" : "warning"}>
-            {formatToken(recommended?.decision)}
-          </Badge>
+          <Badge variant={statusVariant(packet?.approvedProfileDecision.status)}>{formatToken(packet?.approvedProfileDecision.status)}</Badge>
         </div>
         {packet ? (
           <>
             <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
               <AdvisorMini label="Composite bias" value={formatToken(packet.compactSummary.compositeBias)} />
               <AdvisorMini label="Decision" value={formatToken(packet.compactSummary.decision)} />
-              <AdvisorMini label="Draw" value={packet.compactSummary.drawOnLiquidity ?? "none"} />
               <AdvisorMini label="Setup" value={formatToken(packet.compactSummary.setup)} />
+              <AdvisorMini label="Approved profile" value={formatToken(packet.compactSummary.approvedProfileStatus)} />
               <AdvisorMini label="Confidence" value={pct(packet.compactSummary.confidence)} />
             </div>
             <p className="mt-3 text-xs leading-5 text-slate-400">
-              {recommended?.summary ?? "ICT advisor summary pending."}
+              {recommended?.summary ?? "ICT advisor summary pending."} Approval score {packet.compactSummary.approvalScore}/100.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Button variant="secondary" size="sm">
@@ -145,6 +151,7 @@ export function IctAdvisorSummaryPanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Badge variant={statusVariant(packet?.approvedProfileDecision.status)}>{formatToken(packet?.approvedProfileDecision.status)}</Badge>
           <Badge variant={recommended?.decision === "research_only" ? "success" : "warning"}>{formatToken(recommended?.decision)}</Badge>
           <Badge variant="danger">execution none</Badge>
           <Badge variant="secondary">compact packet</Badge>
@@ -160,6 +167,8 @@ export function IctAdvisorSummaryPanel({
             <AdvisorMini label="Active setup" value={formatToken(packet.compactSummary.setup)} />
             <AdvisorMini label="Research side" value={formatToken(packet.compactSummary.side)} />
             <AdvisorMini label="Decision" value={formatToken(packet.compactSummary.decision)} />
+            <AdvisorMini label="Approved profile" value={formatToken(packet.approvedProfileDecision.status)} detail={packet.approvedProfileDecision.profileId.replace(/_/g, " ")} />
+            <AdvisorMini label="Approval score" value={`${packet.approvedProfileDecision.approvalScore}/100`} />
             <AdvisorMini label="Confidence" value={pct(packet.compactSummary.confidence)} />
             <AdvisorMini label="Draw-on-liquidity" value={packet.compactSummary.drawOnLiquidity ?? "none"} />
             <AdvisorMini label="Swept liquidity" value={recommended?.liquiditySwept ? `${recommended.liquiditySwept.type} @ ${compactPrice(recommended.liquiditySwept.price)}` : "none"} />
@@ -197,6 +206,9 @@ export function IctAdvisorSummaryPanel({
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Recommended signal detail</p>
               <div className="mt-3 grid gap-2 text-xs text-slate-300">
                 <AdvisorList label="No-trade reasons" values={recommended?.noTradeReasons ?? []} empty="none" />
+                <AdvisorList label="Approved profile reasons" values={packet.approvedProfileDecision.approvedReasons} empty="none" />
+                <AdvisorList label="Rejection reasons" values={packet.approvedProfileDecision.rejectionReasons} empty="none" />
+                <AdvisorList label="Watchlist reasons" values={packet.approvedProfileDecision.watchlistReasons} empty="none" />
                 <AdvisorList label="Risk notes" values={recommended?.riskNotes ?? []} empty="none" />
               </div>
               <p className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Packet safety</p>

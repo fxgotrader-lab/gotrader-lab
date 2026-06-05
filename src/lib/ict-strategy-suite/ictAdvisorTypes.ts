@@ -1,4 +1,5 @@
 import type { CanonicalCandleProvider } from "../candleSources";
+import type { IctApprovedSetupDecision } from "./ictApprovedSetupProfileTypes";
 
 export type IctBias = "bullish" | "bearish" | "neutral";
 export type IctSide = "long" | "short" | "flat";
@@ -153,8 +154,11 @@ export interface IctAdvisorPacket {
     decision: IctDecision;
     side: IctSide;
     confidence: number;
+    approvedProfileStatus: IctApprovedSetupDecision["status"];
+    approvalScore: number;
     noTradeReasonCount: number;
   };
+  approvedProfileDecision: IctApprovedSetupDecision;
   journalEvents: IctAdvisorJournalEvent[];
   journalStatus: "written" | "memory_only" | "unavailable" | "skipped";
   safetyLocks: {

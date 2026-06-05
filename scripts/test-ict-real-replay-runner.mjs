@@ -15,6 +15,7 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictAdvisorTypes.ts" },
   { root: sourceRoot, file: "ictReplayValidationTypes.ts" },
   { root: sourceRoot, file: "ictReplayDiagnosticsTypes.ts" },
+  { root: sourceRoot, file: "ictApprovedSetupProfileTypes.ts" },
   { root: sourceRoot, file: "ictRealReplayRunnerTypes.ts" },
   { root: sourceRoot, file: "ictStrategySuiteJournal.ts" },
   { root: sourceRoot, file: "ictAdvisorJournal.ts" },
@@ -23,6 +24,7 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictAdvisorEngine.ts" },
   { root: sourceRoot, file: "ictReplayValidation.ts" },
   { root: sourceRoot, file: "ictReplayDiagnostics.ts" },
+  { root: sourceRoot, file: "ictApprovedSetupProfile.ts" },
   { root: sourceRoot, file: "ictRealReplayRunner.ts" },
   { root: mt5Root, file: "mt5ReadOnlyTypes.ts" },
   { root: mt5Root, file: "mt5SymbolSettings.ts" },
@@ -201,6 +203,11 @@ async function main() {
   assert.ok(deterministic.diagnostics?.byStrategyId, "real replay runner should include compact diagnostics by strategy");
   assert.ok(deterministic.diagnostics?.bySession, "real replay runner should include compact diagnostics by session");
   assert.ok(deterministic.calibrationResults?.some((item) => item.filterId === "min_confidence_70"), "real replay runner should include calibration summaries");
+  assert.ok(deterministic.approvedProfileResults?.some((item) => item.profileId === "gotrader_ict_phase1_strict"), "real replay runner should include approved setup profile summaries");
+  assert.ok(
+    deterministic.approvedProfileResults?.every((item) => item.researchOnly === true && !("decisions" in item)),
+    "approved setup profile summaries should stay compact"
+  );
   assert.deepEqual([...new Set(requestedTimeframes)].sort(), ["15m", "1h", "5m"].sort(), "runner should fetch primary 5m separately from HTF 15m/1h context");
   const journalEvent = suite.buildIctRealReplayRunJournalEvent(deterministic);
   assert.equal(journalEvent.eventType, "ict_real_replay_run_summary");

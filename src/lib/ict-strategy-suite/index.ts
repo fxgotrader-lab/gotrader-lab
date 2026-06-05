@@ -9,5 +9,7 @@ export * from "./ictReplayValidationTypes";
 export * from "./ictReplayValidation";
 export * from "./ictReplayDiagnosticsTypes";
 export * from "./ictReplayDiagnostics";
+export * from "./ictApprovedSetupProfileTypes";
+export * from "./ictApprovedSetupProfile";
 export * from "./ictRealReplayRunnerTypes";
 export * from "./ictRealReplayRunner";

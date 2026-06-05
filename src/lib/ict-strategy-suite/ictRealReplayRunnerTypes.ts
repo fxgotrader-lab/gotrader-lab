@@ -1,4 +1,5 @@
 import type { IctReplaySummary } from "./ictReplayValidationTypes";
+import type { IctApprovedSetupProfileRunSummary } from "./ictApprovedSetupProfileTypes";
 import type { IctReplayCalibrationResult, IctReplayDiagnostics } from "./ictReplayDiagnosticsTypes";
 
 export interface IctRealReplayRunConfig {
@@ -63,6 +64,7 @@ export interface IctRealReplayRunResult {
   aggregateSummary: IctRealReplayAggregateSummary;
   diagnostics?: IctReplayDiagnostics;
   calibrationResults?: IctReplayCalibrationResult[];
+  approvedProfileResults?: IctApprovedSetupProfileRunSummary[];
   safety: {
     rawCandlesExcluded: true;
     rawSnapshotsExcluded: true;

@@ -20,6 +20,10 @@ import {
   appendIctAdvisorJournalEvents,
   buildIctAdvisorJournalEvent
 } from "./ictAdvisorJournal";
+import {
+  evaluateApprovedSetupProfile,
+  getDefaultApprovedSetupProfiles
+} from "./ictApprovedSetupProfile";
 import type {
   IctAdvisorDealingRange,
   IctAdvisorDisplacement,
@@ -472,6 +476,8 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
         })
       );
   const recommendedSignal = bestSignal(signals);
+  const approvedProfile = getDefaultApprovedSetupProfiles()[0];
+  const approvedProfileDecision = evaluateApprovedSetupProfile(recommendedSignal, approvedProfile);
   const journalEvents = signals.map((signal) => buildIctAdvisorJournalEvent(signal));
   const journalWrite = appendIctAdvisorJournalEvents(journalEvents);
   return {
@@ -502,8 +508,11 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
       decision: recommendedSignal.decision,
       side: recommendedSignal.side,
       confidence: clamp(recommendedSignal.confidence),
+      approvedProfileStatus: approvedProfileDecision.status,
+      approvalScore: approvedProfileDecision.approvalScore,
       noTradeReasonCount: recommendedSignal.noTradeReasons.length
     },
+    approvedProfileDecision,
     journalEvents,
     journalStatus: journalWrite.storage === "localStorage" ? "written" : journalWrite.storage === "memory_unavailable" ? "memory_only" : "unavailable",
     safetyLocks: {
@@ -523,12 +532,16 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
 }
 
 export function assertIctAdvisorPacketIsCompact(packet: IctAdvisorPacket) {
-  const { safetyLocks: _safetyLocks, ...payloadWithoutSafetyLockLabels } = packet;
-  const serialized = JSON.stringify(payloadWithoutSafetyLockLabels);
+  const { safetyLocks: _safetyLocks, approvedProfileDecision, ...payloadWithoutSafetyLockLabels } = packet;
+  const serialized = JSON.stringify({
+    ...payloadWithoutSafetyLockLabels,
+    approvedProfileDecision: approvedProfileDecision ? { ...approvedProfileDecision, safety: undefined } : undefined
+  });
   return {
     ok:
       packet.safetyLocks.rawCandlesIncluded === false &&
       packet.safetyLocks.rawSnapshotsIncluded === false &&
+      packet.approvedProfileDecision.safety.rawCandlesExcluded === true &&
       !/"candles"\s*:/i.test(serialized) &&
       !/account|position|order|password|secret|api[_-]?key/i.test(serialized),
     serializedBytes: new Blob([serialized]).size

@@ -11,6 +11,11 @@ import {
 import type { Candle, Timeframe } from "../types";
 import { runIctReplayValidation, sanitizeReplayOutput } from "./ictReplayValidation";
 import {
+  appendIctApprovedSetupProfileJournalEvents,
+  buildApprovedSetupProfileRunSummaries,
+  buildIctApprovedSetupProfileJournalEvents
+} from "./ictApprovedSetupProfile";
+import {
   appendIctReplayDiagnosticsJournalEvent,
   buildIctReplayDiagnosticsJournalEvent,
   buildReplayDiagnostics,
@@ -402,6 +407,7 @@ export async function runIctRealReplay(configInput: Partial<IctRealReplayRunConf
 
   const diagnostics = options.includeDiagnostics === false ? undefined : buildReplayDiagnostics(replayResults);
   const calibrationResults = diagnostics ? runReplayCalibrationSuite(replayResults) : undefined;
+  const approvedProfileResults = diagnostics ? buildApprovedSetupProfileRunSummaries(replayResults) : undefined;
   const result = sanitizeIctRealReplayRunResult({
     runId: createId("ict_real_replay"),
     generatedAt: new Date().toISOString(),
@@ -412,6 +418,7 @@ export async function runIctRealReplay(configInput: Partial<IctRealReplayRunConf
     aggregateSummary: aggregateReports(config, symbolResults, completedReports),
     diagnostics,
     calibrationResults,
+    approvedProfileResults,
     safety
   });
   if (options.appendJournal !== false) {
@@ -421,6 +428,14 @@ export async function runIctRealReplay(configInput: Partial<IctRealReplayRunConf
         buildIctReplayDiagnosticsJournalEvent({
           calibrationResults: result.calibrationResults,
           diagnostics: result.diagnostics,
+          runId: result.runId
+        })
+      );
+    }
+    if (result.approvedProfileResults?.length) {
+      appendIctApprovedSetupProfileJournalEvents(
+        buildIctApprovedSetupProfileJournalEvents({
+          profileSummaries: result.approvedProfileResults,
           runId: result.runId
         })
       );
