@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { BarChart3, MessageSquareText, PlayCircle, ShieldCheck } from "lucide-react";
+import { BarChart3, MessageSquareText, PlayCircle, Send, ShieldCheck, Sparkles } from "lucide-react";
 
 import { IctAdvisorSummaryPanel } from "@/components/advisor/IctAdvisorSummaryPanel";
 import { LLMAdvisoryReviewPanel } from "@/components/dashboard/LLMAdvisoryReviewPanel";
@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   buildManualReplayResearchReport,
+  buildIctAdvisorPacketFromRuntime,
   buildMarketScorecardResearchReport,
   appendIctApprovedProfileOptimizationJournalEvent,
   buildIctApprovedProfileOptimizationJournalEvent,
@@ -21,6 +22,7 @@ import {
   saveIctResearchReport,
   summarizeIctResearchReport,
   type IctApprovedProfileOptimizationResult,
+  type IctAdvisorPacket,
   type IctMarketScorecard,
   type IctMarketScorecardConfig,
   type IctMarketScorecardStatus,
@@ -46,8 +48,105 @@ const formatDate = (value?: string) => (value ? new Date(value).toLocaleString()
 const formatToken = (value?: string) => (value ?? "pending").replace(/_/g, " ");
 const pct = (value?: number) => (typeof value === "number" ? `${Math.round(value * 100)}%` : "n/a");
 const rr = (value?: number) => (typeof value === "number" ? `${value.toFixed(2)}R` : "n/a");
+const compactPrice = (value?: number) =>
+  typeof value === "number" && Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "n/a";
 type MarketScorecardRunStatus = "idle" | "running" | "completed" | "unavailable" | "failed";
 type ProfileOptimizationRunStatus = "idle" | "running" | "completed" | "unavailable" | "failed";
+type AdvisorChatMessage = {
+  id: string;
+  role: "assistant" | "user";
+  content: string;
+  timestamp: string;
+};
+
+const createAdvisorMessage = (role: AdvisorChatMessage["role"], content: string): AdvisorChatMessage => ({
+  id: `advisor_msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+  role,
+  content,
+  timestamp: new Date().toISOString()
+});
+
+const approvalVariant = (status?: IctAdvisorPacket["approvedProfileDecision"]["status"]) =>
+  status === "approved_research_candidate"
+    ? "success" as const
+    : status === "watchlist_candidate"
+      ? "warning" as const
+      : status === "rejected_candidate" || status === "no_trade"
+        ? "danger" as const
+        : "secondary" as const;
+const approvalLabel = (status?: IctAdvisorPacket["approvedProfileDecision"]["status"]) => {
+  if (status === "approved_research_candidate") return "Approved";
+  if (status === "watchlist_candidate") return "Watchlist";
+  if (status === "rejected_candidate") return "Rejected";
+  if (status === "no_trade") return "No Trade";
+  return "Pending";
+};
+const riskVariant = (packet?: IctAdvisorPacket) =>
+  packet?.compactSummary.riskGovernorAction === "reject_candidate" ||
+  packet?.compactSummary.riskGovernorAction === "no_trade" ||
+  packet?.compactSummary.sessionRiskState === "avoid"
+    ? "danger" as const
+    : packet?.compactSummary.riskGovernorAction === "downgrade_to_watchlist" ||
+        packet?.compactSummary.sessionRiskState === "caution" ||
+        packet?.compactSummary.newsRiskLevel === "medium"
+      ? "warning" as const
+      : packet
+        ? "success" as const
+        : "secondary" as const;
+const riskLabel = (packet?: IctAdvisorPacket) => {
+  const action = packet?.compactSummary.riskGovernorAction;
+  if (!action) return "Risk: Pending";
+  if (action === "allow") return "Risk: Clear";
+  if (action === "downgrade_to_watchlist") return "Risk: Caution";
+  return "Risk: Blocked";
+};
+const smtLabel = (packet?: IctAdvisorPacket) => {
+  if (packet?.compactSummary.smtRejectsCandidate) return "SMT: Rejects";
+  if (packet?.compactSummary.smtConfirmsCandidate) return "SMT: Confirms";
+  return packet?.compactSummary.smtDivergenceType ? `SMT: ${formatToken(packet.compactSummary.smtDivergenceType)}` : "SMT: Pending";
+};
+const entryZoneLabel = (entryZone?: IctAdvisorPacket["recommendedSignal"]["entryZone"]) =>
+  entryZone ? `${compactPrice(entryZone.low)}-${compactPrice(entryZone.high)}` : "n/a";
+
+function buildLocalAdvisorReply(
+  prompt: string,
+  packet: IctAdvisorPacket | undefined,
+  snapshot: ResearchRuntimeSnapshot,
+  manualReplayStatus: IctManualReplayReviewStatus,
+  marketScorecardStatus: MarketScorecardRunStatus,
+  profileOptimizationStatus: ProfileOptimizationRunStatus
+) {
+  const lower = prompt.toLowerCase();
+  if (!packet) {
+    return "Advisor chat is UI-ready. Connect OpenClaw advisory when configured. Current setup summary is shown in the cards below.";
+  }
+  if (lower.includes("no trade") || lower.includes("why")) {
+    const reasons = packet.recommendedSignal.noTradeReasons.length
+      ? packet.recommendedSignal.noTradeReasons.slice(0, 3).join("; ")
+      : packet.approvedProfileDecision.rejectionReasons.slice(0, 3).join("; ") || "No explicit no-trade reason is available in the compact packet.";
+    return `No-trade context: ${reasons} Authority remains none.`;
+  }
+  if (lower.includes("risk")) {
+    const notes = packet.recommendedSignal.riskNotes.length ? packet.recommendedSignal.riskNotes.slice(0, 3).join("; ") : "No additional risk notes in the compact packet.";
+    return `${riskLabel(packet)}. News/session: ${formatToken(packet.compactSummary.sessionRiskState)}. ${notes}`;
+  }
+  if (lower.includes("smt")) {
+    return `${smtLabel(packet)}. Relative strength leader: ${packet.compactSummary.relativeStrengthLeader ?? "n/a"}. Relative weakness: ${packet.compactSummary.relativeWeaknessLeader ?? "n/a"}.`;
+  }
+  if (lower.includes("replay")) {
+    return `Replay status: ${formatToken(manualReplayStatus)}. Replay does not auto-run from page load; use the quick action or lower replay panel when you want a real replay review.`;
+  }
+  if (lower.includes("scorecard")) {
+    return `Market scorecard status: ${formatToken(marketScorecardStatus)}. It remains idle until explicitly run.`;
+  }
+  if (lower.includes("optimize") || lower.includes("profile")) {
+    return `Profile optimizer status: ${formatToken(profileOptimizationStatus)}. Optimization is research-only and cannot auto-apply thresholds or promote readiness.`;
+  }
+  if (lower.includes("bias") || lower.includes("setup") || lower.includes("current")) {
+    return `Current read: ${formatToken(packet.compactSummary.compositeBias)} bias, ${formatToken(packet.compactSummary.setup)} setup, ${formatToken(packet.compactSummary.side)} side, ${pct(packet.compactSummary.confidence)} confidence. ${packet.recommendedSignal.summary}`;
+  }
+  return `Current GoTrader read: ${formatToken(packet.compactSummary.compositeBias)} / ${approvalLabel(packet.approvedProfileDecision.status)} / ${riskLabel(packet)}. Source ${snapshot.marketData.activeResearchSource.provider.replace(/_/g, " ")} remains read-only with authority none.`;
+}
 
 export function ResearchAdvisorView() {
   const [snapshot, setSnapshot] = useState<ResearchRuntimeSnapshot>();
@@ -63,6 +162,15 @@ export function ResearchAdvisorView() {
   const [savedReports, setSavedReports] = useState<IctResearchReport[]>([]);
   const [manualReportSaveResult, setManualReportSaveResult] = useState<IctResearchReportSaveResult>();
   const [scorecardReportSaveResult, setScorecardReportSaveResult] = useState<IctResearchReportSaveResult>();
+  const [advisorPacket, setAdvisorPacket] = useState<IctAdvisorPacket>();
+  const [advisorPacketError, setAdvisorPacketError] = useState<string>();
+  const [chatInput, setChatInput] = useState("");
+  const [chatMessages, setChatMessages] = useState<AdvisorChatMessage[]>([
+    createAdvisorMessage(
+      "assistant",
+      "Advisor chat is UI-ready. I can summarize the current deterministic GoTrader read, setup blockers, replay status, risk, and SMT context. OpenClaw advisory can be connected separately when configured."
+    )
+  ]);
 
   useEffect(() => {
     let mounted = true;
@@ -102,6 +210,33 @@ export function ResearchAdvisorView() {
       window.removeEventListener("storage", refreshReports);
     };
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    if (!snapshot) {
+      setAdvisorPacket(undefined);
+      setAdvisorPacketError(undefined);
+      return () => {
+        mounted = false;
+      };
+    }
+    void buildIctAdvisorPacketFromRuntime(snapshot)
+      .then((packet) => {
+        if (mounted) {
+          setAdvisorPacket(packet);
+          setAdvisorPacketError(undefined);
+        }
+      })
+      .catch((error) => {
+        if (mounted) {
+          setAdvisorPacket(undefined);
+          setAdvisorPacketError(error instanceof Error ? error.message : String(error));
+        }
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [snapshot?.snapshotId, snapshot?.marketData.activeResearchSource.sourceId, snapshot?.marketData.activeResearchSource.fingerprint, snapshot?.mt5ReadOnly.higherTimeframeSources?.map((source) => source.fingerprint).join("|")]);
 
   useEffect(() => {
     setManualReplayStatus("idle");
@@ -238,99 +373,411 @@ export function ResearchAdvisorView() {
     setScorecardReportSaveResult(saveResult);
     setSavedReports(listIctResearchReports());
   };
+  const submitAdvisorMessage = (content: string) => {
+    const normalized = content.trim();
+    if (!normalized) return;
+    setChatMessages((messages) => [
+      ...messages,
+      createAdvisorMessage("user", normalized),
+      createAdvisorMessage("assistant", buildLocalAdvisorReply(normalized, advisorPacket, snapshot, manualReplayStatus, marketScorecardStatus, profileOptimizationStatus))
+    ]);
+    setChatInput("");
+  };
+  const handleChatSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    submitAdvisorMessage(chatInput);
+  };
+  const handleQuickAction = (action: string) => {
+    if (action === "Run Replay Review") {
+      void runManualReplayReview();
+      submitAdvisorMessage("Run Replay Review");
+      return;
+    }
+    if (action === "Run Market Scorecard") {
+      void runMarketScorecard();
+      submitAdvisorMessage("Run Market Scorecard");
+      return;
+    }
+    if (action === "Optimize Profile") {
+      void runProfileOptimization();
+      submitAdvisorMessage("Optimize Profile");
+      return;
+    }
+    submitAdvisorMessage(action);
+  };
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
-      <section className="overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_18%_0%,rgba(34,211,238,0.16),transparent_34%),radial-gradient(circle_at_82%_6%,rgba(168,85,247,0.16),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(2,6,23,0.98))] p-5 shadow-[0_0_70px_rgba(8,145,178,0.13)]">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+      <section data-testid="research-advisor-page-header" className="rounded-[24px] border border-white/10 bg-slate-950/75 p-5 shadow-[0_0_45px_rgba(8,145,178,0.07)]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-cyan-300">Research Advisor Workspace</p>
-            <h2 className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-normal text-slate-50 md:text-3xl">
-              <MessageSquareText className="h-6 w-6 text-cyan-300" aria-hidden="true" />
-              ICT decision review
-            </h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-              Full-size advisory board for deterministic ICT/Grinch review plus local LLM or phone OpenClaw explanation. Compact packets only; GoTrader gates remain authoritative.
-            </p>
+            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-cyan-300">GoTrader AI Workspace</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-50">Research Advisor</h1>
+            <p className="mt-2 text-sm text-slate-400">ICT research assistant for read-only market analysis.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="warning">advisory-only</Badge>
-            <Badge variant="danger">execution none</Badge>
-            <Badge variant="secondary">readiness override none</Badge>
+            <Badge variant="secondary">MT5 Read Only</Badge>
+            <Badge variant="warning">Research Only</Badge>
+            <Badge variant="danger">Authority: None</Badge>
             <Button variant="secondary" size="sm">
               <Link to="/dashboard">Back to Dashboard</Link>
             </Button>
           </div>
         </div>
-        <div className="mt-5 flex flex-wrap gap-2">
-          {["Setup", "Replay", "Scorecard", "Diagnostics", "Journal"].map((label) => (
-            <span key={label} className="rounded-full border border-white/10 bg-white/[0.045] px-3 py-1 text-xs font-medium text-slate-300">
-              {label}
-            </span>
-          ))}
+      </section>
+
+      <section data-testid="research-advisor-chat-workspace" className="grid items-start gap-4 xl:grid-cols-[minmax(220px,0.62fr)_minmax(420px,1.35fr)_minmax(240px,0.72fr)]">
+        <ResearchAdvisorChatCard
+          packet={advisorPacket}
+          packetError={advisorPacketError}
+          snapshot={snapshot}
+          messages={chatMessages}
+          inputValue={chatInput}
+          onInputChange={setChatInput}
+          onSubmit={handleChatSubmit}
+          onQuickAction={handleQuickAction}
+          manualReplayStatus={manualReplayStatus}
+          marketScorecardStatus={marketScorecardStatus}
+          profileOptimizationStatus={profileOptimizationStatus}
+        />
+
+        <div className="order-2 space-y-4 xl:order-1">
+          <CompactContextCard
+            title="Market Context"
+            rows={[
+              ["Requested", snapshot.marketData.symbol],
+              ["Broker", brokerSymbol],
+              ["Timeframe", snapshot.marketData.timeframe],
+              ["HTF", htfSummary],
+              ["Source", activeSource.provider.replace(/_/g, " ")]
+            ]}
+          />
+          <CompactContextCard
+            title="Current Bias"
+            rows={[
+              ["Bias", formatToken(advisorPacket?.compactSummary.compositeBias)],
+              ["HTF aligned", advisorPacket ? (Object.values(advisorPacket.recommendedSignal.bias.htf).includes(advisorPacket.compactSummary.compositeBias) ? "yes" : "mixed") : "pending"],
+              ["Regime", formatToken(snapshot.regime.label)],
+              ["Readiness", snapshot.readiness.readinessState]
+            ]}
+          />
         </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <AdvisorReadout label="Research source" value={snapshot.marketData.activeResearchSourceLabel} detail={activeSource.provider.replace(/_/g, " ")} />
-          <AdvisorReadout label="Symbol mapping" value={`${brokerSymbol} -> ${snapshot.marketData.symbol}`} detail={snapshot.mt5ReadOnly.displayLabel ?? "MT5 selected mapping"} />
-          <AdvisorReadout label="Primary timeframe" value={snapshot.marketData.timeframe} detail={`${activeSource.candleCount.toLocaleString()} candles`} />
-          <AdvisorReadout label="Higher timeframe context" value={htfSummary} detail="context-only; no broker authority" />
-          <AdvisorReadout label="Regime" value={formatToken(snapshot.regime.label)} detail={`${Math.round(snapshot.regime.confidence * 100)}% / ${snapshot.regime.dataQuality}`} />
-          <AdvisorReadout label="Grinch profile" value={snapshot.latestResearchCycle.activeGrinchProfileSummary?.profile ?? "not_present"} detail={snapshot.latestResearchCycle.activeGrinchProfileSummary?.hardGateReason ?? "no hard gate"} />
-          <AdvisorReadout label="Readiness" value={snapshot.readiness.readinessState} detail={snapshot.readiness.nextAction} />
-          <AdvisorReadout label="Last candle" value={formatDate(activeSource.lastTimestamp)} detail={activeSource.fingerprint.slice(0, 20)} />
-        </div>
-        <div className="mt-5 rounded-2xl border border-amber-300/25 bg-amber-300/10 p-3 text-sm leading-5 text-amber-100">
-          MT5 read-only market data is CFD/proxy or broker market data for research context only. It is not CME futures broker truth and cannot place, modify, or route orders.
+
+        <div className="order-3 space-y-4">
+          <AdvisorSidePanel
+            packet={advisorPacket}
+            manualReplayStatus={manualReplayStatus}
+            manualReplayResult={manualReplayResult}
+          />
         </div>
       </section>
 
-      <IctAdvisorSummaryPanel snapshot={snapshot} />
+      <section data-testid="advisor-deep-research-panels" className="space-y-4">
+        <details className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-100">ICT Strategy Suite details</summary>
+          <div className="mt-4">
+            <IctAdvisorSummaryPanel snapshot={snapshot} packetOverride={advisorPacket} />
+          </div>
+        </details>
 
-      <ManualReplayReviewPanel
-        brokerSymbol={brokerSymbol}
-        onRun={runManualReplayReview}
-        onSave={saveManualReplayReport}
-        request={manualReplayRequest}
-        result={manualReplayResult}
-        saveResult={manualReportSaveResult}
-        status={manualReplayStatus}
-        error={manualReplayError}
-      />
+        <details data-testid="advisor-manual-replay-section" open className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-100">Manual Replay Review</summary>
+          <div className="mt-4">
+            <ManualReplayReviewPanel
+              brokerSymbol={brokerSymbol}
+              onRun={runManualReplayReview}
+              onSave={saveManualReplayReport}
+              request={manualReplayRequest}
+              result={manualReplayResult}
+              saveResult={manualReportSaveResult}
+              status={manualReplayStatus}
+              error={manualReplayError}
+            />
+          </div>
+        </details>
 
-      <ApprovedProfileOptimizerPanel
-        error={profileOptimizationError}
-        onRun={runProfileOptimization}
-        request={manualReplayRequest}
-        result={profileOptimization}
-        status={profileOptimizationStatus}
-      />
+        <details open className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-100">Optimize Profile</summary>
+          <div className="mt-4">
+            <ApprovedProfileOptimizerPanel
+              error={profileOptimizationError}
+              onRun={runProfileOptimization}
+              request={manualReplayRequest}
+              result={profileOptimization}
+              status={profileOptimizationStatus}
+            />
+          </div>
+        </details>
 
-      <MarketScorecardPanel
-        config={marketScorecardConfig}
-        error={marketScorecardError}
-        onRun={runMarketScorecard}
-        onSave={saveMarketScorecardReport}
-        scorecard={marketScorecard}
-        saveResult={scorecardReportSaveResult}
-        status={marketScorecardStatus}
-      />
+        <details data-testid="advisor-market-scorecard-section" open className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-100">Market Scorecard</summary>
+          <div className="mt-4">
+            <MarketScorecardPanel
+              config={marketScorecardConfig}
+              error={marketScorecardError}
+              onRun={runMarketScorecard}
+              onSave={saveMarketScorecardReport}
+              scorecard={marketScorecard}
+              saveResult={scorecardReportSaveResult}
+              status={marketScorecardStatus}
+            />
+          </div>
+        </details>
 
-      <SavedResearchReportsPanel reports={savedReports} />
+        <details open className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-100">Saved Research Reports</summary>
+          <div className="mt-4">
+            <SavedResearchReportsPanel reports={savedReports} />
+          </div>
+        </details>
 
-      <LLMAdvisoryReviewPanel snapshot={snapshot} />
+        <details className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-100">External Advisory Bridge</summary>
+          <div className="mt-4">
+            <LLMAdvisoryReviewPanel snapshot={snapshot} />
+          </div>
+        </details>
 
-      <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-emerald-300" aria-hidden="true" />
-          <h3 className="text-base font-semibold text-slate-50">Packet Safety Contract</h3>
-        </div>
-        <div className="mt-3 grid gap-2 text-sm text-slate-300 md:grid-cols-3">
-          <AdvisorReadout label="Excluded" value="candles / raw snapshots" detail="No candle arrays, raw source objects, logs, screenshots, or base64 payloads." />
-          <AdvisorReadout label="Excluded" value="secrets / credentials" detail="No MT5 credentials, account data, orders, or positions." />
-          <AdvisorReadout label="Authority" value="none" detail="OpenClaw and LLM advice cannot promote readiness or execute anything." />
+        <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-emerald-300" aria-hidden="true" />
+            <h3 className="text-base font-semibold text-slate-50">Packet Safety Contract</h3>
+          </div>
+          <div className="mt-3 grid gap-2 text-sm text-slate-300 md:grid-cols-3">
+            <AdvisorReadout label="Excluded" value="candles / raw snapshots" detail="No candle arrays, raw source objects, logs, screenshots, or base64 payloads." />
+            <AdvisorReadout label="Excluded" value="secrets / credentials" detail="No MT5 credentials, account data, orders, or positions." />
+            <AdvisorReadout label="Authority" value="none" detail="OpenClaw and LLM advice cannot promote readiness or execute anything." />
+          </div>
         </div>
       </section>
     </div>
+  );
+}
+
+function ResearchAdvisorChatCard({
+  inputValue,
+  manualReplayStatus,
+  marketScorecardStatus,
+  messages,
+  onInputChange,
+  onQuickAction,
+  onSubmit,
+  packet,
+  packetError,
+  profileOptimizationStatus,
+  snapshot
+}: {
+  inputValue: string;
+  manualReplayStatus: IctManualReplayReviewStatus;
+  marketScorecardStatus: MarketScorecardRunStatus;
+  messages: AdvisorChatMessage[];
+  onInputChange: (value: string) => void;
+  onQuickAction: (action: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  packet?: IctAdvisorPacket;
+  packetError?: string;
+  profileOptimizationStatus: ProfileOptimizationRunStatus;
+  snapshot: ResearchRuntimeSnapshot;
+}) {
+  const quickActions = [
+    "Explain Current Setup",
+    "Why No Trade?",
+    "Run Replay Review",
+    "Run Market Scorecard",
+    "Optimize Profile",
+    "Show Risk",
+    "Show SMT"
+  ];
+  const readSummary =
+    packet?.recommendedSignal.summary ??
+    packetError ??
+    "Current setup summary is shown in the cards below. Advisor packet is still hydrating.";
+
+  return (
+    <section
+      data-testid="research-advisor-chat-card"
+      className="order-1 overflow-hidden rounded-[28px] border border-cyan-300/15 bg-[radial-gradient(circle_at_18%_0%,rgba(34,211,238,0.16),transparent_34%),radial-gradient(circle_at_86%_0%,rgba(168,85,247,0.13),transparent_35%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(2,6,23,0.98))] shadow-[0_0_80px_rgba(8,145,178,0.12)] xl:order-2"
+    >
+      <div className="border-b border-white/10 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
+              GoTrader AI Research Assistant
+            </p>
+            <h2 className="mt-2 text-xl font-semibold text-slate-50">Ask about this market read</h2>
+          </div>
+          <Badge variant="danger">Authority: None</Badge>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Badge variant="secondary">{snapshot.marketData.symbol}</Badge>
+          <Badge variant="secondary">{snapshot.marketData.timeframe}</Badge>
+          {(packet?.htfTimeframes.length ? packet.htfTimeframes : ["HTF missing"]).map((timeframe) => (
+            <Badge key={timeframe} variant="secondary">{timeframe}</Badge>
+          ))}
+          <Badge variant={approvalVariant(packet?.approvedProfileDecision.status)}>{approvalLabel(packet?.approvedProfileDecision.status)}</Badge>
+          <Badge variant={riskVariant(packet)}>{riskLabel(packet)}</Badge>
+        </div>
+      </div>
+
+      <div className="space-y-3 p-4">
+        <AdvisorMessageBubble role="assistant">
+          Welcome. I can explain the selected market, current ICT read, setup state, risk, replay status, SMT, and next research actions.
+        </AdvisorMessageBubble>
+        <AdvisorMessageBubble role="assistant">
+          <span className="font-semibold text-slate-100">Current read:</span> {readSummary}
+        </AdvisorMessageBubble>
+        {messages.map((message) => (
+          <AdvisorMessageBubble key={message.id} role={message.role}>{message.content}</AdvisorMessageBubble>
+        ))}
+      </div>
+
+      <div className="border-t border-white/10 p-4">
+        <AdvisorQuickActions actions={quickActions} onAction={onQuickAction} />
+        <form className="mt-3 flex gap-2" onSubmit={onSubmit}>
+          <input
+            data-testid="research-advisor-chat-input"
+            value={inputValue}
+            onChange={(event) => onInputChange(event.target.value)}
+            placeholder="Ask GoTrader about this setup, replay, risk, or market bias..."
+            className="min-w-0 flex-1 rounded-full border border-white/10 bg-black/30 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/15"
+          />
+          <Button type="submit" size="icon" aria-label="Send advisor message">
+            <Send className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </form>
+        <p className="mt-3 text-xs text-slate-500">
+          Replay {formatToken(manualReplayStatus)} / scorecard {formatToken(marketScorecardStatus)} / optimizer {formatToken(profileOptimizationStatus)}. Chat replies are deterministic until OpenClaw advisory is explicitly configured.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function AdvisorMessageBubble({ children, role }: { children: ReactNode; role: AdvisorChatMessage["role"] }) {
+  const user = role === "user";
+  return (
+    <div className={`flex ${user ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`max-w-[88%] rounded-2xl border px-4 py-3 text-sm leading-6 ${
+          user
+            ? "border-cyan-300/25 bg-cyan-300/12 text-cyan-50"
+            : "border-white/10 bg-white/[0.045] text-slate-300"
+        }`}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function AdvisorQuickActions({ actions, onAction }: { actions: string[]; onAction: (action: string) => void }) {
+  return (
+    <div data-testid="research-advisor-quick-actions" className="flex flex-wrap gap-2">
+      {actions.map((action) => (
+        <button
+          key={action}
+          type="button"
+          onClick={() => onAction(action)}
+          className="rounded-full border border-white/10 bg-white/[0.045] px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:border-cyan-300/35 hover:text-cyan-100"
+        >
+          {action}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CompactContextCard({ rows, title }: { rows: Array<[string, string]>; title: string }) {
+  return (
+    <section className="rounded-2xl border border-white/10 bg-slate-950/75 p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{title}</p>
+      <div className="mt-3 space-y-2">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex items-start justify-between gap-3 border-b border-white/5 pb-2 last:border-0 last:pb-0">
+            <span className="text-xs text-slate-500">{label}</span>
+            <span className="text-right text-sm font-semibold text-slate-100">{value}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AdvisorSidePanel({
+  manualReplayResult,
+  manualReplayStatus,
+  packet
+}: {
+  manualReplayResult?: IctManualReplayReviewResult;
+  manualReplayStatus: IctManualReplayReviewStatus;
+  packet?: IctAdvisorPacket;
+}) {
+  return (
+    <>
+      <AdvisorMetricCard
+        title="Approved Setup"
+        badge={approvalLabel(packet?.approvedProfileDecision.status)}
+        badgeVariant={approvalVariant(packet?.approvedProfileDecision.status)}
+        rows={[
+          ["Side", formatToken(packet?.compactSummary.side)],
+          ["Confidence", pct(packet?.compactSummary.confidence)],
+          ["RR", typeof packet?.recommendedSignal.rrEstimate === "number" ? rr(packet.recommendedSignal.rrEstimate) : "n/a"],
+          ["Entry", entryZoneLabel(packet?.recommendedSignal.entryZone)]
+        ]}
+      />
+      <AdvisorMetricCard
+        title="Risk State"
+        badge={riskLabel(packet)}
+        badgeVariant={riskVariant(packet)}
+        rows={[
+          ["News/session", formatToken(packet?.compactSummary.sessionRiskState)],
+          ["SMT", smtLabel(packet)],
+          ["Risk action", formatToken(packet?.compactSummary.riskGovernorAction)],
+          ["No-trade reasons", String(packet?.compactSummary.noTradeReasonCount ?? 0)]
+        ]}
+      />
+      <AdvisorMetricCard
+        title="Replay Snapshot"
+        badge={formatToken(manualReplayStatus)}
+        badgeVariant={manualReplayStatus === "completed" ? "success" : manualReplayStatus === "failed" ? "danger" : "secondary"}
+        rows={[
+          ["Target-first", pct(manualReplayResult?.targetFirstRate)],
+          ["Average RR", rr(manualReplayResult?.averageRrAchieved)],
+          ["Signals", String(manualReplayResult?.totalSignals ?? 0)],
+          ["Status", formatToken(manualReplayStatus)]
+        ]}
+      />
+    </>
+  );
+}
+
+function AdvisorMetricCard({
+  badge,
+  badgeVariant,
+  rows,
+  title
+}: {
+  badge: string;
+  badgeVariant: "success" | "warning" | "danger" | "secondary";
+  rows: Array<[string, string]>;
+  title: string;
+}) {
+  return (
+    <section className="rounded-2xl border border-white/10 bg-slate-950/75 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{title}</p>
+        <Badge variant={badgeVariant}>{badge}</Badge>
+      </div>
+      <div className="mt-3 space-y-2">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex items-start justify-between gap-3 border-b border-white/5 pb-2 last:border-0 last:pb-0">
+            <span className="text-xs text-slate-500">{label}</span>
+            <span className="text-right text-sm font-semibold text-slate-100">{value}</span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

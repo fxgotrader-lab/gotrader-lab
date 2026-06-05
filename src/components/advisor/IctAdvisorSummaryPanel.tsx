@@ -61,9 +61,11 @@ const riskLabel = (packet?: IctAdvisorPacket) => {
 
 export function IctAdvisorSummaryPanel({
   mode = "full",
+  packetOverride,
   snapshot
 }: {
   mode?: "compact" | "full";
+  packetOverride?: IctAdvisorPacket;
   snapshot?: ResearchRuntimeSnapshot;
 }) {
   const [packet, setPacket] = useState<IctAdvisorPacket>();
@@ -73,6 +75,13 @@ export function IctAdvisorSummaryPanel({
 
   useEffect(() => {
     let mounted = true;
+    if (packetOverride) {
+      setPacket(packetOverride);
+      setError(undefined);
+      return () => {
+        mounted = false;
+      };
+    }
     if (!snapshot) {
       setPacket(undefined);
       return () => {
@@ -95,7 +104,7 @@ export function IctAdvisorSummaryPanel({
     return () => {
       mounted = false;
     };
-  }, [snapshot?.snapshotId, snapshot?.marketData.activeResearchSource.sourceId, snapshot?.marketData.activeResearchSource.fingerprint, snapshot?.mt5ReadOnly.higherTimeframeSources?.map((source) => source.fingerprint).join("|")]);
+  }, [packetOverride, snapshot?.snapshotId, snapshot?.marketData.activeResearchSource.sourceId, snapshot?.marketData.activeResearchSource.fingerprint, snapshot?.mt5ReadOnly.higherTimeframeSources?.map((source) => source.fingerprint).join("|")]);
 
   useEffect(() => {
     let mounted = true;
@@ -136,13 +145,13 @@ export function IctAdvisorSummaryPanel({
 
   if (mode === "compact") {
     return (
-      <section className="overflow-hidden rounded-2xl border border-cyan-300/15 bg-[radial-gradient(circle_at_12%_0%,rgba(34,211,238,0.14),transparent_38%),linear-gradient(135deg,rgba(15,23,42,0.92),rgba(2,6,23,0.94))] p-4 shadow-[0_0_45px_rgba(8,145,178,0.08)]">
+      <section data-testid="dashboard-research-advisor-card" className="overflow-hidden rounded-2xl border border-cyan-300/15 bg-[radial-gradient(circle_at_12%_0%,rgba(34,211,238,0.14),transparent_38%),linear-gradient(135deg,rgba(15,23,42,0.92),rgba(2,6,23,0.94))] p-4 shadow-[0_0_45px_rgba(8,145,178,0.08)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">ICT Strategy Suite</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">Research Advisor</p>
             <h3 className="mt-1 flex items-center gap-2 text-base font-semibold text-slate-50">
               <BrainCircuit className="h-4 w-4 text-cyan-300" aria-hidden="true" />
-              Compact advisor snapshot
+              ICT Strategy Suite compact snapshot
             </h3>
           </div>
           <div className="flex flex-wrap gap-2">

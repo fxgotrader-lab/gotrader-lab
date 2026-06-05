@@ -132,7 +132,10 @@ test.describe("GoTrader browser route smoke", () => {
 
   test("ICT Strategy Suite advisor panels render in advisor workspace and dashboard", async ({ page }) => {
     await gotoRoute(page, "/advisor");
-    await expect(page.locator("main")).toContainText(/ICT decision review/i);
+    await expect(page.locator("main")).toContainText(/Research Advisor/i);
+    await expect(page.getByTestId("research-advisor-chat-card")).toBeVisible();
+    await expect(page.getByTestId("research-advisor-chat-input")).toBeVisible();
+    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Explain Current Setup/i);
     await expect(page.locator("main")).toContainText(/Setup/i);
     await expect(page.locator("main")).toContainText(/Replay/i);
     await expect(page.locator("main")).toContainText(/Scorecard/i);
@@ -140,7 +143,33 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.locator("main")).toContainText(/Packet Safety Contract/i);
 
     await gotoRoute(page, "/research-advisor");
-    await expect(page.locator("main")).toContainText(/ICT decision review/i);
+    await expect(page.locator("main")).toContainText(/Research Advisor/i);
+    await expect(page.locator("main")).toContainText(/ICT research assistant for read-only market analysis/i);
+    await expect(page.locator("main")).toContainText(/MT5 Read Only/i);
+    await expect(page.locator("main")).toContainText(/Research Only/i);
+    await expect(page.locator("main")).toContainText(/Authority: None/i);
+    await expect(page.getByTestId("research-advisor-chat-card")).toBeVisible();
+    await expect(page.getByTestId("research-advisor-chat-input")).toBeVisible();
+    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Explain Current Setup/i);
+    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Why No Trade/i);
+    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Run Replay Review/i);
+    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Run Market Scorecard/i);
+    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Optimize Profile/i);
+    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Show Risk/i);
+    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Show SMT/i);
+    const chatAppearsBeforeManualPanels = await page.evaluate(() => {
+      const chat = document.querySelector("[data-testid='research-advisor-chat-card']");
+      const replay = document.querySelector("[data-testid='ict-manual-replay-review']");
+      const scorecard = document.querySelector("[data-testid='ict-market-scorecard']");
+      return Boolean(
+        chat &&
+          replay &&
+          scorecard &&
+          (chat.compareDocumentPosition(replay) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+          (chat.compareDocumentPosition(scorecard) & Node.DOCUMENT_POSITION_FOLLOWING)
+      );
+    });
+    expect(chatAppearsBeforeManualPanels).toBe(true);
     await expect(page.locator("main")).toContainText(/ICT Strategy Suite|ICT Advisor is waiting/i);
     await expect(page.locator("main")).toContainText(/raw candles|Raw candles/i);
     await expect(page.locator("main")).not.toContainText(/\"candles\"\\s*:/i);
@@ -154,13 +183,13 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByRole("button", { name: "Run Profile Optimization" })).toBeVisible();
     await expect(page.getByTestId("ict-market-scorecard")).toContainText(/ICT Market Scorecard/i);
     await expect(page.getByTestId("ict-market-scorecard-status")).toContainText(/idle/i);
-    await expect(page.getByRole("button", { name: "Run Market Scorecard" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Save Scorecard Report" })).toBeVisible();
+    await expect(page.getByTestId("ict-market-scorecard").getByRole("button", { name: "Run Market Scorecard" })).toBeVisible();
+    await expect(page.getByTestId("ict-market-scorecard").getByRole("button", { name: "Save Scorecard Report" })).toBeVisible();
     await expect(page.getByTestId("ict-saved-research-reports")).toContainText(/Saved Research Reports/i);
 
     await gotoRoute(page, "/dashboard");
-    await expect(page.locator("main")).toContainText(/ICT Strategy Suite/i);
-    await expect(page.locator("main")).toContainText(/Open Advisor/i);
+    await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Research Advisor/i);
+    await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Open Advisor/i);
   });
 
   test("chart surfaces render canvas or a safe fallback", async ({ page }) => {
