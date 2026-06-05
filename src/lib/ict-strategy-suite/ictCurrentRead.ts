@@ -1,6 +1,7 @@
 import type { ResearchRuntimeSnapshot } from "../runtime";
 import { buildIctAdvisorPacketFromRuntime } from "./ictAdvisorEngine";
 import type { IctAdvisorPacket, IctAdvisorSignal } from "./ictAdvisorTypes";
+import type { IctLatestResearchState } from "./ictLatestResearchStateTypes";
 import type {
   IctCurrentRead,
   IctCurrentReadDataStatus,
@@ -69,6 +70,32 @@ const liquidityLabel = (value?: { type: string; price: number }) =>
 const entryZoneLabel = (entryZone?: IctAdvisorSignal["entryZone"]) =>
   entryZone ? `${entryZone.low}-${entryZone.high}` : undefined;
 
+const pct = (value?: number) => (typeof value === "number" && Number.isFinite(value) ? `${Math.round(value * 100)}%` : undefined);
+
+const latestResearchSummaryFor = (latestState?: IctLatestResearchState) => {
+  const latestReplay = latestState?.latestReplay;
+  const latestMonteCarlo = latestState?.latestMonteCarlo;
+  const latestScorecard = latestState?.latestScorecard;
+  const bestScorecardSymbol =
+    latestScorecard?.bestApprovedTargetFirstSymbol ??
+    latestScorecard?.bestApprovedRrSymbol ??
+    latestScorecard?.researchPreferredSymbols[0];
+  return {
+    latestReplayStatus: latestReplay
+      ? `target-first ${pct(latestReplay.approvedTargetFirstRate ?? latestReplay.targetFirstRate) ?? "n/a"}`
+      : undefined,
+    latestMonteCarloRobustness: latestMonteCarlo?.robustnessRating,
+    latestMonteCarloRiskOfRuinPct: latestMonteCarlo?.riskOfRuinPct,
+    latestMonteCarloRecommendedRiskPct: latestMonteCarlo?.recommendedMaxRiskPerTradePct,
+    latestScorecardBestSymbol: bestScorecardSymbol,
+    latestScorecardResearchPreferredSymbols: latestScorecard?.researchPreferredSymbols,
+    latestResearchStateUpdatedAt: latestState?.updatedAt,
+    latestResearchStateNote: latestState
+      ? "Latest manual research result; not live signal generation and not a readiness override."
+      : undefined
+  } satisfies Partial<IctCurrentRead>;
+};
+
 const fvgStatusFor = (signal?: IctAdvisorSignal) => {
   if (!signal) return undefined;
   if (!signal.fairValueGap) return "missing";
@@ -109,7 +136,10 @@ const nextActionFor = (packet: IctAdvisorPacket, reasons: string[]) => {
   return "Continue observation; current setup is not an approved research candidate.";
 };
 
-export const buildUnavailableIctCurrentRead = (reason = "Active ICT advisor packet is unavailable."): IctCurrentRead => ({
+export const buildUnavailableIctCurrentRead = (
+  reason = "Active ICT advisor packet is unavailable.",
+  latestState?: IctLatestResearchState
+): IctCurrentRead => ({
   researchOnly: true,
   packetSource: "unavailable",
   requestedSymbol: "MNQ",
@@ -133,12 +163,13 @@ export const buildUnavailableIctCurrentRead = (reason = "Active ICT advisor pack
     lastEvaluationAt: new Date().toISOString(),
     packetSource: "unavailable"
   },
+  ...latestResearchSummaryFor(latestState),
   authority,
   safety
 });
 
-export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket): IctCurrentRead => {
-  if (!packet) return buildUnavailableIctCurrentRead();
+export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestState?: IctLatestResearchState): IctCurrentRead => {
+  if (!packet) return buildUnavailableIctCurrentRead(undefined, latestState);
   const phase1Signals = packet.signals.filter((signal) => signal.phase === "phase_1");
   const phase2Signals = packet.signals.filter((signal) => signal.phase === "phase_2");
   const bestPhase1 = bestSignalFrom(phase1Signals);
@@ -190,6 +221,7 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket): IctCur
     fvgStatus: fvgStatusFor(recommended),
     displacementStatus: displacementStatusFor(recommended),
     entryZone: entryZoneLabel(recommended.entryZone),
+    ...latestResearchSummaryFor(latestState),
     topReasons: reasons.length
       ? reasons
       : recommended.decision === "research_only"
@@ -215,8 +247,10 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket): IctCur
   };
 };
 
-export const buildIctCurrentReadFromRuntime = async (snapshot: ResearchRuntimeSnapshot) =>
-  buildIctCurrentReadFromPacket(await buildIctAdvisorPacketFromRuntime(snapshot));
+export const buildIctCurrentReadFromRuntime = async (
+  snapshot: ResearchRuntimeSnapshot,
+  latestState?: IctLatestResearchState
+) => buildIctCurrentReadFromPacket(await buildIctAdvisorPacketFromRuntime(snapshot), latestState);
 
 export const assertIctCurrentReadIsCompact = (read: IctCurrentRead) => {
   const serialized = JSON.stringify(read);

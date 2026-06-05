@@ -45,6 +45,8 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictMarketScorecard.ts" },
   { root: sourceRoot, file: "ictMonteCarloTypes.ts" },
   { root: sourceRoot, file: "ictMonteCarlo.ts" },
+  { root: sourceRoot, file: "ictLatestResearchStateTypes.ts" },
+  { root: sourceRoot, file: "ictLatestResearchState.ts" },
   { root: sourceRoot, file: "ictResearchReportTypes.ts" },
   { root: sourceRoot, file: "ictResearchReport.ts" },
   { root: mt5Root, file: "mt5ReadOnlyTypes.ts" },
@@ -660,6 +662,89 @@ async function main() {
   assert.equal(suite.assertIctMonteCarloSummaryIsCompact(insufficientMc, mcJournal).ok, true);
   assertCompact({ insufficientMc, mcJournal }, "Monte Carlo summary and journal");
 
+  const latestReplaySnapshot = suite.buildLatestReplaySnapshot({
+    status: "completed",
+    runId: "coordination_manual_replay",
+    generatedAt: "2026-06-05T15:00:00.000Z",
+    requestedSymbol: "MNQ",
+    brokerSymbol: "USTECH",
+    primaryTimeframe: "5m",
+    htfTimeframes: ["15m", "1h"],
+    candleLimit: 1000,
+    replayWindowSize: 80,
+    lookaheadCandles: 12,
+    totalWindows: replayReport.summary.totalWindows,
+    totalSignals: replayReport.summary.totalSignals,
+    totalNoTrades: replayReport.summary.totalNoTrades,
+    targetFirstRate: replayReport.summary.targetFirstRate,
+    invalidationFirstRate: replayReport.summary.invalidationFirstRate,
+    averageRrAchieved: replayReport.summary.averageRrAchieved,
+    approvedProfileCounts: { totalApproved: 3, totalWatchlist: 2, totalRejected: 1, totalNoTrade: 1 },
+    approvedTargetFirstRate: 0.5,
+    approvedAverageRr: 1.1,
+    mostCommonNoTradeReasons: [],
+    smtSummary: { divergenceTypes: [], confirmation: [], rejection: [] },
+    newsSessionRiskSummary: { newsRiskLevels: [], sessionRiskStates: [], riskGovernorActions: [] },
+    topCalibrationFilterImprovements: [],
+    approvedProfileComparison: [],
+    errors: [],
+    warnings: [],
+    researchOnly: true,
+    authority,
+    safety: {
+      rawCandlesExcluded: true,
+      rawSnapshotsExcluded: true,
+      accountDataExcluded: true,
+      orderDataExcluded: true,
+      positionDataExcluded: true,
+      secretsExcluded: true
+    }
+  });
+  const latestMonteCarloSnapshot = suite.buildLatestMonteCarloSnapshot(insufficientMc);
+  const latestScorecardSnapshot = suite.buildLatestScorecardSnapshot({
+    runId: "coordination_scorecard",
+    generatedAt: "2026-06-05T15:05:00.000Z",
+    researchOnly: true,
+    config: {
+      requestedSymbols: ["MNQ", "ES", "YM"],
+      primaryTimeframe: "5m",
+      htfTimeframes: ["15m", "1h"],
+      candleLimit: 1000,
+      replayWindowSize: 80,
+      lookaheadCandles: 12
+    },
+    symbols: [],
+    summary: {
+      completedSymbols: 3,
+      unavailableSymbols: 0,
+      researchPreferredSymbols: ["MNQ"],
+      watchlistOnlySymbols: ["ES"],
+      noisySymbols: ["YM"],
+      bestApprovedTargetFirstSymbol: "MNQ",
+      bestApprovedRrSymbol: "MNQ"
+    },
+    authority,
+    safety: {
+      rawCandlesExcluded: true,
+      rawSnapshotsExcluded: true,
+      accountDataExcluded: true,
+      orderDataExcluded: true,
+      positionDataExcluded: true,
+      secretsExcluded: true
+    }
+  });
+  suite.clearLatestResearchState();
+  suite.saveLatestResearchStatePatch({ latestReplay: latestReplaySnapshot }, "manual_replay_review");
+  suite.saveLatestResearchStatePatch({ latestMonteCarlo: latestMonteCarloSnapshot }, "monte_carlo");
+  const latestState = suite.saveLatestResearchStatePatch({ latestScorecard: latestScorecardSnapshot }, "market_scorecard");
+  assert.equal(suite.assertIctLatestResearchStateIsCompact(latestState).ok, true);
+  const currentReadWithLatest = suite.buildIctCurrentReadFromPacket(packet, latestState);
+  assert.equal(currentReadWithLatest.latestReplayStatus, "target-first 50%");
+  assert.equal(currentReadWithLatest.latestMonteCarloRobustness, "insufficient_data");
+  assert.equal(currentReadWithLatest.latestScorecardBestSymbol, "MNQ");
+  assert.match(currentReadWithLatest.latestResearchStateNote, /manual research result/i);
+  assert.equal(suite.assertIctCurrentReadIsCompact(currentReadWithLatest).ok, true);
+
   const advisorJournal = suite.buildIctAdvisorJournalEvent(packet.recommendedSignal, packet.approvedProfileDecision);
   assert.equal(advisorJournal.researchOnly, true);
   assertCompact(advisorJournal, "advisor journal event");
@@ -678,6 +763,9 @@ async function main() {
     newsRiskAction: highNewsRisk.riskGovernorAction,
     replayResults: replayReport.results.length,
     monteCarloRating: insufficientMc.recommendation.robustnessRating,
+    latestReplay: currentReadWithLatest.latestReplayStatus,
+    latestMonteCarlo: currentReadWithLatest.latestMonteCarloRobustness,
+    latestScorecard: currentReadWithLatest.latestScorecardBestSymbol,
     authority: `${read.authority.executionAuthority}/${read.authority.brokerAuthority}/${read.authority.readinessOverrideAuthority}`
   };
 

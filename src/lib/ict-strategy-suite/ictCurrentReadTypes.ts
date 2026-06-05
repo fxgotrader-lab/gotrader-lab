@@ -1,5 +1,6 @@
 import type { IctBias, IctLocation, IctSide } from "./ictAdvisorTypes";
 import type { IctApprovedCandidateStatus } from "./ictApprovedSetupProfileTypes";
+import type { IctMonteCarloRobustnessRating } from "./ictMonteCarloTypes";
 
 export type IctCurrentReadPacketSource =
   | "live_mt5"
@@ -38,6 +39,14 @@ export interface IctCurrentRead {
   fvgStatus?: string;
   displacementStatus?: string;
   entryZone?: string;
+  latestReplayStatus?: string;
+  latestMonteCarloRobustness?: IctMonteCarloRobustnessRating;
+  latestMonteCarloRiskOfRuinPct?: number;
+  latestMonteCarloRecommendedRiskPct?: number;
+  latestScorecardBestSymbol?: string;
+  latestScorecardResearchPreferredSymbols?: string[];
+  latestResearchStateUpdatedAt?: string;
+  latestResearchStateNote?: string;
   topReasons: string[];
   nextAction: string;
   debug: {

@@ -8,6 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   appendIctMonteCarloJournalEvent,
+  buildLatestMonteCarloSnapshot,
+  buildLatestReplaySnapshot,
+  buildLatestScorecardSnapshot,
   buildManualReplayResearchReport,
   buildIctAdvisorPacketFromRuntime,
   buildIctCurrentReadFromPacket,
@@ -21,15 +24,19 @@ import {
   extractMonteCarloOutcomesFromMarketScorecard,
   listIctResearchReports,
   optimizeApprovedProfileFromReplayResults,
+  readLatestResearchState,
   researchReportSourceLabel,
   runMonteCarloBatch,
   runIctRealReplay,
   runManualIctReplayReview,
+  saveLatestResearchStatePatch,
   saveIctResearchReport,
   summarizeIctResearchReport,
+  ICT_LATEST_RESEARCH_STATE_UPDATED_EVENT,
   type IctApprovedProfileOptimizationResult,
   type IctAdvisorPacket,
   type IctCurrentRead,
+  type IctLatestResearchState,
   type IctMarketScorecard,
   type IctMarketScorecardConfig,
   type IctMarketScorecardStatus,
@@ -173,6 +180,7 @@ export function ResearchAdvisorView() {
   const [profileOptimization, setProfileOptimization] = useState<IctApprovedProfileOptimizationResult>();
   const [profileOptimizationError, setProfileOptimizationError] = useState<string>();
   const [savedReports, setSavedReports] = useState<IctResearchReport[]>([]);
+  const [latestResearchState, setLatestResearchState] = useState<IctLatestResearchState>();
   const [manualReportSaveResult, setManualReportSaveResult] = useState<IctResearchReportSaveResult>();
   const [scorecardReportSaveResult, setScorecardReportSaveResult] = useState<IctResearchReportSaveResult>();
   const [advisorPacket, setAdvisorPacket] = useState<IctAdvisorPacket>();
@@ -221,6 +229,17 @@ export function ResearchAdvisorView() {
     return () => {
       window.removeEventListener("gotrader:ict-research-report-saved", refreshReports);
       window.removeEventListener("storage", refreshReports);
+    };
+  }, []);
+
+  useEffect(() => {
+    const refreshLatestState = () => setLatestResearchState(readLatestResearchState());
+    refreshLatestState();
+    window.addEventListener(ICT_LATEST_RESEARCH_STATE_UPDATED_EVENT, refreshLatestState);
+    window.addEventListener("storage", refreshLatestState);
+    return () => {
+      window.removeEventListener(ICT_LATEST_RESEARCH_STATE_UPDATED_EVENT, refreshLatestState);
+      window.removeEventListener("storage", refreshLatestState);
     };
   }, []);
 
@@ -302,7 +321,7 @@ export function ResearchAdvisorView() {
     }),
     [manualReplayRequest.htfTimeframes, snapshot?.marketData.timeframe]
   );
-  const currentRead = useMemo(() => buildIctCurrentReadFromPacket(advisorPacket), [advisorPacket]);
+  const currentRead = useMemo(() => buildIctCurrentReadFromPacket(advisorPacket, latestResearchState), [advisorPacket, latestResearchState]);
 
   if (!snapshot) {
     return (
@@ -329,6 +348,11 @@ export function ResearchAdvisorView() {
       const result = await runManualIctReplayReview(manualReplayRequest);
       setManualReplayResult(result);
       setManualReplayStatus(result.status);
+      if (result.status === "completed") {
+        setLatestResearchState(
+          saveLatestResearchStatePatch({ latestReplay: buildLatestReplaySnapshot(result) }, "manual_replay_review")
+        );
+      }
       setManualReplayError(undefined);
     } catch (error) {
       setManualReplayResult(undefined);
@@ -344,6 +368,11 @@ export function ResearchAdvisorView() {
       const result = await buildIctMarketScorecard(marketScorecardConfig);
       setMarketScorecard(result);
       setMarketScorecardStatus(result.summary.completedSymbols > 0 ? "completed" : "unavailable");
+      if (result.summary.completedSymbols > 0) {
+        setLatestResearchState(
+          saveLatestResearchStatePatch({ latestScorecard: buildLatestScorecardSnapshot(result) }, "market_scorecard")
+        );
+      }
     } catch (error) {
       setMarketScorecard(undefined);
       setMarketScorecardStatus("failed");
@@ -381,6 +410,9 @@ export function ResearchAdvisorView() {
       appendIctMonteCarloJournalEvent(buildIctMonteCarloJournalEvent(summary));
       setMonteCarloSummary(summary);
       setMonteCarloStatus("completed");
+      setLatestResearchState(
+        saveLatestResearchStatePatch({ latestMonteCarlo: buildLatestMonteCarloSnapshot(summary) }, "monte_carlo")
+      );
     } catch (error) {
       setMonteCarloSummary(undefined);
       setMonteCarloStatus("failed");
@@ -484,6 +516,7 @@ export function ResearchAdvisorView() {
       </section>
 
       <CurrentReadPanel currentRead={currentRead} packetError={advisorPacketError} />
+      <LatestResearchStateStrip latestResearchState={latestResearchState} />
 
       <section data-testid="research-advisor-chat-workspace" className="grid items-start gap-4 xl:grid-cols-[minmax(220px,0.62fr)_minmax(420px,1.35fr)_minmax(240px,0.72fr)]">
         <ResearchAdvisorChatCard
@@ -631,6 +664,53 @@ export function ResearchAdvisorView() {
   );
 }
 
+function LatestResearchStateStrip({ latestResearchState }: { latestResearchState?: IctLatestResearchState }) {
+  const monteCarlo = latestResearchState?.latestMonteCarlo;
+  const replay = latestResearchState?.latestReplay;
+  const scorecard = latestResearchState?.latestScorecard;
+  const pctWhole = (value?: number) =>
+    typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(value >= 10 ? 0 : 1)}%` : "n/a";
+
+  return (
+    <section data-testid="ict-latest-research-state" className="rounded-2xl border border-fuchsia-300/15 bg-[radial-gradient(circle_at_8%_0%,rgba(217,70,239,0.12),transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.86),rgba(2,6,23,0.9))] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-fuchsia-300">Latest Research State</p>
+          <h3 className="mt-1 text-base font-semibold text-slate-50">Manual replay, robustness, and scorecard snapshots</h3>
+          <p className="mt-1 text-sm text-slate-400">
+            Saved compact summaries only. These are latest manual research results, not live signal generation.
+          </p>
+        </div>
+        <Badge variant={latestResearchState ? "success" : "secondary"}>
+          {latestResearchState ? `updated ${formatDate(latestResearchState.updatedAt)}` : "no saved state"}
+        </Badge>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <AdvisorReadout
+          label="Latest replay"
+          value={replay ? `target-first ${pct(replay.approvedTargetFirstRate ?? replay.targetFirstRate)}` : "none saved"}
+          detail={replay ? `${replay.requestedSymbol ?? "symbol"} ${replay.primaryTimeframe ?? ""} / ${replay.totalSignals ?? 0} signals` : "Run Manual Replay Review"}
+        />
+        <AdvisorReadout
+          label="Latest Monte Carlo"
+          value={formatToken(monteCarlo?.robustnessRating)}
+          detail={monteCarlo ? `risk of ruin ${pctWhole(monteCarlo.riskOfRuinPct)} / max idea ${pctWhole(monteCarlo.recommendedMaxRiskPerTradePct)}` : "Run Monte Carlo Robustness"}
+        />
+        <AdvisorReadout
+          label="Latest scorecard"
+          value={scorecard?.bestApprovedTargetFirstSymbol ?? scorecard?.bestApprovedRrSymbol ?? scorecard?.researchPreferredSymbols[0] ?? "none saved"}
+          detail={scorecard ? `${scorecard.completedSymbols} completed / preferred ${scorecard.researchPreferredSymbols.join(", ") || "none"}` : "Run Market Scorecard"}
+        />
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Badge variant="danger">authority none</Badge>
+        <Badge variant="secondary">raw candles excluded</Badge>
+        <Badge variant="secondary">manual results only</Badge>
+      </div>
+    </section>
+  );
+}
+
 function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurrentRead; packetError?: string }) {
   const dataVariant =
     currentRead.dataStatus === "ready"
@@ -672,6 +752,22 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
         <AdvisorReadout label="SMT" value={formatToken(currentRead.smtStatus)} />
         <AdvisorReadout label="Risk" value={formatToken(currentRead.riskStatus)} />
         <AdvisorReadout label="RR / location" value={rr(currentRead.rrEstimate)} detail={formatToken(currentRead.dealingRangeLocation)} />
+        <AdvisorReadout label="Latest replay" value={currentRead.latestReplayStatus ?? "none saved"} detail="manual result" />
+        <AdvisorReadout
+          label="Latest Monte Carlo"
+          value={formatToken(currentRead.latestMonteCarloRobustness)}
+          detail={
+            typeof currentRead.latestMonteCarloRiskOfRuinPct === "number"
+              ? `risk of ruin ${currentRead.latestMonteCarloRiskOfRuinPct.toFixed(1)}%`
+              : "manual result"
+          }
+        />
+        <AdvisorReadout
+          label="Latest scorecard"
+          value={currentRead.latestScorecardBestSymbol ?? "none saved"}
+          detail={currentRead.latestScorecardResearchPreferredSymbols?.join(", ") || "manual result"}
+        />
+        <AdvisorReadout label="Latest state note" value={currentRead.latestResearchStateNote ?? "none saved"} detail="not live signal generation" />
       </div>
       <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.55fr)]">
         <AdvisorList label="Why this state" values={packetError ? [packetError, ...currentRead.topReasons] : currentRead.topReasons} empty="No blockers reported." />
@@ -694,6 +790,10 @@ function CurrentReadDataFlowPanel({ currentRead }: { currentRead: IctCurrentRead
     ["Rejection reasons", currentRead.debug.rejectionReasonsCount.toLocaleString()],
     ["No-trade reasons", currentRead.debug.noTradeReasonsCount.toLocaleString()],
     ["Journal", currentRead.debug.journalStatus ?? "pending"],
+    ["Latest replay", currentRead.latestReplayStatus ?? "none"],
+    ["Latest Monte Carlo", currentRead.latestMonteCarloRobustness ?? "none"],
+    ["Latest scorecard best", currentRead.latestScorecardBestSymbol ?? "none"],
+    ["Latest state updated", currentRead.latestResearchStateUpdatedAt ?? "none"],
     ["Last evaluation", formatDate(currentRead.debug.lastEvaluationAt)]
   ];
 
@@ -980,7 +1080,7 @@ function ManualReplayReviewPanel({
       : status === "running"
         ? "Running real MT5 replay review with compact output only..."
         : status === "completed"
-          ? "Manual replay review completed."
+          ? "Manual replay review completed. Latest Replay Saved as a compact research-only summary."
           : status === "unavailable"
             ? `Replay unavailable: ${result?.unavailableReason ?? "mt5_unavailable_or_not_configured"}.`
             : `Replay failed: ${error ?? result?.errors[0] ?? "unknown_error"}.`;
@@ -1131,7 +1231,7 @@ function MonteCarloRobustnessPanel({
       : status === "running"
         ? "Running Monte Carlo robustness from compact replay outcomes..."
         : status === "completed"
-          ? "Monte Carlo robustness completed from compact replay outcomes."
+          ? "Monte Carlo robustness completed. Latest Robustness Saved as a compact research-only summary."
           : status === "unavailable"
             ? error ?? (hasScorecard ? "Scorecard summary is compact; run Manual Replay Review for full Monte Carlo input." : "Run Replay Review first.")
             : `Monte Carlo failed: ${error ?? "unknown_error"}.`;
@@ -1321,7 +1421,7 @@ function MarketScorecardPanel({
       : status === "running"
         ? "Running replay scorecard across configured markets with compact output only..."
         : status === "completed"
-          ? "Market scorecard completed."
+          ? "Market scorecard completed. Latest Scorecard Saved as a compact research-only summary."
           : status === "unavailable"
             ? "No configured market completed replay. Check MT5 read-only availability and symbol mappings."
             : `Market scorecard failed: ${error ?? "unknown_error"}.`;

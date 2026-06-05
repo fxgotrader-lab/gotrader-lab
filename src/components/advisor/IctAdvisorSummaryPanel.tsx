@@ -9,8 +9,11 @@ import {
   buildIctCurrentReadFromPacket,
   buildIctReplayValidationFromRuntime,
   formatIctAdvisorSignalSummary,
+  ICT_LATEST_RESEARCH_STATE_UPDATED_EVENT,
+  readLatestResearchState,
   summarizeNewsSessionRisk,
   type IctAdvisorPacket,
+  type IctLatestResearchState,
   type IctReplayValidationReport
 } from "@/lib/ict-strategy-suite";
 import type { ResearchRuntimeSnapshot } from "@/lib/runtime";
@@ -71,8 +74,20 @@ export function IctAdvisorSummaryPanel({
 }) {
   const [packet, setPacket] = useState<IctAdvisorPacket>();
   const [replayReport, setReplayReport] = useState<IctReplayValidationReport>();
+  const [latestResearchState, setLatestResearchState] = useState<IctLatestResearchState>();
   const [error, setError] = useState<string>();
   const [replayError, setReplayError] = useState<string>();
+
+  useEffect(() => {
+    const refreshLatestState = () => setLatestResearchState(readLatestResearchState());
+    refreshLatestState();
+    window.addEventListener(ICT_LATEST_RESEARCH_STATE_UPDATED_EVENT, refreshLatestState);
+    window.addEventListener("storage", refreshLatestState);
+    return () => {
+      window.removeEventListener(ICT_LATEST_RESEARCH_STATE_UPDATED_EVENT, refreshLatestState);
+      window.removeEventListener("storage", refreshLatestState);
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -134,7 +149,7 @@ export function IctAdvisorSummaryPanel({
   }, [mode, snapshot?.snapshotId, snapshot?.marketData.activeResearchSource.sourceId, snapshot?.marketData.activeResearchSource.fingerprint, snapshot?.mt5ReadOnly.higherTimeframeSources?.map((source) => source.fingerprint).join("|")]);
 
   const recommended = packet?.recommendedSignal;
-  const currentRead = useMemo(() => buildIctCurrentReadFromPacket(packet), [packet]);
+  const currentRead = useMemo(() => buildIctCurrentReadFromPacket(packet, latestResearchState), [packet, latestResearchState]);
   const phaseOneSignals = useMemo(() => (packet?.signals ?? []).filter((signal) => signal.phase === "phase_1"), [packet?.signals]);
   const phaseTwoSignals = useMemo(() => (packet?.signals ?? []).filter((signal) => signal.phase === "phase_2"), [packet?.signals]);
   const topPhaseTwo = phaseTwoSignals
@@ -172,6 +187,25 @@ export function IctAdvisorSummaryPanel({
               <AdvisorMini label="Confidence" value={pct(currentRead.confidence)} />
               <AdvisorMini label="Phase 1 / Phase 2" value={`${currentRead.debug.phase1SignalCount}/${currentRead.debug.phase2SignalCount}`} detail="signals evaluated" />
               <AdvisorMini label="SMT / Risk" value={`${formatToken(currentRead.smtStatus)} / ${formatToken(currentRead.riskStatus)}`} />
+              <AdvisorMini
+                label="Monte Carlo"
+                value={currentRead.latestMonteCarloRobustness ? formatToken(currentRead.latestMonteCarloRobustness) : "none saved"}
+                detail={
+                  typeof currentRead.latestMonteCarloRiskOfRuinPct === "number"
+                    ? `Risk of ruin ${currentRead.latestMonteCarloRiskOfRuinPct.toFixed(1)}%`
+                    : "latest manual result"
+                }
+              />
+              <AdvisorMini
+                label="Replay"
+                value={currentRead.latestReplayStatus ?? "none saved"}
+                detail="latest manual result"
+              />
+              <AdvisorMini
+                label="Scorecard"
+                value={currentRead.latestScorecardBestSymbol ?? "none saved"}
+                detail={currentRead.latestScorecardResearchPreferredSymbols?.join(", ") || "latest manual result"}
+              />
               <AdvisorMini label="Target" value={compactPrice(recommended?.target)} />
               <AdvisorMini label="Invalidation" value={compactPrice(recommended?.invalidation)} />
               <AdvisorMini label="RR estimate" value={typeof recommended?.rrEstimate === "number" ? `${recommended.rrEstimate.toFixed(2)}R` : "n/a"} />
@@ -258,6 +292,17 @@ export function IctAdvisorSummaryPanel({
             <AdvisorMini label="Target" value={compactPrice(recommended?.target)} />
             <AdvisorMini label="RR estimate" value={typeof recommended?.rrEstimate === "number" ? `${recommended.rrEstimate.toFixed(2)}R` : "n/a"} />
             <AdvisorMini label="Journal" value={packet.journalStatus} detail={`${packet.journalEvents.length} compact events`} />
+            <AdvisorMini label="Latest replay" value={currentRead.latestReplayStatus ?? "none saved"} detail="manual result" />
+            <AdvisorMini
+              label="Latest Monte Carlo"
+              value={currentRead.latestMonteCarloRobustness ? formatToken(currentRead.latestMonteCarloRobustness) : "none saved"}
+              detail={
+                typeof currentRead.latestMonteCarloRecommendedRiskPct === "number"
+                  ? `max risk idea ${currentRead.latestMonteCarloRecommendedRiskPct.toFixed(1)}%`
+                  : "manual result"
+              }
+            />
+            <AdvisorMini label="Latest scorecard" value={currentRead.latestScorecardBestSymbol ?? "none saved"} detail="manual result" />
           </div>
           <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3">
             <div className="flex flex-wrap items-start justify-between gap-2">

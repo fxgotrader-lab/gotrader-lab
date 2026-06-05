@@ -31,5 +31,7 @@ export * from "./ictMarketScorecardTypes";
 export * from "./ictMarketScorecard";
 export * from "./ictMonteCarloTypes";
 export * from "./ictMonteCarlo";
+export * from "./ictLatestResearchStateTypes";
+export * from "./ictLatestResearchState";
 export * from "./ictResearchReportTypes";
 export * from "./ictResearchReport";

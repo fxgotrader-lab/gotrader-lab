@@ -40,6 +40,8 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictManualReplayReviewTypes.ts" },
   { root: sourceRoot, file: "ictMarketScorecardTypes.ts" },
   { root: sourceRoot, file: "ictMonteCarloTypes.ts" },
+  { root: sourceRoot, file: "ictLatestResearchStateTypes.ts" },
+  { root: sourceRoot, file: "ictLatestResearchState.ts" },
   { root: sourceRoot, file: "ictResearchReportTypes.ts" },
   { root: sourceRoot, file: "ictRealReplayRunner.ts" },
   { root: sourceRoot, file: "ictManualReplayReview.ts" },
