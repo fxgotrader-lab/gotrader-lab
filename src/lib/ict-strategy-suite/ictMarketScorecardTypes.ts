@@ -1,4 +1,5 @@
 import type { IctRealReplayRunResult } from "./ictRealReplayRunnerTypes";
+import type { IctMonteCarloTradeOutcome } from "./ictMonteCarloTypes";
 
 export type IctMarketScorecardStatus =
   | "research_preferred"
@@ -64,6 +65,7 @@ export interface IctMarketScorecard {
     bestApprovedRejectedRatioSymbol?: string;
     cleanestSymbol?: string;
   };
+  monteCarloOutcomes?: IctMonteCarloTradeOutcome[];
   authority: IctRealReplayRunResult["authority"];
   safety: IctRealReplayRunResult["safety"];
 }

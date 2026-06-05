@@ -7,17 +7,22 @@ import { LLMAdvisoryReviewPanel } from "@/components/dashboard/LLMAdvisoryReview
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  appendIctMonteCarloJournalEvent,
   buildManualReplayResearchReport,
   buildIctAdvisorPacketFromRuntime,
   buildIctCurrentReadFromPacket,
+  buildIctMonteCarloJournalEvent,
   buildMarketScorecardResearchReport,
   appendIctApprovedProfileOptimizationJournalEvent,
   buildIctApprovedProfileOptimizationJournalEvent,
   buildIctMarketScorecard,
   DEFAULT_ICT_MARKET_SCORECARD_SYMBOLS,
+  extractMonteCarloOutcomesFromManualReplay,
+  extractMonteCarloOutcomesFromMarketScorecard,
   listIctResearchReports,
   optimizeApprovedProfileFromReplayResults,
   researchReportSourceLabel,
+  runMonteCarloBatch,
   runIctRealReplay,
   runManualIctReplayReview,
   saveIctResearchReport,
@@ -31,6 +36,7 @@ import {
   type IctManualReplayReviewRequest,
   type IctManualReplayReviewResult,
   type IctManualReplayReviewStatus,
+  type IctMonteCarloSummary,
   type IctResearchReport,
   type IctResearchReportSaveResult
 } from "@/lib/ict-strategy-suite";
@@ -54,6 +60,7 @@ const compactPrice = (value?: number) =>
   typeof value === "number" && Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "n/a";
 type MarketScorecardRunStatus = "idle" | "running" | "completed" | "unavailable" | "failed";
 type ProfileOptimizationRunStatus = "idle" | "running" | "completed" | "unavailable" | "failed";
+type MonteCarloRunStatus = "idle" | "running" | "completed" | "unavailable" | "failed";
 type AdvisorChatMessage = {
   id: string;
   role: "assistant" | "user";
@@ -159,6 +166,9 @@ export function ResearchAdvisorView() {
   const [marketScorecardStatus, setMarketScorecardStatus] = useState<MarketScorecardRunStatus>("idle");
   const [marketScorecard, setMarketScorecard] = useState<IctMarketScorecard>();
   const [marketScorecardError, setMarketScorecardError] = useState<string>();
+  const [monteCarloStatus, setMonteCarloStatus] = useState<MonteCarloRunStatus>("idle");
+  const [monteCarloSummary, setMonteCarloSummary] = useState<IctMonteCarloSummary>();
+  const [monteCarloError, setMonteCarloError] = useState<string>();
   const [profileOptimizationStatus, setProfileOptimizationStatus] = useState<ProfileOptimizationRunStatus>("idle");
   const [profileOptimization, setProfileOptimization] = useState<IctApprovedProfileOptimizationResult>();
   const [profileOptimizationError, setProfileOptimizationError] = useState<string>();
@@ -248,6 +258,9 @@ export function ResearchAdvisorView() {
     setMarketScorecardStatus("idle");
     setMarketScorecard(undefined);
     setMarketScorecardError(undefined);
+    setMonteCarloStatus("idle");
+    setMonteCarloSummary(undefined);
+    setMonteCarloError(undefined);
     setProfileOptimizationStatus("idle");
     setProfileOptimization(undefined);
     setProfileOptimizationError(undefined);
@@ -309,6 +322,9 @@ export function ResearchAdvisorView() {
     if (manualReplayStatus === "running") return;
     setManualReplayStatus("running");
     setManualReplayError(undefined);
+    setMonteCarloStatus("idle");
+    setMonteCarloSummary(undefined);
+    setMonteCarloError(undefined);
     try {
       const result = await runManualIctReplayReview(manualReplayRequest);
       setManualReplayResult(result);
@@ -332,6 +348,43 @@ export function ResearchAdvisorView() {
       setMarketScorecard(undefined);
       setMarketScorecardStatus("failed");
       setMarketScorecardError(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const runMonteCarloRobustness = async () => {
+    if (monteCarloStatus === "running") return;
+    setMonteCarloStatus("running");
+    setMonteCarloError(undefined);
+    try {
+      const manualOutcomes = extractMonteCarloOutcomesFromManualReplay(manualReplayResult);
+      const scorecardOutcomes = extractMonteCarloOutcomesFromMarketScorecard(marketScorecard);
+      if (!manualReplayResult || manualReplayResult.status !== "completed") {
+        setMonteCarloSummary(undefined);
+        setMonteCarloStatus("unavailable");
+        setMonteCarloError("Run Replay Review first.");
+        return;
+      }
+      if (!manualOutcomes.length) {
+        setMonteCarloSummary(undefined);
+        setMonteCarloStatus("unavailable");
+        setMonteCarloError(
+          scorecardOutcomes.length
+            ? "Use Manual Replay Review for this Monte Carlo panel."
+            : "Scorecard summary is compact; run Manual Replay Review for full Monte Carlo input."
+        );
+        return;
+      }
+      const summary = runMonteCarloBatch(manualOutcomes, {
+        source: "manual_replay_review",
+        randomSeed: 20260605,
+        researchOnly: true
+      });
+      appendIctMonteCarloJournalEvent(buildIctMonteCarloJournalEvent(summary));
+      setMonteCarloSummary(summary);
+      setMonteCarloStatus("completed");
+    } catch (error) {
+      setMonteCarloSummary(undefined);
+      setMonteCarloStatus("failed");
+      setMonteCarloError(error instanceof Error ? error.message : String(error));
     }
   };
   const runProfileOptimization = async () => {
@@ -507,6 +560,16 @@ export function ResearchAdvisorView() {
               status={manualReplayStatus}
               error={manualReplayError}
             />
+            <div className="mt-4">
+              <MonteCarloRobustnessPanel
+                error={monteCarloError}
+                hasManualReplayResult={manualReplayResult?.status === "completed"}
+                hasScorecard={marketScorecardStatus === "completed" && Boolean(marketScorecard)}
+                onRun={runMonteCarloRobustness}
+                status={monteCarloStatus}
+                summary={monteCarloSummary}
+              />
+            </div>
           </div>
         </details>
 
@@ -1028,6 +1091,104 @@ function ManualReplayReviewPanel({
               detail="Replay review cannot promote readiness."
             />
             <AdvisorReadout label="Journal" value="compact manual event" detail="ict_manual_replay_review / researchOnly true" />
+          </div>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function MonteCarloRobustnessPanel({
+  error,
+  hasManualReplayResult,
+  hasScorecard,
+  onRun,
+  status,
+  summary
+}: {
+  error?: string;
+  hasManualReplayResult: boolean;
+  hasScorecard: boolean;
+  onRun: () => Promise<void>;
+  status: MonteCarloRunStatus;
+  summary?: IctMonteCarloSummary;
+}) {
+  const statusVariant =
+    status === "completed"
+      ? summary?.recommendation.robustnessRating === "weak" || summary?.recommendation.robustnessRating === "insufficient_data"
+        ? "warning"
+        : "success"
+      : status === "running" || status === "unavailable"
+        ? "warning"
+        : status === "failed"
+          ? "danger"
+          : "secondary";
+  const statusMessage =
+    status === "idle"
+      ? hasManualReplayResult
+        ? "Idle. Run Monte Carlo Robustness to resample compact approved replay outcomes."
+        : "Run Replay Review first."
+      : status === "running"
+        ? "Running Monte Carlo robustness from compact replay outcomes..."
+        : status === "completed"
+          ? "Monte Carlo robustness completed from compact replay outcomes."
+          : status === "unavailable"
+            ? error ?? (hasScorecard ? "Scorecard summary is compact; run Manual Replay Review for full Monte Carlo input." : "Run Replay Review first.")
+            : `Monte Carlo failed: ${error ?? "unknown_error"}.`;
+  const warnings = summary?.recommendation.warnings ?? [];
+
+  return (
+    <section data-testid="ict-monte-carlo-robustness" className="rounded-xl border border-fuchsia-300/15 bg-slate-950/85 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-fuchsia-300">Monte Carlo Robustness</p>
+          <h3 className="mt-1 flex items-center gap-2 text-xl font-semibold text-slate-50">
+            <BarChart3 className="h-5 w-5 text-fuchsia-300" aria-hidden="true" />
+            Replay outcome resampling
+          </h3>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+            Resamples approved ICT replay outcomes to estimate ending R, drawdown, losing streaks, risk of ruin, and max risk per idea. It does not create signals, promote readiness, or expose raw candles.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge data-testid="ict-monte-carlo-status" variant={statusVariant}>{formatToken(status)}</Badge>
+          <Badge variant="danger">authority none</Badge>
+          <Badge variant="secondary">researchOnly true</Badge>
+          <Button type="button" size="sm" onClick={onRun} disabled={status === "running"}>
+            <PlayCircle className="h-4 w-4" aria-hidden="true" />
+            {status === "running" ? "Running..." : "Run Monte Carlo Robustness"}
+          </Button>
+        </div>
+      </div>
+      <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">{statusMessage}</p>
+      {hasScorecard && !summary ? (
+        <p className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-sm leading-5 text-amber-100">
+          Scorecard summary is compact; run Manual Replay Review for full Monte Carlo input.
+        </p>
+      ) : null}
+      {summary ? (
+        <>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <AdvisorReadout label="Robustness" value={formatToken(summary.recommendation.robustnessRating)} detail={summary.recommendation.reason} />
+            <AdvisorReadout label="Usable outcomes" value={summary.input.usableOutcomes.toLocaleString()} detail={`${summary.input.totalOutcomes.toLocaleString()} total compact outcomes`} />
+            <AdvisorReadout label="Median ending R" value={rr(summary.performance.medianEndingR)} detail={`5th ${rr(summary.performance.fifthPercentileEndingR)} / 95th ${rr(summary.performance.ninetyFifthPercentileEndingR)}`} />
+            <AdvisorReadout label="Median max DD" value={`${summary.performance.medianMaxDrawdownPct.toFixed(2)}%`} detail={`worst ${summary.performance.worstMaxDrawdownPct.toFixed(2)}%`} />
+            <AdvisorReadout label="Risk of ruin" value={`${summary.performance.riskOfRuinPct.toFixed(2)}%`} detail={`limit ${summary.performance.probabilityDrawdownOverLimitPct.toFixed(2)}%`} />
+            <AdvisorReadout label="Worst losing streak" value={summary.performance.worstLongestLosingStreak.toLocaleString()} detail={`median ${summary.performance.medianLongestLosingStreak.toFixed(0)}`} />
+            <AdvisorReadout label="Risk per idea" value={`${summary.recommendation.recommendedMaxRiskPerTradePct.toFixed(2)}%`} detail={`${summary.input.simulationCount.toLocaleString()} simulations`} />
+            <AdvisorReadout label="Journal" value="compact MC summary" detail="ict_monte_carlo_summary / raw excluded" />
+          </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            <AdvisorList label="Warnings" values={warnings} empty="none" />
+            <AdvisorList
+              label="Safety"
+              values={[
+                "No raw candles, snapshots, secrets, account data, orders, or positions.",
+                `Authority ${summary.authority.executionAuthority}/${summary.authority.brokerAuthority}/${summary.authority.readinessOverrideAuthority}.`,
+                "Monte Carlo is research-only and cannot approve Paper-Demo Candidate readiness."
+              ]}
+              empty="none"
+            />
           </div>
         </>
       ) : null}

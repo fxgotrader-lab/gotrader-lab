@@ -183,6 +183,10 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByTestId("ict-manual-replay-status")).toContainText(/idle/i);
     await expect(page.getByRole("button", { name: "Run Real Replay Review" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Save Replay Report" })).toBeVisible();
+    await expect(page.getByTestId("ict-monte-carlo-robustness")).toContainText(/Monte Carlo Robustness/i);
+    await expect(page.getByTestId("ict-monte-carlo-status")).toContainText(/idle/i);
+    await expect(page.getByTestId("ict-monte-carlo-robustness")).toContainText(/Run Replay Review first/i);
+    await expect(page.getByRole("button", { name: "Run Monte Carlo Robustness" })).toBeVisible();
     await expect(page.getByTestId("ict-approved-profile-optimizer")).toContainText(/Optimize Approved Profile/i);
     await expect(page.getByTestId("ict-approved-profile-optimizer-status")).toContainText(/idle/i);
     await expect(page.getByRole("button", { name: "Run Profile Optimization" })).toBeVisible();

@@ -5,6 +5,7 @@ import {
 } from "./ictRealReplayRunner";
 import type { IctReplayBreakdownMetric } from "./ictReplayDiagnosticsTypes";
 import type { IctRealReplayRunConfig, IctRealReplayRunResult } from "./ictRealReplayRunnerTypes";
+import { extractMonteCarloOutcomesFromReplayResults } from "./ictMonteCarlo";
 import type {
   IctManualReplayApprovedProfileComparison,
   IctManualReplayBreakdownRow,
@@ -178,6 +179,7 @@ export const buildIctManualReplayReviewResult = (
     },
     topCalibrationFilterImprovements: buildCalibrationImprovements(result),
     approvedProfileComparison,
+    monteCarloOutcomes: extractMonteCarloOutcomesFromReplayResults(result.replayResults ?? []),
     unavailableReason: status === "unavailable" ? firstReason(result) : undefined,
     errors,
     warnings,
@@ -228,6 +230,7 @@ export const buildFailedIctManualReplayReviewResult = (
     },
     topCalibrationFilterImprovements: [],
     approvedProfileComparison: [],
+    monteCarloOutcomes: [],
     unavailableReason: "manual_replay_review_failed",
     errors: [error instanceof Error ? error.message : String(error)],
     warnings: [],
@@ -262,7 +265,8 @@ export async function runManualIctReplayReview(
     const result = await runIctRealReplay(config, {
       ...options,
       appendJournal: options.appendJournal ?? true,
-      includeDiagnostics: options.includeDiagnostics ?? true
+      includeDiagnostics: options.includeDiagnostics ?? true,
+      includeReplayResults: options.includeReplayResults ?? true
     });
     const review = buildIctManualReplayReviewResult(result, request);
     if (options.appendJournal !== false) {

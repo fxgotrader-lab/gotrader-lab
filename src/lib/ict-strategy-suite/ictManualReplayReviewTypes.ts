@@ -1,4 +1,5 @@
 import type { IctApprovedSetupProfileRunSummary } from "./ictApprovedSetupProfileTypes";
+import type { IctMonteCarloTradeOutcome } from "./ictMonteCarloTypes";
 import type { IctReplayBreakdownMetric, IctReplayCalibrationResult } from "./ictReplayDiagnosticsTypes";
 import type { IctRealReplayRunConfig, IctRealReplayRunResult } from "./ictRealReplayRunnerTypes";
 
@@ -86,6 +87,7 @@ export interface IctManualReplayReviewResult {
   };
   topCalibrationFilterImprovements: IctManualReplayCalibrationImprovement[];
   approvedProfileComparison: IctManualReplayApprovedProfileComparison[];
+  monteCarloOutcomes?: IctMonteCarloTradeOutcome[];
   unavailableReason?: string;
   errors: string[];
   warnings: string[];

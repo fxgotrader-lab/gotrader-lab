@@ -29,5 +29,7 @@ export * from "./ictManualReplayReviewTypes";
 export * from "./ictManualReplayReview";
 export * from "./ictMarketScorecardTypes";
 export * from "./ictMarketScorecard";
+export * from "./ictMonteCarloTypes";
+export * from "./ictMonteCarlo";
 export * from "./ictResearchReportTypes";
 export * from "./ictResearchReport";
