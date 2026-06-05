@@ -22,6 +22,8 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictPhase2BreadAndButter.ts" },
   { root: sourceRoot, file: "ictPhase2OneShotOneKill.ts" },
   { root: sourceRoot, file: "ictAdvisorEngine.ts" },
+  { root: sourceRoot, file: "ictCurrentReadTypes.ts" },
+  { root: sourceRoot, file: "ictCurrentRead.ts" },
   { root: sourceRoot, file: "ictReplayValidationTypes.ts" },
   { root: sourceRoot, file: "ictReplayDiagnosticsTypes.ts" },
   { root: sourceRoot, file: "ictApprovedSetupProfileTypes.ts" },

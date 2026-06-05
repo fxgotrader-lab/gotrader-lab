@@ -5,6 +5,8 @@ export * from "./ictStrategySuiteJournal";
 export * from "./ictAdvisorTypes";
 export * from "./ictAdvisorJournal";
 export * from "./ictAdvisorEngine";
+export * from "./ictCurrentReadTypes";
+export * from "./ictCurrentRead";
 export * from "./ictPhase2Types";
 export * from "./ictPhase2OrderBlocks";
 export * from "./ictPhase2BreadAndButter";

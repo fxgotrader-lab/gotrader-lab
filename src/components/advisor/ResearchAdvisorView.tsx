@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import {
   buildManualReplayResearchReport,
   buildIctAdvisorPacketFromRuntime,
+  buildIctCurrentReadFromPacket,
   buildMarketScorecardResearchReport,
   appendIctApprovedProfileOptimizationJournalEvent,
   buildIctApprovedProfileOptimizationJournalEvent,
@@ -23,6 +24,7 @@ import {
   summarizeIctResearchReport,
   type IctApprovedProfileOptimizationResult,
   type IctAdvisorPacket,
+  type IctCurrentRead,
   type IctMarketScorecard,
   type IctMarketScorecardConfig,
   type IctMarketScorecardStatus,
@@ -111,6 +113,7 @@ const entryZoneLabel = (entryZone?: IctAdvisorPacket["recommendedSignal"]["entry
 function buildLocalAdvisorReply(
   prompt: string,
   packet: IctAdvisorPacket | undefined,
+  currentRead: IctCurrentRead,
   snapshot: ResearchRuntimeSnapshot,
   manualReplayStatus: IctManualReplayReviewStatus,
   marketScorecardStatus: MarketScorecardRunStatus,
@@ -118,13 +121,13 @@ function buildLocalAdvisorReply(
 ) {
   const lower = prompt.toLowerCase();
   if (!packet) {
-    return "Advisor chat is UI-ready. Connect OpenClaw advisory when configured. Current setup summary is shown in the cards below.";
+    return `Advisor chat is UI-ready, but the current ICT read is ${formatToken(currentRead.dataStatus)}. ${currentRead.topReasons[0] ?? "No compact advisor packet is available yet."}`;
   }
   if (lower.includes("no trade") || lower.includes("why")) {
-    const reasons = packet.recommendedSignal.noTradeReasons.length
-      ? packet.recommendedSignal.noTradeReasons.slice(0, 3).join("; ")
-      : packet.approvedProfileDecision.rejectionReasons.slice(0, 3).join("; ") || "No explicit no-trade reason is available in the compact packet.";
-    return `No-trade context: ${reasons} Authority remains none.`;
+    const reasons = currentRead.topReasons.length
+      ? currentRead.topReasons.slice(0, 3).join("; ")
+      : "No explicit no-trade reason is available in the compact packet.";
+    return `${approvalLabel(currentRead.approvedStatus)} context: ${reasons} Next action: ${currentRead.nextAction} Authority remains none.`;
   }
   if (lower.includes("risk")) {
     const notes = packet.recommendedSignal.riskNotes.length ? packet.recommendedSignal.riskNotes.slice(0, 3).join("; ") : "No additional risk notes in the compact packet.";
@@ -143,9 +146,9 @@ function buildLocalAdvisorReply(
     return `Profile optimizer status: ${formatToken(profileOptimizationStatus)}. Optimization is research-only and cannot auto-apply thresholds or promote readiness.`;
   }
   if (lower.includes("bias") || lower.includes("setup") || lower.includes("current")) {
-    return `Current read: ${formatToken(packet.compactSummary.compositeBias)} bias, ${formatToken(packet.compactSummary.setup)} setup, ${formatToken(packet.compactSummary.side)} side, ${pct(packet.compactSummary.confidence)} confidence. ${packet.recommendedSignal.summary}`;
+    return `Current read: ${formatToken(currentRead.bias)} bias, ${formatToken(currentRead.bestSetup)} setup, ${formatToken(currentRead.side)} side, ${pct(currentRead.confidence)} confidence, ${formatToken(currentRead.approvedStatus)}. ${packet.recommendedSignal.summary}`;
   }
-  return `Current GoTrader read: ${formatToken(packet.compactSummary.compositeBias)} / ${approvalLabel(packet.approvedProfileDecision.status)} / ${riskLabel(packet)}. Source ${snapshot.marketData.activeResearchSource.provider.replace(/_/g, " ")} remains read-only with authority none.`;
+  return `Current GoTrader read: ${formatToken(currentRead.bias)} / ${approvalLabel(currentRead.approvedStatus)} / ${formatToken(currentRead.riskStatus)}. Source ${snapshot.marketData.activeResearchSource.provider.replace(/_/g, " ")} remains read-only with authority none.`;
 }
 
 export function ResearchAdvisorView() {
@@ -286,6 +289,7 @@ export function ResearchAdvisorView() {
     }),
     [manualReplayRequest.htfTimeframes, snapshot?.marketData.timeframe]
   );
+  const currentRead = useMemo(() => buildIctCurrentReadFromPacket(advisorPacket), [advisorPacket]);
 
   if (!snapshot) {
     return (
@@ -379,7 +383,7 @@ export function ResearchAdvisorView() {
     setChatMessages((messages) => [
       ...messages,
       createAdvisorMessage("user", normalized),
-      createAdvisorMessage("assistant", buildLocalAdvisorReply(normalized, advisorPacket, snapshot, manualReplayStatus, marketScorecardStatus, profileOptimizationStatus))
+      createAdvisorMessage("assistant", buildLocalAdvisorReply(normalized, advisorPacket, currentRead, snapshot, manualReplayStatus, marketScorecardStatus, profileOptimizationStatus))
     ]);
     setChatInput("");
   };
@@ -426,8 +430,11 @@ export function ResearchAdvisorView() {
         </div>
       </section>
 
+      <CurrentReadPanel currentRead={currentRead} packetError={advisorPacketError} />
+
       <section data-testid="research-advisor-chat-workspace" className="grid items-start gap-4 xl:grid-cols-[minmax(220px,0.62fr)_minmax(420px,1.35fr)_minmax(240px,0.72fr)]">
         <ResearchAdvisorChatCard
+          currentRead={currentRead}
           packet={advisorPacket}
           packetError={advisorPacketError}
           snapshot={snapshot}
@@ -455,8 +462,8 @@ export function ResearchAdvisorView() {
           <CompactContextCard
             title="Current Bias"
             rows={[
-              ["Bias", formatToken(advisorPacket?.compactSummary.compositeBias)],
-              ["HTF aligned", advisorPacket ? (Object.values(advisorPacket.recommendedSignal.bias.htf).includes(advisorPacket.compactSummary.compositeBias) ? "yes" : "mixed") : "pending"],
+              ["Bias", formatToken(currentRead.bias)],
+              ["HTF aligned", currentRead.htfTimeframes.length ? "available" : "missing"],
               ["Regime", formatToken(snapshot.regime.label)],
               ["Readiness", snapshot.readiness.readinessState]
             ]}
@@ -477,6 +484,13 @@ export function ResearchAdvisorView() {
           <summary className="cursor-pointer text-sm font-semibold text-slate-100">ICT Strategy Suite details</summary>
           <div className="mt-4">
             <IctAdvisorSummaryPanel snapshot={snapshot} packetOverride={advisorPacket} />
+          </div>
+        </details>
+
+        <details data-testid="ict-current-read-data-flow" className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-100">Current Read Data Flow</summary>
+          <div className="mt-4">
+            <CurrentReadDataFlowPanel currentRead={currentRead} />
           </div>
         </details>
 
@@ -554,7 +568,100 @@ export function ResearchAdvisorView() {
   );
 }
 
+function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurrentRead; packetError?: string }) {
+  const dataVariant =
+    currentRead.dataStatus === "ready"
+      ? "success"
+      : currentRead.dataStatus === "missing" || currentRead.dataStatus === "stale"
+        ? "warning"
+        : "danger";
+  const statusText =
+    currentRead.approvedStatus === "approved_research_candidate"
+      ? "Approved research candidate"
+      : currentRead.approvedStatus === "watchlist_candidate"
+        ? "Watchlist"
+        : currentRead.approvedStatus === "rejected_candidate"
+          ? "Rejected"
+          : "No Trade";
+
+  return (
+    <section data-testid="ict-current-read-panel" className="rounded-[24px] border border-cyan-300/15 bg-[radial-gradient(circle_at_16%_0%,rgba(34,211,238,0.13),transparent_36%),linear-gradient(135deg,rgba(15,23,42,0.92),rgba(2,6,23,0.94))] p-5 shadow-[0_0_55px_rgba(8,145,178,0.08)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">Current Read</p>
+          <h2 className="mt-1 text-xl font-semibold text-slate-50">{statusText}</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+            Live advisor summary from the active canonical source. Replay and scorecard results remain separate unless explicitly run.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant={dataVariant}>{formatToken(currentRead.packetSource)}</Badge>
+          <Badge variant={approvalVariant(currentRead.approvedStatus)}>{formatToken(currentRead.approvedStatus)}</Badge>
+          <Badge variant="danger">authority none</Badge>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <AdvisorReadout label="Source" value={`${currentRead.brokerSymbol} -> ${currentRead.requestedSymbol}`} detail={`${currentRead.primaryTimeframe} / ${currentRead.candleCount?.toLocaleString() ?? 0} candles`} />
+        <AdvisorReadout label="Phase 1" value={formatToken(currentRead.bestPhase1Setup)} detail={`${currentRead.debug.phase1SignalCount} signals evaluated`} />
+        <AdvisorReadout label="Phase 2" value={formatToken(currentRead.bestPhase2Setup)} detail={`${currentRead.debug.phase2SignalCount} signals evaluated`} />
+        <AdvisorReadout label="Best setup" value={formatToken(currentRead.bestSetup)} detail={`${formatToken(currentRead.side)} / ${pct(currentRead.confidence)}`} />
+        <AdvisorReadout label="Bias" value={formatToken(currentRead.bias)} detail={`HTF ${currentRead.htfTimeframes.length ? currentRead.htfTimeframes.join(", ") : "missing"}`} />
+        <AdvisorReadout label="SMT" value={formatToken(currentRead.smtStatus)} />
+        <AdvisorReadout label="Risk" value={formatToken(currentRead.riskStatus)} />
+        <AdvisorReadout label="RR / location" value={rr(currentRead.rrEstimate)} detail={formatToken(currentRead.dealingRangeLocation)} />
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.55fr)]">
+        <AdvisorList label="Why this state" values={packetError ? [packetError, ...currentRead.topReasons] : currentRead.topReasons} empty="No blockers reported." />
+        <AdvisorReadout label="Next action" value={currentRead.nextAction} detail="Research-only; does not promote readiness." />
+      </div>
+    </section>
+  );
+}
+
+function CurrentReadDataFlowPanel({ currentRead }: { currentRead: IctCurrentRead }) {
+  const rows = [
+    ["Packet source", currentRead.debug.packetSource],
+    ["Data status", currentRead.dataStatus],
+    ["Candle count", currentRead.debug.candleCount.toLocaleString()],
+    ["Primary TF available", currentRead.debug.primaryTimeframeAvailable ? "yes" : "no"],
+    ["HTF available", currentRead.debug.htfTimeframesAvailable.join(", ") || "none"],
+    ["Phase 1 signal count", currentRead.debug.phase1SignalCount.toLocaleString()],
+    ["Phase 2 signal count", currentRead.debug.phase2SignalCount.toLocaleString()],
+    ["Approved status", currentRead.debug.approvedStatus],
+    ["Rejection reasons", currentRead.debug.rejectionReasonsCount.toLocaleString()],
+    ["No-trade reasons", currentRead.debug.noTradeReasonsCount.toLocaleString()],
+    ["Journal", currentRead.debug.journalStatus ?? "pending"],
+    ["Last evaluation", formatDate(currentRead.debug.lastEvaluationAt)]
+  ];
+
+  return (
+    <section className="rounded-xl border border-white/10 bg-black/20 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Debug</p>
+          <h3 className="mt-1 text-base font-semibold text-slate-100">Current advisor data flow</h3>
+          <p className="mt-1 text-sm leading-6 text-slate-400">
+            Compact fields only. Raw candles, snapshots, secrets, account data, orders, and positions are excluded.
+          </p>
+        </div>
+        <Badge variant="danger">authority none</Badge>
+      </div>
+      <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        {rows.map(([label, value]) => (
+          <AdvisorReadout key={label} label={label} value={formatToken(value)} />
+        ))}
+      </div>
+      <div className="mt-4 grid gap-2 md:grid-cols-3">
+        <AdvisorReadout label="Raw candles" value={currentRead.safety.rawCandlesExcluded ? "excluded" : "included"} />
+        <AdvisorReadout label="Raw snapshots" value={currentRead.safety.rawSnapshotsExcluded ? "excluded" : "included"} />
+        <AdvisorReadout label="Authority" value={`${currentRead.authority.executionAuthority}/${currentRead.authority.brokerAuthority}/${currentRead.authority.readinessOverrideAuthority}`} />
+      </div>
+    </section>
+  );
+}
+
 function ResearchAdvisorChatCard({
+  currentRead,
   inputValue,
   manualReplayStatus,
   marketScorecardStatus,
@@ -567,6 +674,7 @@ function ResearchAdvisorChatCard({
   profileOptimizationStatus,
   snapshot
 }: {
+  currentRead: IctCurrentRead;
   inputValue: string;
   manualReplayStatus: IctManualReplayReviewStatus;
   marketScorecardStatus: MarketScorecardRunStatus;
@@ -591,6 +699,7 @@ function ResearchAdvisorChatCard({
   const readSummary =
     packet?.recommendedSignal.summary ??
     packetError ??
+    currentRead.topReasons[0] ??
     "Current setup summary is shown in the cards below. Advisor packet is still hydrating.";
 
   return (
@@ -615,7 +724,7 @@ function ResearchAdvisorChatCard({
           {(packet?.htfTimeframes.length ? packet.htfTimeframes : ["HTF missing"]).map((timeframe) => (
             <Badge key={timeframe} variant="secondary">{timeframe}</Badge>
           ))}
-          <Badge variant={approvalVariant(packet?.approvedProfileDecision.status)}>{approvalLabel(packet?.approvedProfileDecision.status)}</Badge>
+          <Badge variant={approvalVariant(currentRead.approvedStatus)}>{approvalLabel(currentRead.approvedStatus)}</Badge>
           <Badge variant={riskVariant(packet)}>{riskLabel(packet)}</Badge>
         </div>
       </div>

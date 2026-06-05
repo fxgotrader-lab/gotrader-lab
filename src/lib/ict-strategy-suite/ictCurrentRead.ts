@@ -1,0 +1,234 @@
+import type { ResearchRuntimeSnapshot } from "../runtime";
+import { buildIctAdvisorPacketFromRuntime } from "./ictAdvisorEngine";
+import type { IctAdvisorPacket, IctAdvisorSignal } from "./ictAdvisorTypes";
+import type {
+  IctCurrentRead,
+  IctCurrentReadDataStatus,
+  IctCurrentReadPacketSource
+} from "./ictCurrentReadTypes";
+
+const authority = {
+  executionAuthority: "none" as const,
+  brokerAuthority: "none" as const,
+  readinessOverrideAuthority: "none" as const
+};
+
+const safety = {
+  rawCandlesExcluded: true as const,
+  rawSnapshotsExcluded: true as const,
+  accountDataExcluded: true as const,
+  orderDataExcluded: true as const,
+  positionDataExcluded: true as const,
+  secretsExcluded: true as const
+};
+
+const statusWeight = (status?: string) =>
+  status === "approved_research_candidate"
+    ? 4
+    : status === "watchlist_candidate"
+      ? 3
+      : status === "rejected_candidate"
+        ? 2
+        : status === "no_trade"
+          ? 1
+          : 0;
+
+const bestSignalFrom = (signals: IctAdvisorSignal[]) =>
+  signals
+    .slice()
+    .sort((left, right) => {
+      const leftDirectional = left.side === "long" || left.side === "short" ? 1 : 0;
+      const rightDirectional = right.side === "long" || right.side === "short" ? 1 : 0;
+      return (
+        statusWeight(right.approvedProfileDecision?.status) -
+          statusWeight(left.approvedProfileDecision?.status) ||
+        rightDirectional - leftDirectional ||
+        right.confidence - left.confidence ||
+        (right.rrEstimate ?? 0) - (left.rrEstimate ?? 0)
+      );
+    })[0];
+
+const packetSourceFor = (packet?: IctAdvisorPacket): IctCurrentReadPacketSource => {
+  if (!packet) return "unavailable";
+  if (packet.activeSource.provider === "mt5_read_only") return "live_mt5";
+  if (packet.activeSource.provider === "replay") return "manual_replay";
+  if (packet.activeSource.provider === "mock") return "default";
+  return packet.activeSource.candleCount > 0 ? "default" : "unavailable";
+};
+
+const dataStatusFor = (packet?: IctAdvisorPacket): IctCurrentReadDataStatus => {
+  if (!packet) return "unavailable";
+  if (!packet.activeSource.candleCount) return "missing";
+  if (!packet.activeSource.sourceFingerprint) return "stale";
+  return "ready";
+};
+
+const liquidityLabel = (value?: { type: string; price: number }) =>
+  value ? `${value.type} @ ${value.price}` : undefined;
+
+const entryZoneLabel = (entryZone?: IctAdvisorSignal["entryZone"]) =>
+  entryZone ? `${entryZone.low}-${entryZone.high}` : undefined;
+
+const fvgStatusFor = (signal?: IctAdvisorSignal) => {
+  if (!signal) return undefined;
+  if (!signal.fairValueGap) return "missing";
+  return signal.fairValueGap.mitigated ? "mitigated" : `${signal.fairValueGap.direction}_present`;
+};
+
+const displacementStatusFor = (signal?: IctAdvisorSignal) => {
+  if (!signal) return undefined;
+  if (!signal.displacement) return "missing";
+  return signal.displacement.createdFvg
+    ? `${signal.displacement.direction}_with_fvg`
+    : `${signal.displacement.direction}_without_fvg`;
+};
+
+const htfStatusFor = (packet: IctAdvisorPacket) => {
+  const expected = new Set(["15m", "1h", ...packet.htfTimeframes]);
+  return Object.fromEntries(
+    [...expected].map((timeframe) => [
+      timeframe,
+      packet.htfTimeframes.includes(timeframe) ? "ready" : "missing"
+    ])
+  ) as IctCurrentRead["htfStatus"];
+};
+
+const uniqueReasons = (values: Array<string | undefined>) =>
+  Array.from(new Set(values.filter((value): value is string => Boolean(value?.trim())))).slice(0, 6);
+
+const nextActionFor = (packet: IctAdvisorPacket, reasons: string[]) => {
+  const status = packet.approvedProfileDecision.status;
+  if (!packet.activeSource.candleCount) return "Check MT5 Read Only or activate a canonical research source.";
+  if (!packet.htfTimeframes.length) return "Fetch 15m and 1h MT5 context before trusting the current read.";
+  if (status === "approved_research_candidate") return "Run replay and walk-forward before any readiness review.";
+  if (status === "watchlist_candidate") return "Keep on watchlist and test the blocking evidence with replay.";
+  if (reasons.some((reason) => /rr|target/i.test(reason))) return "Wait for a cleaner target and RR profile.";
+  if (reasons.some((reason) => /fvg|displacement/i.test(reason))) return "Wait for displacement/FVG evidence before retesting.";
+  if (reasons.some((reason) => /smt|relative strength/i.test(reason))) return "Fetch or compare correlated index context for SMT confirmation.";
+  if (reasons.some((reason) => /news|session/i.test(reason))) return "Wait until news/session risk clears.";
+  return "Continue observation; current setup is not an approved research candidate.";
+};
+
+export const buildUnavailableIctCurrentRead = (reason = "Active ICT advisor packet is unavailable."): IctCurrentRead => ({
+  researchOnly: true,
+  packetSource: "unavailable",
+  requestedSymbol: "MNQ",
+  brokerSymbol: "USTECH",
+  primaryTimeframe: "5m",
+  htfTimeframes: [],
+  dataStatus: "unavailable",
+  side: "flat",
+  approvedStatus: "no_trade",
+  topReasons: [reason],
+  nextAction: "Activate MT5 Research Mode or check the canonical research source.",
+  debug: {
+    candleCount: 0,
+    primaryTimeframeAvailable: false,
+    htfTimeframesAvailable: [],
+    phase1SignalCount: 0,
+    phase2SignalCount: 0,
+    approvedStatus: "no_trade",
+    rejectionReasonsCount: 0,
+    noTradeReasonsCount: 1,
+    lastEvaluationAt: new Date().toISOString(),
+    packetSource: "unavailable"
+  },
+  authority,
+  safety
+});
+
+export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket): IctCurrentRead => {
+  if (!packet) return buildUnavailableIctCurrentRead();
+  const phase1Signals = packet.signals.filter((signal) => signal.phase === "phase_1");
+  const phase2Signals = packet.signals.filter((signal) => signal.phase === "phase_2");
+  const bestPhase1 = bestSignalFrom(phase1Signals);
+  const bestPhase2 = bestSignalFrom(phase2Signals);
+  const recommended = packet.recommendedSignal;
+  const reasons = uniqueReasons([
+    packet.activeSource.candleCount <= 0 ? "Missing candle data from active canonical research source." : undefined,
+    packet.htfTimeframes.length === 0 ? "Missing higher-timeframe context for the current advisor read." : undefined,
+    ...packet.approvedProfileDecision.rejectionReasons,
+    ...packet.approvedProfileDecision.watchlistReasons,
+    ...recommended.noTradeReasons,
+    ...(recommended.newsSessionRisk?.newsSessionRiskNotes ?? []),
+    recommended.smt?.reason
+  ]);
+  const packetSource = packetSourceFor(packet);
+  const dataStatus = dataStatusFor(packet);
+
+  return {
+    researchOnly: true,
+    packetSource,
+    requestedSymbol: packet.requestedSymbol,
+    brokerSymbol: packet.brokerSymbol,
+    primaryTimeframe: packet.primaryTimeframe,
+    htfTimeframes: packet.htfTimeframes,
+    dataStatus,
+    candleCount: packet.activeSource.candleCount,
+    htfStatus: htfStatusFor(packet),
+    bestPhase1Setup: bestPhase1?.setup,
+    bestPhase2Setup: bestPhase2?.setup,
+    bestSetup: recommended.setup,
+    side: recommended.side,
+    approvedStatus: packet.approvedProfileDecision.status,
+    confidence: recommended.confidence,
+    rrEstimate: recommended.rrEstimate,
+    target: recommended.target,
+    invalidation: recommended.invalidation,
+    bias: recommended.bias.composite,
+    smtStatus: recommended.smt
+      ? recommended.smt.rejectsCandidate
+        ? "rejects_candidate"
+        : recommended.smt.confirmsCandidate
+          ? "confirms_candidate"
+          : recommended.smt.divergenceType
+      : "not_available",
+    riskStatus: recommended.newsSessionRisk?.riskGovernorAction ?? "not_available",
+    dealingRangeLocation: recommended.dealingRange?.currentLocation,
+    drawOnLiquidity: liquidityLabel(recommended.drawOnLiquidity),
+    liquiditySwept: liquidityLabel(recommended.liquiditySwept),
+    fvgStatus: fvgStatusFor(recommended),
+    displacementStatus: displacementStatusFor(recommended),
+    entryZone: entryZoneLabel(recommended.entryZone),
+    topReasons: reasons.length
+      ? reasons
+      : recommended.decision === "research_only"
+        ? ["Research candidate generated; validation is still required before any readiness review."]
+        : ["No explicit blocker was provided by the compact advisor packet."],
+    nextAction: nextActionFor(packet, reasons),
+    debug: {
+      candleCount: packet.activeSource.candleCount,
+      primaryTimeframeAvailable: packet.activeSource.candleCount > 0,
+      htfTimeframesAvailable: packet.htfTimeframes,
+      phase1SignalCount: phase1Signals.length,
+      phase2SignalCount: phase2Signals.length,
+      approvedStatus: packet.approvedProfileDecision.status,
+      rejectionReasonsCount: packet.approvedProfileDecision.rejectionReasons.length,
+      noTradeReasonsCount: recommended.noTradeReasons.length,
+      lastEvaluationAt: packet.generatedAt,
+      packetSource,
+      sourceFingerprint: packet.activeSource.sourceFingerprint,
+      journalStatus: packet.journalStatus
+    },
+    authority,
+    safety
+  };
+};
+
+export const buildIctCurrentReadFromRuntime = async (snapshot: ResearchRuntimeSnapshot) =>
+  buildIctCurrentReadFromPacket(await buildIctAdvisorPacketFromRuntime(snapshot));
+
+export const assertIctCurrentReadIsCompact = (read: IctCurrentRead) => {
+  const serialized = JSON.stringify(read);
+  return {
+    ok:
+      read.researchOnly === true &&
+      read.authority.executionAuthority === "none" &&
+      read.authority.brokerAuthority === "none" &&
+      read.authority.readinessOverrideAuthority === "none" &&
+      read.safety.rawCandlesExcluded === true &&
+      !/"candles"\s*:/i.test(serialized) &&
+      !/"account(Data|Number)?"\s*:|"position(Data|s|Id)?"\s*:|"order(Data|s|Id)?"\s*:|"rawSnapshot"\s*:|"snapshot"\s*:|"password"\s*:|"secret"\s*:|"api[_-]?key"\s*:/i.test(serialized),
+    serializedBytes: new Blob([serialized]).size
+  };
+};

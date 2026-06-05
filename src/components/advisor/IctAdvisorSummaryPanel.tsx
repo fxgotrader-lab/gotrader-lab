@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   buildIctAdvisorPacketFromRuntime,
+  buildIctCurrentReadFromPacket,
   buildIctReplayValidationFromRuntime,
   formatIctAdvisorSignalSummary,
   summarizeNewsSessionRisk,
@@ -133,6 +134,7 @@ export function IctAdvisorSummaryPanel({
   }, [mode, snapshot?.snapshotId, snapshot?.marketData.activeResearchSource.sourceId, snapshot?.marketData.activeResearchSource.fingerprint, snapshot?.mt5ReadOnly.higherTimeframeSources?.map((source) => source.fingerprint).join("|")]);
 
   const recommended = packet?.recommendedSignal;
+  const currentRead = useMemo(() => buildIctCurrentReadFromPacket(packet), [packet]);
   const phaseOneSignals = useMemo(() => (packet?.signals ?? []).filter((signal) => signal.phase === "phase_1"), [packet?.signals]);
   const phaseTwoSignals = useMemo(() => (packet?.signals ?? []).filter((signal) => signal.phase === "phase_2"), [packet?.signals]);
   const topPhaseTwo = phaseTwoSignals
@@ -163,18 +165,20 @@ export function IctAdvisorSummaryPanel({
         {packet ? (
           <>
             <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              <AdvisorMini label="Composite bias" value={formatToken(packet.compactSummary.compositeBias)} />
-              <AdvisorMini label="Active setup" value={formatToken(packet.compactSummary.setup)} detail={formatToken(topPhaseTwo?.setup)} />
-              <AdvisorMini label="Draw-on-liquidity" value={packet.compactSummary.drawOnLiquidity ?? "none"} />
-              <AdvisorMini label="Decision" value={formatToken(packet.compactSummary.decision)} />
-              <AdvisorMini label="Confidence" value={pct(packet.compactSummary.confidence)} />
+              <AdvisorMini label="Packet source" value={formatToken(currentRead.packetSource)} detail={`${currentRead.candleCount?.toLocaleString() ?? 0} candles`} />
+              <AdvisorMini label="Composite bias" value={formatToken(currentRead.bias)} />
+              <AdvisorMini label="Active setup" value={formatToken(currentRead.bestSetup)} detail={`Phase 2 ${formatToken(topPhaseTwo?.setup ?? currentRead.bestPhase2Setup)}`} />
+              <AdvisorMini label="Decision" value={formatToken(currentRead.approvedStatus)} detail={formatToken(currentRead.dataStatus)} />
+              <AdvisorMini label="Confidence" value={pct(currentRead.confidence)} />
+              <AdvisorMini label="Phase 1 / Phase 2" value={`${currentRead.debug.phase1SignalCount}/${currentRead.debug.phase2SignalCount}`} detail="signals evaluated" />
+              <AdvisorMini label="SMT / Risk" value={`${formatToken(currentRead.smtStatus)} / ${formatToken(currentRead.riskStatus)}`} />
               <AdvisorMini label="Target" value={compactPrice(recommended?.target)} />
               <AdvisorMini label="Invalidation" value={compactPrice(recommended?.invalidation)} />
               <AdvisorMini label="RR estimate" value={typeof recommended?.rrEstimate === "number" ? `${recommended.rrEstimate.toFixed(2)}R` : "n/a"} />
             </div>
             <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3">
               <p className="line-clamp-2 text-xs leading-5 text-slate-300">
-                {recommended?.summary ?? "ICT advisor summary pending."} Approval score {packet.compactSummary.approvalScore}/100.
+                {currentRead.topReasons[0] ?? recommended?.summary ?? "ICT advisor summary pending."} Next: {currentRead.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
               </p>
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">

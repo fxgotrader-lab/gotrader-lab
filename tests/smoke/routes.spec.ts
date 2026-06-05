@@ -148,6 +148,10 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.locator("main")).toContainText(/MT5 Read Only/i);
     await expect(page.locator("main")).toContainText(/Research Only/i);
     await expect(page.locator("main")).toContainText(/Authority: None/i);
+    await expect(page.getByTestId("ict-current-read-panel")).toContainText(/Current Read/i);
+    await expect(page.getByTestId("ict-current-read-panel")).toContainText(/Phase 1/i);
+    await expect(page.getByTestId("ict-current-read-panel")).toContainText(/Phase 2/i);
+    await expect(page.getByTestId("ict-current-read-panel")).toContainText(/Next action/i);
     await expect(page.getByTestId("research-advisor-chat-card")).toBeVisible();
     await expect(page.getByTestId("research-advisor-chat-input")).toBeVisible();
     await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Explain Current Setup/i);
@@ -171,6 +175,7 @@ test.describe("GoTrader browser route smoke", () => {
     });
     expect(chatAppearsBeforeManualPanels).toBe(true);
     await expect(page.locator("main")).toContainText(/ICT Strategy Suite|ICT Advisor is waiting/i);
+    await expect(page.getByTestId("ict-current-read-data-flow")).toContainText(/Current Read Data Flow/i);
     await expect(page.locator("main")).toContainText(/raw candles|Raw candles/i);
     await expect(page.locator("main")).not.toContainText(/\"candles\"\\s*:/i);
     await expect(page.locator("main")).not.toContainText(/accountNumber|orderId|positionId/i);
@@ -189,6 +194,8 @@ test.describe("GoTrader browser route smoke", () => {
 
     await gotoRoute(page, "/dashboard");
     await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Research Advisor/i);
+    await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Packet source/i);
+    await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Phase 1 \/ Phase 2/i);
     await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Open Advisor/i);
   });
 
