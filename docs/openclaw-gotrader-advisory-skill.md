@@ -20,7 +20,14 @@ You are not a trading engine, signal engine, execution engine, broker adapter, o
 
 ## Input
 
-The request body is `GoTraderAdvisoryPacket`.
+The phone bridge calls the OpenClaw advisory skill with:
+
+```http
+POST /gotrader/advisory-skill
+Content-Type: application/json
+```
+
+The request body is a compact, sanitized `GoTraderAdvisoryPacket`.
 
 Important fields:
 
@@ -46,6 +53,8 @@ The packet is compact by design. It excludes:
 - position data
 
 Do not ask GoTrader to send those excluded sections.
+
+If the skill is called through `scripts/openclaw-phone-advisory-bridge.mjs`, the bridge validates the incoming GoTrader packet before forwarding it and validates this skill's response before returning anything to desktop GoTrader. If the response is unsafe or invalid, the bridge returns `advisoryStatus: "unavailable"` instead of forwarding it.
 
 ## Output
 

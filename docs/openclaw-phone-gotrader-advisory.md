@@ -76,7 +76,17 @@ OPENCLAW_PHONE_BRIDGE_HOST=0.0.0.0
 OPENCLAW_PHONE_BRIDGE_PORT=8797
 ```
 
-See `docs/openclaw-phone-bridge-runbook.md` for copy, install, token, local test, and desktop test steps.
+Optional OpenClaw skill routing:
+
+```bash
+export OPENCLAW_AGENT_ENDPOINT="http://127.0.0.1:8897/gotrader/advisory-skill"
+export OPENCLAW_AGENT_TIMEOUT_MS=15000
+node openclaw-phone-advisory-bridge.mjs
+```
+
+If `OPENCLAW_AGENT_ENDPOINT` is not set, the bridge returns the safe stub response. If it is set but unreachable or unsafe, the bridge returns a safe unavailable response instead of proxying the failure to GoTrader.
+
+See `docs/openclaw-phone-bridge-runbook.md` for copy, install, token, local test, routing, and desktop test steps.
 
 If the phone setup uses Hermes/Telegram for routing, start Hermes after OpenClaw is available. Hermes may notify or route review text, but GoTrader should still call only the GoTrader advisory endpoint for structured responses.
 
@@ -175,6 +185,36 @@ Optional proposal intent:
 ```
 
 `autoApplyAllowed` must remain `false`.
+
+## Phone Bridge Downstream Skill Contract
+
+When `OPENCLAW_AGENT_ENDPOINT` is set, the phone bridge sends a compact sanitized packet to the configured phone-local OpenClaw advisory skill endpoint. The downstream skill should expose:
+
+```http
+POST /gotrader/advisory-skill
+```
+
+The downstream skill receives only compact research context. It must not expect raw candles, MT5 credentials, screenshots, account state, order state, position state, or secrets.
+
+If the downstream skill is offline, times out, returns non-JSON, returns unsafe authority, or includes structural execution/account/order/position fields, the phone bridge returns:
+
+```json
+{
+  "advisoryStatus": "unavailable",
+  "summary": "Phone OpenClaw bridge could not complete live OpenClaw skill routing...",
+  "authority": {
+    "executionAuthority": "none",
+    "brokerAuthority": "none",
+    "readinessOverrideAuthority": "none"
+  }
+}
+```
+
+The bridge test command verifies stub, invalid-endpoint, and valid mock-skill behavior:
+
+```powershell
+npm.cmd run test:openclaw-phone-bridge
+```
 
 ## Safety Boundary
 

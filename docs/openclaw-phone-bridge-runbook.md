@@ -1,6 +1,6 @@
 # OpenClaw Phone Advisory Bridge Runbook
 
-This runbook starts the runnable GoTrader/OpenClaw phone advisory bridge in Termux/Ubuntu on Android. The bridge is an immediate safe stub. It returns valid `OpenClawAdvisoryResponse` JSON now and can later be wired into OpenClaw/Hermes internals through `OPENCLAW_AGENT_ENDPOINT`.
+This runbook starts the runnable GoTrader/OpenClaw phone advisory bridge in Termux/Ubuntu on Android. The bridge returns valid `OpenClawAdvisoryResponse` JSON as a safe stub when no OpenClaw skill endpoint is configured. When `OPENCLAW_AGENT_ENDPOINT` is set, it forwards a compact, sanitized GoTrader advisory packet to that local OpenClaw skill endpoint and validates the response before returning it to desktop GoTrader.
 
 The bridge is advisory-only. It never calls MT5, brokers, accounts, orders, positions, live trading controls, or readiness override paths.
 
@@ -57,7 +57,8 @@ Optional overrides:
 export OPENCLAW_PHONE_BRIDGE_HOST=0.0.0.0
 export OPENCLAW_PHONE_BRIDGE_PORT=8797
 export OPENCLAW_PHONE_BRIDGE_TOKEN="local-token-if-wanted"
-export OPENCLAW_AGENT_ENDPOINT=""
+export OPENCLAW_AGENT_ENDPOINT="http://127.0.0.1:8897/gotrader/advisory-skill"
+export OPENCLAW_AGENT_TIMEOUT_MS=15000
 node openclaw-phone-advisory-bridge.mjs
 ```
 
@@ -90,7 +91,7 @@ Expected fields:
 }
 ```
 
-`advisoryStatus` is `stub` until future OpenClaw/Hermes routing is connected.
+`advisoryStatus` is `stub` when no `OPENCLAW_AGENT_ENDPOINT` is configured. It is `connected` when a downstream OpenClaw advisory skill endpoint is configured, though individual advisory calls still fall back safely if that endpoint is unreachable or returns an invalid response.
 
 ## Find The Phone IP
 
@@ -205,14 +206,50 @@ The bridge does not:
 - bypass GoTrader gates
 - expose secrets
 
-## Future OpenClaw/Hermes Routing
+## OpenClaw Skill Routing
 
-`OPENCLAW_AGENT_ENDPOINT` is reserved for later. When connected, the bridge should still:
+Set `OPENCLAW_AGENT_ENDPOINT` only to a local OpenClaw/Hermes advisory skill endpoint running on the phone or inside the phone's Termux/Ubuntu environment. The phone bridge forwards only a compact packet with source, cycle, source-context, layer-contribution, safety, and user-question fields. It does not forward candle arrays, raw runtime snapshots, screenshots, secrets, MT5 credentials, account data, order data, or position data.
 
-- validate GoTrader packet authority first
-- send compact advisory context only
-- reject unsafe downstream responses
-- preserve `autoApplyAllowed: false`
-- preserve authority none
+Expected skill endpoint:
 
-Until that is implemented, the bridge returns a safe stub advisory with top blockers derived from the GoTrader packet.
+```http
+POST /gotrader/advisory-skill
+Content-Type: application/json
+```
+
+Expected skill response:
+
+```json
+{
+  "advisoryStatus": "complete",
+  "summary": "Advisory-only research review.",
+  "topBlockers": [],
+  "nextActions": [],
+  "calibrationRecommendations": [],
+  "riskNotes": [],
+  "questions": [],
+  "authority": {
+    "executionAuthority": "none",
+    "brokerAuthority": "none",
+    "readinessOverrideAuthority": "none"
+  }
+}
+```
+
+The response can also be wrapped as `{ "response": { ... } }`.
+
+The bridge validates every downstream response. If the skill is offline, times out, returns non-JSON, returns an invalid shape, returns unsafe authority, or includes structural execution/account/order/position fields, the bridge returns a safe `advisoryStatus: "unavailable"` response instead of proxying the bad response.
+
+Run the local routing test from desktop:
+
+```powershell
+npm.cmd run test:openclaw-phone-bridge
+```
+
+That test verifies:
+
+- no `OPENCLAW_AGENT_ENDPOINT` returns the safe stub
+- fake/invalid endpoint returns safe unavailable
+- valid mock endpoint returns a normalized advisory response
+- authority remains none
+- no MT5, secrets, or candle arrays are sent
