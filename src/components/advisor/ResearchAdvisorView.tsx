@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MessageSquareText, ShieldCheck } from "lucide-react";
 
+import { IctAdvisorSummaryPanel } from "@/components/advisor/IctAdvisorSummaryPanel";
 import { LLMAdvisoryReviewPanel } from "@/components/dashboard/LLMAdvisoryReviewPanel";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -106,6 +107,8 @@ export function ResearchAdvisorView() {
           MT5 read-only market data is CFD/proxy or broker market data for research context only. It is not CME futures broker truth and cannot place, modify, or route orders.
         </div>
       </section>
+
+      <IctAdvisorSummaryPanel snapshot={snapshot} />
 
       <LLMAdvisoryReviewPanel snapshot={snapshot} />
 

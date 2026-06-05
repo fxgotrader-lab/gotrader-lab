@@ -22,6 +22,8 @@
     "mt5:readonly-diagnose": "node scripts/diagnose-mt5-readonly-bridge.mjs",
     "diagnose:mt5-python": "python scripts/diagnose-mt5-python-connection.py",
     "build": "tsc -b && vite build",
+    "test": "node scripts/test-ict-strategy-suite.mjs",
+    "test:ict-strategy-suite": "node scripts/test-ict-strategy-suite.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "smoke:http": "node scripts/smoke-routes.mjs",
     "smoke:browser": "node scripts/run-playwright-smoke.mjs",

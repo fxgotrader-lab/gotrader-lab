@@ -2,6 +2,7 @@ import { Component, useEffect, useMemo, useRef, useState, type ErrorInfo, type R
 import { Link } from "react-router-dom";
 import { Activity, ExternalLink, Lock, RadioTower, ShieldCheck, Zap } from "lucide-react";
 
+import { IctAdvisorSummaryPanel } from "@/components/advisor/IctAdvisorSummaryPanel";
 import { clearReplaySnapshotSourceMeta, loadReplaySnapshotSourceMeta } from "@/lib/backtesting";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import {
@@ -1929,6 +1930,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
             />
           </div>
         </div>
+        <IctAdvisorSummaryPanel mode="compact" snapshot={runtimeSnapshot} />
         <LLMAdvisoryReviewPanel mode="compact" snapshot={runtimeSnapshot} onAdvisoryEvent={addDataConnectionEvent} />
         </div>
 
