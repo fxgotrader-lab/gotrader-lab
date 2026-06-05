@@ -21,3 +21,5 @@ export * from "./ictNewsSessionRiskTypes";
 export * from "./ictNewsSessionRisk";
 export * from "./ictRealReplayRunnerTypes";
 export * from "./ictRealReplayRunner";
+export * from "./ictManualReplayReviewTypes";
+export * from "./ictManualReplayReview";

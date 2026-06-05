@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { MessageSquareText, ShieldCheck } from "lucide-react";
+import { BarChart3, MessageSquareText, PlayCircle, ShieldCheck } from "lucide-react";
 
 import { IctAdvisorSummaryPanel } from "@/components/advisor/IctAdvisorSummaryPanel";
 import { LLMAdvisoryReviewPanel } from "@/components/dashboard/LLMAdvisoryReviewPanel";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  runManualIctReplayReview,
+  type IctManualReplayReviewRequest,
+  type IctManualReplayReviewResult,
+  type IctManualReplayReviewStatus
+} from "@/lib/ict-strategy-suite";
 import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
   MARKET_DATA_IMPORT_UPDATED_EVENT
@@ -18,9 +25,14 @@ import { WALK_FORWARD_UPDATED_EVENT } from "@/lib/walkForward";
 
 const formatDate = (value?: string) => (value ? new Date(value).toLocaleString() : "n/a");
 const formatToken = (value?: string) => (value ?? "pending").replace(/_/g, " ");
+const pct = (value?: number) => (typeof value === "number" ? `${Math.round(value * 100)}%` : "n/a");
+const rr = (value?: number) => (typeof value === "number" ? `${value.toFixed(2)}R` : "n/a");
 
 export function ResearchAdvisorView() {
   const [snapshot, setSnapshot] = useState<ResearchRuntimeSnapshot>();
+  const [manualReplayStatus, setManualReplayStatus] = useState<IctManualReplayReviewStatus>("idle");
+  const [manualReplayResult, setManualReplayResult] = useState<IctManualReplayReviewResult>();
+  const [manualReplayError, setManualReplayError] = useState<string>();
 
   useEffect(() => {
     let mounted = true;
@@ -50,6 +62,12 @@ export function ResearchAdvisorView() {
     };
   }, []);
 
+  useEffect(() => {
+    setManualReplayStatus("idle");
+    setManualReplayResult(undefined);
+    setManualReplayError(undefined);
+  }, [snapshot?.marketData.activeResearchSource.fingerprint]);
+
   const htfSummary = useMemo(
     () =>
       snapshot?.mt5ReadOnly.higherTimeframeSources?.length
@@ -57,6 +75,21 @@ export function ResearchAdvisorView() {
         : "missing/not fetched",
     [snapshot?.mt5ReadOnly.higherTimeframeSources]
   );
+
+  const manualReplayRequest = useMemo<IctManualReplayReviewRequest>(() => {
+    const primaryTimeframe = snapshot?.marketData.timeframe ?? "5m";
+    const htfTimeframes = snapshot?.mt5ReadOnly.higherTimeframeSources
+      ?.map((source) => source.timeframe)
+      .filter((timeframe) => timeframe !== primaryTimeframe);
+    return {
+      requestedSymbol: snapshot?.marketData.symbol ?? "MNQ",
+      primaryTimeframe,
+      htfTimeframes: htfTimeframes?.length ? htfTimeframes : ["15m", "1h"],
+      candleLimit: 1000,
+      replayWindowSize: 80,
+      lookaheadCandles: 12
+    };
+  }, [snapshot?.marketData.symbol, snapshot?.marketData.timeframe, snapshot?.mt5ReadOnly.higherTimeframeSources]);
 
   if (!snapshot) {
     return (
@@ -72,6 +105,21 @@ export function ResearchAdvisorView() {
 
   const activeSource = snapshot.marketData.activeResearchSource;
   const brokerSymbol = snapshot.mt5ReadOnly.brokerSymbol ?? activeSource.provenance.providerSymbol ?? "n/a";
+  const runManualReplayReview = async () => {
+    if (manualReplayStatus === "running") return;
+    setManualReplayStatus("running");
+    setManualReplayError(undefined);
+    try {
+      const result = await runManualIctReplayReview(manualReplayRequest);
+      setManualReplayResult(result);
+      setManualReplayStatus(result.status);
+      setManualReplayError(undefined);
+    } catch (error) {
+      setManualReplayResult(undefined);
+      setManualReplayStatus("failed");
+      setManualReplayError(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
@@ -110,6 +158,15 @@ export function ResearchAdvisorView() {
 
       <IctAdvisorSummaryPanel snapshot={snapshot} />
 
+      <ManualReplayReviewPanel
+        brokerSymbol={brokerSymbol}
+        onRun={runManualReplayReview}
+        request={manualReplayRequest}
+        result={manualReplayResult}
+        status={manualReplayStatus}
+        error={manualReplayError}
+      />
+
       <LLMAdvisoryReviewPanel snapshot={snapshot} />
 
       <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
@@ -127,12 +184,158 @@ export function ResearchAdvisorView() {
   );
 }
 
+function ManualReplayReviewPanel({
+  brokerSymbol,
+  error,
+  onRun,
+  request,
+  result,
+  status
+}: {
+  brokerSymbol: string;
+  error?: string;
+  onRun: () => Promise<void>;
+  request: IctManualReplayReviewRequest;
+  result?: IctManualReplayReviewResult;
+  status: IctManualReplayReviewStatus;
+}) {
+  const statusVariant =
+    status === "completed" ? "success" : status === "unavailable" || status === "running" ? "warning" : status === "failed" ? "danger" : "secondary";
+  const statusMessage =
+    status === "idle"
+      ? "Idle. Real MT5 replay review runs only after explicit user action."
+      : status === "running"
+        ? "Running real MT5 replay review with compact output only..."
+        : status === "completed"
+          ? "Manual replay review completed."
+          : status === "unavailable"
+            ? `Replay unavailable: ${result?.unavailableReason ?? "mt5_unavailable_or_not_configured"}.`
+            : `Replay failed: ${error ?? result?.errors[0] ?? "unknown_error"}.`;
+  const rowLabel = (row: { key: string; totalSignals: number; targetFirstRate: number; averageRrAchieved: number }) =>
+    `${formatToken(row.key)}: ${row.totalSignals} signals / ${pct(row.targetFirstRate)} / ${rr(row.averageRrAchieved)}`;
+
+  return (
+    <section data-testid="ict-manual-replay-review" className="rounded-xl border border-cyan-300/15 bg-slate-950/85 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Manual ICT Replay Review</p>
+          <h3 className="mt-1 flex items-center gap-2 text-xl font-semibold text-slate-50">
+            <BarChart3 className="h-5 w-5 text-cyan-300" aria-hidden="true" />
+            Real-data replay on demand
+          </h3>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+            Runs the real MT5 replay runner only when requested, then stores and displays compact research-only metrics. Raw candles, snapshots, secrets, account data, orders, and positions are excluded.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge data-testid="ict-manual-replay-status" variant={statusVariant}>{formatToken(status)}</Badge>
+          <Badge variant="danger">authority none</Badge>
+          <Badge variant="secondary">researchOnly true</Badge>
+          <Button type="button" size="sm" onClick={onRun} disabled={status === "running"}>
+            <PlayCircle className="h-4 w-4" aria-hidden="true" />
+            {status === "running" ? "Running..." : "Run Real Replay Review"}
+          </Button>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <AdvisorReadout label="Requested symbol" value={request.requestedSymbol} detail={`broker ${result?.brokerSymbol ?? brokerSymbol}`} />
+        <AdvisorReadout label="Primary timeframe" value={request.primaryTimeframe} detail={`${request.candleLimit.toLocaleString()} candle limit`} />
+        <AdvisorReadout label="HTF timeframes" value={request.htfTimeframes.join(", ")} detail="context-only" />
+        <AdvisorReadout label="Replay shape" value={`${request.replayWindowSize}/${request.lookaheadCandles}`} detail="window / lookahead candles" />
+      </div>
+      <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">{statusMessage}</p>
+      {result ? (
+        <>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <AdvisorReadout label="Run ID" value={result.runId ?? "n/a"} detail={formatDate(result.generatedAt)} />
+            <AdvisorReadout label="Total windows" value={result.totalWindows.toLocaleString()} />
+            <AdvisorReadout label="Total signals" value={result.totalSignals.toLocaleString()} />
+            <AdvisorReadout label="Total no-trades" value={result.totalNoTrades.toLocaleString()} />
+            <AdvisorReadout label="Target-first rate" value={pct(result.targetFirstRate)} />
+            <AdvisorReadout label="Invalidation-first rate" value={pct(result.invalidationFirstRate)} />
+            <AdvisorReadout label="Average RR achieved" value={rr(result.averageRrAchieved)} />
+            <AdvisorReadout label="Approved target-first" value={pct(result.approvedTargetFirstRate)} detail={rr(result.approvedAverageRr)} />
+            <AdvisorReadout label="Approved" value={result.approvedProfileCounts.totalApproved.toLocaleString()} detail="approved profile count" />
+            <AdvisorReadout label="Watchlist" value={result.approvedProfileCounts.totalWatchlist.toLocaleString()} />
+            <AdvisorReadout label="Rejected" value={result.approvedProfileCounts.totalRejected.toLocaleString()} />
+            <AdvisorReadout label="No-trade profile" value={result.approvedProfileCounts.totalNoTrade.toLocaleString()} />
+          </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            <AdvisorList
+              label="Most common no-trade reasons"
+              values={result.mostCommonNoTradeReasons.map((item) => `${item.reason} (${item.count})`)}
+              empty="none"
+            />
+            <AdvisorList
+              label="Top calibration filter improvements"
+              values={result.topCalibrationFilterImprovements.map((item) => `${item.label}: ${pct(item.targetFirstRateChange)} / ${rr(item.averageRrChange)}`)}
+              empty="none"
+            />
+            <AdvisorList
+              label="Best / worst setup"
+              values={[
+                result.bestSetup ? `Best ${rowLabel(result.bestSetup)}` : "",
+                result.worstSetup ? `Worst ${rowLabel(result.worstSetup)}` : ""
+              ].filter(Boolean)}
+              empty="none"
+            />
+            <AdvisorList
+              label="Approved-profile comparison"
+              values={result.approvedProfileComparison.map(
+                (profile) =>
+                  `${profile.label}: ${profile.totalApproved} approved / ${profile.totalWatchlist} watchlist / ${profile.totalRejected} rejected`
+              )}
+              empty="none"
+            />
+            <AdvisorList
+              label="SMT confirmation / rejection"
+              values={[
+                ...result.smtSummary.confirmation.map(rowLabel),
+                ...result.smtSummary.rejection.map(rowLabel),
+                ...result.smtSummary.divergenceTypes.map(rowLabel)
+              ]}
+              empty="none"
+            />
+            <AdvisorList
+              label="News / session risk"
+              values={[
+                ...result.newsSessionRiskSummary.newsRiskLevels.map(rowLabel),
+                ...result.newsSessionRiskSummary.sessionRiskStates.map(rowLabel),
+                ...result.newsSessionRiskSummary.riskGovernorActions.map(rowLabel)
+              ]}
+              empty="none"
+            />
+          </div>
+          <div className="mt-4 grid gap-2 text-sm text-slate-300 md:grid-cols-3">
+            <AdvisorReadout label="Safety" value="raw candles excluded" detail="No raw candles, snapshots, secrets, account/order/position data." />
+            <AdvisorReadout
+              label="Authority"
+              value={`${result.authority.executionAuthority}/${result.authority.brokerAuthority}/${result.authority.readinessOverrideAuthority}`}
+              detail="Replay review cannot promote readiness."
+            />
+            <AdvisorReadout label="Journal" value="compact manual event" detail="ict_manual_replay_review / researchOnly true" />
+          </div>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
 function AdvisorReadout({ detail, label, value }: { detail?: string; label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-lg border border-white/10 bg-white/[0.035] p-3">
       <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{label}</p>
       <p className="mt-1 break-words text-sm font-semibold text-slate-100">{value}</p>
       {detail ? <p className="mt-1 line-clamp-2 text-xs text-slate-500">{detail}</p> : null}
+    </div>
+  );
+}
+
+function AdvisorList({ empty, label, values }: { empty: string; label: string; values: string[] }) {
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
+      <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{label}</p>
+      <p className="mt-1 text-sm font-semibold leading-5 text-slate-100">{values.length ? values.slice(0, 5).join("; ") : empty}</p>
     </div>
   );
 }

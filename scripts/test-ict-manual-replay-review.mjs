@@ -9,7 +9,7 @@ import ts from "typescript";
 const projectRoot = process.cwd();
 const sourceRoot = path.join(projectRoot, "src", "lib", "ict-strategy-suite");
 const mt5Root = path.join(projectRoot, "src", "lib", "integrations", "mt5");
-const outRoot = path.join(projectRoot, ".gotrader", "ict-real-replay-runner-test");
+const outRoot = path.join(projectRoot, ".gotrader", "ict-manual-replay-review-test");
 const sourceFiles = [
   { root: sourceRoot, file: "ictStrategySuiteTypes.ts" },
   { root: sourceRoot, file: "ictAdvisorTypes.ts" },
@@ -72,10 +72,10 @@ function compileSuiteForNode() {
   fs.writeFileSync(
     path.join(outRoot, "candleSourcesStub.mjs"),
     `export async function loadCanonicalCandleSource(sourceId) {
-  return globalThis.__ICT_REAL_REPLAY_TEST_SOURCES?.get(sourceId);
+  return globalThis.__ICT_MANUAL_REPLAY_TEST_SOURCES?.get(sourceId);
 }
 export async function listCanonicalCandleSourceSummaries() {
-  return Array.from(globalThis.__ICT_REAL_REPLAY_TEST_SOURCES?.values() ?? []).map(({ candles, ...summary }) => summary);
+  return Array.from(globalThis.__ICT_MANUAL_REPLAY_TEST_SOURCES?.values() ?? []).map(({ candles, ...summary }) => summary);
 }
 `,
     "utf8"
@@ -103,7 +103,7 @@ const candle = (id, timestamp, open, high, low, close, timeframe = "5m", symbol 
 function fixtureCandles({ count = 180, timeframe = "5m", symbol = "MNQ" } = {}) {
   const minutes = timeframeMinutes[timeframe] ?? 5;
   const start = Date.parse("2026-06-01T07:00:00.000Z");
-  let lastClose = symbol === "ES" ? 5600 : symbol === "YM" ? 39000 : symbol === "BTCUSD" ? 68000 : symbol === "XAUUSD" ? 2350 : 100;
+  let lastClose = symbol === "ES" ? 5600 : symbol === "YM" ? 39000 : symbol === "US500" ? 5600 : symbol === "US30" ? 39000 : 100;
   return Array.from({ length: count }, (_, index) => {
     const timestamp = new Date(start + index * minutes * 60_000).toISOString();
     const trend = Math.sin(index / 8) * 1.8 + index * 0.03;
@@ -112,45 +112,46 @@ function fixtureCandles({ count = 180, timeframe = "5m", symbol = "MNQ" } = {}) 
     const high = Math.max(open, close) + 1.2 + (index % 11 === 0 ? 2.4 : 0);
     const low = Math.min(open, close) - 1.2 - (index % 13 === 0 ? 2.1 : 0);
     lastClose = close;
-    return candle(`fixture_${timeframe}_${index}`, timestamp, open, high, low, close, timeframe, symbol);
+    return candle(`manual_fixture_${symbol}_${timeframe}_${index}`, timestamp, open, high, low, close, timeframe, symbol);
   });
 }
 
-function assertCompactRun(suite, result, label) {
-  assert.equal(result.researchOnly, true, `${label}: run must be research-only`);
+function assertCompactReview(suite, result, label) {
+  assert.equal(result.researchOnly, true, `${label}: result must be research-only`);
   assert.equal(result.authority.executionAuthority, "none", `${label}: execution authority must be none`);
   assert.equal(result.authority.brokerAuthority, "none", `${label}: broker authority must be none`);
-  assert.equal(result.authority.readinessOverrideAuthority, "none", `${label}: readiness override authority must be none`);
+  assert.equal(result.authority.readinessOverrideAuthority, "none", `${label}: readiness authority must be none`);
   assert.equal(result.safety.rawCandlesExcluded, true, `${label}: raw candles must be excluded`);
   assert.equal(result.safety.rawSnapshotsExcluded, true, `${label}: raw snapshots must be excluded`);
+  assert.equal(result.safety.secretsExcluded, true, `${label}: secrets must be excluded`);
   assert.equal(result.safety.accountDataExcluded, true, `${label}: account data must be excluded`);
   assert.equal(result.safety.orderDataExcluded, true, `${label}: order data must be excluded`);
   assert.equal(result.safety.positionDataExcluded, true, `${label}: position data must be excluded`);
-  assert.equal(result.safety.secretsExcluded, true, `${label}: secrets must be excluded`);
-  assert.equal(suite.assertIctRealReplayRunOutputIsCompact(result).ok, true, `${label}: compact assertion failed`);
-  assert.doesNotMatch(JSON.stringify(result), /"candles"\s*:/i, `${label}: raw candle arrays must not appear`);
+  assert.equal(suite.assertIctManualReplayReviewOutputIsCompact({ result }).ok, true, `${label}: compact assertion failed`);
+  assert.doesNotMatch(JSON.stringify({ ...result, safety: undefined }), /"candles"\s*:/i, `${label}: raw candle arrays must not appear`);
+  assert.doesNotMatch(
+    JSON.stringify({ ...result, safety: undefined }),
+    /"password"\s*:|"secret"\s*:|"api[_-]?key"\s*:|"account(Data)?"\s*:|"position(Data|s)?"\s*:|"order(Data|s)?"\s*:|"rawSnapshot"\s*:|"snapshot"\s*:/i,
+    `${label}: unsafe fields must not appear`
+  );
 }
 
 async function main() {
   compileSuiteForNode();
   const suite = await import(pathToFileURL(path.join(outRoot, "index.mjs")));
 
-  assert.equal(suite.resolveIctRealReplaySymbolMapping("MNQ").brokerSymbol, "USTECH");
-  assert.equal(suite.resolveIctRealReplaySymbolMapping("NQ").brokerSymbol, "USTECH");
-  assert.equal(suite.resolveIctRealReplaySymbolMapping("ES").brokerSymbol, "US500");
-  assert.equal(suite.resolveIctRealReplaySymbolMapping("YM").brokerSymbol, "US30");
-  assert.equal(suite.resolveIctRealReplaySymbolMapping("EURUSD.pro").brokerSymbol, "EURUSD.pro");
+  const defaults = suite.defaultIctManualReplayReviewRequest();
+  assert.equal(defaults.requestedSymbol, "MNQ", "manual replay default requested symbol mismatch");
+  assert.equal(defaults.primaryTimeframe, "5m", "manual replay default timeframe mismatch");
 
-  const unavailable = await suite.runIctRealReplay(
+  const unavailable = await suite.runManualIctReplayReview(
     {
-      requestedSymbols: ["MNQ"],
-      primaryTimeframes: ["5m"],
+      requestedSymbol: "MNQ",
+      primaryTimeframe: "5m",
       htfTimeframes: ["15m", "1h"],
       candleLimit: 1000,
-      replayWindowSize: 60,
-      lookaheadCandles: 12,
-      minRequiredCandles: 120,
-      researchOnly: true
+      replayWindowSize: 80,
+      lookaheadCandles: 12
     },
     {
       appendJournal: false,
@@ -167,20 +168,19 @@ async function main() {
       })
     }
   );
-  assertCompactRun(suite, unavailable, "unavailable fixture");
-  assert.equal(unavailable.symbols[0].status, "skipped", "unavailable MT5 should skip, not fail unsafely");
+  assert.equal(unavailable.status, "unavailable", "unavailable MT5 should produce unavailable state");
+  assert.match(unavailable.unavailableReason ?? "", /mt5_unavailable|Injected unavailable/i, "unavailable state should carry a friendly reason");
+  assertCompactReview(suite, unavailable, "unavailable manual review");
 
   const requestedTimeframes = [];
-  const deterministic = await suite.runIctRealReplay(
+  const deterministic = await suite.runManualIctReplayReview(
     {
-      requestedSymbols: ["MNQ"],
-      primaryTimeframes: ["5m"],
+      requestedSymbol: "MNQ",
+      primaryTimeframe: "5m",
       htfTimeframes: ["15m", "1h"],
       candleLimit: 1000,
       replayWindowSize: 60,
-      lookaheadCandles: 12,
-      minRequiredCandles: 120,
-      researchOnly: true
+      lookaheadCandles: 12
     },
     {
       appendJournal: false,
@@ -189,7 +189,7 @@ async function main() {
         const candles = fixtureCandles({
           count: timeframe === "5m" ? Math.min(180, limit) : Math.min(90, limit),
           timeframe,
-          symbol: requestedSymbol
+          symbol: brokerSymbol || requestedSymbol
         });
         return {
           requestedSymbol,
@@ -207,73 +207,51 @@ async function main() {
       }
     }
   );
-  assertCompactRun(suite, deterministic, "deterministic fixture");
-  assert.equal(deterministic.symbols[0].status, "completed", "deterministic fixture should complete");
-  assert.ok(deterministic.aggregateSummary.totalSignals > 0, "deterministic replay should produce compact signal metrics");
-  assert.ok(deterministic.diagnostics?.byStrategyId, "real replay runner should include compact diagnostics by strategy");
-  assert.ok(deterministic.diagnostics?.bySession, "real replay runner should include compact diagnostics by session");
-  assert.ok(deterministic.calibrationResults?.some((item) => item.filterId === "min_confidence_70"), "real replay runner should include calibration summaries");
-  assert.ok(deterministic.approvedProfileResults?.some((item) => item.profileId === "gotrader_ict_phase1_strict"), "real replay runner should include approved setup profile summaries");
-  assert.ok(
-    deterministic.approvedProfileResults?.every((item) => item.researchOnly === true && !("decisions" in item)),
-    "approved setup profile summaries should stay compact"
-  );
-  assert.deepEqual([...new Set(requestedTimeframes)].sort(), ["15m", "1h", "5m"].sort(), "runner should fetch primary 5m separately from HTF 15m/1h context");
-  const journalEvent = suite.buildIctRealReplayRunJournalEvent(deterministic);
-  assert.equal(journalEvent.eventType, "ict_real_replay_run_summary");
-  assert.equal(journalEvent.researchOnly, true);
-  assert.doesNotMatch(JSON.stringify(journalEvent), /"candles"\s*:/i, "real replay journal summary must not contain raw candles");
+  assert.equal(deterministic.status, "completed", "deterministic manual replay should complete");
+  assert.ok(deterministic.totalSignals > 0, "manual replay review should expose compact signal count");
+  assert.ok(deterministic.approvedProfileComparison.length > 0, "manual replay review should expose approved-profile comparison");
+  assert.ok(deterministic.topCalibrationFilterImprovements.length > 0, "manual replay review should expose compact calibration improvements");
+  assert.ok(deterministic.smtSummary.divergenceTypes.length > 0, "manual replay review should expose SMT summary");
+  assert.ok(deterministic.newsSessionRiskSummary.riskGovernorActions.length > 0, "manual replay review should expose news/session risk summary");
+  assert.deepEqual([...new Set(requestedTimeframes)].sort(), ["15m", "1h", "5m"].sort(), "manual replay should fetch primary and HTF contexts");
+  assertCompactReview(suite, deterministic, "deterministic manual review");
 
-  let liveStatus = "not_run";
-  let liveResult;
-  if (process.env.ICT_REAL_REPLAY_SKIP_LIVE !== "true") {
-    liveResult = await suite.runIctRealReplay(
+  const journalEvent = suite.buildIctManualReplayReviewJournalEvent(deterministic);
+  assert.equal(journalEvent.eventType, "ict_manual_replay_review", "manual review journal event type mismatch");
+  assert.equal(journalEvent.researchOnly, true, "manual review journal event must be research-only");
+  assert.equal(journalEvent.authority.executionAuthority, "none", "journal execution authority must be none");
+  assert.equal(suite.assertIctManualReplayReviewOutputIsCompact({ result: deterministic, journalEvent }).ok, true, "journal compact assertion failed");
+  assert.doesNotMatch(JSON.stringify({ ...journalEvent, safety: undefined }), /"candles"\s*:/i, "journal must not contain raw candles");
+
+  const failed = suite.buildFailedIctManualReplayReviewResult({ requestedSymbol: "MNQ", primaryTimeframe: "5m" }, new Error("manual failure"));
+  assert.equal(failed.status, "failed", "failed helper should produce failed state");
+  assertCompactReview(suite, failed, "failed manual review");
+
+  process.stdout.write("GoTrader ICT Manual Replay Review smoke test passed.\n");
+  process.stdout.write(`Deterministic status: ${deterministic.status}\n`);
+  process.stdout.write(`Deterministic total signals: ${deterministic.totalSignals}\n`);
+  process.stdout.write(`Deterministic approved count: ${deterministic.approvedProfileCounts.totalApproved}\n`);
+  process.stdout.write(`Unavailable status: ${unavailable.status}\n`);
+  process.stdout.write(
+    JSON.stringify(
       {
-        requestedSymbols: [process.env.MT5_READONLY_REQUESTED_SYMBOL || "MNQ"],
-        primaryTimeframes: [process.env.MT5_READONLY_TIMEFRAME || "5m"],
-        htfTimeframes: ["15m", "1h"],
-        candleLimit: Number(process.env.MT5_READONLY_CANDLE_LIMIT || 1000),
-        replayWindowSize: 80,
-        lookaheadCandles: 12,
-        minRequiredCandles: 120,
-        researchOnly: true
+        status: deterministic.status,
+        requestedSymbol: deterministic.requestedSymbol,
+        brokerSymbol: deterministic.brokerSymbol,
+        primaryTimeframe: deterministic.primaryTimeframe,
+        htfTimeframes: deterministic.htfTimeframes,
+        totalSignals: deterministic.totalSignals,
+        approvedProfileCounts: deterministic.approvedProfileCounts,
+        authority: deterministic.authority,
+        safety: deterministic.safety
       },
-      { appendJournal: false }
-    );
-    assertCompactRun(suite, liveResult, "live MT5");
-    liveStatus = liveResult.aggregateSummary.completedSymbols > 0 ? "completed" : "mt5_unavailable";
-  }
-
-  process.stdout.write("GoTrader ICT Real Replay Runner smoke test passed.\n");
-  process.stdout.write(`Deterministic fixture signals: ${deterministic.aggregateSummary.totalSignals}\n`);
-  process.stdout.write(`Deterministic target-first rate: ${Math.round(deterministic.aggregateSummary.targetFirstRate * 100)}%\n`);
-  process.stdout.write(`Live MT5 status: ${liveStatus}\n`);
-  if (liveResult) {
-    process.stdout.write(
-      JSON.stringify(
-        {
-          status: liveStatus,
-          symbols: liveResult.symbols.map((symbol) => ({
-            requestedSymbol: symbol.requestedSymbol,
-            brokerSymbol: symbol.brokerSymbol,
-            primaryTimeframe: symbol.primaryTimeframe,
-            status: symbol.status,
-            reason: symbol.reason,
-            totalSignals: symbol.summary?.totalSignals ?? 0,
-            targetFirstRate: symbol.summary?.targetFirstRate ?? 0,
-            averageRrAchieved: symbol.summary?.averageRrAchieved ?? 0
-          })),
-          authority: liveResult.authority,
-          safety: liveResult.safety
-        },
-        null,
-        2
-      ) + "\n"
-    );
-  }
+      null,
+      2
+    ) + "\n"
+  );
 }
 
 main().catch((error) => {
-  process.stderr.write(`ICT Real Replay Runner smoke test failed: ${error?.message ?? error}\n`);
+  process.stderr.write(`ICT Manual Replay Review smoke test failed: ${error?.message ?? error}\n`);
   process.exitCode = 1;
 });
