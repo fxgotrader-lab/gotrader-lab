@@ -17,6 +17,8 @@ const sourceFiles = [
   "ictStrategySuiteHelpers.ts",
   "ictStrategySuiteEngines.ts",
   "ictAdvisorEngine.ts",
+  "ictReplayValidationTypes.ts",
+  "ictReplayValidation.ts",
   "index.ts"
 ];
 

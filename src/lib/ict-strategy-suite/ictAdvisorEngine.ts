@@ -189,7 +189,7 @@ const resolveHtfSources = async (snapshot: ResearchRuntimeSnapshot) => {
   return loaded;
 };
 
-const buildAdvisorSignals = ({
+export const buildIctAdvisorSignals = ({
   brokerSymbol,
   candles,
   htfCandles,
@@ -442,7 +442,7 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
   const candles = activeSource?.candles ?? [];
   const htfTimeframes = Object.keys(htfCandles);
   const signals = activeSource?.candles?.length
-    ? buildAdvisorSignals({
+    ? buildIctAdvisorSignals({
         brokerSymbol,
         candles,
         htfCandles,

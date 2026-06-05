@@ -24,6 +24,7 @@
     "build": "tsc -b && vite build",
     "test": "node scripts/test-ict-strategy-suite.mjs",
     "test:ict-strategy-suite": "node scripts/test-ict-strategy-suite.mjs",
+    "test:ict-replay-validation": "node scripts/test-ict-replay-validation.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "smoke:http": "node scripts/smoke-routes.mjs",
     "smoke:browser": "node scripts/run-playwright-smoke.mjs",

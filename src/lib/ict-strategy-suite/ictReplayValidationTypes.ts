@@ -1,0 +1,147 @@
+import type { IctAdvisorSignal } from "./ictAdvisorTypes";
+
+export type IctReplayOutcome =
+  | "target_first"
+  | "invalidation_first"
+  | "partial_target"
+  | "stalled"
+  | "no_trade"
+  | "insufficient_future_candles";
+
+export type IctFvgReplayStatus =
+  | "respected"
+  | "partially_mitigated"
+  | "fully_mitigated"
+  | "ignored"
+  | "not_applicable";
+
+export interface IctReplayInput {
+  symbol: string;
+  requestedSymbol: string;
+  brokerSymbol: string;
+  primaryTimeframe: string;
+  htfTimeframes: string[];
+  candles: unknown[];
+  htfCandles?: Record<string, unknown[]>;
+  replayWindowSize: number;
+  lookaheadCandles: number;
+  researchOnly: true;
+}
+
+export interface IctReplayTradePath {
+  signalTime: string;
+  entryReference?: number;
+  invalidation?: number;
+  target?: number;
+  maxFavorableExcursion?: number;
+  maxAdverseExcursion?: number;
+  candlesToTarget?: number;
+  candlesToInvalidation?: number;
+  rrAchieved?: number;
+}
+
+export interface IctReplayResult {
+  strategyId: IctAdvisorSignal["strategyId"];
+  symbol: string;
+  requestedSymbol: string;
+  brokerSymbol: string;
+  primaryTimeframe: string;
+  side: "long" | "short" | "flat";
+  setup: IctAdvisorSignal["setup"];
+  decision: "research_only" | "no_trade";
+  confidence: number;
+  outcome: IctReplayOutcome;
+  fvgStatus: IctFvgReplayStatus;
+  tradePath: IctReplayTradePath;
+  noTradeReasons: string[];
+  riskNotes: string[];
+  summary: string;
+  provenance: {
+    methodology: "ICT";
+    sourceSet: "ICT Mentorship Core Content";
+    replay: true;
+    researchOnly: true;
+    generatedAt: string;
+  };
+}
+
+export interface IctReplayStrategySummary {
+  totalSignals: number;
+  targetFirstCount: number;
+  invalidationFirstCount: number;
+  targetFirstRate: number;
+  averageRrAchieved: number;
+}
+
+export interface IctReplaySummary {
+  symbol: string;
+  primaryTimeframe: string;
+  totalWindows: number;
+  totalSignals: number;
+  totalNoTrades: number;
+  targetFirstCount: number;
+  invalidationFirstCount: number;
+  partialTargetCount: number;
+  stalledCount: number;
+  insufficientFutureCandlesCount: number;
+  targetFirstRate: number;
+  invalidationFirstRate: number;
+  averageRrAchieved: number;
+  mostCommonNoTradeReasons: Array<{ reason: string; count: number }>;
+  byStrategyId: Record<string, IctReplayStrategySummary>;
+  researchOnly: true;
+}
+
+export interface IctReplayJournalEvent {
+  eventType: "ict_replay_result";
+  journalEventId: string;
+  strategyId: IctAdvisorSignal["strategyId"];
+  symbol: string;
+  requestedSymbol: string;
+  brokerSymbol: string;
+  primaryTimeframe: string;
+  htfTimeframes: string[];
+  signalTime: string;
+  side: IctReplayResult["side"];
+  setup: IctReplayResult["setup"];
+  decision: IctReplayResult["decision"];
+  confidence: number;
+  outcome: IctReplayOutcome;
+  fvgStatus: IctFvgReplayStatus;
+  entryReference?: number;
+  invalidation?: number;
+  target?: number;
+  maxFavorableExcursion?: number;
+  maxAdverseExcursion?: number;
+  candlesToTarget?: number;
+  candlesToInvalidation?: number;
+  rrAchieved?: number;
+  noTradeReasons: string[];
+  riskNotes: string[];
+  researchOnly: true;
+}
+
+export interface IctReplayValidationReport {
+  replayId: string;
+  generatedAt: string;
+  input: Omit<IctReplayInput, "candles" | "htfCandles"> & {
+    candleCount: number;
+  };
+  summary: IctReplaySummary;
+  results: IctReplayResult[];
+  journalEvents: IctReplayJournalEvent[];
+  safetyLocks: {
+    rawCandlesIncluded: false;
+    rawSnapshotsIncluded: false;
+    secretsIncluded: false;
+    accountDataIncluded: false;
+    orderDataIncluded: false;
+    positionDataIncluded: false;
+  };
+  authority: {
+    executionAuthority: "none";
+    brokerAuthority: "none";
+    readinessOverrideAuthority: "none";
+  };
+  researchOnly: true;
+}

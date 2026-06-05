@@ -5,3 +5,5 @@ export * from "./ictStrategySuiteJournal";
 export * from "./ictAdvisorTypes";
 export * from "./ictAdvisorJournal";
 export * from "./ictAdvisorEngine";
+export * from "./ictReplayValidationTypes";
+export * from "./ictReplayValidation";
