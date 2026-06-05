@@ -21,12 +21,13 @@ type EquivalentResearchOutput = Partial<TradeThesis> & {
   createdAt?: string;
 };
 
-const futuresSpecs = {
+const futuresSpecs: Partial<Record<FuturesSymbol, { tick_size: number; tick_value: number; multiplier: number; margin: number }>> = {
   ES: { tick_size: 0.25, tick_value: 12.5, multiplier: 50, margin: 15400 },
   NQ: { tick_size: 0.25, tick_value: 5, multiplier: 20, margin: 21000 },
   MES: { tick_size: 0.25, tick_value: 1.25, multiplier: 5, margin: 1540 },
-  MNQ: { tick_size: 0.25, tick_value: 0.5, multiplier: 2, margin: 2100 }
-} as const;
+  MNQ: { tick_size: 0.25, tick_value: 0.5, multiplier: 2, margin: 2100 },
+  YM: { tick_size: 1, tick_value: 5, multiplier: 5, margin: 12000 }
+};
 
 export class GoTraderBridgeValidationError extends Error {
   constructor(public readonly validation: GoTraderBridgeValidationResult) {

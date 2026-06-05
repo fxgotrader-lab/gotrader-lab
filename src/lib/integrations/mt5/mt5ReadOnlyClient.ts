@@ -11,6 +11,12 @@ import {
   createActiveMt5ReadOnlyCandleFeed,
   evaluateMt5ReadOnlyResearchEligibility
 } from "@/lib/integrations/mt5/mt5ReadOnlyNormalizer";
+import {
+  displayLabelForMt5Mapping,
+  findDefaultMt5SymbolMapping,
+  sanitizeMt5HigherTimeframes,
+  sanitizeMt5ReadOnlyTimeframe
+} from "@/lib/integrations/mt5/mt5SymbolSettings";
 
 const REQUEST_TIMEOUT_MS = 5000;
 const DB_NAME = "gotrader-ai-lab-mt5-readonly";
@@ -44,19 +50,32 @@ const defaultSettings: Mt5ReadOnlySettings = {
   enabled: false,
   requestedSymbol: "MNQ",
   brokerSymbolOverride: "USTECH",
+  displayLabel: "MNQ via USTECH",
   timeframe: "5m",
+  higherTimeframes: ["15m", "1h"],
   candleLimit: 1000
 };
 
-const sanitizeSettings = (settings: Partial<Mt5ReadOnlySettings> | null | undefined): Mt5ReadOnlySettings => ({
-  ...defaultSettings,
-  ...(settings ?? {}),
-  bridgeUrl: (settings?.bridgeUrl || defaultSettings.bridgeUrl).replace(/\/$/, ""),
-  requestedSymbol: (settings?.requestedSymbol || defaultSettings.requestedSymbol || "MNQ").trim(),
-  brokerSymbolOverride: (settings?.brokerSymbolOverride || defaultSettings.brokerSymbolOverride || "USTECH").trim(),
-  timeframe: (settings?.timeframe || defaultSettings.timeframe || "5m").trim(),
-  candleLimit: Math.max(1, Number(settings?.candleLimit ?? defaultSettings.candleLimit ?? 1000))
-});
+const sanitizeSettings = (settings: Partial<Mt5ReadOnlySettings> | null | undefined): Mt5ReadOnlySettings => {
+  const requestedSymbol = (settings?.requestedSymbol || defaultSettings.requestedSymbol || "MNQ").trim();
+  const defaultMapping = findDefaultMt5SymbolMapping(requestedSymbol);
+  const brokerSymbolOverride = (settings?.brokerSymbolOverride || defaultMapping.brokerSymbol || defaultSettings.brokerSymbolOverride || "USTECH").trim();
+  return {
+    ...defaultSettings,
+    ...(settings ?? {}),
+    bridgeUrl: (settings?.bridgeUrl || defaultSettings.bridgeUrl).replace(/\/$/, ""),
+    requestedSymbol,
+    brokerSymbolOverride,
+    displayLabel: displayLabelForMt5Mapping({
+      brokerSymbol: brokerSymbolOverride,
+      displayLabel: settings?.displayLabel,
+      requestedSymbol
+    }),
+    timeframe: sanitizeMt5ReadOnlyTimeframe(settings?.timeframe || defaultSettings.timeframe || "5m"),
+    higherTimeframes: sanitizeMt5HigherTimeframes(settings?.higherTimeframes ?? defaultSettings.higherTimeframes),
+    candleLimit: Math.max(1, Number(settings?.candleLimit ?? defaultSettings.candleLimit ?? 1000))
+  };
+};
 
 export const loadMt5ReadOnlySettings = (): Mt5ReadOnlySettings => {
   if (!isBrowser()) {

@@ -291,6 +291,7 @@ export interface GoTraderAdvisoryPacket {
     provider: string;
     requestedSymbol?: string;
     brokerSymbol?: string;
+    timeframe?: string;
     candleCount: number;
     firstTimestamp?: string;
     lastTimestamp?: string;
@@ -330,6 +331,13 @@ export interface GoTraderAdvisoryPacket {
     provider: string;
     requestedSymbol?: string;
     brokerSymbol?: string;
+    timeframe?: string;
+    higherTimeframes?: Array<{
+      timeframe?: string;
+      candleCount: number;
+      firstTimestamp?: string;
+      lastTimestamp?: string;
+    }>;
     candleCount: number;
     warning: string;
     authority: {

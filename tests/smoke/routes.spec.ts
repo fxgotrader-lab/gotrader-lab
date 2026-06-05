@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 const primaryRoutes = [
   "/dashboard",
+  "/advisor",
   "/market-data",
   "/autonomous-research",
   "/walk-forward",
@@ -41,6 +42,7 @@ const consoleErrorsByTest = new Map<string, string[]>();
 
 const expectedHeadings: Record<string, RegExp> = {
   "/dashboard": /Command Center/i,
+  "/advisor": /Research Advisor/i,
   "/market-data": /Market Data/i,
   "/autonomous-research": /Autonomous Research/i,
   "/walk-forward": /Walk-Forward/i,

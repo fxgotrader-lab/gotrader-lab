@@ -7,8 +7,8 @@ import type {
   Mt5ReadOnlyResearchEligibility
 } from "@/lib/integrations/mt5/mt5ReadOnlyTypes";
 
-const futuresSymbols = new Set<FuturesSymbol>(["ES", "NQ", "MES", "MNQ"]);
-const timeframeValues = new Set<Timeframe>(["1m", "5m", "15m", "1h", "4h", "1d"]);
+const futuresSymbols = new Set<FuturesSymbol>(["ES", "NQ", "MES", "MNQ", "YM", "XAUUSD", "EURUSD", "BTCUSD"]);
+const timeframeValues = new Set<Timeframe>(["1m", "5m", "15m", "30m", "1h", "4h", "1d"]);
 
 export const mt5ReadOnlyCandleMinimums = {
   visual: 5,
@@ -29,15 +29,17 @@ const symbolAliases: Record<string, string[]> = {
   ES: ["ES", "SPX500", "US500", "SP500", "S&P500"],
   YM: ["YM", "US30", "DJ30", "DOW", "DOW30"],
   XAUUSD: ["XAUUSD", "GOLD", "XAU/USD"],
-  EURUSD: ["EURUSD", "EUR/USD"],
+  EURUSD: ["EURUSD", "EUR/USD", "EURUSD.PRO"],
   GBPUSD: ["GBPUSD", "GBP/USD"],
-  USDJPY: ["USDJPY", "USD/JPY"]
+  USDJPY: ["USDJPY", "USD/JPY"],
+  BTCUSD: ["BTCUSD", "BTC/USD"]
 };
 
 const timeframeAliases: Record<string, string[]> = {
   "1m": ["1", "1m", "m1", "1min"],
   "5m": ["5", "5m", "m5", "5min"],
   "15m": ["15", "15m", "m15", "15min"],
+  "30m": ["30", "30m", "m30", "30min"],
   "1h": ["60", "1h", "h1", "60m"],
   "4h": ["240", "4h", "h4", "240m"],
   "1d": ["D", "1D", "1d", "d1"]
@@ -274,6 +276,18 @@ const toFuturesSymbol = (symbol?: string): FuturesSymbol => {
   }
   if (["SPX500", "US500", "SP500", "S&P500"].map(canonical).includes(normalized)) {
     return "ES";
+  }
+  if (["US30", "DJ30", "DOW", "DOW30"].map(canonical).includes(normalized)) {
+    return "YM";
+  }
+  if (["XAUUSD", "GOLD", "XAU/USD"].map(canonical).includes(normalized)) {
+    return "XAUUSD";
+  }
+  if (["EURUSD", "EUR/USD", "EURUSDPRO"].map(canonical).includes(normalized)) {
+    return "EURUSD";
+  }
+  if (["BTCUSD", "BTC/USD"].map(canonical).includes(normalized)) {
+    return "BTCUSD";
   }
   return "MNQ";
 };

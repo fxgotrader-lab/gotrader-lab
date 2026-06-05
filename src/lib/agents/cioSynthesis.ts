@@ -1,13 +1,17 @@
 import type { CIOSynthesisResult, InternalAgentOpinion } from "@/lib/agents/agentTypes";
-import type { ICTContext, MarketBias, ThesisInput } from "@/lib/types";
+import type { FuturesSymbol, ICTContext, MarketBias, ThesisInput } from "@/lib/types";
 import { clamp } from "@/lib/utils";
 
-const basePriceBySymbol = {
+const basePriceBySymbol: Partial<Record<FuturesSymbol, number>> = {
   ES: 5265,
   NQ: 18880,
   MES: 5265,
-  MNQ: 18880
-} as const;
+  MNQ: 18880,
+  YM: 39000,
+  XAUUSD: 2300,
+  EURUSD: 1.08,
+  BTCUSD: 65000
+};
 
 const biasToScore = (bias: MarketBias) => (bias === "bullish" ? 1 : bias === "bearish" ? -1 : 0);
 
@@ -27,9 +31,10 @@ const latestUnmitigatedGapMidpoint = (ictContext: ICTContext, bias: MarketBias, 
 };
 
 function buildLevels(input: ThesisInput, finalBias: MarketBias, ictContext: ICTContext) {
-  const base = basePriceBySymbol[input.symbol];
-  const unit = input.symbol.includes("NQ") ? 16 : 5;
-  const rawCurrentPrice = ictContext.premiumDiscountZone.currentPrice || base;
+  const fallbackBase = basePriceBySymbol[input.symbol] ?? 1;
+  const rawCurrentPrice = ictContext.premiumDiscountZone.currentPrice || fallbackBase;
+  const base = basePriceBySymbol[input.symbol] ?? rawCurrentPrice;
+  const unit = input.symbol.includes("NQ") ? 16 : input.symbol === "EURUSD" ? 0.001 : input.symbol === "XAUUSD" ? 2 : input.symbol === "BTCUSD" ? 100 : 5;
   const scale = input.symbol === "ES" || input.symbol === "MES" ? base / Math.max(1, rawCurrentPrice) : 1;
   const scaleLevel = (value: number | undefined, fallback: number) => Number(((value ?? fallback) * scale).toFixed(2));
   const currentPrice = scaleLevel(rawCurrentPrice, base);

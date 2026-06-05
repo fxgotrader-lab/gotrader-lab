@@ -66,7 +66,13 @@ import {
   hydrateActiveMt5ReadOnlyCandleFeed,
   loadActiveMt5ReadOnlyCandleFeed,
   loadMt5ReadOnlySettings,
+  mt5CfdProxyWarning,
+  mt5ReadOnlyHigherTimeframeOptions,
+  mt5ReadOnlySymbolOptions,
+  mt5ReadOnlyTimeframeOptions,
   resolveMt5ReadOnlyRuntimeState,
+  resolveDefaultMt5BrokerSymbol,
+  displayLabelForMt5Mapping,
   saveMt5ReadOnlySettings,
   updateActiveMt5ReadOnlyCandleFeedMetadata,
   MT5_READ_ONLY_UPDATED_EVENT,
@@ -74,10 +80,14 @@ import {
   type Mt5ReadOnlyCandlesResponse,
   type Mt5ReadOnlyQuote
 } from "@/lib/integrations/mt5";
+import {
+  fetchAndStoreMt5HigherTimeframeSources,
+  MT5_HIGHER_TIMEFRAME_SOURCES_UPDATED_EVENT
+} from "@/lib/integrations/mt5/mt5MultiTimeframe";
 import type { Candle, FuturesSymbol, Timeframe } from "@/lib/types";
 
-const symbolOptions = ["ES", "NQ", "MES", "MNQ"].map((value) => ({ label: value, value }));
-const timeframeOptions = ["1m", "5m", "15m", "1h"].map((value) => ({ label: value, value }));
+const symbolOptions = mt5ReadOnlySymbolOptions;
+const timeframeOptions = mt5ReadOnlyTimeframeOptions;
 const tradingViewCandleLimitOptions = [100, 240, 400, 1000].map((value) => ({
   label: `${value.toLocaleString()} candles`,
   value: String(value)
@@ -167,6 +177,10 @@ export function MarketDataView() {
   const [mt5Connecting, setMt5Connecting] = useState(false);
   const [mt5CandleLimit, setMt5CandleLimit] = useState(() => String(Math.max(1000, loadMt5ReadOnlySettings().candleLimit ?? 1000)));
   const [mt5BrokerSymbol, setMt5BrokerSymbol] = useState(() => loadMt5ReadOnlySettings().brokerSymbolOverride ?? "USTECH");
+  const [mt5DisplayLabel, setMt5DisplayLabel] = useState(() => loadMt5ReadOnlySettings().displayLabel ?? "MNQ via USTECH");
+  const [mt5HigherTimeframes, setMt5HigherTimeframes] = useState<Timeframe[]>(() =>
+    (loadMt5ReadOnlySettings().higherTimeframes as Timeframe[] | undefined) ?? ["15m", "1h"]
+  );
   const [chartVerification, setChartVerification] = useState<ChartSourceVerification>();
   const contextSymbol = activeSource.metadata?.symbol ?? symbol;
   const contextTimeframe = activeSource.mode === "imported" ? activeSource.appliedSettings.targetTimeframe : timeframe;
@@ -306,9 +320,11 @@ export function MarketDataView() {
     };
     refreshMt5Feed();
     window.addEventListener(MT5_READ_ONLY_UPDATED_EVENT, refreshMt5Feed);
+    window.addEventListener(MT5_HIGHER_TIMEFRAME_SOURCES_UPDATED_EVENT, refreshMt5Feed);
     window.addEventListener("storage", refreshMt5Feed);
     return () => {
       window.removeEventListener(MT5_READ_ONLY_UPDATED_EVENT, refreshMt5Feed);
+      window.removeEventListener(MT5_HIGHER_TIMEFRAME_SOURCES_UPDATED_EVENT, refreshMt5Feed);
       window.removeEventListener("storage", refreshMt5Feed);
     };
   }, []);
@@ -538,6 +554,60 @@ export function MarketDataView() {
     setTradingViewFeedMessage("TradingView MCP cached candles cleared. Falling back to imported/mock candles.");
   };
 
+  const updateMt5RequestedSymbol = (nextSymbol: FuturesSymbol) => {
+    const nextBrokerSymbol = resolveDefaultMt5BrokerSymbol(nextSymbol);
+    const nextDisplayLabel = displayLabelForMt5Mapping({ brokerSymbol: nextBrokerSymbol, requestedSymbol: nextSymbol });
+    setSymbol(nextSymbol);
+    setMt5BrokerSymbol(nextBrokerSymbol);
+    setMt5DisplayLabel(nextDisplayLabel);
+    saveMt5ReadOnlySettings({
+      requestedSymbol: nextSymbol,
+      brokerSymbolOverride: nextBrokerSymbol,
+      displayLabel: nextDisplayLabel
+    });
+  };
+
+  const updateMt5HigherTimeframes = (nextTimeframe: Timeframe, checked: boolean) => {
+    const next = checked
+      ? [...mt5HigherTimeframes, nextTimeframe].filter((item, index, all) => all.indexOf(item) === index)
+      : mt5HigherTimeframes.filter((item) => item !== nextTimeframe);
+    const normalized = next.filter((item) => item !== timeframe);
+    setMt5HigherTimeframes(normalized);
+    saveMt5ReadOnlySettings({ higherTimeframes: normalized });
+  };
+
+  const fetchMt5HigherTimeframeContext = async () => {
+    const loadedSettings = loadMt5ReadOnlySettings();
+    const brokerSymbol = (mt5BrokerSymbol.trim() || loadedSettings.brokerSymbolOverride || "USTECH").trim();
+    const limit = Number(mt5CandleLimit) || loadedSettings.candleLimit || 1000;
+    const selected = mt5HigherTimeframes.filter((item) => item !== timeframe);
+    if (!selected.length) {
+      setMt5FeedMessage("No higher timeframe context selected. Primary timeframe remains available.");
+      return;
+    }
+    setMt5Connecting(true);
+    setMt5FeedMessage(`Fetching MT5 higher-timeframe context for ${symbol} via ${brokerSymbol}: ${selected.join(", ")}...`);
+    try {
+      const sources = await fetchAndStoreMt5HigherTimeframeSources({
+        brokerSymbol,
+        limit,
+        requestedSymbol: symbol,
+        timeframes: selected
+      });
+      setMt5Runtime(resolveMt5ReadOnlyRuntimeState(mt5Feed));
+      const matching = sources.filter((source) => source.requestedSymbol === symbol && source.brokerSymbol === brokerSymbol);
+      setMt5FeedMessage(
+        matching.length
+          ? `Fetched MT5 HTF context: ${matching.map((source) => `${source.timeframe} ${source.candleCount.toLocaleString()}`).join(", ")}.`
+          : "Higher-timeframe fetch completed, but no matching context source was stored."
+      );
+    } catch (error) {
+      setMt5FeedMessage(error instanceof Error ? error.message : "MT5 higher-timeframe context fetch failed.");
+    } finally {
+      setMt5Connecting(false);
+    }
+  };
+
   const fetchMt5QuoteForChart = async () => {
     const loadedSettings = loadMt5ReadOnlySettings();
     const brokerSymbol = (mt5BrokerSymbol.trim() || loadedSettings.brokerSymbolOverride || "USTECH").trim();
@@ -550,6 +620,8 @@ export function MarketDataView() {
       requestedSymbol: symbol,
       brokerSymbolOverride: brokerSymbol,
       timeframe,
+      displayLabel: mt5DisplayLabel,
+      higherTimeframes: mt5HigherTimeframes,
       candleLimit: Number(mt5CandleLimit) || loadedSettings.candleLimit || 1000
     });
     const quote = await fetchMt5ReadOnlyQuote({ symbol, brokerSymbol }, settings);
@@ -575,6 +647,8 @@ export function MarketDataView() {
       requestedSymbol: symbol,
       brokerSymbolOverride: brokerSymbol,
       timeframe,
+      displayLabel: mt5DisplayLabel,
+      higherTimeframes: mt5HigherTimeframes,
       candleLimit: limit
     });
     const candles = await fetchMt5ReadOnlyCandles({ symbol, brokerSymbol, timeframe, limit }, settings);
@@ -610,6 +684,8 @@ export function MarketDataView() {
         requestedSymbol: symbol,
         brokerSymbolOverride: mt5BrokerSymbol.trim() || loadedSettings.brokerSymbolOverride || "USTECH",
         timeframe,
+        displayLabel: mt5DisplayLabel,
+        higherTimeframes: mt5HigherTimeframes,
         candleLimit: Number(mt5CandleLimit) || loadedSettings.candleLimit || 1000
       });
       const status = await checkMt5ReadOnlyStatus(settings);
@@ -653,6 +729,8 @@ export function MarketDataView() {
             requestedSymbol: symbol,
             brokerSymbolOverride: brokerSymbol,
             timeframe,
+            displayLabel: mt5DisplayLabel,
+            higherTimeframes: mt5HigherTimeframes,
             candleLimit: usageMode === "research_source" ? Math.max(400, Number(mt5CandleLimit) || 1000) : Number(mt5CandleLimit) || 1000
           }),
           usageMode
@@ -824,18 +902,14 @@ export function MarketDataView() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
-          <div className="grid gap-3 md:grid-cols-5">
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
             <div className="space-y-2">
               <Label htmlFor="mt5-feed-symbol">GoTrader symbol</Label>
               <Select
                 id="mt5-feed-symbol"
                 value={symbol}
                 options={symbolOptions}
-                onChange={(event) => {
-                  const nextSymbol = event.target.value as FuturesSymbol;
-                  setSymbol(nextSymbol);
-                  saveMt5ReadOnlySettings({ requestedSymbol: nextSymbol });
-                }}
+                onChange={(event) => updateMt5RequestedSymbol(event.target.value as FuturesSymbol)}
               />
             </div>
             <div className="space-y-2">
@@ -844,14 +918,36 @@ export function MarketDataView() {
                 id="mt5-broker-symbol"
                 value={mt5BrokerSymbol}
                 onChange={(event) => {
-                  setMt5BrokerSymbol(event.target.value);
-                  saveMt5ReadOnlySettings({ brokerSymbolOverride: event.target.value.trim() || undefined });
+                  const nextBrokerSymbol = event.target.value;
+                  const nextDisplayLabel = displayLabelForMt5Mapping({
+                    brokerSymbol: nextBrokerSymbol,
+                    displayLabel: mt5DisplayLabel,
+                    requestedSymbol: symbol
+                  });
+                  setMt5BrokerSymbol(nextBrokerSymbol);
+                  setMt5DisplayLabel(nextDisplayLabel);
+                  saveMt5ReadOnlySettings({
+                    brokerSymbolOverride: nextBrokerSymbol.trim() || undefined,
+                    displayLabel: nextDisplayLabel
+                  });
                 }}
                 placeholder="USTECH"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="mt5-feed-timeframe">Timeframe</Label>
+              <Label htmlFor="mt5-display-label">Display label</Label>
+              <Input
+                id="mt5-display-label"
+                value={mt5DisplayLabel}
+                onChange={(event) => {
+                  setMt5DisplayLabel(event.target.value);
+                  saveMt5ReadOnlySettings({ displayLabel: event.target.value.trim() || undefined });
+                }}
+                placeholder="MNQ via USTECH"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="mt5-feed-timeframe">Primary timeframe</Label>
               <Select
                 id="mt5-feed-timeframe"
                 value={timeframe}
@@ -859,7 +955,9 @@ export function MarketDataView() {
                 onChange={(event) => {
                   const nextTimeframe = event.target.value as Timeframe;
                   setTimeframe(nextTimeframe);
-                  saveMt5ReadOnlySettings({ timeframe: nextTimeframe });
+                  const nextHigherTimeframes = mt5HigherTimeframes.filter((item) => item !== nextTimeframe);
+                  setMt5HigherTimeframes(nextHigherTimeframes);
+                  saveMt5ReadOnlySettings({ timeframe: nextTimeframe, higherTimeframes: nextHigherTimeframes });
                 }}
               />
             </div>
@@ -879,9 +977,40 @@ export function MarketDataView() {
               {mt5Connecting ? "Checking..." : "Connect MT5 Read-Only"}
             </Button>
           </div>
-          <div className="grid gap-2 md:grid-cols-5">
+          <div className="rounded-md border border-border bg-background/45 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Higher timeframe context</p>
+              <Badge variant={mt5HigherTimeframes.length ? "secondary" : "warning"}>
+                {mt5HigherTimeframes.length ? mt5HigherTimeframes.join(", ") : "missing"}
+              </Badge>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {mt5ReadOnlyHigherTimeframeOptions.map((option) => {
+                const value = option.value as Timeframe;
+                const disabled = value === timeframe;
+                return (
+                  <label
+                    key={option.value}
+                    className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${
+                      disabled ? "border-border/40 text-muted-foreground/50" : "border-border bg-background/40 text-muted-foreground"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={mt5HigherTimeframes.includes(value)}
+                      disabled={disabled}
+                      onChange={(event) => updateMt5HigherTimeframes(value, event.target.checked)}
+                    />
+                    {option.label}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+          <div className="grid gap-2 md:grid-cols-6">
             <Button variant="secondary" onClick={() => void fetchMt5QuoteForChart()}>Fetch MT5 quote</Button>
             <Button variant="outline" onClick={() => void fetchMt5CandlesForChart()}>Fetch MT5 candles</Button>
+            <Button variant="outline" onClick={() => void fetchMt5HigherTimeframeContext()} disabled={mt5Connecting}>Fetch HTF context</Button>
             <Button variant="secondary" onClick={() => void useMt5CandlesAsSource("chart_only")}>Use MT5 for chart</Button>
             <Button
               variant="secondary"
@@ -897,6 +1026,17 @@ export function MarketDataView() {
             <StatusTile label="Bridge" value={formatToken(mt5Runtime.connectionStatus)} />
             <StatusTile label="GoTrader symbol" value={symbol} />
             <StatusTile label="Broker symbol" value={(mt5Runtime.brokerSymbol ?? mt5BrokerSymbol) || "USTECH"} />
+            <StatusTile label="Display label" value={mt5Runtime.displayLabel ?? mt5DisplayLabel} />
+            <StatusTile
+              label="HTF context"
+              value={
+                mt5Runtime.higherTimeframeSources?.length
+                  ? mt5Runtime.higherTimeframeSources.map((source) => `${source.timeframe}:${source.candleCount}`).join(", ")
+                  : mt5HigherTimeframes.length
+                    ? `selected ${mt5HigherTimeframes.join(", ")}`
+                    : "missing"
+              }
+            />
             <StatusTile label="Quote latest" value={String(mt5Runtime.latestPrice ?? mt5Quote?.mid ?? mt5Quote?.bid ?? "none")} />
             <StatusTile label="Spread" value={String(mt5Runtime.spread ?? mt5Quote?.spread ?? "n/a")} />
             <StatusTile label="Candles" value={String(mt5Candles?.returnedCount ?? mt5Runtime.candleCount)} />
@@ -913,7 +1053,8 @@ export function MarketDataView() {
             <p className="mt-1 text-xs">{mt5FeedMessage ?? mt5Runtime.eligibilityReasons.join(" ")}</p>
             <p className="mt-2 text-xs">
               GoTrader requested symbol <span className="font-mono">{symbol}</span>; MT5 broker symbol{" "}
-              <span className="font-mono">{(mt5Runtime.brokerSymbol ?? mt5BrokerSymbol) || "USTECH"}</span>. Broker CFD/proxy data such as USTECH is read-only and not CME MNQ futures broker truth.
+              <span className="font-mono">{(mt5Runtime.brokerSymbol ?? mt5BrokerSymbol) || "USTECH"}</span>.{" "}
+              {mt5CfdProxyWarning((mt5Runtime.brokerSymbol ?? mt5BrokerSymbol) || "USTECH", symbol)}
             </p>
           </div>
         </CardContent>

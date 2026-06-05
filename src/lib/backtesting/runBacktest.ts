@@ -18,15 +18,19 @@ import type {
 import { scoreSimulatedTradeOutcome } from "@/lib/backtesting/outcomeScoring";
 import { buildICTContext, tagSession } from "@/lib/ict";
 import { calculateGrinchStrategyScore } from "@/lib/strategyLibrary";
-import type { Candle, FairValueGap, MarketBias, SimulatedTradePlan, ThesisInput, TradingSession } from "@/lib/types";
+import type { Candle, FairValueGap, FuturesSymbol, MarketBias, SimulatedTradePlan, ThesisInput, TradingSession } from "@/lib/types";
 
 const round = (value: number, digits = 2) => Number(value.toFixed(digits));
-const tickSizeBySymbol = {
+const tickSizeBySymbol: Partial<Record<FuturesSymbol, number>> = {
   ES: 0.25,
   NQ: 0.25,
   MES: 0.25,
-  MNQ: 0.25
-} as const;
+  MNQ: 0.25,
+  YM: 1,
+  XAUUSD: 0.01,
+  EURUSD: 0.00001,
+  BTCUSD: 0.01
+};
 
 const sessionFromCandle = (candle: Candle): TradingSession => {
   const tagged = tagSession(candle);
@@ -78,7 +82,7 @@ const buildSimulatedPlan = (
 ): SimulatedTradePlan => {
   const bias = synthesis.finalBias;
   const direction = directionFor(bias);
-  const tickSize = tickSizeBySymbol[input.symbol];
+  const tickSize = tickSizeBySymbol[input.symbol] ?? 0.25;
   const entryMid = (synthesis.entryZone[0] + synthesis.entryZone[1]) / 2;
   const stopDistance =
     config.stopModel === "fixed ticks"

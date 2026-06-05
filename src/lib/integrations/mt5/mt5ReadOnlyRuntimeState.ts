@@ -3,6 +3,7 @@ import {
   loadMt5ReadOnlySettings,
   loadMt5ReadOnlyStatus
 } from "@/lib/integrations/mt5/mt5ReadOnlyClient";
+import { loadMt5HigherTimeframeSourceSummaries } from "@/lib/integrations/mt5/mt5MultiTimeframe";
 import type {
   ActiveMt5ReadOnlyCandleFeed,
   Mt5ReadOnlyRuntimeState
@@ -54,6 +55,13 @@ export const resolveMt5ReadOnlyRuntimeState = (
     usageMode: feed?.usageMode ?? "none",
     researchEligibility: feed?.researchEligibility.state ?? "ineligible_disconnected",
     eligibilityReasons: feed?.researchEligibility.reasons ?? ["MT5 read-only candle feed is not active."],
+    displayLabel: settings.displayLabel,
+    higherTimeframes: settings.higherTimeframes,
+    higherTimeframeSources: loadMt5HigherTimeframeSourceSummaries().filter(
+      (source) =>
+        source.requestedSymbol === (feed?.requestedSymbol ?? settings.requestedSymbol ?? "MNQ") &&
+        (!source.brokerSymbol || source.brokerSymbol === (feed?.brokerSymbol ?? settings.brokerSymbolOverride))
+    ),
     sourceWarnings,
     symbolMatch: Boolean(feed?.researchEligibility.symbolMatch),
     timeframeMatch: Boolean(feed?.researchEligibility.timeframeMatch),

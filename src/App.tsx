@@ -4,6 +4,7 @@ import { AgentRoster } from "@/components/agents/AgentRoster";
 import { AgentAuditView } from "@/components/agent-audit/AgentAuditView";
 import { AgentDebateView } from "@/components/agent-debate/AgentDebateView";
 import { AdvisoryAgentsView } from "@/components/advisory/AdvisoryAgentsView";
+import { ResearchAdvisorView } from "@/components/advisor/ResearchAdvisorView";
 import { AppShell } from "@/components/AppShell";
 import { AutoResearchView } from "@/components/auto-research/AutoResearchView";
 import { AutonomousResearchView } from "@/components/autonomous-research/AutonomousResearchView";
@@ -36,6 +37,8 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<ResearchCommandCenter state={state} />} />
+        <Route path="/advisor" element={<ResearchAdvisorView />} />
+        <Route path="/research-advisor" element={<ResearchAdvisorView />} />
         <Route path="/communications" element={<AICommunicationsView />} />
         <Route path="/agent-audit" element={<AgentAuditView />} />
         <Route path="/agent-debate" element={<AgentDebateView />} />

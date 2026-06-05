@@ -44,7 +44,10 @@ interface NavigationGroup {
 const primaryNavigation: NavigationGroup[] = [
   {
     section: "Command Center",
-    items: [{ href: "/dashboard", label: "Command Center", icon: LayoutDashboard, primary: true }]
+    items: [
+      { href: "/dashboard", label: "Command Center", icon: LayoutDashboard, primary: true },
+      { href: "/advisor", label: "Research Advisor", icon: MessageSquareText }
+    ]
   },
   {
     section: "Autonomous Workflow",

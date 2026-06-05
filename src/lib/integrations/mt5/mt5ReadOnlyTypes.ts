@@ -41,7 +41,9 @@ export interface Mt5ReadOnlySettings {
   enabled: boolean;
   requestedSymbol?: string;
   brokerSymbolOverride?: string;
+  displayLabel?: string;
   timeframe?: string;
+  higherTimeframes?: string[];
   candleLimit?: number;
 }
 
@@ -214,6 +216,23 @@ export interface Mt5ReadOnlyRuntimeState extends Mt5ReadOnlyAuthority {
   usageMode: "none" | Mt5ReadOnlyFeedUsageMode;
   researchEligibility: Mt5ReadOnlyResearchEligibilityState | "ineligible_disconnected";
   eligibilityReasons: string[];
+  displayLabel?: string;
+  higherTimeframes?: string[];
+  higherTimeframeSources?: Array<{
+    provider: "mt5_read_only";
+    requestedSymbol: string;
+    brokerSymbol?: string;
+    timeframe: string;
+    candleCount: number;
+    firstTimestamp?: string;
+    lastTimestamp?: string;
+    lastClose?: number;
+    fingerprint?: string;
+    eligibilityState: string;
+    storageBackend?: string;
+    fetchedAt?: string;
+    warning?: string;
+  }>;
   sourceWarnings: string[];
   symbolMatch: boolean;
   timeframeMatch: boolean;

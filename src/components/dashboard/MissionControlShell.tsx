@@ -73,6 +73,12 @@ import {
   loadMt5ReadOnlySettings,
   mt5ReadOnlyAutoRefreshCandleLimitOptions,
   mt5ReadOnlyAutoRefreshIntervalOptions,
+  mt5ReadOnlyHigherTimeframeOptions,
+  mt5ReadOnlySymbolOptions,
+  mt5ReadOnlyTimeframeOptions,
+  resolveDefaultMt5BrokerSymbol,
+  displayLabelForMt5Mapping,
+  mt5CfdProxyWarning,
   MT5_READ_ONLY_AUTO_REFRESH_UPDATED_EVENT,
   MT5_READ_ONLY_UPDATED_EVENT,
   refreshMt5ReadOnlyNow,
@@ -83,6 +89,7 @@ import {
   updateActiveMt5ReadOnlyCandleFeedMetadata,
   type Mt5ReadOnlyAutoRefreshState
 } from "@/lib/integrations/mt5";
+import { fetchAndStoreMt5HigherTimeframeSources } from "@/lib/integrations/mt5/mt5MultiTimeframe";
 import { mt5ExecutionAdapterPlan } from "@/lib/brokers/mt5";
 import { tradovateExecutionAdapterPlan } from "@/lib/brokers/tradovate";
 import {
@@ -118,7 +125,7 @@ import {
   selectRuntimeWarnings,
   type ResearchRuntimeSnapshot
 } from "@/lib/runtime";
-import type { LabState } from "@/lib/types";
+import type { LabState, Timeframe } from "@/lib/types";
 import { safeArray, safeTopN, uid } from "@/lib/utils";
 import { WALK_FORWARD_UPDATED_EVENT } from "@/lib/walkForward";
 
@@ -213,6 +220,7 @@ type SourceConsistencyRow = {
   provider: string;
   requestedSymbol: string;
   status: SourceConsistencyStatus;
+  timeframe?: string;
 };
 
 const compactFingerprint = (value?: string) =>
@@ -248,7 +256,8 @@ const sourceSummaryRow = (
   fingerprint: compactFingerprint(source.fingerprint),
   provider: source.provider.replace(/_/g, " "),
   requestedSymbol: source.symbol,
-  status
+  status,
+  timeframe: source.timeframe
 });
 
 const buildSourceConsistencyRows = (snapshot?: ResearchRuntimeSnapshot): SourceConsistencyRow[] => {
@@ -268,6 +277,37 @@ const buildSourceConsistencyRows = (snapshot?: ResearchRuntimeSnapshot): SourceC
         : activeResearch;
   const replaySnapshot = loadReplaySnapshotSourceMeta();
   const researchFingerprint = activeResearch.fingerprint;
+  const mt5HigherTimeframeRows: SourceConsistencyRow[] = (snapshot.mt5ReadOnly.higherTimeframeSources ?? []).map((source) => ({
+    area: `HTF context ${source.timeframe}`,
+    brokerSymbol: source.brokerSymbol,
+    candleCount: source.candleCount,
+    detail: source.warning ?? "Higher-timeframe MT5 context is cached separately and is not used as broker truth.",
+    fingerprint: compactFingerprint(source.fingerprint),
+    provider: source.provider.replace(/_/g, " "),
+    requestedSymbol: source.requestedSymbol,
+    status:
+      source.candleCount > 0 && source.requestedSymbol === activeResearch.symbol
+        ? "consistent"
+        : "different but explicit",
+    timeframe: source.timeframe
+  }));
+  const selectedMt5SettingsRow: SourceConsistencyRow = {
+    area: "Selected MT5 workspace",
+    brokerSymbol: snapshot.mt5ReadOnly.brokerSymbol,
+    candleCount: snapshot.mt5ReadOnly.candleCount || "pending",
+    detail: [
+      snapshot.mt5ReadOnly.displayLabel ?? "MT5 read-only source selection",
+      snapshot.mt5ReadOnly.higherTimeframes?.length
+        ? `HTF selected: ${snapshot.mt5ReadOnly.higherTimeframes.join(", ")}`
+        : "HTF missing/not selected",
+      "authority none"
+    ].join("; "),
+    fingerprint: compactFingerprint(snapshot.marketData.mt5ReadOnlyDataFingerprint),
+    provider: "mt5 read only",
+    requestedSymbol: snapshot.mt5ReadOnly.feedSymbol ?? activeResearch.symbol,
+    status: activeResearch.provider === "mt5_read_only" ? "consistent" : "different but explicit",
+    timeframe: snapshot.mt5ReadOnly.timeframe
+  };
 
   const rowForBacktest = explicitBacktestSource
     ? sourceSummaryRow(
@@ -289,7 +329,8 @@ const buildSourceConsistencyRows = (snapshot?: ResearchRuntimeSnapshot): SourceC
         fingerprint: "no fingerprint",
         provider: "unavailable",
         requestedSymbol: activeResearch.symbol,
-        status: "stale/mismatch" as const
+        status: "stale/mismatch" as const,
+        timeframe: activeResearch.timeframe
       };
 
   const rowForReplay: SourceConsistencyRow = replaySnapshot
@@ -304,7 +345,8 @@ const buildSourceConsistencyRows = (snapshot?: ResearchRuntimeSnapshot): SourceC
         fingerprint: compactFingerprint(replaySnapshot.sourceFingerprint),
         provider: replaySnapshot.provider.replace(/_/g, " "),
         requestedSymbol: replaySnapshot.requestedSymbol,
-        status: replaySnapshot.sourceFingerprint === researchFingerprint ? "consistent" : "different but explicit"
+        status: replaySnapshot.sourceFingerprint === researchFingerprint ? "consistent" : "different but explicit",
+        timeframe: replaySnapshot.timeframe
       }
     : {
         area: "Replay",
@@ -314,10 +356,12 @@ const buildSourceConsistencyRows = (snapshot?: ResearchRuntimeSnapshot): SourceC
         fingerprint: compactFingerprint(researchFingerprint),
         provider: activeResearch.provider.replace(/_/g, " "),
         requestedSymbol: activeResearch.symbol,
-        status: "different but explicit"
+        status: "different but explicit",
+        timeframe: activeResearch.timeframe
       };
 
   return [
+    selectedMt5SettingsRow,
     sourceSummaryRow(
       "Dashboard chart",
       activeChart,
@@ -337,7 +381,8 @@ const buildSourceConsistencyRows = (snapshot?: ResearchRuntimeSnapshot): SourceC
     ),
     sourceSummaryRow("ICT Lab chart", activeChart, "consistent", "ICT Lab chart resolves through the canonical active chart source."),
     sourceSummaryRow("Autonomous", activeResearch, "consistent", "Autonomous preflight uses the active research source guard; mock fallback is refused by default."),
-    sourceSummaryRow("Advisory packet", activeResearch, "consistent", "LLM/OpenClaw advisory context is compacted from the active research source metadata.")
+    sourceSummaryRow("Advisory packet", activeResearch, "consistent", "LLM/OpenClaw advisory context is compacted from the active research source metadata."),
+    ...mt5HigherTimeframeRows
   ];
 };
 
@@ -516,7 +561,13 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const [mt5Busy, setMt5Busy] = useState(false);
   const [mt5OperationMessage, setMt5OperationMessage] = useState("MT5 read-only bridge not checked.");
   const [mt5ActivationSteps, setMt5ActivationSteps] = useState<Mt5ActivationStep[]>([]);
+  const [mt5RequestedSymbol, setMt5RequestedSymbol] = useState(() => loadMt5ReadOnlySettings().requestedSymbol ?? "MNQ");
   const [mt5BrokerSymbol, setMt5BrokerSymbol] = useState(() => loadMt5ReadOnlySettings().brokerSymbolOverride ?? "USTECH");
+  const [mt5DisplayLabel, setMt5DisplayLabel] = useState(() => loadMt5ReadOnlySettings().displayLabel ?? "MNQ via USTECH");
+  const [mt5PrimaryTimeframe, setMt5PrimaryTimeframe] = useState(() => loadMt5ReadOnlySettings().timeframe ?? "5m");
+  const [mt5HigherTimeframes, setMt5HigherTimeframes] = useState<Timeframe[]>(() =>
+    (loadMt5ReadOnlySettings().higherTimeframes as Timeframe[] | undefined) ?? ["15m", "1h"]
+  );
   const [mt5CandleLimit, setMt5CandleLimit] = useState(() => String(Math.max(1000, loadMt5ReadOnlySettings().candleLimit ?? 1000)));
   const [mt5AutoRefresh, setMt5AutoRefresh] = useState<Mt5ReadOnlyAutoRefreshState>(() =>
     loadMt5ReadOnlyAutoRefreshState()
@@ -645,8 +696,28 @@ export function MissionControlShell({ state }: { state: LabState }) {
   };
 
   const mt5CommandSettings = loadMt5ReadOnlySettings();
-  const commandCenterSymbol = mt5CommandSettings.requestedSymbol ?? runtimeSnapshot?.marketData.symbol ?? "MNQ";
-  const commandCenterTimeframe = mt5CommandSettings.timeframe ?? runtimeSnapshot?.marketData.timeframe ?? "5m";
+  const commandCenterSymbol = mt5RequestedSymbol || mt5CommandSettings.requestedSymbol || runtimeSnapshot?.marketData.symbol || "MNQ";
+  const commandCenterTimeframe = mt5PrimaryTimeframe || mt5CommandSettings.timeframe || runtimeSnapshot?.marketData.timeframe || "5m";
+  const updateMt5RequestedSymbolSelection = (requestedSymbol: string) => {
+    const brokerSymbol = resolveDefaultMt5BrokerSymbol(requestedSymbol);
+    const displayLabel = displayLabelForMt5Mapping({ brokerSymbol, requestedSymbol });
+    setMt5RequestedSymbol(requestedSymbol);
+    setMt5BrokerSymbol(brokerSymbol);
+    setMt5DisplayLabel(displayLabel);
+    saveMt5ReadOnlySettings({
+      requestedSymbol,
+      brokerSymbolOverride: brokerSymbol,
+      displayLabel
+    });
+  };
+  const updateMt5HigherTimeframeSelection = (timeframe: Timeframe, checked: boolean) => {
+    const next = checked
+      ? [...mt5HigherTimeframes, timeframe].filter((item, index, all) => all.indexOf(item) === index)
+      : mt5HigherTimeframes.filter((item) => item !== timeframe);
+    const normalized = next.filter((item) => item !== mt5PrimaryTimeframe);
+    setMt5HigherTimeframes(normalized);
+    saveMt5ReadOnlySettings({ higherTimeframes: normalized });
+  };
 
   const connectTradingViewChart = async ({ usageMode = "chart_only" }: { usageMode?: "chart_only" | "research_source" } = {}) => {
     setTradingViewBusy(true);
@@ -840,9 +911,15 @@ export function MissionControlShell({ state }: { state: LabState }) {
         ? "Use MT5 for Research"
         : "Connect MT5 Read-Only";
     const loadedSettings = loadMt5ReadOnlySettings();
-    const requestedSymbol = (loadedSettings.requestedSymbol || commandCenterSymbol || "MNQ").trim();
-    const timeframe = (loadedSettings.timeframe || commandCenterTimeframe || "5m").trim();
+    const requestedSymbol = (mt5RequestedSymbol || loadedSettings.requestedSymbol || commandCenterSymbol || "MNQ").trim();
+    const timeframe = (mt5PrimaryTimeframe || loadedSettings.timeframe || commandCenterTimeframe || "5m").trim();
     const brokerSymbol = (mt5BrokerSymbol.trim() || loadedSettings.brokerSymbolOverride || "USTECH").trim();
+    const displayLabel = displayLabelForMt5Mapping({
+      brokerSymbol,
+      displayLabel: mt5DisplayLabel,
+      requestedSymbol
+    });
+    const higherTimeframes = mt5HigherTimeframes.filter((item) => item !== timeframe);
     const limit = Math.max(1, Number(mt5CandleLimit) || loadedSettings.candleLimit || 1000);
     resetMt5ActivationSteps([
       "wrapper status",
@@ -851,6 +928,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
       "quote",
       "candles",
       "canonical registration",
+      "higher timeframe context",
       "chart activation",
       "research activation",
       "authority"
@@ -865,15 +943,21 @@ export function MissionControlShell({ state }: { state: LabState }) {
       brokerSymbol
     );
     addDataConnectionEvent("MT5 status checked", `Checking GoTrader ${requestedSymbol} via MT5 broker symbol ${brokerSymbol}.`, "running");
+    setMt5RequestedSymbol(requestedSymbol);
     try {
       updateMt5ActivationStep("wrapper status", "running", `Checking safe wrapper ${loadedSettings.bridgeUrl}.`);
       const settings = saveMt5ReadOnlySettings({
         enabled: true,
         requestedSymbol,
         brokerSymbolOverride: brokerSymbol,
+        displayLabel,
         timeframe,
+        higherTimeframes,
         candleLimit: limit
       });
+      setMt5DisplayLabel(settings.displayLabel ?? displayLabel);
+      setMt5PrimaryTimeframe(settings.timeframe ?? timeframe);
+      setMt5HigherTimeframes((settings.higherTimeframes as Timeframe[] | undefined) ?? higherTimeframes);
       const status = await checkMt5ReadOnlyStatus(settings);
       if (status.connectionStatus !== "connected" && status.connectionStatus !== "degraded") {
         const message = `Activation failed at wrapper status: MT5 read-only bridge disconnected. ${status.message}`;
@@ -982,6 +1066,49 @@ export function MissionControlShell({ state }: { state: LabState }) {
         feed.feedId ? `Registered canonical MT5 source ${feed.feedId}.` : "Candles loaded, but feed id is missing.",
         feed.candleFingerprint
       );
+      if (higherTimeframes.length) {
+        updateMt5ActivationStep(
+          "higher timeframe context",
+          "running",
+          `Fetching separate MT5 context sources for ${higherTimeframes.join(", ")}.`
+        );
+        try {
+          const htfSources = await fetchAndStoreMt5HigherTimeframeSources({
+            brokerSymbol,
+            limit,
+            requestedSymbol,
+            timeframes: higherTimeframes
+          });
+          const matchingHtfSources = htfSources.filter(
+            (source) => source.requestedSymbol === requestedSymbol && source.brokerSymbol === (feed.brokerSymbol ?? brokerSymbol)
+          );
+          const htfDetail = matchingHtfSources.length
+            ? matchingHtfSources.map((source) => `${source.timeframe}: ${source.candleCount.toLocaleString()} candles`).join("; ")
+            : "Higher-timeframe context was requested but no matching MT5 context sources were cached.";
+          updateMt5ActivationStep(
+            "higher timeframe context",
+            matchingHtfSources.some((source) => source.candleCount > 0) ? "success" : "warning",
+            htfDetail,
+            feed.candleFingerprint
+          );
+          addDataConnectionEvent(
+            "MT5 higher timeframes checked",
+            htfDetail,
+            matchingHtfSources.some((source) => source.candleCount > 0) ? "success" : "warning",
+            feed.candleFingerprint
+          );
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : "Higher-timeframe MT5 context fetch failed.";
+          updateMt5ActivationStep("higher timeframe context", "warning", `${detail} Primary ${timeframe} source remains active.`);
+          addDataConnectionEvent("MT5 higher timeframe context unavailable", detail, "warning", brokerSymbol);
+        }
+      } else {
+        updateMt5ActivationStep(
+          "higher timeframe context",
+          "warning",
+          "No higher timeframes selected. Analysis can run on the primary timeframe, but HTF context is missing."
+        );
+      }
       updateMt5ActivationStep(
         "chart activation",
         feed.activeForChart ? "success" : "failed",
@@ -1650,6 +1777,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
     runtimeSnapshot?.mt5ReadOnly.brokerSymbol ||
     canonicalMt5Source?.provenance.providerSymbol ||
     "USTECH";
+  const mt5SelectedProxyWarning = mt5CfdProxyWarning(mt5ReadOnlyBrokerSymbol, commandCenterSymbol);
   const mt5ResearchEligible = mt5ResearchEligibleFrom(runtimeSnapshot);
   const mt5ResearchEligibilityReason = mt5ResearchEligibilityReasonFrom(runtimeSnapshot);
   const autonomousSource = latestRun?.sourceDiagnostics;
@@ -1801,7 +1929,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
             />
           </div>
         </div>
-        <LLMAdvisoryReviewPanel snapshot={runtimeSnapshot} onAdvisoryEvent={addDataConnectionEvent} />
+        <LLMAdvisoryReviewPanel mode="compact" snapshot={runtimeSnapshot} onAdvisoryEvent={addDataConnectionEvent} />
         </div>
 
         <div className="space-y-4">
@@ -1827,16 +1955,59 @@ export function MissionControlShell({ state }: { state: LabState }) {
                     refresh {formatToken(mt5AutoRefresh.status)}
                   </Badge>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                <div className="grid gap-2 md:grid-cols-3">
+                  <label className="space-y-1 text-xs text-slate-300">
+                    Requested GoTrader symbol
+                    <Select
+                      value={mt5RequestedSymbol}
+                      options={mt5ReadOnlySymbolOptions}
+                      onChange={(event) => updateMt5RequestedSymbolSelection(event.target.value)}
+                    />
+                  </label>
                   <label className="space-y-1 text-xs text-slate-300">
                     MT5 broker symbol
                     <Input
                       value={mt5BrokerSymbol}
                       onChange={(event) => {
                         setMt5BrokerSymbol(event.target.value);
-                        saveMt5ReadOnlySettings({ brokerSymbolOverride: event.target.value.trim() || undefined });
+                        const nextBrokerSymbol = event.target.value.trim();
+                        const nextDisplayLabel = displayLabelForMt5Mapping({
+                          brokerSymbol: nextBrokerSymbol,
+                          displayLabel: mt5DisplayLabel,
+                          requestedSymbol: mt5RequestedSymbol
+                        });
+                        setMt5DisplayLabel(nextDisplayLabel);
+                        saveMt5ReadOnlySettings({
+                          brokerSymbolOverride: nextBrokerSymbol || undefined,
+                          displayLabel: nextDisplayLabel
+                        });
                       }}
                       placeholder="USTECH"
+                    />
+                  </label>
+                  <label className="space-y-1 text-xs text-slate-300">
+                    Display label
+                    <Input
+                      value={mt5DisplayLabel}
+                      onChange={(event) => {
+                        setMt5DisplayLabel(event.target.value);
+                        saveMt5ReadOnlySettings({ displayLabel: event.target.value.trim() || undefined });
+                      }}
+                      placeholder="MNQ via USTECH"
+                    />
+                  </label>
+                  <label className="space-y-1 text-xs text-slate-300">
+                    Primary timeframe
+                    <Select
+                      value={mt5PrimaryTimeframe}
+                      options={mt5ReadOnlyTimeframeOptions}
+                      onChange={(event) => {
+                        const nextTimeframe = event.target.value as Timeframe;
+                        setMt5PrimaryTimeframe(nextTimeframe);
+                        const nextHigherTimeframes = mt5HigherTimeframes.filter((item) => item !== nextTimeframe);
+                        setMt5HigherTimeframes(nextHigherTimeframes);
+                        saveMt5ReadOnlySettings({ timeframe: nextTimeframe, higherTimeframes: nextHigherTimeframes });
+                      }}
                     />
                   </label>
                   <label className="space-y-1 text-xs text-slate-300">
@@ -1863,14 +2034,47 @@ export function MissionControlShell({ state }: { state: LabState }) {
                     />
                   </label>
                 </div>
+                <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Higher timeframe context</p>
+                    <Badge variant={mt5HigherTimeframes.length ? "secondary" : "warning"}>
+                      {mt5HigherTimeframes.length ? mt5HigherTimeframes.join(", ") : "missing"}
+                    </Badge>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {mt5ReadOnlyHigherTimeframeOptions.map((option) => {
+                      const value = option.value as Timeframe;
+                      const disabled = value === mt5PrimaryTimeframe;
+                      return (
+                        <label
+                          key={option.value}
+                          className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${
+                            disabled ? "border-white/5 bg-white/[0.02] text-slate-600" : "border-white/10 bg-white/[0.035] text-slate-300"
+                          }`}
+                          title={disabled ? "Primary timeframe is already fetched as the main source." : `Fetch ${option.label} as separate MT5 context.`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={mt5HigherTimeframes.includes(value)}
+                            disabled={disabled}
+                            onChange={(event) => updateMt5HigherTimeframeSelection(value, event.target.checked)}
+                          />
+                          {option.label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-2 text-[11px] leading-4 text-slate-500">
+                    Higher-timeframe sources are cached separately. They never overwrite the primary {mt5PrimaryTimeframe} MT5 source and remain context-only until research code explicitly consumes them.
+                  </p>
+                </div>
                 <p className="mt-2 text-[11px] leading-4 text-slate-400">
                   GoTrader requested symbol: <span className="font-mono text-slate-200">{commandCenterSymbol}</span>. MT5 broker symbol:{" "}
                   <span className="font-mono text-slate-200">{mt5ReadOnlyBrokerSymbol}</span>.
                   {" "}Broker CFD/proxy data is read-only and not CME futures broker truth.
                 </p>
                 <p className="mt-1 text-[11px] leading-4 text-slate-500">
-                  USTECH is MT5 CFD/proxy data for MNQ/NQ-style research, not CME MNQ futures truth. MT5 read-only has no execution authority.
-                  Broker authority: none.
+                  {mt5SelectedProxyWarning} Broker authority: none. Display label: {mt5DisplayLabel || "not set"}.
                 </p>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
                   <MiniReadout
@@ -3200,6 +3404,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
                   <th className="py-2 pr-3">Provider</th>
                   <th className="py-2 pr-3">Requested</th>
                   <th className="py-2 pr-3">Broker</th>
+                  <th className="py-2 pr-3">Timeframe</th>
                   <th className="py-2 pr-3">Candles</th>
                   <th className="py-2 pr-3">Fingerprint</th>
                   <th className="py-2 pr-3">Status</th>
@@ -3213,6 +3418,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
                     <td className="py-3 pr-3 font-mono text-slate-300">{row.provider}</td>
                     <td className="py-3 pr-3 font-mono text-slate-300">{row.requestedSymbol}</td>
                     <td className="py-3 pr-3 font-mono text-slate-300">{row.brokerSymbol ?? "n/a"}</td>
+                    <td className="py-3 pr-3 font-mono text-slate-300">{row.timeframe ?? "n/a"}</td>
                     <td className="py-3 pr-3 font-mono text-slate-300">{typeof row.candleCount === "number" ? row.candleCount.toLocaleString() : row.candleCount}</td>
                     <td className="py-3 pr-3 break-all font-mono text-slate-500">{row.fingerprint}</td>
                     <td className="py-3 pr-3">

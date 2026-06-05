@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Bot, MessageSquareText, ShieldCheck } from "lucide-react";
 
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
@@ -29,6 +30,7 @@ import {
   type LocalBridgeProcessStatus,
   type LocalBridgeUnavailableReason
 } from "@/lib/llm";
+import { mt5CfdProxyWarning } from "@/lib/integrations/mt5";
 import type { ResearchRuntimeSnapshot } from "@/lib/runtime";
 import { safeArray, safeTopN, uid } from "@/lib/utils";
 
@@ -327,6 +329,12 @@ const buildAdvisoryPacket = (snapshot: ResearchRuntimeSnapshot, question: string
       `Provider: ${source.provider}`,
       `Requested symbol: ${snapshot.marketData.symbol}`,
       `Broker/provider symbol: ${sourceBrokerSymbol ?? "n/a"}`,
+      `Primary timeframe: ${snapshot.marketData.timeframe}`,
+      `Higher-timeframe MT5 context: ${
+        snapshot.mt5ReadOnly.higherTimeframeSources?.length
+          ? snapshot.mt5ReadOnly.higherTimeframeSources.map((item) => `${item.timeframe}:${item.candleCount}`).join(", ")
+          : "missing/not fetched"
+      }`,
       `Candle count: ${source.candleCount}`,
       `First/last timestamp: ${source.firstTimestamp ?? "n/a"} -> ${source.lastTimestamp ?? "n/a"}`,
       `Source eligibility reasons: ${safeArray(source.eligibilityReasons).join("; ") || "none"}`,
@@ -413,6 +421,7 @@ const buildOpenClawPacket = (snapshot: ResearchRuntimeSnapshot, question: string
       provider: source.provider,
       requestedSymbol: snapshot.marketData.symbol,
       brokerSymbol: sourceBrokerSymbol,
+      timeframe: snapshot.marketData.timeframe,
       candleCount: source.candleCount,
       firstTimestamp: source.firstTimestamp,
       lastTimestamp: source.lastTimestamp,
@@ -454,10 +463,18 @@ const buildOpenClawPacket = (snapshot: ResearchRuntimeSnapshot, question: string
       provider: source.provider,
       requestedSymbol: snapshot.marketData.symbol,
       brokerSymbol: sourceBrokerSymbol,
+      timeframe: snapshot.marketData.timeframe,
+      higherTimeframes:
+        snapshot.mt5ReadOnly.higherTimeframeSources?.map((source) => ({
+          timeframe: source.timeframe,
+          candleCount: source.candleCount,
+          firstTimestamp: source.firstTimestamp,
+          lastTimestamp: source.lastTimestamp
+        })) ?? [],
       candleCount: source.candleCount,
       warning:
         source.provider === "mt5_read_only"
-          ? "MT5 read-only USTECH is CFD/proxy data for MNQ/NQ-style research, not CME MNQ futures truth."
+          ? mt5CfdProxyWarning(sourceBrokerSymbol, snapshot.marketData.symbol)
           : "Source is research context only; it is not broker truth or execution authority.",
       authority
     },
@@ -477,9 +494,11 @@ const buildOpenClawPacket = (snapshot: ResearchRuntimeSnapshot, question: string
 };
 
 export function LLMAdvisoryReviewPanel({
+  mode = "full",
   snapshot,
   onAdvisoryEvent
 }: {
+  mode?: "compact" | "full";
   snapshot?: ResearchRuntimeSnapshot;
   onAdvisoryEvent?: (
     title: string,
@@ -911,6 +930,69 @@ export function LLMAdvisoryReviewPanel({
       setBusy(false);
     }
   };
+
+  if (mode === "compact") {
+    const higherTimeframeSummary = snapshot?.mt5ReadOnly.higherTimeframeSources?.length
+      ? snapshot.mt5ReadOnly.higherTimeframeSources.map((source) => `${source.timeframe}:${source.candleCount.toLocaleString()}`).join(", ")
+      : "HTF missing";
+
+    return (
+      <section className="rounded-xl border border-cyan-300/15 bg-slate-950/85 p-4 shadow-[0_0_45px_rgba(8,145,178,0.07)]">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Research Advisor</p>
+            <h3 className="mt-1 flex items-center gap-2 text-lg font-semibold text-slate-50">
+              <Bot className="h-4 w-4 text-cyan-300" aria-hidden="true" />
+              Advisory Review
+            </h3>
+            <p className="mt-1 text-xs leading-5 text-slate-400">
+              Compact status only. Open the advisor workspace for chat, provider settings, and full diagnostics.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="secondary">Provider {providerMode.replace(/_/g, " ")}</Badge>
+            <Badge variant={advisoryBadgeVariant(advisoryCapabilityStatus)}>Advisory {shortStatus(advisoryCapabilityStatus)}</Badge>
+            <Badge variant="warning">advisory-only</Badge>
+            <Badge variant="danger">authority none</Badge>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <MiniAdvisoryReadout label="Source context" value={sourceContext} />
+          <MiniAdvisoryReadout label="Primary / HTF" value={snapshot ? `${snapshot.marketData.timeframe} primary / ${higherTimeframeSummary}` : "loading"} />
+          <MiniAdvisoryReadout label="Readiness" value={snapshot?.readiness.readinessState ?? "loading"} />
+          <MiniAdvisoryReadout label="Next action" value={nextSuggestedAction} />
+        </div>
+
+        <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Latest summary</p>
+          <p className="mt-2 line-clamp-3 text-sm leading-5 text-slate-300">{latestSummary}</p>
+          {blockers.length ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {blockers.slice(0, 4).map((blocker) => (
+                <Badge key={blocker} variant="warning">
+                  {blocker.replace(/_/g, " ")}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <span className="text-xs text-slate-500">
+            Full chat sends compact advisory packets only; no candles, secrets, account/order/position data, or readiness override.
+          </span>
+          <Link
+            to="/advisor"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
+          >
+            <MessageSquareText className="h-4 w-4" aria-hidden="true" />
+            Open Advisor
+          </Link>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="rounded-xl border border-cyan-300/15 bg-slate-950/85 p-4 shadow-[0_0_45px_rgba(8,145,178,0.07)]">

@@ -1,8 +1,8 @@
 import type { RegimeClassification } from "@/lib/regime";
 
-export type FuturesSymbol = "ES" | "NQ" | "MES" | "MNQ";
+export type FuturesSymbol = "ES" | "NQ" | "MES" | "MNQ" | "YM" | "XAUUSD" | "EURUSD" | "BTCUSD";
 
-export type Timeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
+export type Timeframe = "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
 
 export type TradingSession =
   | "Globex"

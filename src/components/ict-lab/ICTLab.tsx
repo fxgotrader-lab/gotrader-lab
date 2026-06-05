@@ -49,6 +49,7 @@ import {
   MT5_READ_ONLY_UPDATED_EVENT,
   resolveMt5ReadOnlyRuntimeState
 } from "@/lib/integrations/mt5";
+import { MT5_HIGHER_TIMEFRAME_SOURCES_UPDATED_EVENT } from "@/lib/integrations/mt5/mt5MultiTimeframe";
 import { mockCandles } from "@/lib/mockData/mockCandles";
 import {
   analyzeGrinchPhase1,
@@ -136,6 +137,9 @@ export function ICTLab() {
   const chartSourceLabel = displaySource.activeChartDisplaySourceLabel;
   const mt5BrokerSymbol = mt5Runtime.brokerSymbol ?? mt5Feed?.brokerSymbol ?? "USTECH";
   const mt5RequestedSymbol = mt5Feed?.requestedSymbol ?? "MNQ";
+  const mt5HigherTimeframeSummary = mt5Runtime.higherTimeframeSources?.length
+    ? mt5Runtime.higherTimeframeSources.map((source) => `${source.timeframe}:${source.candleCount.toLocaleString()}`).join(", ")
+    : "HTF context missing";
   const sessionTimeMapping = useMemo(
     () =>
       resolveSessionTimeMapping({
@@ -322,9 +326,11 @@ export function ICTLab() {
     };
     refreshMt5Status();
     window.addEventListener(MT5_READ_ONLY_UPDATED_EVENT, refreshMt5Status);
+    window.addEventListener(MT5_HIGHER_TIMEFRAME_SOURCES_UPDATED_EVENT, refreshMt5Status);
     window.addEventListener("storage", refreshMt5Status);
     return () => {
       window.removeEventListener(MT5_READ_ONLY_UPDATED_EVENT, refreshMt5Status);
+      window.removeEventListener(MT5_HIGHER_TIMEFRAME_SOURCES_UPDATED_EVENT, refreshMt5Status);
       window.removeEventListener("storage", refreshMt5Status);
     };
   }, []);
@@ -502,6 +508,8 @@ export function ICTLab() {
           <StatusTile label="Chart source" value={chartSourceType.replace(/_/g, " ")} />
           <StatusTile label="Research source" value={sourceType.replace(/_/g, " ")} />
           <StatusTile label="Broker symbol" value={chartSourceType === "mt5_read_only" || sourceType === "mt5_read_only" ? mt5BrokerSymbol : "n/a"} />
+          <StatusTile label="Primary timeframe" value={latestCandle?.timeframe ?? "n/a"} />
+          <StatusTile label="HTF context" value={mt5HigherTimeframeSummary} />
           <StatusTile label="Authority" value="execution none" />
           <div className="rounded-lg border border-cyan-300/20 bg-background/45 p-3 text-cyan-100 md:col-span-4">
             {sourceType === "mt5_read_only" || chartSourceType === "mt5_read_only"
