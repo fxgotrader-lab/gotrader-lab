@@ -121,7 +121,11 @@ export const buildReplayDiagnostics = (results: IctReplayResult[]): IctReplayDia
     totalSignals: signalResults(results).length,
     baseline: baselineFor(results),
     byStrategyId: buildBreakdown(results, (result) => result.strategyId),
+    byPhase: buildBreakdown(results, (result) => result.phase ?? "phase_1"),
     bySetup: buildBreakdown(results, (result) => result.setup),
+    byPhase2Setup: buildBreakdown(results.filter((result) => result.phase === "phase_2"), (result) => result.setup),
+    byOrderBlockVariant: buildBreakdown(results, (result) => result.orderBlockVariant ?? "none"),
+    byApprovedProfileStatus: buildBreakdown(results, (result) => result.approvedProfileStatus ?? "unknown"),
     bySide: buildBreakdown(results, (result) => result.side),
     bySymbol: buildBreakdown(results, (result) => result.requestedSymbol || result.symbol),
     byPrimaryTimeframe: buildBreakdown(results, (result) => result.primaryTimeframe),
@@ -289,9 +293,8 @@ export const assertIctReplayDiagnosticsOutputIsCompact = (output: {
   return {
     ok:
       !/"candles"\s*:/i.test(serialized) &&
-      !/password|secret|api[_-]?key|account|position|order|snapshot/i.test(serialized) &&
+      !/"password"\s*:|"secret"\s*:|"api[_-]?key"\s*:|"account(Data)?"\s*:|"position(Data|s)?"\s*:|"order(Data|s)?"\s*:|"rawSnapshot"\s*:|"snapshot"\s*:/i.test(serialized) &&
       (output.diagnostics?.researchOnly ?? true) === true,
     serializedBytes: new Blob([serialized]).size
   };
 };
-

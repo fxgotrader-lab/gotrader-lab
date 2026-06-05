@@ -21,6 +21,12 @@ import {
   buildIctAdvisorJournalEvent
 } from "./ictAdvisorJournal";
 import {
+  evaluateIctPhase2BreadAndButterBuy,
+  evaluateIctPhase2BreadAndButterSell,
+  evaluateIctPhase2OrderBlockTaxonomy
+} from "./ictPhase2BreadAndButter";
+import { evaluateIctPhase2OneShotOneKill } from "./ictPhase2OneShotOneKill";
+import {
   evaluateApprovedSetupProfile,
   getDefaultApprovedSetupProfiles
 } from "./ictApprovedSetupProfile";
@@ -47,6 +53,13 @@ const phaseOneStrategyIds = [
   "ict-daily-range",
   "ict-liquidity-pool",
   "ict-fvg-displacement"
+] as const;
+
+const phaseTwoStrategyIds = [
+  "ict-order-block-taxonomy",
+  "ict-bread-and-butter-buy",
+  "ict-bread-and-butter-sell",
+  "ict-one-shot-one-kill"
 ] as const;
 
 const allowedLiquidityTypes = new Set<IctLiquidityType>([
@@ -144,10 +157,13 @@ const signalBase = ({
   htfTimeframes: string[];
   primaryTimeframe: string;
   requestedSymbol: string;
-  signal: Omit<IctAdvisorSignal, "brokerSymbol" | "htfTimeframes" | "primaryTimeframe" | "provenance" | "requestedSymbol" | "symbol">;
+  signal: Omit<IctAdvisorSignal, "brokerSymbol" | "htfTimeframes" | "phase" | "primaryTimeframe" | "provenance" | "requestedSymbol" | "symbol"> & {
+    phase?: IctAdvisorSignal["phase"];
+  };
   symbol: string;
 }): IctAdvisorSignal => ({
   ...signal,
+  phase: signal.phase ?? "phase_1",
   symbol,
   requestedSymbol,
   brokerSymbol,
@@ -155,6 +171,7 @@ const signalBase = ({
   htfTimeframes,
   provenance: {
     methodology: "ICT",
+    phase: signal.phase ?? "phase_1",
     sourceSet: "ICT Mentorship Core Content",
     researchOnly: true,
     generatedAt: new Date().toISOString()
@@ -422,7 +439,25 @@ export const buildIctAdvisorSignals = ({
     }
   });
 
-  return [htfSignal, dailySignal, liquiditySignal, fvgSignal];
+  const phase2Context = {
+    brokerSymbol,
+    candles: normalized,
+    htfCandles,
+    primaryTimeframe,
+    requestedSymbol,
+    symbol
+  };
+  const phase2Signals = [
+    evaluateIctPhase2OrderBlockTaxonomy(phase2Context),
+    evaluateIctPhase2BreadAndButterBuy(phase2Context),
+    evaluateIctPhase2BreadAndButterSell(phase2Context),
+    evaluateIctPhase2OneShotOneKill(phase2Context)
+  ];
+  const approvedProfile = getDefaultApprovedSetupProfiles()[0];
+  return [htfSignal, dailySignal, liquiditySignal, fvgSignal, ...phase2Signals].map((signal) => ({
+    ...signal,
+    approvedProfileDecision: signal.approvedProfileDecision ?? evaluateApprovedSetupProfile(signal, approvedProfile)
+  }));
 };
 
 const bestSignal = (signals: IctAdvisorSignal[]) =>
@@ -455,7 +490,7 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
         sourceSummary,
         symbol
       })
-    : phaseOneStrategyIds.map((strategyId) =>
+    : [...phaseOneStrategyIds, ...phaseTwoStrategyIds].map((strategyId) =>
         signalBase({
           brokerSymbol,
           htfTimeframes,
@@ -464,6 +499,7 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
           symbol,
           signal: {
             strategyId,
+            phase: (phaseTwoStrategyIds as readonly string[]).includes(strategyId) ? "phase_2" : "phase_1",
             side: "flat",
             decision: "no_trade",
             confidence: 0,
@@ -543,7 +579,7 @@ export function assertIctAdvisorPacketIsCompact(packet: IctAdvisorPacket) {
       packet.safetyLocks.rawSnapshotsIncluded === false &&
       packet.approvedProfileDecision.safety.rawCandlesExcluded === true &&
       !/"candles"\s*:/i.test(serialized) &&
-      !/account|position|order|password|secret|api[_-]?key/i.test(serialized),
+      !/"account(Data)?"\s*:|"position(Data|s)?"\s*:|"order(Data|s)?"\s*:|"rawSnapshot"\s*:|"snapshot"\s*:|"password"\s*:|"secret"\s*:|"api[_-]?key"\s*:/i.test(serialized),
     serializedBytes: new Blob([serialized]).size
   };
 }

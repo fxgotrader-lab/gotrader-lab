@@ -42,6 +42,7 @@ export interface IctReplayTradePath {
 
 export interface IctReplayResult {
   strategyId: IctAdvisorSignal["strategyId"];
+  phase: IctAdvisorSignal["phase"];
   symbol: string;
   requestedSymbol: string;
   brokerSymbol: string;
@@ -53,6 +54,8 @@ export interface IctReplayResult {
   htfAligned?: boolean;
   dealingRangeLocation?: "premium" | "discount" | "equilibrium";
   liquidityTargetType?: string;
+  orderBlockVariant?: string;
+  approvedProfileStatus?: string;
   rrEstimate?: number;
   outcome: IctReplayOutcome;
   fvgStatus: IctFvgReplayStatus;
@@ -101,6 +104,7 @@ export interface IctReplayJournalEvent {
   eventType: "ict_replay_result";
   journalEventId: string;
   strategyId: IctAdvisorSignal["strategyId"];
+  phase: IctAdvisorSignal["phase"];
   symbol: string;
   requestedSymbol: string;
   brokerSymbol: string;
@@ -113,6 +117,8 @@ export interface IctReplayJournalEvent {
   confidence: number;
   outcome: IctReplayOutcome;
   fvgStatus: IctFvgReplayStatus;
+  orderBlockVariant?: string;
+  approvedProfileStatus?: string;
   entryReference?: number;
   invalidation?: number;
   target?: number;

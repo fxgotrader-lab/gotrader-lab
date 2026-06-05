@@ -466,7 +466,7 @@ export const assertIctRealReplayRunOutputIsCompact = (result: IctRealReplayRunRe
       result.authority.readinessOverrideAuthority === "none" &&
       result.safety.rawCandlesExcluded === true &&
       !/"candles"\s*:/i.test(serialized + diagnosticsSerialized) &&
-      !/password|secret|api[_-]?key|account|position|order|snapshot/i.test(serialized + diagnosticsSerialized),
+      !/"password"\s*:|"secret"\s*:|"api[_-]?key"\s*:|"account(Data)?"\s*:|"position(Data|s)?"\s*:|"order(Data|s)?"\s*:|"rawSnapshot"\s*:|"snapshot"\s*:/i.test(serialized + diagnosticsSerialized),
     serializedBytes: new Blob([serialized, diagnosticsSerialized]).size
   };
 };

@@ -28,7 +28,11 @@ export interface IctReplayDiagnostics {
     averageRrAchieved: number;
   };
   byStrategyId: Record<string, IctReplayBreakdownMetric>;
+  byPhase: Record<string, IctReplayBreakdownMetric>;
   bySetup: Record<string, IctReplayBreakdownMetric>;
+  byPhase2Setup: Record<string, IctReplayBreakdownMetric>;
+  byOrderBlockVariant: Record<string, IctReplayBreakdownMetric>;
+  byApprovedProfileStatus: Record<string, IctReplayBreakdownMetric>;
   bySide: Record<string, IctReplayBreakdownMetric>;
   bySymbol: Record<string, IctReplayBreakdownMetric>;
   byPrimaryTimeframe: Record<string, IctReplayBreakdownMetric>;
@@ -119,4 +123,3 @@ export interface IctReplayDiagnosticsJournalEvent {
 export type IctReplayCalibrationCandidate = IctReplayResult & {
   session?: string;
 };
-

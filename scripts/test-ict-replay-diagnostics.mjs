@@ -13,6 +13,7 @@ const outRoot = path.join(projectRoot, ".gotrader", "ict-replay-diagnostics-test
 const sourceFiles = [
   { root: sourceRoot, file: "ictStrategySuiteTypes.ts" },
   { root: sourceRoot, file: "ictAdvisorTypes.ts" },
+  { root: sourceRoot, file: "ictPhase2Types.ts" },
   { root: sourceRoot, file: "ictReplayValidationTypes.ts" },
   { root: sourceRoot, file: "ictReplayDiagnosticsTypes.ts" },
   { root: sourceRoot, file: "ictApprovedSetupProfileTypes.ts" },
@@ -21,6 +22,9 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictAdvisorJournal.ts" },
   { root: sourceRoot, file: "ictStrategySuiteHelpers.ts" },
   { root: sourceRoot, file: "ictStrategySuiteEngines.ts" },
+  { root: sourceRoot, file: "ictPhase2OrderBlocks.ts" },
+  { root: sourceRoot, file: "ictPhase2BreadAndButter.ts" },
+  { root: sourceRoot, file: "ictPhase2OneShotOneKill.ts" },
   { root: sourceRoot, file: "ictAdvisorEngine.ts" },
   { root: sourceRoot, file: "ictReplayValidation.ts" },
   { root: sourceRoot, file: "ictReplayDiagnostics.ts" },
@@ -74,6 +78,7 @@ export async function listCanonicalCandleSourceSummaries() {
 
 const baseResult = (overrides = {}) => ({
   strategyId: "ict-fvg-displacement",
+  phase: "phase_1",
   symbol: "MNQ",
   requestedSymbol: "MNQ",
   brokerSymbol: "USTECH",
@@ -117,6 +122,18 @@ async function main() {
   const suite = await import(pathToFileURL(path.join(outRoot, "index.mjs")));
   const results = [
     baseResult(),
+    baseResult({
+      phase: "phase_2",
+      strategyId: "ict-order-block-taxonomy",
+      setup: "order_block_retracement",
+      orderBlockVariant: "standard_order_block",
+      approvedProfileStatus: "watchlist_candidate",
+      confidence: 0.68,
+      rrEstimate: 2.1,
+      fvgStatus: "not_applicable",
+      outcome: "partial_target",
+      tradePath: { ...baseResult().tradePath, signalTime: "2026-06-05T14:00:00.000Z", rrAchieved: 1.3 }
+    }),
     baseResult({
       strategyId: "ict-liquidity-pool",
       setup: "sellside_sweep_bullish_displacement",
@@ -170,9 +187,13 @@ async function main() {
   const diagnostics = suite.buildReplayDiagnostics(results);
   assert.equal(diagnostics.researchOnly, true);
   assert.equal(diagnostics.totalResults, results.length);
-  assert.equal(diagnostics.totalSignals, 4);
+  assert.equal(diagnostics.totalSignals, 5);
   assert.ok(diagnostics.byStrategyId["ict-fvg-displacement"], "strategy breakdown missing");
+  assert.ok(diagnostics.byPhase.phase_2, "Phase 2 breakdown missing");
   assert.ok(diagnostics.bySetup.fvg_retracement, "setup breakdown missing");
+  assert.ok(diagnostics.byPhase2Setup.order_block_retracement, "Phase 2 setup breakdown missing");
+  assert.ok(diagnostics.byOrderBlockVariant.standard_order_block, "order-block variant breakdown missing");
+  assert.ok(diagnostics.byApprovedProfileStatus.watchlist_candidate, "approved profile status breakdown missing");
   assert.ok(diagnostics.bySide.long, "side breakdown missing");
   assert.ok(diagnostics.byConfidenceBucket["61-80"], "confidence bucket missing");
   assert.ok(diagnostics.byRrBucket["2r_to_3r"], "RR bucket missing");

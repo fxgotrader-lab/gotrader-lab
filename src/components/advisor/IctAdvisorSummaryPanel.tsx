@@ -92,14 +92,22 @@ export function IctAdvisorSummaryPanel({
   }, [mode, snapshot?.snapshotId, snapshot?.marketData.activeResearchSource.sourceId, snapshot?.marketData.activeResearchSource.fingerprint, snapshot?.mt5ReadOnly.higherTimeframeSources?.map((source) => source.fingerprint).join("|")]);
 
   const recommended = packet?.recommendedSignal;
-  const phaseOneSignals = useMemo(() => packet?.signals ?? [], [packet?.signals]);
+  const phaseOneSignals = useMemo(() => (packet?.signals ?? []).filter((signal) => signal.phase === "phase_1"), [packet?.signals]);
+  const phaseTwoSignals = useMemo(() => (packet?.signals ?? []).filter((signal) => signal.phase === "phase_2"), [packet?.signals]);
+  const topPhaseTwo = phaseTwoSignals
+    .slice()
+    .sort((left, right) => {
+      const statusWeight = (status?: string) =>
+        status === "approved_research_candidate" ? 3 : status === "watchlist_candidate" ? 2 : status === "rejected_candidate" ? 1 : 0;
+      return statusWeight(right.approvedProfileDecision?.status) - statusWeight(left.approvedProfileDecision?.status) || right.confidence - left.confidence;
+    })[0];
 
   if (mode === "compact") {
     return (
       <section className="rounded-xl border border-cyan-300/15 bg-slate-950/85 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">ICT Advisor Phase 1</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">ICT Advisor</p>
             <h3 className="mt-1 flex items-center gap-2 text-base font-semibold text-slate-50">
               <BrainCircuit className="h-4 w-4 text-cyan-300" aria-hidden="true" />
               Deterministic strategy summary
@@ -109,8 +117,9 @@ export function IctAdvisorSummaryPanel({
         </div>
         {packet ? (
           <>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
               <AdvisorMini label="Composite bias" value={formatToken(packet.compactSummary.compositeBias)} />
+              <AdvisorMini label="Phase 2 setup" value={formatToken(topPhaseTwo?.setup)} />
               <AdvisorMini label="Decision" value={formatToken(packet.compactSummary.decision)} />
               <AdvisorMini label="Setup" value={formatToken(packet.compactSummary.setup)} />
               <AdvisorMini label="Approved profile" value={formatToken(packet.compactSummary.approvedProfileStatus)} />
@@ -141,7 +150,7 @@ export function IctAdvisorSummaryPanel({
     <section className="rounded-xl border border-cyan-300/15 bg-slate-950/85 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">ICT Strategy Suite Phase 1</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">ICT Strategy Suite</p>
           <h3 className="mt-1 flex items-center gap-2 text-xl font-semibold text-slate-50">
             <BrainCircuit className="h-5 w-5 text-cyan-300" aria-hidden="true" />
             Deterministic ICT Advisor
@@ -173,6 +182,8 @@ export function IctAdvisorSummaryPanel({
             <AdvisorMini label="Draw-on-liquidity" value={packet.compactSummary.drawOnLiquidity ?? "none"} />
             <AdvisorMini label="Swept liquidity" value={recommended?.liquiditySwept ? `${recommended.liquiditySwept.type} @ ${compactPrice(recommended.liquiditySwept.price)}` : "none"} />
             <AdvisorMini label="Dealing range" value={formatToken(recommended?.dealingRange?.currentLocation)} detail={recommended?.dealingRange ? `${compactPrice(recommended.dealingRange.low)} / ${compactPrice(recommended.dealingRange.midpoint)} / ${compactPrice(recommended.dealingRange.high)}` : undefined} />
+            <AdvisorMini label="Phase" value={formatToken(recommended?.phase)} />
+            <AdvisorMini label="Order block" value={formatToken(recommended?.orderBlock?.variant)} detail={recommended?.orderBlock ? `${recommended.orderBlock.direction} / ${recommended.orderBlock.reason}` : undefined} />
             <AdvisorMini label="FVG / displacement" value={recommended?.fairValueGap ? `${recommended.fairValueGap.direction} FVG` : recommended?.displacement ? `${recommended.displacement.direction} displacement` : "missing"} />
             <AdvisorMini label="Entry zone" value={entryZoneLabel(recommended?.entryZone)} />
             <AdvisorMini label="Invalidation" value={compactPrice(recommended?.invalidation)} />
@@ -195,6 +206,33 @@ export function IctAdvisorSummaryPanel({
                     </div>
                     <p className="mt-1 text-xs text-slate-400">{formatIctAdvisorSignalSummary(signal)}</p>
                     <p className="mt-2 text-xs leading-5 text-slate-300">{signal.summary}</p>
+                    {signal.noTradeReasons.length ? (
+                      <p className="mt-2 text-xs leading-5 text-amber-100">Blocked: {signal.noTradeReasons.slice(0, 3).join("; ")}</p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Phase 2 models</p>
+              <div className="mt-3 grid gap-2">
+                {phaseTwoSignals.map((signal) => (
+                  <div key={signal.strategyId} className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-slate-100">{signal.strategyId}</p>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant={statusVariant(signal.approvedProfileDecision?.status)}>{formatToken(signal.approvedProfileDecision?.status)}</Badge>
+                        <Badge variant={signal.decision === "research_only" ? "success" : "warning"}>{formatToken(signal.decision)}</Badge>
+                        <Badge variant="secondary">{pct(signal.confidence)}</Badge>
+                      </div>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-400">{formatIctAdvisorSignalSummary(signal)}</p>
+                    <p className="mt-2 text-xs leading-5 text-slate-300">{signal.summary}</p>
+                    {signal.orderBlock ? (
+                      <p className="mt-2 text-xs leading-5 text-cyan-100">
+                        {formatToken(signal.orderBlock.variant)} / {signal.orderBlock.direction} / {signal.orderBlock.reason}
+                      </p>
+                    ) : null}
                     {signal.noTradeReasons.length ? (
                       <p className="mt-2 text-xs leading-5 text-amber-100">Blocked: {signal.noTradeReasons.slice(0, 3).join("; ")}</p>
                     ) : null}
@@ -226,7 +264,7 @@ export function IctAdvisorSummaryPanel({
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">ICT Replay Validation</p>
                 <p className="mt-1 text-xs text-slate-400">
-                  Research-only historical replay of Phase 1 signals. Raw candles are used internally and excluded from the report.
+                  Research-only historical replay of compact ICT advisor signals. Raw candles are used internally and excluded from the report.
                 </p>
               </div>
               <Badge variant="danger">authority none</Badge>

@@ -36,7 +36,11 @@ const strategyIds = new Set([
   "ict-htf-bias",
   "ict-daily-range",
   "ict-liquidity-pool",
-  "ict-fvg-displacement"
+  "ict-fvg-displacement",
+  "ict-order-block-taxonomy",
+  "ict-bread-and-butter-buy",
+  "ict-bread-and-butter-sell",
+  "ict-one-shot-one-kill"
 ]);
 
 const forbiddenFieldNames = new Set([
@@ -188,11 +192,22 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
   const liquidityTargetType = replay ? input.liquidityTargetType : input.drawOnLiquidity?.type;
   const noTradeReasons = input.noTradeReasons ?? [];
   const hasDisplacement = replay
-    ? input.strategyId === "ict-fvg-displacement" || input.setup.includes("displacement") || input.fvgStatus !== "not_applicable"
-    : Boolean(input.displacement);
+    ? input.strategyId === "ict-fvg-displacement" ||
+      input.strategyId === "ict-order-block-taxonomy" ||
+      input.strategyId === "ict-bread-and-butter-buy" ||
+      input.strategyId === "ict-bread-and-butter-sell" ||
+      input.strategyId === "ict-one-shot-one-kill" ||
+      input.setup.includes("displacement") ||
+      input.fvgStatus !== "not_applicable"
+    : Boolean(input.displacement || input.orderBlock?.displacementConfirmed);
   const hasLiquiditySweep = replay
-    ? Boolean(input.liquidityTargetType) || input.setup.includes("sweep") || input.strategyId === "ict-fvg-displacement"
-    : Boolean(input.liquiditySwept);
+    ? Boolean(input.liquidityTargetType) ||
+      input.setup.includes("sweep") ||
+      input.strategyId === "ict-fvg-displacement" ||
+      input.strategyId === "ict-bread-and-butter-buy" ||
+      input.strategyId === "ict-bread-and-butter-sell" ||
+      input.strategyId === "ict-one-shot-one-kill"
+    : Boolean(input.liquiditySwept || input.orderBlock?.liquiditySweepConfirmed);
   const mixedBias = replay ? input.htfAligned === false : mixedBiasForSignal(input);
   const missingHtfContext = replay ? input.htfAligned === undefined : htfTimeframes.length === 0;
   const targetTooClose = hasText(noTradeReasons, /target (is )?too close|too close to target/i);
@@ -256,7 +271,7 @@ export const evaluateApprovedSetupProfile = (
   const nearRr = rr >= profile.minRr - 0.25;
 
   if (normalized.hasForbiddenField) hardRejects.push("Input contains a forbidden unsafe field.");
-  if (!strategyIds.has(normalized.strategyId)) hardRejects.push("Unknown ICT Phase 1 strategy id.");
+  if (!strategyIds.has(normalized.strategyId)) hardRejects.push("Unknown ICT strategy id.");
   if (normalized.decision !== "research_only") hardRejects.push("Original signal is not research-only.");
   if (normalized.side !== "long" && normalized.side !== "short") hardRejects.push("Signal is not directional.");
   if (profile.allowedSides?.length && !profile.allowedSides.includes(normalized.side as "long" | "short")) hardRejects.push("Side is outside approved profile allowed sides.");
@@ -478,7 +493,7 @@ export const assertIctApprovedSetupDecisionIsCompact = (decision: IctApprovedSet
       decision.authority.readinessOverrideAuthority === "none" &&
       decision.safety.rawCandlesExcluded === true &&
       !/"candles"\s*:/i.test(serialized) &&
-      !/password|secret|api[_-]?key|account|position|order|snapshot/i.test(serialized),
+      !/"password"\s*:|"secret"\s*:|"api[_-]?key"\s*:|"account(Data)?"\s*:|"position(Data|s)?"\s*:|"order(Data|s)?"\s*:|"rawSnapshot"\s*:|"snapshot"\s*:/i.test(serialized),
     serializedBytes: new Blob([serialized]).size
   };
 };

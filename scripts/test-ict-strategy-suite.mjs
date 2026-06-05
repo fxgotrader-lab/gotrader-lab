@@ -13,10 +13,14 @@ const outRoot = path.join(projectRoot, ".gotrader", "ict-strategy-suite-test");
 const sourceFiles = [
   { root: sourceRoot, file: "ictStrategySuiteTypes.ts" },
   { root: sourceRoot, file: "ictAdvisorTypes.ts" },
+  { root: sourceRoot, file: "ictPhase2Types.ts" },
   { root: sourceRoot, file: "ictStrategySuiteJournal.ts" },
   { root: sourceRoot, file: "ictAdvisorJournal.ts" },
   { root: sourceRoot, file: "ictStrategySuiteHelpers.ts" },
   { root: sourceRoot, file: "ictStrategySuiteEngines.ts" },
+  { root: sourceRoot, file: "ictPhase2OrderBlocks.ts" },
+  { root: sourceRoot, file: "ictPhase2BreadAndButter.ts" },
+  { root: sourceRoot, file: "ictPhase2OneShotOneKill.ts" },
   { root: sourceRoot, file: "ictAdvisorEngine.ts" },
   { root: sourceRoot, file: "ictReplayValidationTypes.ts" },
   { root: sourceRoot, file: "ictReplayDiagnosticsTypes.ts" },
@@ -417,17 +421,24 @@ async function main() {
   assert.equal(advisorPacket.requestedSymbol, "MNQ", "advisor packet requested symbol mismatch");
   assert.equal(advisorPacket.brokerSymbol, "USTECH", "advisor packet broker symbol mismatch");
   assert.deepEqual(advisorPacket.htfTimeframes.sort(), ["15m", "1h"].sort(), "advisor packet should keep primary 5m separate from 15m/1h HTF context");
-  assert.equal(advisorPacket.signals.length, 4, "advisor packet should include Phase 1 strategy signals only");
+  assert.ok(advisorPacket.signals.length >= 8, "advisor packet should include Phase 1 and Phase 2 strategy signals");
   assert.ok(advisorPacket.signals.some((signal) => signal.strategyId === "ict-fvg-displacement"), "advisor packet should include FVG signal");
+  assert.ok(advisorPacket.signals.some((signal) => signal.strategyId === "ict-order-block-taxonomy"), "advisor packet should include order-block taxonomy signal");
+  assert.ok(advisorPacket.signals.some((signal) => signal.phase === "phase_2"), "advisor packet should include Phase 2 model signals");
+  assert.ok(
+    advisorPacket.signals.every((signal) => signal.approvedProfileDecision?.status),
+    "every advisor signal should be evaluated by the approved setup profile layer"
+  );
   assert.equal(advisorPacket.authority.executionAuthority, "none", "advisor packet execution authority must be none");
   assert.equal(advisorPacket.authority.brokerAuthority, "none", "advisor packet broker authority must be none");
   assert.equal(advisorPacket.authority.readinessOverrideAuthority, "none", "advisor packet readiness authority must be none");
   const compactCheck = suite.assertIctAdvisorPacketIsCompact(advisorPacket);
   assert.equal(compactCheck.ok, true, "advisor packet must stay compact and exclude raw candles/secrets/account/order/position data");
   assert.doesNotMatch(JSON.stringify(advisorPacket), /"candles"\s*:/i, "advisor packet must not include raw candle arrays");
-  assert.equal(advisorPacket.journalEvents.length, 4, "advisor packet should journal every Phase 1 signal");
+  assert.equal(advisorPacket.journalEvents.length, advisorPacket.signals.length, "advisor packet should journal every compact ICT signal");
   for (const event of advisorPacket.journalEvents) {
     assert.equal(event.researchOnly, true, "advisor journal event must be research-only");
+    assert.ok(event.phase === "phase_1" || event.phase === "phase_2", "advisor journal event should include model phase");
     assert.ok(event.setup, "advisor journal event should include compact setup");
     assert.ok(!("candles" in event), "advisor journal event must not persist raw candles");
   }

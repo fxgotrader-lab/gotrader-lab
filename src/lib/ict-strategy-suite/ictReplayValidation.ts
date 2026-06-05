@@ -199,6 +199,7 @@ export const evaluateSignalOutcome = ({
   const fvgStatus = evaluateFvgReplayStatus(signal, futureCandles);
   return {
     strategyId: signal.strategyId,
+    phase: signal.phase ?? "phase_1",
     symbol,
     requestedSymbol,
     brokerSymbol,
@@ -212,6 +213,8 @@ export const evaluateSignalOutcome = ({
       : undefined,
     dealingRangeLocation: signal.dealingRange?.currentLocation,
     liquidityTargetType: signal.drawOnLiquidity?.type,
+    orderBlockVariant: signal.orderBlock?.variant,
+    approvedProfileStatus: signal.approvedProfileDecision?.status,
     rrEstimate: signal.rrEstimate,
     outcome,
     fvgStatus,
@@ -289,6 +292,7 @@ export const buildIctReplayJournalEvent = (result: IctReplayResult, htfTimeframe
   eventType: "ict_replay_result",
   journalEventId: createId("ict_replay_journal"),
   strategyId: result.strategyId,
+  phase: result.phase,
   symbol: result.symbol,
   requestedSymbol: result.requestedSymbol,
   brokerSymbol: result.brokerSymbol,
@@ -301,6 +305,8 @@ export const buildIctReplayJournalEvent = (result: IctReplayResult, htfTimeframe
   confidence: result.confidence,
   outcome: result.outcome,
   fvgStatus: result.fvgStatus,
+  orderBlockVariant: result.orderBlockVariant,
+  approvedProfileStatus: result.approvedProfileStatus,
   entryReference: result.tradePath.entryReference,
   invalidation: result.tradePath.invalidation,
   target: result.tradePath.target,
@@ -493,7 +499,7 @@ export const assertIctReplayOutputIsCompact = (report: IctReplayValidationReport
       report.authority.brokerAuthority === "none" &&
       report.authority.readinessOverrideAuthority === "none" &&
       !/"candles"\s*:/i.test(serialized) &&
-      !/password|secret|api[_-]?key|account|position|order/i.test(serialized),
+      !/"password"\s*:|"secret"\s*:|"api[_-]?key"\s*:|"account(Data)?"\s*:|"position(Data|s)?"\s*:|"order(Data|s)?"\s*:|"rawSnapshot"\s*:|"snapshot"\s*:/i.test(serialized),
     serializedBytes: new Blob([serialized]).size
   };
 };

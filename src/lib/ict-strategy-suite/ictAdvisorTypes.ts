@@ -1,5 +1,11 @@
 import type { CanonicalCandleProvider } from "../candleSources";
 import type { IctApprovedSetupDecision } from "./ictApprovedSetupProfileTypes";
+import type {
+  IctOrderBlockClassification,
+  IctOrderBlockVariant,
+  IctPhase2Setup,
+  IctPhase2StrategyId
+} from "./ictPhase2Types";
 
 export type IctBias = "bullish" | "bearish" | "neutral";
 export type IctSide = "long" | "short" | "flat";
@@ -50,12 +56,24 @@ export interface IctAdvisorFairValueGap {
   createdAt: string;
 }
 
+export type IctAdvisorStrategyId =
+  | "ict-htf-bias"
+  | "ict-daily-range"
+  | "ict-liquidity-pool"
+  | "ict-fvg-displacement"
+  | IctPhase2StrategyId;
+
+export type IctAdvisorSetup =
+  | "htf_bias_only"
+  | "daily_range_projection"
+  | "sellside_sweep_bullish_displacement"
+  | "buyside_sweep_bearish_displacement"
+  | "fvg_retracement"
+  | IctPhase2Setup;
+
 export interface IctAdvisorSignal {
-  strategyId:
-    | "ict-htf-bias"
-    | "ict-daily-range"
-    | "ict-liquidity-pool"
-    | "ict-fvg-displacement";
+  strategyId: IctAdvisorStrategyId;
+  phase: "phase_1" | "phase_2";
   symbol: string;
   requestedSymbol: string;
   brokerSymbol: string;
@@ -74,8 +92,9 @@ export interface IctAdvisorSignal {
   drawOnLiquidity?: IctAdvisorLiquidityPool;
   displacement?: IctAdvisorDisplacement;
   fairValueGap?: IctAdvisorFairValueGap;
+  orderBlock?: IctOrderBlockClassification;
   entryZone?: {
-    type: "fair_value_gap";
+    type: "fair_value_gap" | IctOrderBlockVariant;
     high: number;
     low: number;
     midpoint: number;
@@ -83,18 +102,14 @@ export interface IctAdvisorSignal {
   invalidation?: number;
   target?: number;
   rrEstimate?: number;
-  setup:
-    | "htf_bias_only"
-    | "daily_range_projection"
-    | "sellside_sweep_bullish_displacement"
-    | "buyside_sweep_bearish_displacement"
-    | "fvg_retracement"
-    | "no_trade";
+  setup: IctAdvisorSetup;
   summary: string;
   noTradeReasons: string[];
   riskNotes: string[];
+  approvedProfileDecision?: IctApprovedSetupDecision;
   provenance: {
     methodology: "ICT";
+    phase: "phase_1" | "phase_2";
     sourceSet: "ICT Mentorship Core Content";
     researchOnly: true;
     generatedAt: string;
@@ -112,6 +127,11 @@ export interface IctAdvisorJournalEvent {
   htfTimeframes: string[];
   compositeBias: IctBias;
   setup: IctAdvisorSignal["setup"];
+  phase: "phase_1" | "phase_2";
+  orderBlockVariant?: IctOrderBlockVariant;
+  approvedProfileStatus?: IctApprovedSetupDecision["status"];
+  approvalScore?: number;
+  rejectionReasons?: string[];
   liquiditySwept?: IctAdvisorLiquidityPool;
   drawOnLiquidity?: IctAdvisorLiquidityPool;
   dealingRangeLocation?: IctLocation;

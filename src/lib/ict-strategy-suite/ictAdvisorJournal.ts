@@ -20,6 +20,11 @@ export const buildIctAdvisorJournalEvent = (signal: IctAdvisorSignal): IctAdviso
   htfTimeframes: signal.htfTimeframes,
   compositeBias: signal.bias.composite,
   setup: signal.setup,
+  phase: signal.phase,
+  orderBlockVariant: signal.orderBlock?.variant,
+  approvedProfileStatus: signal.approvedProfileDecision?.status,
+  approvalScore: signal.approvedProfileDecision?.approvalScore,
+  rejectionReasons: signal.approvedProfileDecision?.rejectionReasons,
   liquiditySwept: signal.liquiditySwept,
   drawOnLiquidity: signal.drawOnLiquidity,
   dealingRangeLocation: signal.dealingRange?.currentLocation,
@@ -49,7 +54,7 @@ export const appendIctAdvisorJournalEvents = (events: IctAdvisorJournalEvent[]) 
   const sanitized = events.map((event) => ({
     ...event,
     researchOnly: true as const,
-    riskNotes: Array.from(new Set([...event.riskNotes, "ICT Advisor Phase 1 is research-only; authority remains none."]))
+    riskNotes: Array.from(new Set([...event.riskNotes, "ICT Advisor is research-only; authority remains none."]))
   }));
   if (!isBrowser()) {
     return {

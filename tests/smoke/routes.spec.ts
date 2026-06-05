@@ -129,14 +129,14 @@ test.describe("GoTrader browser route smoke", () => {
 
   test("ICT Strategy Suite advisor panels render in advisor workspace and dashboard", async ({ page }) => {
     await gotoRoute(page, "/advisor");
-    await expect(page.locator("main")).toContainText(/ICT Strategy Suite Phase 1|ICT Advisor is waiting/i);
+    await expect(page.locator("main")).toContainText(/ICT Strategy Suite|ICT Advisor is waiting/i);
     await expect(page.locator("main")).toContainText(/Packet Safety Contract/i);
 
     await gotoRoute(page, "/research-advisor");
-    await expect(page.locator("main")).toContainText(/ICT Strategy Suite Phase 1|ICT Advisor is waiting/i);
+    await expect(page.locator("main")).toContainText(/ICT Strategy Suite|ICT Advisor is waiting/i);
 
     await gotoRoute(page, "/dashboard");
-    await expect(page.locator("main")).toContainText(/ICT Advisor Phase 1/i);
+    await expect(page.locator("main")).toContainText(/ICT Advisor/i);
     await expect(page.locator("main")).toContainText(/Open Advisor/i);
   });
 

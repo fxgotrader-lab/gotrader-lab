@@ -13,6 +13,7 @@ const outRoot = path.join(projectRoot, ".gotrader", "ict-replay-validation-test"
 const sourceFiles = [
   { root: sourceRoot, file: "ictStrategySuiteTypes.ts" },
   { root: sourceRoot, file: "ictAdvisorTypes.ts" },
+  { root: sourceRoot, file: "ictPhase2Types.ts" },
   { root: sourceRoot, file: "ictReplayValidationTypes.ts" },
   { root: sourceRoot, file: "ictReplayDiagnosticsTypes.ts" },
   { root: sourceRoot, file: "ictApprovedSetupProfileTypes.ts" },
@@ -21,6 +22,9 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictAdvisorJournal.ts" },
   { root: sourceRoot, file: "ictStrategySuiteHelpers.ts" },
   { root: sourceRoot, file: "ictStrategySuiteEngines.ts" },
+  { root: sourceRoot, file: "ictPhase2OrderBlocks.ts" },
+  { root: sourceRoot, file: "ictPhase2BreadAndButter.ts" },
+  { root: sourceRoot, file: "ictPhase2OneShotOneKill.ts" },
   { root: sourceRoot, file: "ictAdvisorEngine.ts" },
   { root: sourceRoot, file: "ictReplayValidation.ts" },
   { root: sourceRoot, file: "ictReplayDiagnostics.ts" },
