@@ -50,6 +50,10 @@ export interface IctReplayResult {
   setup: IctAdvisorSignal["setup"];
   decision: "research_only" | "no_trade";
   confidence: number;
+  htfAligned?: boolean;
+  dealingRangeLocation?: "premium" | "discount" | "equilibrium";
+  liquidityTargetType?: string;
+  rrEstimate?: number;
   outcome: IctReplayOutcome;
   fvgStatus: IctFvgReplayStatus;
   tradePath: IctReplayTradePath;

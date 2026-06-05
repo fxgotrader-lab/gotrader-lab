@@ -207,6 +207,12 @@ export const evaluateSignalOutcome = ({
     setup: signal.setup,
     decision: signal.decision,
     confidence: signal.confidence,
+    htfAligned: Object.values(signal.bias.htf ?? {}).length
+      ? Object.values(signal.bias.htf).every((bias) => bias === signal.bias.composite || bias === "neutral")
+      : undefined,
+    dealingRangeLocation: signal.dealingRange?.currentLocation,
+    liquidityTargetType: signal.drawOnLiquidity?.type,
+    rrEstimate: signal.rrEstimate,
     outcome,
     fvgStatus,
     tradePath,

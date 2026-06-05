@@ -1,4 +1,5 @@
 import type { IctReplaySummary } from "./ictReplayValidationTypes";
+import type { IctReplayCalibrationResult, IctReplayDiagnostics } from "./ictReplayDiagnosticsTypes";
 
 export interface IctRealReplayRunConfig {
   requestedSymbols: string[];
@@ -60,6 +61,8 @@ export interface IctRealReplayRunResult {
   config: Omit<IctRealReplayRunConfig, "researchOnly"> & { researchOnly: true };
   symbols: IctRealReplaySymbolResult[];
   aggregateSummary: IctRealReplayAggregateSummary;
+  diagnostics?: IctReplayDiagnostics;
+  calibrationResults?: IctReplayCalibrationResult[];
   safety: {
     rawCandlesExcluded: true;
     rawSnapshotsExcluded: true;
@@ -94,4 +97,3 @@ export interface IctRealReplayRunJournalEvent {
   authority: IctRealReplayRunResult["authority"];
   safety: IctRealReplayRunResult["safety"];
 }
-

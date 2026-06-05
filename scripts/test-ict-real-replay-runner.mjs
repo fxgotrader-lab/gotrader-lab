@@ -14,6 +14,7 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictStrategySuiteTypes.ts" },
   { root: sourceRoot, file: "ictAdvisorTypes.ts" },
   { root: sourceRoot, file: "ictReplayValidationTypes.ts" },
+  { root: sourceRoot, file: "ictReplayDiagnosticsTypes.ts" },
   { root: sourceRoot, file: "ictRealReplayRunnerTypes.ts" },
   { root: sourceRoot, file: "ictStrategySuiteJournal.ts" },
   { root: sourceRoot, file: "ictAdvisorJournal.ts" },
@@ -21,6 +22,7 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictStrategySuiteEngines.ts" },
   { root: sourceRoot, file: "ictAdvisorEngine.ts" },
   { root: sourceRoot, file: "ictReplayValidation.ts" },
+  { root: sourceRoot, file: "ictReplayDiagnostics.ts" },
   { root: sourceRoot, file: "ictRealReplayRunner.ts" },
   { root: mt5Root, file: "mt5ReadOnlyTypes.ts" },
   { root: mt5Root, file: "mt5SymbolSettings.ts" },
@@ -196,6 +198,9 @@ async function main() {
   assertCompactRun(suite, deterministic, "deterministic fixture");
   assert.equal(deterministic.symbols[0].status, "completed", "deterministic fixture should complete");
   assert.ok(deterministic.aggregateSummary.totalSignals > 0, "deterministic replay should produce compact signal metrics");
+  assert.ok(deterministic.diagnostics?.byStrategyId, "real replay runner should include compact diagnostics by strategy");
+  assert.ok(deterministic.diagnostics?.bySession, "real replay runner should include compact diagnostics by session");
+  assert.ok(deterministic.calibrationResults?.some((item) => item.filterId === "min_confidence_70"), "real replay runner should include calibration summaries");
   assert.deepEqual([...new Set(requestedTimeframes)].sort(), ["15m", "1h", "5m"].sort(), "runner should fetch primary 5m separately from HTF 15m/1h context");
   const journalEvent = suite.buildIctRealReplayRunJournalEvent(deterministic);
   assert.equal(journalEvent.eventType, "ict_real_replay_run_summary");
@@ -255,4 +260,3 @@ main().catch((error) => {
   process.stderr.write(`ICT Real Replay Runner smoke test failed: ${error?.message ?? error}\n`);
   process.exitCode = 1;
 });
-

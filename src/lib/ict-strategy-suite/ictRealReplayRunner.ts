@@ -10,6 +10,12 @@ import {
 } from "../integrations/mt5/mt5SymbolSettings";
 import type { Candle, Timeframe } from "../types";
 import { runIctReplayValidation, sanitizeReplayOutput } from "./ictReplayValidation";
+import {
+  appendIctReplayDiagnosticsJournalEvent,
+  buildIctReplayDiagnosticsJournalEvent,
+  buildReplayDiagnostics,
+  runReplayCalibrationSuite
+} from "./ictReplayDiagnostics";
 import type { IctReplayResult, IctReplaySummary, IctReplayValidationReport } from "./ictReplayValidationTypes";
 import type {
   IctRealReplayAggregateSummary,
@@ -71,6 +77,7 @@ export type IctRealReplayCandleFetcher = (request: {
 export interface IctRealReplayRunOptions {
   fetchCandles?: IctRealReplayCandleFetcher;
   appendJournal?: boolean;
+  includeDiagnostics?: boolean;
 }
 
 const average = (values: number[]) => (values.length ? round(values.reduce((total, value) => total + value, 0) / values.length, 4) : 0);
@@ -311,6 +318,7 @@ export async function runIctRealReplay(configInput: Partial<IctRealReplayRunConf
   const fetchCandles = options.fetchCandles ?? defaultMt5RealReplayCandleFetcher;
   const symbolResults: IctRealReplaySymbolResult[] = [];
   const completedReports: Array<{ requestedSymbol: string; primaryTimeframe: string; report: IctReplayValidationReport }> = [];
+  const replayResults: IctReplayResult[] = [];
 
   for (const requested of config.requestedSymbols) {
     const mapping = resolveIctRealReplaySymbolMapping(requested);
@@ -368,6 +376,7 @@ export async function runIctRealReplay(configInput: Partial<IctRealReplayRunConf
           })
         );
         completedReports.push({ requestedSymbol: mapping.requestedSymbol, primaryTimeframe, report });
+        replayResults.push(...report.results);
         symbolResults.push({
           requestedSymbol: mapping.requestedSymbol,
           brokerSymbol: mapping.brokerSymbol,
@@ -391,6 +400,8 @@ export async function runIctRealReplay(configInput: Partial<IctRealReplayRunConf
     }
   }
 
+  const diagnostics = options.includeDiagnostics === false ? undefined : buildReplayDiagnostics(replayResults);
+  const calibrationResults = diagnostics ? runReplayCalibrationSuite(replayResults) : undefined;
   const result = sanitizeIctRealReplayRunResult({
     runId: createId("ict_real_replay"),
     generatedAt: new Date().toISOString(),
@@ -399,10 +410,21 @@ export async function runIctRealReplay(configInput: Partial<IctRealReplayRunConf
     config,
     symbols: symbolResults,
     aggregateSummary: aggregateReports(config, symbolResults, completedReports),
+    diagnostics,
+    calibrationResults,
     safety
   });
   if (options.appendJournal !== false) {
     appendIctRealReplayRunJournalEvent(buildIctRealReplayRunJournalEvent(result));
+    if (result.diagnostics && result.calibrationResults) {
+      appendIctReplayDiagnosticsJournalEvent(
+        buildIctReplayDiagnosticsJournalEvent({
+          calibrationResults: result.calibrationResults,
+          diagnostics: result.diagnostics,
+          runId: result.runId
+        })
+      );
+    }
   }
   return result;
 }
@@ -417,8 +439,10 @@ export const sanitizeIctRealReplayRunResult = (result: IctRealReplayRunResult): 
 };
 
 export const assertIctRealReplayRunOutputIsCompact = (result: IctRealReplayRunResult) => {
-  const { safety: _safety, ...payloadWithoutSafetyLabels } = result;
+  const { safety: _safety, diagnostics, ...payloadWithoutSafetyLabels } = result;
+  const diagnosticsWithoutSafety = diagnostics ? { ...diagnostics, safety: undefined } : undefined;
   const serialized = JSON.stringify(payloadWithoutSafetyLabels);
+  const diagnosticsSerialized = JSON.stringify(diagnosticsWithoutSafety ?? {});
   return {
     ok:
       result.researchOnly === true &&
@@ -426,8 +450,8 @@ export const assertIctRealReplayRunOutputIsCompact = (result: IctRealReplayRunRe
       result.authority.brokerAuthority === "none" &&
       result.authority.readinessOverrideAuthority === "none" &&
       result.safety.rawCandlesExcluded === true &&
-      !/"candles"\s*:/i.test(serialized) &&
-      !/password|secret|api[_-]?key|account|position|order|snapshot/i.test(serialized),
-    serializedBytes: new Blob([serialized]).size
+      !/"candles"\s*:/i.test(serialized + diagnosticsSerialized) &&
+      !/password|secret|api[_-]?key|account|position|order|snapshot/i.test(serialized + diagnosticsSerialized),
+    serializedBytes: new Blob([serialized, diagnosticsSerialized]).size
   };
 };
