@@ -110,6 +110,7 @@ export interface IctAdvisorJournalEvent {
   primaryTimeframe: string;
   htfTimeframes: string[];
   compositeBias: IctBias;
+  setup: IctAdvisorSignal["setup"];
   liquiditySwept?: IctAdvisorLiquidityPool;
   drawOnLiquidity?: IctAdvisorLiquidityPool;
   dealingRangeLocation?: IctLocation;

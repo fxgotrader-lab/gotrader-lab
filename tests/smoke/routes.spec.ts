@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 const primaryRoutes = [
   "/dashboard",
   "/advisor",
+  "/research-advisor",
   "/market-data",
   "/autonomous-research",
   "/walk-forward",
@@ -43,6 +44,7 @@ const consoleErrorsByTest = new Map<string, string[]>();
 const expectedHeadings: Record<string, RegExp> = {
   "/dashboard": /Command Center/i,
   "/advisor": /Research Advisor/i,
+  "/research-advisor": /Research Advisor/i,
   "/market-data": /Market Data/i,
   "/autonomous-research": /Autonomous Research/i,
   "/walk-forward": /Walk-Forward/i,
@@ -123,6 +125,19 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByText(/Go-Trader gate/i).first()).toBeVisible();
     await expect(page.getByText(/Tradovate gate|Tradovate Future Gate/i).first()).toBeVisible();
     await expect(page.getByText("Loop progress")).toBeVisible();
+  });
+
+  test("ICT Strategy Suite advisor panels render in advisor workspace and dashboard", async ({ page }) => {
+    await gotoRoute(page, "/advisor");
+    await expect(page.locator("main")).toContainText(/ICT Strategy Suite Phase 1|ICT Advisor is waiting/i);
+    await expect(page.locator("main")).toContainText(/Packet Safety Contract/i);
+
+    await gotoRoute(page, "/research-advisor");
+    await expect(page.locator("main")).toContainText(/ICT Strategy Suite Phase 1|ICT Advisor is waiting/i);
+
+    await gotoRoute(page, "/dashboard");
+    await expect(page.locator("main")).toContainText(/ICT Advisor Phase 1/i);
+    await expect(page.locator("main")).toContainText(/Open Advisor/i);
   });
 
   test("chart surfaces render canvas or a safe fallback", async ({ page }) => {

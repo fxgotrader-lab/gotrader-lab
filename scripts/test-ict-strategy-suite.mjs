@@ -411,8 +411,23 @@ async function main() {
   assert.equal(advisorPacket.journalEvents.length, 4, "advisor packet should journal every Phase 1 signal");
   for (const event of advisorPacket.journalEvents) {
     assert.equal(event.researchOnly, true, "advisor journal event must be research-only");
+    assert.ok(event.setup, "advisor journal event should include compact setup");
     assert.ok(!("candles" in event), "advisor journal event must not persist raw candles");
   }
+  const noHtfPacket = await suite.buildIctAdvisorPacketFromRuntime({
+    ...runtimeSnapshot,
+    mt5ReadOnly: {
+      brokerSymbol: "USTECH",
+      higherTimeframeSources: []
+    }
+  });
+  const noHtfBiasSignal = noHtfPacket.signals.find((signal) => signal.strategyId === "ict-htf-bias");
+  assert.equal(noHtfPacket.htfTimeframes.length, 0, "missing HTF runtime should produce an empty HTF context");
+  assert.equal(noHtfBiasSignal?.decision, "no_trade", "missing HTF context should block the HTF bias signal");
+  assert.ok(
+    noHtfBiasSignal?.noTradeReasons.some((reason) => /Missing higher-timeframe context/i.test(reason)),
+    "missing HTF context should be visible in advisor no-trade reasons"
+  );
 
   const serialized = JSON.stringify(evaluation);
   assert.doesNotMatch(serialized, /order_placement|executionAllowed":true|brokerAuthority":"[^n]|readinessOverrideAuthority":"[^n]/i);

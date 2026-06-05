@@ -19,6 +19,7 @@ export const buildIctAdvisorJournalEvent = (signal: IctAdvisorSignal): IctAdviso
   primaryTimeframe: signal.primaryTimeframe,
   htfTimeframes: signal.htfTimeframes,
   compositeBias: signal.bias.composite,
+  setup: signal.setup,
   liquiditySwept: signal.liquiditySwept,
   drawOnLiquidity: signal.drawOnLiquidity,
   dealingRangeLocation: signal.dealingRange?.currentLocation,

@@ -14,6 +14,8 @@ import type { ResearchRuntimeSnapshot } from "@/lib/runtime";
 const formatToken = (value?: string) => (value ?? "pending").replace(/_/g, " ");
 const pct = (value?: number) => (typeof value === "number" ? `${Math.round(value * 100)}%` : "n/a");
 const compactPrice = (value?: number) => (typeof value === "number" && Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "n/a");
+const entryZoneLabel = (entryZone?: IctAdvisorPacket["recommendedSignal"]["entryZone"]) =>
+  entryZone ? `${compactPrice(entryZone.low)} - ${compactPrice(entryZone.high)} (${compactPrice(entryZone.midpoint)} mid)` : "n/a";
 
 export function IctAdvisorSummaryPanel({
   mode = "full",
@@ -71,8 +73,9 @@ export function IctAdvisorSummaryPanel({
         </div>
         {packet ? (
           <>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
               <AdvisorMini label="Composite bias" value={formatToken(packet.compactSummary.compositeBias)} />
+              <AdvisorMini label="Decision" value={formatToken(packet.compactSummary.decision)} />
               <AdvisorMini label="Draw" value={packet.compactSummary.drawOnLiquidity ?? "none"} />
               <AdvisorMini label="Setup" value={formatToken(packet.compactSummary.setup)} />
               <AdvisorMini label="Confidence" value={pct(packet.compactSummary.confidence)} />
@@ -124,9 +127,18 @@ export function IctAdvisorSummaryPanel({
             <AdvisorMini label="Primary timeframe" value={packet.primaryTimeframe} detail={`${packet.activeSource.candleCount.toLocaleString()} candles`} />
             <AdvisorMini label="HTF context" value={packet.htfTimeframes.length ? packet.htfTimeframes.join(", ") : "missing"} detail="15m / 1h when fetched" />
             <AdvisorMini label="Composite bias" value={formatToken(packet.compactSummary.compositeBias)} detail={recommended?.bias.primary ? `primary ${recommended.bias.primary}` : undefined} />
+            <AdvisorMini label="Active setup" value={formatToken(packet.compactSummary.setup)} />
+            <AdvisorMini label="Research side" value={formatToken(packet.compactSummary.side)} />
+            <AdvisorMini label="Decision" value={formatToken(packet.compactSummary.decision)} />
+            <AdvisorMini label="Confidence" value={pct(packet.compactSummary.confidence)} />
             <AdvisorMini label="Draw-on-liquidity" value={packet.compactSummary.drawOnLiquidity ?? "none"} />
             <AdvisorMini label="Swept liquidity" value={recommended?.liquiditySwept ? `${recommended.liquiditySwept.type} @ ${compactPrice(recommended.liquiditySwept.price)}` : "none"} />
+            <AdvisorMini label="Dealing range" value={formatToken(recommended?.dealingRange?.currentLocation)} detail={recommended?.dealingRange ? `${compactPrice(recommended.dealingRange.low)} / ${compactPrice(recommended.dealingRange.midpoint)} / ${compactPrice(recommended.dealingRange.high)}` : undefined} />
             <AdvisorMini label="FVG / displacement" value={recommended?.fairValueGap ? `${recommended.fairValueGap.direction} FVG` : recommended?.displacement ? `${recommended.displacement.direction} displacement` : "missing"} />
+            <AdvisorMini label="Entry zone" value={entryZoneLabel(recommended?.entryZone)} />
+            <AdvisorMini label="Invalidation" value={compactPrice(recommended?.invalidation)} />
+            <AdvisorMini label="Target" value={compactPrice(recommended?.target)} />
+            <AdvisorMini label="RR estimate" value={typeof recommended?.rrEstimate === "number" ? `${recommended.rrEstimate.toFixed(2)}R` : "n/a"} />
             <AdvisorMini label="Journal" value={packet.journalStatus} detail={`${packet.journalEvents.length} compact events`} />
           </div>
           <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.6fr)]">
@@ -152,7 +164,12 @@ export function IctAdvisorSummaryPanel({
               </div>
             </div>
             <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Packet safety</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Recommended signal detail</p>
+              <div className="mt-3 grid gap-2 text-xs text-slate-300">
+                <AdvisorList label="No-trade reasons" values={recommended?.noTradeReasons ?? []} empty="none" />
+                <AdvisorList label="Risk notes" values={recommended?.riskNotes ?? []} empty="none" />
+              </div>
+              <p className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Packet safety</p>
               <div className="mt-3 grid gap-2 text-xs text-slate-300">
                 <AdvisorMini label="Raw candles" value={packet.safetyLocks.rawCandlesIncluded ? "included" : "excluded"} />
                 <AdvisorMini label="Raw snapshots" value={packet.safetyLocks.rawSnapshotsIncluded ? "included" : "excluded"} />
@@ -177,6 +194,15 @@ function AdvisorMini({ detail, label, value }: { detail?: string; label: string;
       <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{label}</p>
       <p className="mt-1 break-words text-sm font-semibold text-slate-100">{value}</p>
       {detail ? <p className="mt-1 line-clamp-2 text-xs text-slate-500">{detail}</p> : null}
+    </div>
+  );
+}
+
+function AdvisorList({ empty, label, values }: { empty: string; label: string; values: string[] }) {
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
+      <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-slate-100">{values.length ? values.slice(0, 4).join("; ") : empty}</p>
     </div>
   );
 }
