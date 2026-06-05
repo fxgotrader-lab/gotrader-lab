@@ -136,42 +136,50 @@ export function IctAdvisorSummaryPanel({
 
   if (mode === "compact") {
     return (
-      <section className="rounded-xl border border-cyan-300/15 bg-slate-950/85 p-4">
+      <section className="overflow-hidden rounded-2xl border border-cyan-300/15 bg-[radial-gradient(circle_at_12%_0%,rgba(34,211,238,0.14),transparent_38%),linear-gradient(135deg,rgba(15,23,42,0.92),rgba(2,6,23,0.94))] p-4 shadow-[0_0_45px_rgba(8,145,178,0.08)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">ICT Advisor</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">ICT Strategy Suite</p>
             <h3 className="mt-1 flex items-center gap-2 text-base font-semibold text-slate-50">
               <BrainCircuit className="h-4 w-4 text-cyan-300" aria-hidden="true" />
-              Deterministic strategy summary
+              Compact advisor snapshot
             </h3>
           </div>
-          <Badge variant={statusVariant(packet?.approvedProfileDecision.status)}>{formatToken(packet?.approvedProfileDecision.status)}</Badge>
-          <Badge variant={smtVariant(packet)}>{smtLabel(packet)}</Badge>
-          <Badge variant={riskVariant(packet)}>{riskLabel(packet)}</Badge>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant={statusVariant(packet?.approvedProfileDecision.status)}>{formatToken(packet?.approvedProfileDecision.status)}</Badge>
+            <Badge variant={smtVariant(packet)}>{smtLabel(packet)}</Badge>
+            <Badge variant={riskVariant(packet)}>{riskLabel(packet)}</Badge>
+          </div>
         </div>
         {packet ? (
           <>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-7">
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               <AdvisorMini label="Composite bias" value={formatToken(packet.compactSummary.compositeBias)} />
-              <AdvisorMini label="Phase 2 setup" value={formatToken(topPhaseTwo?.setup)} />
-              <AdvisorMini label="SMT / RS" value={smtLabel(packet)} detail={packet.indexSmt?.relativeStrengthLeader ? `RS ${packet.indexSmt.relativeStrengthLeader}` : undefined} />
-              <AdvisorMini label="Risk Governor" value={riskLabel(packet)} detail={formatToken(packet.compactSummary.sessionRiskState)} />
+              <AdvisorMini label="Active setup" value={formatToken(packet.compactSummary.setup)} detail={formatToken(topPhaseTwo?.setup)} />
+              <AdvisorMini label="Draw-on-liquidity" value={packet.compactSummary.drawOnLiquidity ?? "none"} />
               <AdvisorMini label="Decision" value={formatToken(packet.compactSummary.decision)} />
-              <AdvisorMini label="Setup" value={formatToken(packet.compactSummary.setup)} />
               <AdvisorMini label="Confidence" value={pct(packet.compactSummary.confidence)} />
+              <AdvisorMini label="Target" value={compactPrice(recommended?.target)} />
+              <AdvisorMini label="Invalidation" value={compactPrice(recommended?.invalidation)} />
+              <AdvisorMini label="RR estimate" value={typeof recommended?.rrEstimate === "number" ? `${recommended.rrEstimate.toFixed(2)}R` : "n/a"} />
             </div>
-            <p className="mt-3 text-xs leading-5 text-slate-400">
-              {recommended?.summary ?? "ICT advisor summary pending."} Approval score {packet.compactSummary.approvalScore}/100.
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3">
+              <p className="line-clamp-2 text-xs leading-5 text-slate-300">
+                {recommended?.summary ?? "ICT advisor summary pending."} Approval score {packet.compactSummary.approvalScore}/100.
+              </p>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="secondary">journal {packet.journalStatus}</Badge>
+                <Badge variant="danger">authority none</Badge>
+                <Badge variant="secondary">compact packet only</Badge>
+              </div>
               <Button variant="secondary" size="sm">
-                <Link to="/advisor" className="inline-flex items-center gap-2">
+                <Link to="/research-advisor" className="inline-flex items-center gap-2">
                   Open Advisor
                   <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
                 </Link>
               </Button>
-              <Badge variant="secondary">journal {packet.journalStatus}</Badge>
-              <Badge variant="danger">authority none</Badge>
             </div>
           </>
         ) : (
@@ -182,16 +190,16 @@ export function IctAdvisorSummaryPanel({
   }
 
   return (
-    <section className="rounded-xl border border-cyan-300/15 bg-slate-950/85 p-5">
+    <section className="overflow-hidden rounded-[24px] border border-cyan-300/15 bg-[radial-gradient(circle_at_20%_0%,rgba(34,211,238,0.13),transparent_34%),radial-gradient(circle_at_82%_4%,rgba(168,85,247,0.12),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.96),rgba(2,6,23,0.96))] p-5 shadow-[0_0_55px_rgba(8,145,178,0.09)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">ICT Strategy Suite</p>
           <h3 className="mt-1 flex items-center gap-2 text-xl font-semibold text-slate-50">
             <BrainCircuit className="h-5 w-5 text-cyan-300" aria-hidden="true" />
-            Deterministic ICT Advisor
+            Research-only decision board
           </h3>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-            Uses the active canonical research source plus higher-timeframe MT5 contexts locally, then emits compact advisor signals only. Raw candles, raw snapshots, account data, order data, positions, and secrets are excluded.
+            Canonical candles are evaluated locally; the UI and advisory packets expose compact decision fields only. Raw candles, snapshots, account/order/position data, and secrets stay excluded.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -444,8 +452,8 @@ export function IctAdvisorSummaryPanel({
 }
 function AdvisorMini({ detail, label, value }: { detail?: string; label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-lg border border-white/10 bg-white/[0.035] p-3">
-      <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{label}</p>
+    <div className="min-w-0 rounded-xl border border-white/10 bg-white/[0.04] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
       <p className="mt-1 break-words text-sm font-semibold text-slate-100">{value}</p>
       {detail ? <p className="mt-1 line-clamp-2 text-xs text-slate-500">{detail}</p> : null}
     </div>
@@ -454,8 +462,8 @@ function AdvisorMini({ detail, label, value }: { detail?: string; label: string;
 
 function AdvisorList({ empty, label, values }: { empty: string; label: string; values: string[] }) {
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
-      <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{label}</p>
+    <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
       <p className="mt-1 text-sm font-semibold text-slate-100">{values.length ? values.slice(0, 4).join("; ") : empty}</p>
     </div>
   );

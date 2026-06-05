@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { BarChart3, MessageSquareText, PlayCircle, ShieldCheck } from "lucide-react";
 
 import { IctAdvisorSummaryPanel } from "@/components/advisor/IctAdvisorSummaryPanel";
@@ -240,25 +241,35 @@ export function ResearchAdvisorView() {
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
-      <section className="rounded-xl border border-cyan-300/15 bg-slate-950/85 p-5 shadow-[0_0_45px_rgba(8,145,178,0.07)]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <section className="overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_18%_0%,rgba(34,211,238,0.16),transparent_34%),radial-gradient(circle_at_82%_6%,rgba(168,85,247,0.16),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(2,6,23,0.98))] p-5 shadow-[0_0_70px_rgba(8,145,178,0.13)]">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Research Advisor Workspace</p>
-            <h2 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-normal text-slate-50">
-              <MessageSquareText className="h-5 w-5 text-cyan-300" aria-hidden="true" />
-              Advisory chat and source context
+            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-cyan-300">Research Advisor Workspace</p>
+            <h2 className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-normal text-slate-50 md:text-3xl">
+              <MessageSquareText className="h-6 w-6 text-cyan-300" aria-hidden="true" />
+              ICT decision review
             </h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-              Full-size advisory workspace for local LLM or phone OpenClaw review. GoTrader sends compact research packets only; deterministic gates remain authoritative.
+              Full-size advisory board for deterministic ICT/Grinch review plus local LLM or phone OpenClaw explanation. Compact packets only; GoTrader gates remain authoritative.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge variant="warning">advisory-only</Badge>
             <Badge variant="danger">execution none</Badge>
             <Badge variant="secondary">readiness override none</Badge>
+            <Button variant="secondary" size="sm">
+              <Link to="/dashboard">Back to Dashboard</Link>
+            </Button>
           </div>
         </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-5 flex flex-wrap gap-2">
+          {["Setup", "Replay", "Scorecard", "Diagnostics", "Journal"].map((label) => (
+            <span key={label} className="rounded-full border border-white/10 bg-white/[0.045] px-3 py-1 text-xs font-medium text-slate-300">
+              {label}
+            </span>
+          ))}
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <AdvisorReadout label="Research source" value={snapshot.marketData.activeResearchSourceLabel} detail={activeSource.provider.replace(/_/g, " ")} />
           <AdvisorReadout label="Symbol mapping" value={`${brokerSymbol} -> ${snapshot.marketData.symbol}`} detail={snapshot.mt5ReadOnly.displayLabel ?? "MT5 selected mapping"} />
           <AdvisorReadout label="Primary timeframe" value={snapshot.marketData.timeframe} detail={`${activeSource.candleCount.toLocaleString()} candles`} />
@@ -268,7 +279,7 @@ export function ResearchAdvisorView() {
           <AdvisorReadout label="Readiness" value={snapshot.readiness.readinessState} detail={snapshot.readiness.nextAction} />
           <AdvisorReadout label="Last candle" value={formatDate(activeSource.lastTimestamp)} detail={activeSource.fingerprint.slice(0, 20)} />
         </div>
-        <div className="mt-4 rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm leading-5 text-amber-100">
+        <div className="mt-5 rounded-2xl border border-amber-300/25 bg-amber-300/10 p-3 text-sm leading-5 text-amber-100">
           MT5 read-only market data is CFD/proxy or broker market data for research context only. It is not CME futures broker truth and cannot place, modify, or route orders.
         </div>
       </section>
@@ -774,8 +785,8 @@ function SavedResearchReportsPanel({ reports }: { reports: IctResearchReport[] }
 
 function AdvisorReadout({ detail, label, value }: { detail?: string; label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-lg border border-white/10 bg-white/[0.035] p-3">
-      <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{label}</p>
+    <div className="min-w-0 rounded-xl border border-white/10 bg-white/[0.04] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
       <p className="mt-1 break-words text-sm font-semibold text-slate-100">{value}</p>
       {detail ? <p className="mt-1 line-clamp-2 text-xs text-slate-500">{detail}</p> : null}
     </div>
@@ -784,8 +795,8 @@ function AdvisorReadout({ detail, label, value }: { detail?: string; label: stri
 
 function AdvisorList({ empty, label, values }: { empty: string; label: string; values: string[] }) {
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
-      <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{label}</p>
+    <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
       <p className="mt-1 text-sm font-semibold leading-5 text-slate-100">{values.length ? values.slice(0, 5).join("; ") : empty}</p>
     </div>
   );

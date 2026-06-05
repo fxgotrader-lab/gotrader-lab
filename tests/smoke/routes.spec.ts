@@ -120,20 +120,31 @@ test.describe("GoTrader browser route smoke", () => {
 
   test("dashboard shows command-center safety locks and progress panel", async ({ page }) => {
     await gotoRoute(page, "/dashboard");
-    await expect(page.getByText("Broker execution disabled").first()).toBeVisible();
-    await expect(page.getByText(/Simulation research only|Command Center can start research loops only/i).first()).toBeVisible();
-    await expect(page.getByText(/Go-Trader gate/i).first()).toBeVisible();
-    await expect(page.getByText(/Tradovate gate|Tradovate Future Gate/i).first()).toBeVisible();
-    await expect(page.getByText("Loop progress")).toBeVisible();
+    await expect(page.locator("main")).toContainText(/MT5-first research cockpit/i);
+    await expect(page.locator("main")).toContainText(/Composite ICT bias/i);
+    await expect(page.locator("main")).toContainText(/Replay score/i);
+    await expect(page.locator("main")).toContainText(/Broker execution disabled/i);
+    await expect(page.locator("main")).toContainText(/Simulation research only|Command Center can start research loops only/i);
+    await expect(page.locator("main")).toContainText(/Go-Trader gate/i);
+    await expect(page.locator("main")).toContainText(/Tradovate gate|Tradovate Future Gate/i);
+    await expect(page.locator("main")).toContainText(/Loop progress/i);
   });
 
   test("ICT Strategy Suite advisor panels render in advisor workspace and dashboard", async ({ page }) => {
     await gotoRoute(page, "/advisor");
+    await expect(page.locator("main")).toContainText(/ICT decision review/i);
+    await expect(page.locator("main")).toContainText(/Setup/i);
+    await expect(page.locator("main")).toContainText(/Replay/i);
+    await expect(page.locator("main")).toContainText(/Scorecard/i);
     await expect(page.locator("main")).toContainText(/ICT Strategy Suite|ICT Advisor is waiting/i);
     await expect(page.locator("main")).toContainText(/Packet Safety Contract/i);
 
     await gotoRoute(page, "/research-advisor");
+    await expect(page.locator("main")).toContainText(/ICT decision review/i);
     await expect(page.locator("main")).toContainText(/ICT Strategy Suite|ICT Advisor is waiting/i);
+    await expect(page.locator("main")).toContainText(/raw candles|Raw candles/i);
+    await expect(page.locator("main")).not.toContainText(/\"candles\"\\s*:/i);
+    await expect(page.locator("main")).not.toContainText(/accountNumber|orderId|positionId/i);
     await expect(page.getByTestId("ict-manual-replay-review")).toContainText(/Manual ICT Replay Review/i);
     await expect(page.getByTestId("ict-manual-replay-status")).toContainText(/idle/i);
     await expect(page.getByRole("button", { name: "Run Real Replay Review" })).toBeVisible();
@@ -148,7 +159,7 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByTestId("ict-saved-research-reports")).toContainText(/Saved Research Reports/i);
 
     await gotoRoute(page, "/dashboard");
-    await expect(page.locator("main")).toContainText(/ICT Advisor/i);
+    await expect(page.locator("main")).toContainText(/ICT Strategy Suite/i);
     await expect(page.locator("main")).toContainText(/Open Advisor/i);
   });
 

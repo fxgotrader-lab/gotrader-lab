@@ -139,6 +139,10 @@ import { ResearchCycleControl } from "./ResearchCycleControl";
 
 const pct = (value?: number) =>
   typeof value === "number" && Number.isFinite(value) ? `${(value * 100).toFixed(0)}%` : "n/a";
+const compactNumber = (value?: number) =>
+  typeof value === "number" && Number.isFinite(value)
+    ? value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+    : "n/a";
 
 const formatToken = (value?: string) => (value ?? "idle").replace(/_/g, " ");
 const executableStatusVariant = (status?: string) =>
@@ -1850,29 +1854,102 @@ export function MissionControlShell({ state }: { state: LabState }) {
       tone: "danger"
     }
   ] as const;
+  const latestThesis = runtimeSnapshot?.latestResearchCycle.latestThesisSummary;
+  const thesisBias = latestThesis
+    ? "bias" in latestThesis
+      ? latestThesis.bias
+      : latestThesis.finalBias
+    : undefined;
+  const thesisTarget = latestThesis && "target" in latestThesis ? latestThesis.target : undefined;
+  const thesisInvalidation = latestThesis && "invalidation" in latestThesis ? latestThesis.invalidation : undefined;
+  const thesisConfidence = latestThesis?.confidence;
+  const dashboardDecisionLabel =
+    runtimeSnapshot?.readiness.readinessState === "Paper-Demo Candidate"
+      ? "candidate review"
+      : runtimeSnapshot?.readiness.readinessState === "Research Ready"
+        ? "research only"
+        : "no trade";
+  const dashboardDecisionTone =
+    runtimeSnapshot?.readiness.readinessState === "Paper-Demo Candidate"
+      ? "success"
+      : runtimeSnapshot?.readiness.readinessState === "Research Ready"
+        ? "warning"
+        : "danger";
+  const topDecisionSummary =
+    (latestThesis && "summary" in latestThesis ? latestThesis.summary : latestThesis?.thesisSummary) ??
+    grinch?.detail ??
+    "Activate MT5 Research Mode, then run a research cycle to populate the live advisor decision.";
+  const primarySetupLabel =
+    grinch?.profile && grinch.profile !== "none"
+      ? `${grinch.profile.replace(/_/g, " ")} / ${grinch.state}`
+      : formatToken(grinch?.hardGateReason ?? grinch?.state ?? "waiting");
+  const lastRefreshLabel =
+    mt5AutoRefresh.lastRefreshAt
+      ? formatDateTime(mt5AutoRefresh.lastRefreshAt)
+      : runtimeSnapshot?.mt5ReadOnly.latestQuoteTimestamp
+        ? formatDateTime(runtimeSnapshot.mt5ReadOnly.latestQuoteTimestamp)
+        : "not refreshed";
 
   return (
     <div className="space-y-5">
-      <section className="rounded-2xl border border-cyan-300/15 bg-slate-950 p-4 shadow-[0_0_60px_rgba(8,145,178,0.10)] lg:p-5">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+      <section className="overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_18%_0%,rgba(34,211,238,0.16),transparent_34%),radial-gradient(circle_at_78%_10%,rgba(168,85,247,0.15),transparent_30%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(2,6,23,0.98))] p-4 shadow-[0_0_70px_rgba(8,145,178,0.13)] lg:p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">Command Center</p>
-            <h2 className="mt-1 text-2xl font-semibold tracking-normal text-slate-50">GoTrader Research Dashboard</h2>
-            <p className="mt-1 max-w-3xl text-sm text-slate-400">
-              Command Center can start research loops only. Chart data and safety gates stay supervised from this surface.
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">GoTrader Command Center</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-normal text-slate-50 md:text-3xl">MT5-first research cockpit</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+              Simulation research only. Command Center can start research loops only; chart data, readiness gates, and safety locks stay supervised from this surface.
             </p>
           </div>
-          <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 xl:justify-end">
             <Badge variant="danger">Broker execution disabled</Badge>
             <Badge variant="warning">Go-Trader gate locked</Badge>
             <Badge variant="warning">Tradovate gate locked</Badge>
             <Badge variant="secondary">Readiness override none</Badge>
+            <Badge variant="secondary">Last refresh {lastRefreshLabel}</Badge>
+            <Button variant="secondary" size="sm">
+              <Link to="/research-advisor" className="inline-flex items-center gap-2">
+                Open Advisor
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+            </Button>
           </div>
         </div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+        <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
           {statusChips.map((chip) => (
             <StatusChip key={chip.label} label={chip.label} value={chip.value} tone={chip.tone} />
           ))}
+        </div>
+        <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(260px,0.8fr)_minmax(260px,0.8fr)_minmax(260px,0.8fr)]">
+          <div className="rounded-2xl border border-cyan-300/15 bg-black/25 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">Composite ICT bias</p>
+            <div className="mt-3 flex flex-wrap items-end gap-3">
+              <p className="text-3xl font-semibold text-slate-50">{formatToken(thesisBias)}</p>
+              <Badge variant={dashboardDecisionTone}>{dashboardDecisionLabel}</Badge>
+            </div>
+            <p className="mt-3 text-xs leading-5 text-cyan-100/80">
+              Confidence {pct(thesisConfidence)} / Target {compactNumber(thesisTarget)} / Invalidation {compactNumber(thesisInvalidation)}
+            </p>
+            <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">{topDecisionSummary}</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Approved setup</p>
+            <p className="mt-3 text-2xl font-semibold text-slate-50">{primarySetupLabel}</p>
+            <p className="mt-2 text-xs text-slate-500">Timing {formatToken(grinch?.timingGrade)} / score {latestGrinchScore?.grinchModelScore ?? "n/a"}</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Risk state</p>
+            <p className="mt-3 text-2xl font-semibold text-slate-50">{runtimeSnapshot?.readiness.readinessState ?? "loading"}</p>
+            <p className="mt-2 line-clamp-2 text-xs text-slate-500">{primaryBlockerDetail}</p>
+          </div>
+          <div className="rounded-2xl border border-violet-300/15 bg-violet-300/[0.055] p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-200">Replay score</p>
+            <p className="mt-3 text-2xl font-semibold text-slate-50">{latestBacktest ? `${latestBacktest.totalTrades} trades` : "pending"}</p>
+            <p className="mt-2 text-xs text-violet-100/75">
+              Win {pct(latestBacktest?.winRate)} / Avg {latestBacktest ? `${latestBacktest.averageR.toFixed(2)}R` : "n/a"} / PF{" "}
+              {latestBacktest?.profitFactor !== null && latestBacktest?.profitFactor !== undefined ? latestBacktest.profitFactor.toFixed(2) : "n/a"}
+            </p>
+          </div>
         </div>
       </section>
 
