@@ -6,15 +6,23 @@ import { LLMAdvisoryReviewPanel } from "@/components/dashboard/LLMAdvisoryReview
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  buildManualReplayResearchReport,
+  buildMarketScorecardResearchReport,
   buildIctMarketScorecard,
   DEFAULT_ICT_MARKET_SCORECARD_SYMBOLS,
+  listIctResearchReports,
+  researchReportSourceLabel,
   runManualIctReplayReview,
+  saveIctResearchReport,
+  summarizeIctResearchReport,
   type IctMarketScorecard,
   type IctMarketScorecardConfig,
   type IctMarketScorecardStatus,
   type IctManualReplayReviewRequest,
   type IctManualReplayReviewResult,
-  type IctManualReplayReviewStatus
+  type IctManualReplayReviewStatus,
+  type IctResearchReport,
+  type IctResearchReportSaveResult
 } from "@/lib/ict-strategy-suite";
 import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
@@ -42,6 +50,9 @@ export function ResearchAdvisorView() {
   const [marketScorecardStatus, setMarketScorecardStatus] = useState<MarketScorecardRunStatus>("idle");
   const [marketScorecard, setMarketScorecard] = useState<IctMarketScorecard>();
   const [marketScorecardError, setMarketScorecardError] = useState<string>();
+  const [savedReports, setSavedReports] = useState<IctResearchReport[]>([]);
+  const [manualReportSaveResult, setManualReportSaveResult] = useState<IctResearchReportSaveResult>();
+  const [scorecardReportSaveResult, setScorecardReportSaveResult] = useState<IctResearchReportSaveResult>();
 
   useEffect(() => {
     let mounted = true;
@@ -72,12 +83,25 @@ export function ResearchAdvisorView() {
   }, []);
 
   useEffect(() => {
+    const refreshReports = () => setSavedReports(listIctResearchReports());
+    refreshReports();
+    window.addEventListener("gotrader:ict-research-report-saved", refreshReports);
+    window.addEventListener("storage", refreshReports);
+    return () => {
+      window.removeEventListener("gotrader:ict-research-report-saved", refreshReports);
+      window.removeEventListener("storage", refreshReports);
+    };
+  }, []);
+
+  useEffect(() => {
     setManualReplayStatus("idle");
     setManualReplayResult(undefined);
     setManualReplayError(undefined);
     setMarketScorecardStatus("idle");
     setMarketScorecard(undefined);
     setMarketScorecardError(undefined);
+    setManualReportSaveResult(undefined);
+    setScorecardReportSaveResult(undefined);
   }, [snapshot?.marketData.activeResearchSource.fingerprint]);
 
   const htfSummary = useMemo(
@@ -158,6 +182,18 @@ export function ResearchAdvisorView() {
       setMarketScorecardError(error instanceof Error ? error.message : String(error));
     }
   };
+  const saveManualReplayReport = () => {
+    if (!manualReplayResult || manualReplayResult.status !== "completed") return;
+    const saveResult = saveIctResearchReport(buildManualReplayResearchReport(manualReplayResult));
+    setManualReportSaveResult(saveResult);
+    setSavedReports(listIctResearchReports());
+  };
+  const saveMarketScorecardReport = () => {
+    if (!marketScorecard || marketScorecardStatus !== "completed") return;
+    const saveResult = saveIctResearchReport(buildMarketScorecardResearchReport(marketScorecard));
+    setScorecardReportSaveResult(saveResult);
+    setSavedReports(listIctResearchReports());
+  };
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
@@ -199,8 +235,10 @@ export function ResearchAdvisorView() {
       <ManualReplayReviewPanel
         brokerSymbol={brokerSymbol}
         onRun={runManualReplayReview}
+        onSave={saveManualReplayReport}
         request={manualReplayRequest}
         result={manualReplayResult}
+        saveResult={manualReportSaveResult}
         status={manualReplayStatus}
         error={manualReplayError}
       />
@@ -209,9 +247,13 @@ export function ResearchAdvisorView() {
         config={marketScorecardConfig}
         error={marketScorecardError}
         onRun={runMarketScorecard}
+        onSave={saveMarketScorecardReport}
         scorecard={marketScorecard}
+        saveResult={scorecardReportSaveResult}
         status={marketScorecardStatus}
       />
+
+      <SavedResearchReportsPanel reports={savedReports} />
 
       <LLMAdvisoryReviewPanel snapshot={snapshot} />
 
@@ -234,15 +276,19 @@ function ManualReplayReviewPanel({
   brokerSymbol,
   error,
   onRun,
+  onSave,
   request,
   result,
+  saveResult,
   status
 }: {
   brokerSymbol: string;
   error?: string;
   onRun: () => Promise<void>;
+  onSave: () => void;
   request: IctManualReplayReviewRequest;
   result?: IctManualReplayReviewResult;
+  saveResult?: IctResearchReportSaveResult;
   status: IctManualReplayReviewStatus;
 }) {
   const statusVariant =
@@ -281,6 +327,9 @@ function ManualReplayReviewPanel({
             <PlayCircle className="h-4 w-4" aria-hidden="true" />
             {status === "running" ? "Running..." : "Run Real Replay Review"}
           </Button>
+          <Button type="button" size="sm" variant="secondary" onClick={onSave} disabled={result?.status !== "completed"}>
+            Save Replay Report
+          </Button>
         </div>
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -290,6 +339,7 @@ function ManualReplayReviewPanel({
         <AdvisorReadout label="Replay shape" value={`${request.replayWindowSize}/${request.lookaheadCandles}`} detail="window / lookahead candles" />
       </div>
       <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">{statusMessage}</p>
+      {saveResult ? <SaveResultNotice result={saveResult} /> : null}
       {result ? (
         <>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -371,13 +421,17 @@ function MarketScorecardPanel({
   config,
   error,
   onRun,
+  onSave,
   scorecard,
+  saveResult,
   status
 }: {
   config: IctMarketScorecardConfig;
   error?: string;
   onRun: () => Promise<void>;
+  onSave: () => void;
   scorecard?: IctMarketScorecard;
+  saveResult?: IctResearchReportSaveResult;
   status: MarketScorecardRunStatus;
 }) {
   const statusVariant = marketScorecardBadgeVariant(status);
@@ -414,6 +468,9 @@ function MarketScorecardPanel({
             <PlayCircle className="h-4 w-4" aria-hidden="true" />
             {status === "running" ? "Running..." : "Run Market Scorecard"}
           </Button>
+          <Button type="button" size="sm" variant="secondary" onClick={onSave} disabled={status !== "completed" || !scorecard}>
+            Save Scorecard Report
+          </Button>
         </div>
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -423,6 +480,7 @@ function MarketScorecardPanel({
         <AdvisorReadout label="Replay shape" value={`${config.replayWindowSize}/${config.lookaheadCandles}`} detail="window / lookahead candles" />
       </div>
       <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">{statusMessage}</p>
+      {saveResult ? <SaveResultNotice result={saveResult} /> : null}
       {scorecard ? (
         <>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -503,6 +561,63 @@ function marketScorecardBadgeVariant(
   if (status === "running" || status === "watchlist_only" || status === "insufficient_data") return "warning";
   if (status === "failed" || status === "unavailable") return "danger";
   return "secondary";
+}
+
+function SaveResultNotice({ result }: { result: IctResearchReportSaveResult }) {
+  const variant = result.status === "saved" ? "success" : result.status === "failed" ? "danger" : "warning";
+  return (
+    <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant={variant}>{formatToken(result.status)}</Badge>
+        <span>{result.message}</span>
+      </div>
+      <div className="mt-2 grid gap-2 text-xs text-slate-500 sm:grid-cols-2">
+        <span>Report ID: {result.reportId ?? "n/a"}</span>
+        <span>Location: {result.path ?? "not persisted"}</span>
+      </div>
+    </div>
+  );
+}
+
+function SavedResearchReportsPanel({ reports }: { reports: IctResearchReport[] }) {
+  return (
+    <section data-testid="ict-saved-research-reports" className="rounded-xl border border-white/10 bg-slate-950/65 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Saved Research Reports</p>
+          <h3 className="mt-1 text-xl font-semibold text-slate-50">Compact local report history</h3>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+            Saved reports are local, compact, and research-only. The list shows summaries only; raw replay windows, candles, snapshots, secrets, account data, orders, and positions are not stored.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="secondary">{reports.length} saved</Badge>
+          <Badge variant="danger">authority none</Badge>
+        </div>
+      </div>
+      {reports.length ? (
+        <div className="mt-4 grid gap-3">
+          {reports.slice(0, 6).map((report) => (
+            <div key={report.reportId} className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-100">{report.title}</p>
+                  <p className="mt-1 text-xs text-slate-500">{researchReportSourceLabel(report.source)} / saved {formatDate(report.savedAt)}</p>
+                </div>
+                <Badge variant="secondary">{report.reportId}</Badge>
+              </div>
+              <p className="mt-2 text-sm leading-5 text-slate-300">{summarizeIctResearchReport(report)}</p>
+              <p className="mt-2 text-xs text-slate-500">Research-only report. Authority {report.authority.executionAuthority}/{report.authority.brokerAuthority}/{report.authority.readinessOverrideAuthority}; raw data excluded.</p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-4 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-400">
+          No saved reports yet. Run Manual ICT Replay Review or ICT Market Scorecard, then save the compact report.
+        </p>
+      )}
+    </section>
+  );
 }
 
 function AdvisorReadout({ detail, label, value }: { detail?: string; label: string; value: string }) {
