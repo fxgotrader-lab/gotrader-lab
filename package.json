@@ -32,6 +32,7 @@
     "test:ict-index-smt": "node scripts/test-ict-index-smt.mjs",
     "test:ict-news-session-risk": "node scripts/test-ict-news-session-risk.mjs",
     "test:ict-manual-replay-review": "node scripts/test-ict-manual-replay-review.mjs",
+    "test:ict-market-scorecard": "node scripts/test-ict-market-scorecard.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "smoke:http": "node scripts/smoke-routes.mjs",
     "smoke:browser": "node scripts/run-playwright-smoke.mjs",

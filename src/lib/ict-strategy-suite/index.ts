@@ -23,3 +23,5 @@ export * from "./ictRealReplayRunnerTypes";
 export * from "./ictRealReplayRunner";
 export * from "./ictManualReplayReviewTypes";
 export * from "./ictManualReplayReview";
+export * from "./ictMarketScorecardTypes";
+export * from "./ictMarketScorecard";

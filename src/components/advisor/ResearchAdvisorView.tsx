@@ -6,7 +6,12 @@ import { LLMAdvisoryReviewPanel } from "@/components/dashboard/LLMAdvisoryReview
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  buildIctMarketScorecard,
+  DEFAULT_ICT_MARKET_SCORECARD_SYMBOLS,
   runManualIctReplayReview,
+  type IctMarketScorecard,
+  type IctMarketScorecardConfig,
+  type IctMarketScorecardStatus,
   type IctManualReplayReviewRequest,
   type IctManualReplayReviewResult,
   type IctManualReplayReviewStatus
@@ -27,12 +32,16 @@ const formatDate = (value?: string) => (value ? new Date(value).toLocaleString()
 const formatToken = (value?: string) => (value ?? "pending").replace(/_/g, " ");
 const pct = (value?: number) => (typeof value === "number" ? `${Math.round(value * 100)}%` : "n/a");
 const rr = (value?: number) => (typeof value === "number" ? `${value.toFixed(2)}R` : "n/a");
+type MarketScorecardRunStatus = "idle" | "running" | "completed" | "unavailable" | "failed";
 
 export function ResearchAdvisorView() {
   const [snapshot, setSnapshot] = useState<ResearchRuntimeSnapshot>();
   const [manualReplayStatus, setManualReplayStatus] = useState<IctManualReplayReviewStatus>("idle");
   const [manualReplayResult, setManualReplayResult] = useState<IctManualReplayReviewResult>();
   const [manualReplayError, setManualReplayError] = useState<string>();
+  const [marketScorecardStatus, setMarketScorecardStatus] = useState<MarketScorecardRunStatus>("idle");
+  const [marketScorecard, setMarketScorecard] = useState<IctMarketScorecard>();
+  const [marketScorecardError, setMarketScorecardError] = useState<string>();
 
   useEffect(() => {
     let mounted = true;
@@ -66,6 +75,9 @@ export function ResearchAdvisorView() {
     setManualReplayStatus("idle");
     setManualReplayResult(undefined);
     setManualReplayError(undefined);
+    setMarketScorecardStatus("idle");
+    setMarketScorecard(undefined);
+    setMarketScorecardError(undefined);
   }, [snapshot?.marketData.activeResearchSource.fingerprint]);
 
   const htfSummary = useMemo(
@@ -90,6 +102,18 @@ export function ResearchAdvisorView() {
       lookaheadCandles: 12
     };
   }, [snapshot?.marketData.symbol, snapshot?.marketData.timeframe, snapshot?.mt5ReadOnly.higherTimeframeSources]);
+
+  const marketScorecardConfig = useMemo<IctMarketScorecardConfig>(
+    () => ({
+      requestedSymbols: [...DEFAULT_ICT_MARKET_SCORECARD_SYMBOLS],
+      primaryTimeframe: snapshot?.marketData.timeframe ?? "5m",
+      htfTimeframes: manualReplayRequest.htfTimeframes,
+      candleLimit: 1000,
+      replayWindowSize: 80,
+      lookaheadCandles: 12
+    }),
+    [manualReplayRequest.htfTimeframes, snapshot?.marketData.timeframe]
+  );
 
   if (!snapshot) {
     return (
@@ -118,6 +142,20 @@ export function ResearchAdvisorView() {
       setManualReplayResult(undefined);
       setManualReplayStatus("failed");
       setManualReplayError(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const runMarketScorecard = async () => {
+    if (marketScorecardStatus === "running") return;
+    setMarketScorecardStatus("running");
+    setMarketScorecardError(undefined);
+    try {
+      const result = await buildIctMarketScorecard(marketScorecardConfig);
+      setMarketScorecard(result);
+      setMarketScorecardStatus(result.summary.completedSymbols > 0 ? "completed" : "unavailable");
+    } catch (error) {
+      setMarketScorecard(undefined);
+      setMarketScorecardStatus("failed");
+      setMarketScorecardError(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -165,6 +203,14 @@ export function ResearchAdvisorView() {
         result={manualReplayResult}
         status={manualReplayStatus}
         error={manualReplayError}
+      />
+
+      <MarketScorecardPanel
+        config={marketScorecardConfig}
+        error={marketScorecardError}
+        onRun={runMarketScorecard}
+        scorecard={marketScorecard}
+        status={marketScorecardStatus}
       />
 
       <LLMAdvisoryReviewPanel snapshot={snapshot} />
@@ -319,6 +365,144 @@ function ManualReplayReviewPanel({
       ) : null}
     </section>
   );
+}
+
+function MarketScorecardPanel({
+  config,
+  error,
+  onRun,
+  scorecard,
+  status
+}: {
+  config: IctMarketScorecardConfig;
+  error?: string;
+  onRun: () => Promise<void>;
+  scorecard?: IctMarketScorecard;
+  status: MarketScorecardRunStatus;
+}) {
+  const statusVariant = marketScorecardBadgeVariant(status);
+  const statusMessage =
+    status === "idle"
+      ? "Idle. Market scorecard runs only after explicit user action."
+      : status === "running"
+        ? "Running replay scorecard across configured markets with compact output only..."
+        : status === "completed"
+          ? "Market scorecard completed."
+          : status === "unavailable"
+            ? "No configured market completed replay. Check MT5 read-only availability and symbol mappings."
+            : `Market scorecard failed: ${error ?? "unknown_error"}.`;
+  const configuredSymbols = config.requestedSymbols.join(", ");
+
+  return (
+    <section data-testid="ict-market-scorecard" className="rounded-xl border border-emerald-300/15 bg-slate-950/85 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-300">ICT Market Scorecard</p>
+          <h3 className="mt-1 flex items-center gap-2 text-xl font-semibold text-slate-50">
+            <BarChart3 className="h-5 w-5 text-emerald-300" aria-hidden="true" />
+            Side-by-side replay quality
+          </h3>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+            Compares configured markets with real replay, diagnostics, approved-profile, SMT, and news/session risk summaries. It runs only on demand and exposes compact research-only metrics.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge data-testid="ict-market-scorecard-status" variant={statusVariant}>{formatToken(status)}</Badge>
+          <Badge variant="danger">authority none</Badge>
+          <Badge variant="secondary">researchOnly true</Badge>
+          <Button type="button" size="sm" onClick={onRun} disabled={status === "running"}>
+            <PlayCircle className="h-4 w-4" aria-hidden="true" />
+            {status === "running" ? "Running..." : "Run Market Scorecard"}
+          </Button>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <AdvisorReadout label="Configured symbols" value={configuredSymbols} detail="MNQ maps to USTECH, ES to US500, YM to US30." />
+        <AdvisorReadout label="Primary timeframe" value={config.primaryTimeframe} detail={`${config.candleLimit.toLocaleString()} candle limit per market`} />
+        <AdvisorReadout label="HTF timeframes" value={config.htfTimeframes.join(", ")} detail="context-only" />
+        <AdvisorReadout label="Replay shape" value={`${config.replayWindowSize}/${config.lookaheadCandles}`} detail="window / lookahead candles" />
+      </div>
+      <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">{statusMessage}</p>
+      {scorecard ? (
+        <>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <AdvisorReadout label="Completed" value={scorecard.summary.completedSymbols.toLocaleString()} detail={`${scorecard.summary.unavailableSymbols} unavailable`} />
+            <AdvisorReadout label="Research-preferred" value={scorecard.summary.researchPreferredSymbols.join(", ") || "none"} />
+            <AdvisorReadout label="Watchlist-only" value={scorecard.summary.watchlistOnlySymbols.join(", ") || "none"} />
+            <AdvisorReadout label="Noisy" value={scorecard.summary.noisySymbols.join(", ") || "none"} />
+            <AdvisorReadout label="Best target-first" value={scorecard.summary.bestApprovedTargetFirstSymbol ?? "n/a"} detail="approved-profile basis" />
+            <AdvisorReadout label="Best average RR" value={scorecard.summary.bestApprovedRrSymbol ?? "n/a"} detail="approved-profile basis" />
+            <AdvisorReadout label="Best approved/rejected" value={scorecard.summary.bestApprovedRejectedRatioSymbol ?? "n/a"} detail="approved-profile ratio" />
+            <AdvisorReadout label="Cleanest symbol" value={scorecard.summary.cleanestSymbol ?? "n/a"} detail="research scorecard only" />
+            <AdvisorReadout label="Generated" value={formatDate(scorecard.generatedAt)} detail={scorecard.runId} />
+          </div>
+          <div className="mt-4 overflow-x-auto rounded-lg border border-white/10">
+            <table className="min-w-[980px] w-full text-left text-sm">
+              <thead className="bg-white/[0.04] text-xs uppercase tracking-[0.12em] text-slate-500">
+                <tr>
+                  <th className="px-3 py-3 font-semibold">Symbol</th>
+                  <th className="px-3 py-3 font-semibold">Status</th>
+                  <th className="px-3 py-3 font-semibold">Approved target-first</th>
+                  <th className="px-3 py-3 font-semibold">Approved RR</th>
+                  <th className="px-3 py-3 font-semibold">A / W / R</th>
+                  <th className="px-3 py-3 font-semibold">Signal reduction</th>
+                  <th className="px-3 py-3 font-semibold">SMT</th>
+                  <th className="px-3 py-3 font-semibold">Risk blocks</th>
+                  <th className="px-3 py-3 font-semibold">Top setup</th>
+                  <th className="px-3 py-3 font-semibold">No-trade reason</th>
+                  <th className="px-3 py-3 font-semibold">Safety</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/10">
+                {scorecard.symbols.map((symbol) => {
+                  const noTradeReason = symbol.mostCommonNoTradeReasons[0];
+                  return (
+                    <tr key={`${symbol.requestedSymbol}:${symbol.primaryTimeframe}`} className="text-slate-300">
+                      <td className="px-3 py-3 align-top">
+                        <p className="font-semibold text-slate-100">{symbol.requestedSymbol}</p>
+                        <p className="text-xs text-slate-500">{symbol.brokerSymbol} / {symbol.primaryTimeframe}</p>
+                      </td>
+                      <td className="px-3 py-3 align-top">
+                        <Badge variant={marketScorecardBadgeVariant(symbol.status)}>{formatToken(symbol.status)}</Badge>
+                        <p className="mt-1 max-w-[220px] text-xs leading-4 text-slate-500">{symbol.statusReason}</p>
+                      </td>
+                      <td className="px-3 py-3 align-top">{pct(symbol.approvedTargetFirstRate)}</td>
+                      <td className="px-3 py-3 align-top">{rr(symbol.approvedAverageRr)}</td>
+                      <td className="px-3 py-3 align-top">{symbol.approvedCount} / {symbol.watchlistCount} / {symbol.rejectedCount}<span className="block text-xs text-slate-500">ratio {symbol.approvedRejectedRatio.toFixed(2)}</span></td>
+                      <td className="px-3 py-3 align-top">{pct(symbol.signalReductionPct)}</td>
+                      <td className="px-3 py-3 align-top">{pct(symbol.smtConfirmRate)} / {pct(symbol.smtRejectRate)}</td>
+                      <td className="px-3 py-3 align-top">{symbol.newsBlockedCount ?? 0} blocked / {symbol.newsCautionCount ?? 0} caution</td>
+                      <td className="px-3 py-3 align-top">{symbol.topSetup ? formatToken(symbol.topSetup) : "n/a"}</td>
+                      <td className="px-3 py-3 align-top">{noTradeReason ? `${formatToken(noTradeReason.reason)} (${noTradeReason.count})` : "none"}</td>
+                      <td className="px-3 py-3 align-top">raw excluded / none</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4 grid gap-2 text-sm text-slate-300 md:grid-cols-3">
+            <AdvisorReadout label="Safety" value="raw candles excluded" detail="No raw candles, snapshots, secrets, account/order/position data." />
+            <AdvisorReadout
+              label="Authority"
+              value={`${scorecard.authority.executionAuthority}/${scorecard.authority.brokerAuthority}/${scorecard.authority.readinessOverrideAuthority}`}
+              detail="Scorecard cannot promote readiness."
+            />
+            <AdvisorReadout label="Journal" value="compact scorecard event" detail="ict_market_scorecard_summary / researchOnly true" />
+          </div>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function marketScorecardBadgeVariant(
+  status: IctMarketScorecardStatus | MarketScorecardRunStatus
+): "success" | "warning" | "danger" | "secondary" {
+  if (status === "completed" || status === "research_preferred") return "success";
+  if (status === "running" || status === "watchlist_only" || status === "insufficient_data") return "warning";
+  if (status === "failed" || status === "unavailable") return "danger";
+  return "secondary";
 }
 
 function AdvisorReadout({ detail, label, value }: { detail?: string; label: string; value: string }) {

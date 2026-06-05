@@ -137,6 +137,9 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByTestId("ict-manual-replay-review")).toContainText(/Manual ICT Replay Review/i);
     await expect(page.getByTestId("ict-manual-replay-status")).toContainText(/idle/i);
     await expect(page.getByRole("button", { name: "Run Real Replay Review" })).toBeVisible();
+    await expect(page.getByTestId("ict-market-scorecard")).toContainText(/ICT Market Scorecard/i);
+    await expect(page.getByTestId("ict-market-scorecard-status")).toContainText(/idle/i);
+    await expect(page.getByRole("button", { name: "Run Market Scorecard" })).toBeVisible();
 
     await gotoRoute(page, "/dashboard");
     await expect(page.locator("main")).toContainText(/ICT Advisor/i);
