@@ -1,0 +1,122 @@
+import type { IctBias, IctLocation, IctSide } from "./ictAdvisorTypes";
+import type { IctApprovedCandidateStatus } from "./ictApprovedSetupProfileTypes";
+import type { IctMonteCarloRobustnessRating } from "./ictMonteCarloTypes";
+
+export type IctResearchSignalStatus =
+  | "approved_research_signal"
+  | "watchlist_signal"
+  | "rejected_signal"
+  | "no_signal";
+
+export type IctExecutionReadiness =
+  | "research_only"
+  | "paper_ready_later"
+  | "execution_ready_later";
+
+export interface IctResearchSignalEntryZone {
+  high: number;
+  low: number;
+  midpoint?: number;
+  type?: string;
+}
+
+export interface IctResearchSignalMonteCarlo {
+  robustnessRating?: IctMonteCarloRobustnessRating;
+  riskOfRuinPct?: number;
+  recommendedMaxRiskPerTradePct?: number;
+  usableOutcomes?: number;
+}
+
+export interface IctResearchSignal {
+  signalId: string;
+  generatedAt: string;
+  researchOnly: true;
+  status: IctResearchSignalStatus;
+  executionReadiness: IctExecutionReadiness;
+  executionAllowed: false;
+  requestedSymbol: string;
+  brokerSymbol: string;
+  displayLabel?: string;
+  primaryTimeframe: string;
+  htfTimeframes: string[];
+  strategyId?: string;
+  setup?: string;
+  phase?: "phase_1" | "phase_2" | "combined";
+  side: IctSide;
+  entryZone?: IctResearchSignalEntryZone;
+  invalidation?: number;
+  target?: number;
+  rrEstimate?: number;
+  confidence?: number;
+  approvedProfileStatus?: IctApprovedCandidateStatus;
+  approvalScore?: number;
+  bias?: IctBias;
+  smtStatus?: string;
+  newsSessionRisk?: string;
+  riskGovernorAction?: string;
+  monteCarlo?: IctResearchSignalMonteCarlo;
+  reasons: string[];
+  rejectionReasons: string[];
+  warnings: string[];
+  nextAction: string;
+  authority: {
+    executionAuthority: "none";
+    brokerAuthority: "none";
+    readinessOverrideAuthority: "none";
+  };
+  safety: {
+    rawCandlesExcluded: true;
+    rawSnapshotsExcluded: true;
+    accountDataExcluded: true;
+    orderDataExcluded: true;
+    positionDataExcluded: true;
+    secretsExcluded: true;
+  };
+  provenance: {
+    source: "ict_current_read";
+    methodology: "ICT";
+    researchOnly: true;
+    generatedAt: string;
+  };
+}
+
+export interface IctResearchSignalJournalEvent {
+  eventType: "ict_research_signal_generated";
+  journalEventId: string;
+  signalId: string;
+  generatedAt: string;
+  status: IctResearchSignalStatus;
+  requestedSymbol: string;
+  brokerSymbol: string;
+  side: IctSide;
+  setup?: string;
+  rrEstimate?: number;
+  confidence?: number;
+  target?: number;
+  invalidation?: number;
+  monteCarloRobustnessRating?: IctMonteCarloRobustnessRating;
+  riskOfRuinPct?: number;
+  recommendedMaxRiskPerTradePct?: number;
+  executionAllowed: false;
+  researchOnly: true;
+  authority: IctResearchSignal["authority"];
+  safety: IctResearchSignal["safety"];
+}
+
+export interface IctResearchSignalCompleteness {
+  ok: boolean;
+  missing: string[];
+  warnings: string[];
+}
+
+export type IctSignalRiskBlockingReason =
+  | "risk_governor_blocked"
+  | "smt_rejects_candidate"
+  | "missing_direction"
+  | "missing_target"
+  | "missing_invalidation"
+  | "missing_rr"
+  | "missing_confidence"
+  | "rejected_current_read";
+
+export type IctResearchSignalLocation = IctLocation;

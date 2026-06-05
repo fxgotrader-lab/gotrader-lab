@@ -26,6 +26,7 @@ export interface IctCurrentRead {
   bestSetup?: string;
   side: IctSide;
   approvedStatus: IctApprovedCandidateStatus;
+  approvalScore?: number;
   confidence?: number;
   rrEstimate?: number;
   target?: number;

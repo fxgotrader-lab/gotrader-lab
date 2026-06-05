@@ -202,6 +202,7 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     bestSetup: recommended.setup,
     side: recommended.side,
     approvedStatus: packet.approvedProfileDecision.status,
+    approvalScore: packet.approvedProfileDecision.approvalScore,
     confidence: recommended.confidence,
     rrEstimate: recommended.rrEstimate,
     target: recommended.target,

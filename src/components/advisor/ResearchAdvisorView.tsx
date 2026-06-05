@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   appendIctMonteCarloJournalEvent,
+  appendIctResearchSignalJournalEvent,
   buildLatestMonteCarloSnapshot,
   buildLatestReplaySnapshot,
   buildLatestScorecardSnapshot,
@@ -15,6 +16,8 @@ import {
   buildIctAdvisorPacketFromRuntime,
   buildIctCurrentReadFromPacket,
   buildIctMonteCarloJournalEvent,
+  buildIctResearchSignalFromCurrentRead,
+  buildIctResearchSignalJournalEvent,
   buildMarketScorecardResearchReport,
   appendIctApprovedProfileOptimizationJournalEvent,
   buildIctApprovedProfileOptimizationJournalEvent,
@@ -44,6 +47,7 @@ import {
   type IctManualReplayReviewResult,
   type IctManualReplayReviewStatus,
   type IctMonteCarloSummary,
+  type IctResearchSignal,
   type IctResearchReport,
   type IctResearchReportSaveResult
 } from "@/lib/ict-strategy-suite";
@@ -322,6 +326,15 @@ export function ResearchAdvisorView() {
     [manualReplayRequest.htfTimeframes, snapshot?.marketData.timeframe]
   );
   const currentRead = useMemo(() => buildIctCurrentReadFromPacket(advisorPacket, latestResearchState), [advisorPacket, latestResearchState]);
+  const researchSignal = useMemo(
+    () => buildIctResearchSignalFromCurrentRead(currentRead, latestResearchState),
+    [currentRead, latestResearchState]
+  );
+
+  useEffect(() => {
+    if (!advisorPacket || !researchSignal.signalId) return;
+    appendIctResearchSignalJournalEvent(buildIctResearchSignalJournalEvent(researchSignal));
+  }, [advisorPacket?.packetId, researchSignal.signalId]);
 
   if (!snapshot) {
     return (
@@ -516,6 +529,7 @@ export function ResearchAdvisorView() {
       </section>
 
       <CurrentReadPanel currentRead={currentRead} packetError={advisorPacketError} />
+      <ResearchSignalCard signal={researchSignal} />
       <LatestResearchStateStrip latestResearchState={latestResearchState} />
 
       <section data-testid="research-advisor-chat-workspace" className="grid items-start gap-4 xl:grid-cols-[minmax(220px,0.62fr)_minmax(420px,1.35fr)_minmax(240px,0.72fr)]">
@@ -661,6 +675,70 @@ export function ResearchAdvisorView() {
         </div>
       </section>
     </div>
+  );
+}
+
+function ResearchSignalCard({ signal }: { signal: IctResearchSignal }) {
+  const statusVariant =
+    signal.status === "approved_research_signal"
+      ? "success"
+      : signal.status === "watchlist_signal"
+        ? "warning"
+        : signal.status === "rejected_signal"
+          ? "danger"
+          : "secondary";
+  const entryZone = signal.entryZone
+    ? `${compactPrice(signal.entryZone.low)}-${compactPrice(signal.entryZone.high)}`
+    : "n/a";
+  const confidence = typeof signal.confidence === "number" ? pct(signal.confidence) : "n/a";
+  const rrValue = typeof signal.rrEstimate === "number" ? rr(signal.rrEstimate) : "n/a";
+  const monteCarloRobustness = signal.monteCarlo?.robustnessRating ? formatToken(signal.monteCarlo.robustnessRating) : "none saved";
+  const riskOfRuin =
+    typeof signal.monteCarlo?.riskOfRuinPct === "number" ? `${signal.monteCarlo.riskOfRuinPct.toFixed(2)}%` : "n/a";
+  const maxRisk =
+    typeof signal.monteCarlo?.recommendedMaxRiskPerTradePct === "number"
+      ? `${signal.monteCarlo.recommendedMaxRiskPerTradePct.toFixed(2)}%`
+      : "n/a";
+
+  return (
+    <section data-testid="ict-research-signal-card" className="rounded-[24px] border border-emerald-300/15 bg-[radial-gradient(circle_at_12%_0%,rgba(16,185,129,0.12),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.9),rgba(2,6,23,0.94))] p-5 shadow-[0_0_50px_rgba(16,185,129,0.07)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-300">Research Signal Contract</p>
+          <h3 className="mt-1 text-xl font-semibold text-slate-50">Approved research signal bridge</h3>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+            Formal compact contract for future signal architecture. It is research-only and cannot place, route, or approve orders.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge data-testid="ict-research-signal-status" variant={statusVariant}>{formatToken(signal.status)}</Badge>
+          <Badge variant="danger">Execution Disabled</Badge>
+          <Badge variant="secondary">Research Only</Badge>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <AdvisorReadout label="Symbol" value={`${signal.brokerSymbol} -> ${signal.requestedSymbol}`} detail={signal.primaryTimeframe} />
+        <AdvisorReadout label="Side" value={formatToken(signal.side)} detail={formatToken(signal.phase)} />
+        <AdvisorReadout label="Setup" value={formatToken(signal.setup)} detail={formatToken(signal.approvedProfileStatus)} />
+        <AdvisorReadout label="Approval score" value={typeof signal.approvalScore === "number" ? `${signal.approvalScore}/100` : "n/a"} />
+        <AdvisorReadout label="Entry zone" value={entryZone} detail={signal.entryZone?.type} />
+        <AdvisorReadout label="Target" value={compactPrice(signal.target)} />
+        <AdvisorReadout label="Invalidation" value={compactPrice(signal.invalidation)} />
+        <AdvisorReadout label="RR / confidence" value={`${rrValue} / ${confidence}`} />
+        <AdvisorReadout label="Monte Carlo" value={monteCarloRobustness} detail={`${signal.monteCarlo?.usableOutcomes ?? 0} usable outcomes`} />
+        <AdvisorReadout label="Risk of ruin" value={riskOfRuin} />
+        <AdvisorReadout label="Recommended max risk" value={maxRisk} detail="research sizing note only" />
+        <AdvisorReadout label="Execution allowed" value={signal.executionAllowed ? "true" : "false"} detail="authority none/none/none" />
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        <AdvisorList label="Reasons" values={signal.reasons} empty="No positive reasons yet." />
+        <AdvisorList label="Rejection reasons" values={signal.rejectionReasons} empty="No hard rejection reason." />
+        <AdvisorList label="Warnings" values={signal.warnings} empty="No warnings." />
+      </div>
+      <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">
+        Next action: {signal.nextAction}
+      </p>
+    </section>
   );
 }
 

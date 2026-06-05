@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   buildIctAdvisorPacketFromRuntime,
   buildIctCurrentReadFromPacket,
+  buildIctResearchSignalFromCurrentRead,
   buildIctReplayValidationFromRuntime,
   formatIctAdvisorSignalSummary,
   ICT_LATEST_RESEARCH_STATE_UPDATED_EVENT,
@@ -14,6 +15,7 @@ import {
   summarizeNewsSessionRisk,
   type IctAdvisorPacket,
   type IctLatestResearchState,
+  type IctResearchSignal,
   type IctReplayValidationReport
 } from "@/lib/ict-strategy-suite";
 import type { ResearchRuntimeSnapshot } from "@/lib/runtime";
@@ -62,6 +64,14 @@ const riskLabel = (packet?: IctAdvisorPacket) => {
   if (action === "downgrade_to_watchlist") return "Risk caution";
   return "Risk blocked";
 };
+const signalVariant = (signal?: IctResearchSignal) =>
+  signal?.status === "approved_research_signal"
+    ? "success"
+    : signal?.status === "watchlist_signal"
+      ? "warning"
+      : signal?.status === "rejected_signal"
+        ? "danger"
+        : "secondary";
 
 export function IctAdvisorSummaryPanel({
   mode = "full",
@@ -150,6 +160,10 @@ export function IctAdvisorSummaryPanel({
 
   const recommended = packet?.recommendedSignal;
   const currentRead = useMemo(() => buildIctCurrentReadFromPacket(packet, latestResearchState), [packet, latestResearchState]);
+  const researchSignal = useMemo(
+    () => buildIctResearchSignalFromCurrentRead(currentRead, latestResearchState),
+    [currentRead, latestResearchState]
+  );
   const phaseOneSignals = useMemo(() => (packet?.signals ?? []).filter((signal) => signal.phase === "phase_1"), [packet?.signals]);
   const phaseTwoSignals = useMemo(() => (packet?.signals ?? []).filter((signal) => signal.phase === "phase_2"), [packet?.signals]);
   const topPhaseTwo = phaseTwoSignals
@@ -173,6 +187,7 @@ export function IctAdvisorSummaryPanel({
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge variant={statusVariant(packet?.approvedProfileDecision.status)}>{formatToken(packet?.approvedProfileDecision.status)}</Badge>
+            <Badge data-testid="dashboard-ict-research-signal-status" variant={signalVariant(researchSignal)}>{formatToken(researchSignal.status)}</Badge>
             <Badge variant={smtVariant(packet)}>{smtLabel(packet)}</Badge>
             <Badge variant={riskVariant(packet)}>{riskLabel(packet)}</Badge>
           </div>
@@ -184,7 +199,13 @@ export function IctAdvisorSummaryPanel({
               <AdvisorMini label="Composite bias" value={formatToken(currentRead.bias)} />
               <AdvisorMini label="Active setup" value={formatToken(currentRead.bestSetup)} detail={`Phase 2 ${formatToken(topPhaseTwo?.setup ?? currentRead.bestPhase2Setup)}`} />
               <AdvisorMini label="Decision" value={formatToken(currentRead.approvedStatus)} detail={formatToken(currentRead.dataStatus)} />
+              <AdvisorMini
+                label="Research signal"
+                value={formatToken(researchSignal.status)}
+                detail={`${formatToken(researchSignal.side)} / execution disabled`}
+              />
               <AdvisorMini label="Confidence" value={pct(currentRead.confidence)} />
+              <AdvisorMini label="Signal RR" value={typeof researchSignal.rrEstimate === "number" ? `${researchSignal.rrEstimate.toFixed(2)}R` : "n/a"} detail={typeof researchSignal.confidence === "number" ? pct(researchSignal.confidence) : "n/a"} />
               <AdvisorMini label="Phase 1 / Phase 2" value={`${currentRead.debug.phase1SignalCount}/${currentRead.debug.phase2SignalCount}`} detail="signals evaluated" />
               <AdvisorMini label="SMT / Risk" value={`${formatToken(currentRead.smtStatus)} / ${formatToken(currentRead.riskStatus)}`} />
               <AdvisorMini
@@ -212,7 +233,7 @@ export function IctAdvisorSummaryPanel({
             </div>
             <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3">
               <p className="line-clamp-2 text-xs leading-5 text-slate-300">
-                {currentRead.topReasons[0] ?? recommended?.summary ?? "ICT advisor summary pending."} Next: {currentRead.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
+                Signal: {formatToken(researchSignal.status)} / {formatToken(researchSignal.side)} / execution disabled. {currentRead.topReasons[0] ?? recommended?.summary ?? "ICT advisor summary pending."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
               </p>
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -269,7 +290,9 @@ export function IctAdvisorSummaryPanel({
             <AdvisorMini label="Research side" value={formatToken(packet.compactSummary.side)} />
             <AdvisorMini label="Decision" value={formatToken(packet.compactSummary.decision)} />
             <AdvisorMini label="Approved profile" value={formatToken(packet.approvedProfileDecision.status)} detail={packet.approvedProfileDecision.profileId.replace(/_/g, " ")} />
+            <AdvisorMini label="Research signal" value={formatToken(researchSignal.status)} detail={`${formatToken(researchSignal.side)} / execution disabled`} />
             <AdvisorMini label="Approval score" value={`${packet.approvedProfileDecision.approvalScore}/100`} />
+            <AdvisorMini label="Signal next action" value={researchSignal.nextAction} detail="research-only contract" />
             <AdvisorMini label="Confidence" value={pct(packet.compactSummary.confidence)} />
             <AdvisorMini
               label="SMT / RS"
