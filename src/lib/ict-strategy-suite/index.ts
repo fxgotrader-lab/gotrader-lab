@@ -15,6 +15,8 @@ export * from "./ictReplayDiagnosticsTypes";
 export * from "./ictReplayDiagnostics";
 export * from "./ictApprovedSetupProfileTypes";
 export * from "./ictApprovedSetupProfile";
+export * from "./ictApprovedProfileOptimizerTypes";
+export * from "./ictApprovedProfileOptimizer";
 export * from "./ictIndexSmtTypes";
 export * from "./ictIndexSmt";
 export * from "./ictNewsSessionRiskTypes";

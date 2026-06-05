@@ -86,6 +86,7 @@ export interface IctRealReplayRunOptions {
   fetchCandles?: IctRealReplayCandleFetcher;
   appendJournal?: boolean;
   includeDiagnostics?: boolean;
+  includeReplayResults?: boolean;
   newsSessionRiskContext?: IctNewsSessionRiskContextInput;
 }
 
@@ -468,6 +469,7 @@ export async function runIctRealReplay(configInput: Partial<IctRealReplayRunConf
     diagnostics,
     calibrationResults,
     approvedProfileResults,
+    replayResults: options.includeReplayResults ? replayResults : undefined,
     safety
   });
   if (options.appendJournal !== false) {
@@ -499,6 +501,7 @@ export const sanitizeIctRealReplayRunResult = (result: IctRealReplayRunResult): 
   sanitized.authority = authority;
   sanitized.safety = safety;
   sanitized.config.researchOnly = true;
+  sanitized.replayResults = sanitized.replayResults?.map((result) => ({ ...result, researchOnly: true as const }));
   return sanitized;
 };
 

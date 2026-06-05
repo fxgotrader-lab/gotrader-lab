@@ -8,13 +8,18 @@ import { Button } from "@/components/ui/button";
 import {
   buildManualReplayResearchReport,
   buildMarketScorecardResearchReport,
+  appendIctApprovedProfileOptimizationJournalEvent,
+  buildIctApprovedProfileOptimizationJournalEvent,
   buildIctMarketScorecard,
   DEFAULT_ICT_MARKET_SCORECARD_SYMBOLS,
   listIctResearchReports,
+  optimizeApprovedProfileFromReplayResults,
   researchReportSourceLabel,
+  runIctRealReplay,
   runManualIctReplayReview,
   saveIctResearchReport,
   summarizeIctResearchReport,
+  type IctApprovedProfileOptimizationResult,
   type IctMarketScorecard,
   type IctMarketScorecardConfig,
   type IctMarketScorecardStatus,
@@ -41,6 +46,7 @@ const formatToken = (value?: string) => (value ?? "pending").replace(/_/g, " ");
 const pct = (value?: number) => (typeof value === "number" ? `${Math.round(value * 100)}%` : "n/a");
 const rr = (value?: number) => (typeof value === "number" ? `${value.toFixed(2)}R` : "n/a");
 type MarketScorecardRunStatus = "idle" | "running" | "completed" | "unavailable" | "failed";
+type ProfileOptimizationRunStatus = "idle" | "running" | "completed" | "unavailable" | "failed";
 
 export function ResearchAdvisorView() {
   const [snapshot, setSnapshot] = useState<ResearchRuntimeSnapshot>();
@@ -50,6 +56,9 @@ export function ResearchAdvisorView() {
   const [marketScorecardStatus, setMarketScorecardStatus] = useState<MarketScorecardRunStatus>("idle");
   const [marketScorecard, setMarketScorecard] = useState<IctMarketScorecard>();
   const [marketScorecardError, setMarketScorecardError] = useState<string>();
+  const [profileOptimizationStatus, setProfileOptimizationStatus] = useState<ProfileOptimizationRunStatus>("idle");
+  const [profileOptimization, setProfileOptimization] = useState<IctApprovedProfileOptimizationResult>();
+  const [profileOptimizationError, setProfileOptimizationError] = useState<string>();
   const [savedReports, setSavedReports] = useState<IctResearchReport[]>([]);
   const [manualReportSaveResult, setManualReportSaveResult] = useState<IctResearchReportSaveResult>();
   const [scorecardReportSaveResult, setScorecardReportSaveResult] = useState<IctResearchReportSaveResult>();
@@ -100,6 +109,9 @@ export function ResearchAdvisorView() {
     setMarketScorecardStatus("idle");
     setMarketScorecard(undefined);
     setMarketScorecardError(undefined);
+    setProfileOptimizationStatus("idle");
+    setProfileOptimization(undefined);
+    setProfileOptimizationError(undefined);
     setManualReportSaveResult(undefined);
     setScorecardReportSaveResult(undefined);
   }, [snapshot?.marketData.activeResearchSource.fingerprint]);
@@ -182,6 +194,37 @@ export function ResearchAdvisorView() {
       setMarketScorecardError(error instanceof Error ? error.message : String(error));
     }
   };
+  const runProfileOptimization = async () => {
+    if (profileOptimizationStatus === "running") return;
+    setProfileOptimizationStatus("running");
+    setProfileOptimizationError(undefined);
+    try {
+      const replayRun = await runIctRealReplay(
+        {
+          requestedSymbols: [manualReplayRequest.requestedSymbol],
+          primaryTimeframes: [manualReplayRequest.primaryTimeframe],
+          htfTimeframes: manualReplayRequest.htfTimeframes,
+          candleLimit: manualReplayRequest.candleLimit,
+          replayWindowSize: manualReplayRequest.replayWindowSize,
+          lookaheadCandles: manualReplayRequest.lookaheadCandles,
+          researchOnly: true
+        },
+        {
+          appendJournal: false,
+          includeDiagnostics: true,
+          includeReplayResults: true
+        }
+      );
+      const result = optimizeApprovedProfileFromReplayResults(replayRun.replayResults ?? [], "balanced_quality");
+      appendIctApprovedProfileOptimizationJournalEvent(buildIctApprovedProfileOptimizationJournalEvent(result));
+      setProfileOptimization(result);
+      setProfileOptimizationStatus(result.baseline.totalSignals > 0 ? "completed" : "unavailable");
+    } catch (error) {
+      setProfileOptimization(undefined);
+      setProfileOptimizationStatus("failed");
+      setProfileOptimizationError(error instanceof Error ? error.message : String(error));
+    }
+  };
   const saveManualReplayReport = () => {
     if (!manualReplayResult || manualReplayResult.status !== "completed") return;
     const saveResult = saveIctResearchReport(buildManualReplayResearchReport(manualReplayResult));
@@ -241,6 +284,14 @@ export function ResearchAdvisorView() {
         saveResult={manualReportSaveResult}
         status={manualReplayStatus}
         error={manualReplayError}
+      />
+
+      <ApprovedProfileOptimizerPanel
+        error={profileOptimizationError}
+        onRun={runProfileOptimization}
+        request={manualReplayRequest}
+        result={profileOptimization}
+        status={profileOptimizationStatus}
       />
 
       <MarketScorecardPanel
@@ -410,6 +461,107 @@ function ManualReplayReviewPanel({
               detail="Replay review cannot promote readiness."
             />
             <AdvisorReadout label="Journal" value="compact manual event" detail="ict_manual_replay_review / researchOnly true" />
+          </div>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function ApprovedProfileOptimizerPanel({
+  error,
+  onRun,
+  request,
+  result,
+  status
+}: {
+  error?: string;
+  onRun: () => Promise<void>;
+  request: IctManualReplayReviewRequest;
+  result?: IctApprovedProfileOptimizationResult;
+  status: ProfileOptimizationRunStatus;
+}) {
+  const statusVariant =
+    status === "completed" ? "success" : status === "unavailable" || status === "running" ? "warning" : status === "failed" ? "danger" : "secondary";
+  const statusMessage =
+    status === "idle"
+      ? "Idle. Profile optimization runs only after explicit user action and does not change production settings."
+      : status === "running"
+        ? "Running compact real replay optimization..."
+        : status === "completed"
+          ? "Approved-profile optimization completed."
+          : status === "unavailable"
+            ? "Optimization unavailable: replay produced no research signals."
+            : `Optimization failed: ${error ?? "unknown_error"}.`;
+  const recommended = result?.recommendedProfile;
+  const yesNo = (value?: boolean) => (value ? "yes" : "no");
+  const tooFewSignals =
+    recommended && recommended.results.approvedCount > 0 && recommended.results.approvedCount < Math.max(3, recommended.results.totalSignalsBefore * 0.03);
+
+  return (
+    <section data-testid="ict-approved-profile-optimizer" className="rounded-xl border border-violet-300/15 bg-slate-950/85 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-violet-300">Optimize Approved Profile</p>
+          <h3 className="mt-1 flex items-center gap-2 text-xl font-semibold text-slate-50">
+            <BarChart3 className="h-5 w-5 text-violet-300" aria-hidden="true" />
+            Research-only profile settings recommendation
+          </h3>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+            Tests approved-profile settings against compact replay outcomes to reduce noisy ICT signals. It recommends a draft profile only; no thresholds are changed automatically.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge data-testid="ict-approved-profile-optimizer-status" variant={statusVariant}>{formatToken(status)}</Badge>
+          <Badge variant="danger">authority none</Badge>
+          <Badge variant="secondary">researchOnly true</Badge>
+          <Button type="button" size="sm" onClick={onRun} disabled={status === "running"}>
+            <PlayCircle className="h-4 w-4" aria-hidden="true" />
+            {status === "running" ? "Optimizing..." : "Run Profile Optimization"}
+          </Button>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <AdvisorReadout label="Requested symbol" value={request.requestedSymbol} detail="uses MT5 mapping when available" />
+        <AdvisorReadout label="Primary timeframe" value={request.primaryTimeframe} detail={`${request.candleLimit.toLocaleString()} candle limit`} />
+        <AdvisorReadout label="HTF timeframes" value={request.htfTimeframes.join(", ")} detail="profile evidence context" />
+        <AdvisorReadout label="Objective" value={formatToken(result?.objective ?? "balanced_quality")} detail="target-first, RR, and noise balance" />
+      </div>
+      <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">{statusMessage}</p>
+      {result && recommended ? (
+        <>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <AdvisorReadout label="Baseline target-first" value={pct(result.baseline.targetFirstRate)} detail={`${result.baseline.totalSignals.toLocaleString()} replay signals`} />
+            <AdvisorReadout label="Baseline average RR" value={rr(result.baseline.averageRrAchieved)} />
+            <AdvisorReadout label="Recommended confidence" value={`${recommended.minConfidence}%`} detail={recommended.label} />
+            <AdvisorReadout label="Recommended min RR" value={rr(recommended.minRr)} />
+            <AdvisorReadout label="Signal reduction" value={pct(recommended.results.signalReductionPct)} detail={`${recommended.results.approvedCount} approved / ${recommended.results.rejectedCount} rejected`} />
+            <AdvisorReadout label="Improved target-first" value={pct(recommended.results.targetFirstRate)} detail={`score ${recommended.score.toFixed(2)}`} />
+            <AdvisorReadout label="Improved average RR" value={rr(recommended.results.averageRrAchieved)} />
+            <AdvisorReadout label="Invalidation-first" value={pct(recommended.results.invalidationFirstRate)} />
+            <AdvisorReadout label="HTF alignment" value={yesNo(recommended.requireHtfAlignment)} />
+            <AdvisorReadout label="FVG required" value={yesNo(recommended.requireFvgPresent)} />
+            <AdvisorReadout label="SMT confirmation" value={yesNo(recommended.requireSmtConfirmationForIndex)} />
+            <AdvisorReadout label="News filters" value={recommended.rejectMediumNewsRisk ? "high + medium" : "high only"} />
+          </div>
+          {tooFewSignals ? (
+            <div className="mt-3 rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm leading-5 text-amber-100">
+              Warning: this profile leaves a small approved sample. Keep it draft-only until additional replay windows confirm the edge.
+            </div>
+          ) : null}
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            <AdvisorList label="Strengths" values={recommended.strengths} empty="none" />
+            <AdvisorList label="Weaknesses" values={recommended.weaknesses} empty="none" />
+            <AdvisorList label="Recommendation" values={[result.recommendationSummary, result.nextTestSuggestion]} empty="none" />
+            <AdvisorList
+              label="Safety"
+              values={[
+                "Draft recommendation only; no production profile mutation.",
+                `Authority ${result.authority.executionAuthority}/${result.authority.brokerAuthority}/${result.authority.readinessOverrideAuthority}.`,
+                "Raw candles, snapshots, secrets, account data, orders, and positions excluded."
+              ]}
+              empty="none"
+            />
           </div>
         </>
       ) : null}
