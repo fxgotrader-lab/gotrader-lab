@@ -3032,11 +3032,11 @@ export function MissionControlShell({ state }: { state: LabState }) {
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-300">Monte Carlo Robustness</p>
               <h3 className="mt-1 text-base font-semibold text-slate-50">Robustness Report</h3>
               <p className="mt-1 text-sm text-slate-400">
-                Planned: trade-order shuffle, drawdown distribution, losing-streak probability, and edge survival score.
+                Manual robustness engine is available in Research Advisor after replay review; Dashboard keeps this compact until a replay-backed run exists.
               </p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <MiniReadout label="Edge survival score" value="planned" detail="No Monte Carlo engine wired yet" />
-                <MiniReadout label="5th percentile drawdown" value="planned" detail="Awaiting shuffle simulation" />
+                <MiniReadout label="Edge survival score" value="run in Advisor" detail="Requires compact approved replay outcomes" />
+                <MiniReadout label="5th percentile drawdown" value="manual run" detail="Calculated by the ICT Monte Carlo engine" />
                 <MiniReadout label="Losing streak probability" value="planned" detail={canonicalMetrics ? `Sample ${canonicalMetrics.totalTrades} trades` : "No sample yet"} />
                 <MiniReadout label="Sample warning" value={canonicalMetrics && canonicalMetrics.totalTrades >= 30 ? "sample usable" : "sample small"} detail="Do not fabricate robustness values" />
               </div>

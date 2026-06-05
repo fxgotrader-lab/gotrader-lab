@@ -35,6 +35,7 @@
     "test:ict-market-scorecard": "node scripts/test-ict-market-scorecard.mjs",
     "test:ict-research-report": "node scripts/test-ict-research-report.mjs",
     "test:ict-monte-carlo": "node scripts/test-ict-monte-carlo.mjs",
+    "test:gotrader-system-coordination": "node scripts/test-gotrader-system-coordination.mjs",
     "test:ict-current-read-flow": "node scripts/test-ict-current-read-flow.mjs",
     "test:ict-approved-profile-optimizer": "node scripts/test-ict-approved-profile-optimizer.mjs",
     "preview": "vite preview --host 127.0.0.1",
