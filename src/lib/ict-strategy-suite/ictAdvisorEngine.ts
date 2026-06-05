@@ -30,6 +30,14 @@ import {
   evaluateApprovedSetupProfile,
   getDefaultApprovedSetupProfiles
 } from "./ictApprovedSetupProfile";
+import {
+  ICT_INDEX_SMT_INSTRUMENTS,
+  appendIctIndexSmtJournalEvents,
+  applySmtToApprovedDecision,
+  buildIctIndexSmtJournalEvent,
+  evaluateIndexSmt,
+  smtSymbolMatchesIndexGroup
+} from "./ictIndexSmt";
 import type {
   IctAdvisorDealingRange,
   IctAdvisorDisplacement,
@@ -42,6 +50,7 @@ import type {
   IctLiquidityType,
   IctSide
 } from "./ictAdvisorTypes";
+import type { IctIndexComparisonCandles } from "./ictIndexSmtTypes";
 import type { IctLiquidityPool as SuiteLiquidityPool } from "./ictStrategySuiteTypes";
 
 const createId = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -214,6 +223,7 @@ export const buildIctAdvisorSignals = ({
   brokerSymbol,
   candles,
   htfCandles,
+  indexComparisonCandles,
   primaryTimeframe,
   requestedSymbol,
   sourceSummary,
@@ -222,6 +232,7 @@ export const buildIctAdvisorSignals = ({
   brokerSymbol: string;
   candles: Candle[];
   htfCandles: Record<string, Candle[]>;
+  indexComparisonCandles?: IctIndexComparisonCandles;
   primaryTimeframe: string;
   requestedSymbol: string;
   sourceSummary: CanonicalCandleSourceSummary;
@@ -454,10 +465,37 @@ export const buildIctAdvisorSignals = ({
     evaluateIctPhase2OneShotOneKill(phase2Context)
   ];
   const approvedProfile = getDefaultApprovedSetupProfiles()[0];
-  return [htfSignal, dailySignal, liquiditySignal, fvgSignal, ...phase2Signals].map((signal) => ({
-    ...signal,
-    approvedProfileDecision: signal.approvedProfileDecision ?? evaluateApprovedSetupProfile(signal, approvedProfile)
-  }));
+  const comparisonCandles: IctIndexComparisonCandles = {
+    ...(indexComparisonCandles ?? {}),
+    [brokerSymbol]: indexComparisonCandles?.[brokerSymbol] ?? normalized
+  };
+  const shouldEvaluateSmt = smtSymbolMatchesIndexGroup(brokerSymbol) || smtSymbolMatchesIndexGroup(requestedSymbol);
+  return [htfSignal, dailySignal, liquiditySignal, fvgSignal, ...phase2Signals].map((signal) => {
+    const smt = shouldEvaluateSmt
+      ? evaluateIndexSmt({
+          candidateSide: signal.side,
+          candlesByBrokerSymbol: comparisonCandles,
+          htfTimeframes,
+          primarySymbol: brokerSymbol,
+          primaryTimeframe
+        })
+      : undefined;
+    const signalWithSmt: IctAdvisorSignal = smt
+      ? {
+          ...signal,
+          smt,
+          confidence: clamp(signal.confidence + smt.confidenceAdjustment)
+        }
+      : signal;
+    const approvedProfileDecision = applySmtToApprovedDecision(
+      evaluateApprovedSetupProfile(signalWithSmt, approvedProfile),
+      smt
+    );
+    return {
+      ...signalWithSmt,
+      approvedProfileDecision
+    };
+  });
 };
 
 const bestSignal = (signals: IctAdvisorSignal[]) =>
@@ -469,6 +507,40 @@ const bestSignal = (signals: IctAdvisorSignal[]) =>
       return rightDecision - leftDecision || right.confidence - left.confidence || (right.rrEstimate ?? 0) - (left.rrEstimate ?? 0);
     })[0] ?? signals[0];
 
+const resolveIndexSmtSources = async ({
+  activeSource,
+  primaryTimeframe,
+  snapshot
+}: {
+  activeSource?: CanonicalCandleSource;
+  primaryTimeframe: string;
+  snapshot: ResearchRuntimeSnapshot;
+}): Promise<IctIndexComparisonCandles> => {
+  const sourceSummaries = await listCanonicalCandleSourceSummaries();
+  const loaded: IctIndexComparisonCandles = {};
+  for (const instrument of ICT_INDEX_SMT_INSTRUMENTS) {
+    const activeBrokerSymbol = activeSource?.provenance.providerSymbol ?? snapshot.marketData.activeResearchSource.provenance.providerSymbol;
+    if (
+      activeSource?.candles?.length &&
+      activeSource.timeframe === primaryTimeframe &&
+      (activeBrokerSymbol === instrument.brokerSymbol || activeSource.symbol === instrument.requestedSymbol)
+    ) {
+      loaded[instrument.brokerSymbol] = activeSource.candles;
+      continue;
+    }
+    const matching = sourceSummaries.find(
+      (source) =>
+        source.provider === "mt5_read_only" &&
+        source.timeframe === primaryTimeframe &&
+        (source.symbol === instrument.requestedSymbol || source.provenance.providerSymbol === instrument.brokerSymbol)
+    );
+    if (!matching) continue;
+    const source = await loadCanonicalCandleSource(matching.sourceId);
+    if (source?.candles?.length) loaded[instrument.brokerSymbol] = source.candles;
+  }
+  return loaded;
+};
+
 export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntimeSnapshot): Promise<IctAdvisorPacket> {
   const sourceSummary = snapshot.marketData.activeResearchSource;
   const activeSource = await loadCanonicalCandleSource(sourceSummary.sourceId);
@@ -479,12 +551,14 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
   const htfSources = await resolveHtfSources(snapshot);
   const htfCandles = Object.fromEntries(htfSources.map(({ source }) => [source.timeframe, source.candles]));
   const candles = activeSource?.candles ?? [];
+  const indexComparisonCandles = await resolveIndexSmtSources({ activeSource, primaryTimeframe, snapshot });
   const htfTimeframes = Object.keys(htfCandles);
   const signals = activeSource?.candles?.length
     ? buildIctAdvisorSignals({
         brokerSymbol,
         candles,
         htfCandles,
+        indexComparisonCandles,
         primaryTimeframe,
         requestedSymbol,
         sourceSummary,
@@ -513,9 +587,14 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
       );
   const recommendedSignal = bestSignal(signals);
   const approvedProfile = getDefaultApprovedSetupProfiles()[0];
-  const approvedProfileDecision = evaluateApprovedSetupProfile(recommendedSignal, approvedProfile);
+  const approvedProfileDecision = applySmtToApprovedDecision(
+    evaluateApprovedSetupProfile(recommendedSignal, approvedProfile),
+    recommendedSignal.smt
+  );
   const journalEvents = signals.map((signal) => buildIctAdvisorJournalEvent(signal));
+  const indexSmtJournalEvents = signals.filter((signal) => signal.smt).map((signal) => buildIctIndexSmtJournalEvent(signal.smt!));
   const journalWrite = appendIctAdvisorJournalEvents(journalEvents);
+  appendIctIndexSmtJournalEvents(indexSmtJournalEvents);
   return {
     packetId: createId("ict_advisor_packet"),
     source: "gotrader_ict_strategy_suite",
@@ -535,6 +614,7 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
     },
     signals,
     recommendedSignal,
+    indexSmt: recommendedSignal.smt,
     compactSummary: {
       compositeBias: recommendedSignal.bias.composite,
       drawOnLiquidity: recommendedSignal.drawOnLiquidity
@@ -546,10 +626,17 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
       confidence: clamp(recommendedSignal.confidence),
       approvedProfileStatus: approvedProfileDecision.status,
       approvalScore: approvedProfileDecision.approvalScore,
+      smtDivergenceType: recommendedSignal.smt?.divergenceType,
+      smtConfirmsCandidate: recommendedSignal.smt?.confirmsCandidate,
+      smtRejectsCandidate: recommendedSignal.smt?.rejectsCandidate,
+      relativeStrengthLeader: recommendedSignal.smt?.relativeStrengthLeader,
+      relativeWeaknessLeader: recommendedSignal.smt?.relativeWeaknessLeader,
+      smtConfidenceAdjustment: recommendedSignal.smt?.confidenceAdjustment,
       noTradeReasonCount: recommendedSignal.noTradeReasons.length
     },
     approvedProfileDecision,
     journalEvents,
+    indexSmtJournalEvents,
     journalStatus: journalWrite.storage === "localStorage" ? "written" : journalWrite.storage === "memory_unavailable" ? "memory_only" : "unavailable",
     safetyLocks: {
       rawCandlesIncluded: false,

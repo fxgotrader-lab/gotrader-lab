@@ -26,6 +26,20 @@ const statusVariant = (status?: IctAdvisorPacket["approvedProfileDecision"]["sta
       : status === "rejected_candidate"
         ? "danger"
         : "secondary";
+const smtVariant = (packet?: IctAdvisorPacket) =>
+  packet?.compactSummary.smtRejectsCandidate
+    ? "danger"
+    : packet?.compactSummary.smtConfirmsCandidate
+      ? "success"
+      : packet?.compactSummary.smtDivergenceType === "insufficient_data"
+        ? "warning"
+        : "secondary";
+const smtLabel = (packet?: IctAdvisorPacket) => {
+  if (!packet?.compactSummary.smtDivergenceType) return "SMT pending";
+  if (packet.compactSummary.smtRejectsCandidate) return "SMT rejects";
+  if (packet.compactSummary.smtConfirmsCandidate) return "SMT confirms";
+  return formatToken(packet.compactSummary.smtDivergenceType);
+};
 
 export function IctAdvisorSummaryPanel({
   mode = "full",
@@ -114,15 +128,16 @@ export function IctAdvisorSummaryPanel({
             </h3>
           </div>
           <Badge variant={statusVariant(packet?.approvedProfileDecision.status)}>{formatToken(packet?.approvedProfileDecision.status)}</Badge>
+          <Badge variant={smtVariant(packet)}>{smtLabel(packet)}</Badge>
         </div>
         {packet ? (
           <>
             <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
               <AdvisorMini label="Composite bias" value={formatToken(packet.compactSummary.compositeBias)} />
               <AdvisorMini label="Phase 2 setup" value={formatToken(topPhaseTwo?.setup)} />
+              <AdvisorMini label="SMT / RS" value={smtLabel(packet)} detail={packet.indexSmt?.relativeStrengthLeader ? `RS ${packet.indexSmt.relativeStrengthLeader}` : undefined} />
               <AdvisorMini label="Decision" value={formatToken(packet.compactSummary.decision)} />
               <AdvisorMini label="Setup" value={formatToken(packet.compactSummary.setup)} />
-              <AdvisorMini label="Approved profile" value={formatToken(packet.compactSummary.approvedProfileStatus)} />
               <AdvisorMini label="Confidence" value={pct(packet.compactSummary.confidence)} />
             </div>
             <p className="mt-3 text-xs leading-5 text-slate-400">
@@ -161,6 +176,7 @@ export function IctAdvisorSummaryPanel({
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant={statusVariant(packet?.approvedProfileDecision.status)}>{formatToken(packet?.approvedProfileDecision.status)}</Badge>
+          <Badge variant={smtVariant(packet)}>{smtLabel(packet)}</Badge>
           <Badge variant={recommended?.decision === "research_only" ? "success" : "warning"}>{formatToken(recommended?.decision)}</Badge>
           <Badge variant="danger">execution none</Badge>
           <Badge variant="secondary">compact packet</Badge>
@@ -179,6 +195,12 @@ export function IctAdvisorSummaryPanel({
             <AdvisorMini label="Approved profile" value={formatToken(packet.approvedProfileDecision.status)} detail={packet.approvedProfileDecision.profileId.replace(/_/g, " ")} />
             <AdvisorMini label="Approval score" value={`${packet.approvedProfileDecision.approvalScore}/100`} />
             <AdvisorMini label="Confidence" value={pct(packet.compactSummary.confidence)} />
+            <AdvisorMini
+              label="SMT / RS"
+              value={smtLabel(packet)}
+              detail={packet.indexSmt ? `${formatToken(packet.indexSmt.divergenceType)} / ${packet.indexSmt.reason}` : "awaiting index comparison"}
+            />
+            <AdvisorMini label="RS leader" value={packet.indexSmt?.relativeStrengthLeader ?? "n/a"} detail={`weakness ${packet.indexSmt?.relativeWeaknessLeader ?? "n/a"}`} />
             <AdvisorMini label="Draw-on-liquidity" value={packet.compactSummary.drawOnLiquidity ?? "none"} />
             <AdvisorMini label="Swept liquidity" value={recommended?.liquiditySwept ? `${recommended.liquiditySwept.type} @ ${compactPrice(recommended.liquiditySwept.price)}` : "none"} />
             <AdvisorMini label="Dealing range" value={formatToken(recommended?.dealingRange?.currentLocation)} detail={recommended?.dealingRange ? `${compactPrice(recommended.dealingRange.low)} / ${compactPrice(recommended.dealingRange.midpoint)} / ${compactPrice(recommended.dealingRange.high)}` : undefined} />
@@ -190,6 +212,48 @@ export function IctAdvisorSummaryPanel({
             <AdvisorMini label="Target" value={compactPrice(recommended?.target)} />
             <AdvisorMini label="RR estimate" value={typeof recommended?.rrEstimate === "number" ? `${recommended.rrEstimate.toFixed(2)}R` : "n/a"} />
             <AdvisorMini label="Journal" value={packet.journalStatus} detail={`${packet.journalEvents.length} compact events`} />
+          </div>
+          <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Index SMT / Relative Strength</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Confirmation layer only. It can confirm, reject, or adjust confidence on existing ICT candidates, but it cannot create standalone signals.
+                </p>
+              </div>
+              <Badge variant={smtVariant(packet)}>{smtLabel(packet)}</Badge>
+            </div>
+            {packet.indexSmt ? (
+              <>
+                <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                  <AdvisorMini label="Index group" value="USTECH / US500 / US30" />
+                  <AdvisorMini label="SMT type" value={formatToken(packet.indexSmt.divergenceType)} />
+                  <AdvisorMini label="Confirms candidate" value={packet.indexSmt.confirmsCandidate ? "yes" : "no"} />
+                  <AdvisorMini label="Rejects candidate" value={packet.indexSmt.rejectsCandidate ? "yes" : "no"} />
+                  <AdvisorMini label="Confidence adjustment" value={`${Math.round(packet.indexSmt.confidenceAdjustment * 100)} pts`} />
+                  <AdvisorMini label="RS leader" value={packet.indexSmt.relativeStrengthLeader ?? "n/a"} />
+                  <AdvisorMini label="RS weakness" value={packet.indexSmt.relativeWeaknessLeader ?? "n/a"} />
+                  <AdvisorMini label="Journal" value={`${packet.indexSmtJournalEvents.length} compact SMT events`} />
+                </div>
+                <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-xs leading-5 text-slate-300">
+                  {packet.indexSmt.reason}
+                </p>
+                <div className="mt-3 grid gap-2 md:grid-cols-3">
+                  {packet.indexSmt.instruments.map((instrument) => (
+                    <AdvisorMini
+                      key={instrument.brokerSymbol}
+                      label={instrument.displayLabel}
+                      value={`${instrument.dataStatus} / ${typeof instrument.relativeChangePct === "number" ? `${instrument.relativeChangePct.toFixed(2)}%` : "n/a"}`}
+                      detail={`buy sweep ${instrument.sweptBuySide ? "yes" : "no"} / sell sweep ${instrument.sweptSellSide ? "yes" : "no"}`}
+                    />
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
+                Index SMT is waiting for the active index futures research context.
+              </p>
+            )}
           </div>
           <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.6fr)]">
             <div className="rounded-lg border border-white/10 bg-black/20 p-3">

@@ -9,6 +9,8 @@ import {
   sanitizeMt5ReadOnlyTimeframe
 } from "../integrations/mt5/mt5SymbolSettings";
 import type { Candle, Timeframe } from "../types";
+import { ICT_INDEX_SMT_INSTRUMENTS, smtSymbolMatchesIndexGroup } from "./ictIndexSmt";
+import type { IctIndexComparisonCandles } from "./ictIndexSmtTypes";
 import { runIctReplayValidation, sanitizeReplayOutput } from "./ictReplayValidation";
 import {
   appendIctApprovedSetupProfileJournalEvents,
@@ -216,6 +218,43 @@ const buildSessionBuckets = (reports: IctReplayValidationReport[]) => {
   );
 };
 
+const fetchIndexComparisonCandles = async ({
+  candleLimit,
+  fetchCandles,
+  primary,
+  primaryTimeframe
+}: {
+  candleLimit: number;
+  fetchCandles: IctRealReplayCandleFetcher;
+  primary: IctRealReplayFetchedCandles;
+  primaryTimeframe: string;
+}): Promise<IctIndexComparisonCandles> => {
+  if (!smtSymbolMatchesIndexGroup(primary.brokerSymbol) && !smtSymbolMatchesIndexGroup(primary.requestedSymbol)) {
+    return {};
+  }
+  const comparison: IctIndexComparisonCandles = {};
+  for (const instrument of ICT_INDEX_SMT_INSTRUMENTS) {
+    try {
+      if (canonical(primary.brokerSymbol) === canonical(instrument.brokerSymbol) && primary.candles.length) {
+        comparison[instrument.brokerSymbol] = primary.candles;
+        continue;
+      }
+      const fetched = await fetchCandles({
+        requestedSymbol: instrument.requestedSymbol,
+        brokerSymbol: instrument.brokerSymbol,
+        timeframe: primaryTimeframe,
+        limit: candleLimit
+      });
+      if ((fetched.connectionStatus === "connected" || fetched.connectionStatus === "degraded") && fetched.candles.length) {
+        comparison[instrument.brokerSymbol] = fetched.candles;
+      }
+    } catch {
+      // Missing comparison data downgrades SMT to insufficient_data; real replay continues.
+    }
+  }
+  return comparison;
+};
+
 const aggregateReports = (
   config: IctRealReplayRunConfig,
   symbols: IctRealReplaySymbolResult[],
@@ -366,6 +405,12 @@ export async function runIctRealReplay(configInput: Partial<IctRealReplayRunConf
             htfCandles[htfTimeframe] = htf.candles;
           }
         }
+        const indexComparisonCandles = await fetchIndexComparisonCandles({
+          candleLimit: config.candleLimit,
+          fetchCandles,
+          primary,
+          primaryTimeframe
+        });
         const report = sanitizeReplayOutput(
           runIctReplayValidation({
             symbol: mapping.requestedSymbol,
@@ -375,6 +420,7 @@ export async function runIctRealReplay(configInput: Partial<IctRealReplayRunConf
             htfTimeframes: Object.keys(htfCandles),
             candles: primary.candles,
             htfCandles,
+            indexComparisonCandles,
             replayWindowSize: config.replayWindowSize,
             lookaheadCandles: config.lookaheadCandles,
             researchOnly: true

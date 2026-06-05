@@ -15,5 +15,7 @@ export * from "./ictReplayDiagnosticsTypes";
 export * from "./ictReplayDiagnostics";
 export * from "./ictApprovedSetupProfileTypes";
 export * from "./ictApprovedSetupProfile";
+export * from "./ictIndexSmtTypes";
+export * from "./ictIndexSmt";
 export * from "./ictRealReplayRunnerTypes";
 export * from "./ictRealReplayRunner";

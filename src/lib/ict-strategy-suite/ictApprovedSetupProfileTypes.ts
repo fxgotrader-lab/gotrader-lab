@@ -56,6 +56,13 @@ export interface IctApprovedSetupDecision {
   dealingRangeLocation?: string;
   liquidityTargetType?: string;
   fvgStatus?: string;
+  smtDivergenceType?: string;
+  smtConfirmsCandidate?: boolean;
+  smtRejectsCandidate?: boolean;
+  relativeStrengthLeader?: string;
+  relativeWeaknessLeader?: string;
+  smtConfidenceAdjustment?: number;
+  smtReason?: string;
   approvalScore: number;
   approvedReasons: string[];
   rejectionReasons: string[];

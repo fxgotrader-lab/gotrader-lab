@@ -1,4 +1,5 @@
 import type { IctAdvisorSignal } from "./ictAdvisorTypes";
+import type { IctIndexComparisonCandles, IctSmtSignal } from "./ictIndexSmtTypes";
 
 export type IctReplayOutcome =
   | "target_first"
@@ -23,6 +24,7 @@ export interface IctReplayInput {
   htfTimeframes: string[];
   candles: unknown[];
   htfCandles?: Record<string, unknown[]>;
+  indexComparisonCandles?: IctIndexComparisonCandles | Record<string, unknown[]>;
   replayWindowSize: number;
   lookaheadCandles: number;
   researchOnly: true;
@@ -56,6 +58,13 @@ export interface IctReplayResult {
   liquidityTargetType?: string;
   orderBlockVariant?: string;
   approvedProfileStatus?: string;
+  smtDivergenceType?: IctSmtSignal["divergenceType"];
+  smtConfirmsCandidate?: boolean;
+  smtRejectsCandidate?: boolean;
+  relativeStrengthLeader?: string;
+  relativeWeaknessLeader?: string;
+  smtConfidenceAdjustment?: number;
+  smtReason?: string;
   rrEstimate?: number;
   outcome: IctReplayOutcome;
   fvgStatus: IctFvgReplayStatus;
@@ -119,6 +128,13 @@ export interface IctReplayJournalEvent {
   fvgStatus: IctFvgReplayStatus;
   orderBlockVariant?: string;
   approvedProfileStatus?: string;
+  smtDivergenceType?: IctSmtSignal["divergenceType"];
+  smtConfirmsCandidate?: boolean;
+  smtRejectsCandidate?: boolean;
+  relativeStrengthLeader?: string;
+  relativeWeaknessLeader?: string;
+  smtConfidenceAdjustment?: number;
+  smtReason?: string;
   entryReference?: number;
   invalidation?: number;
   target?: number;
@@ -135,8 +151,9 @@ export interface IctReplayJournalEvent {
 export interface IctReplayValidationReport {
   replayId: string;
   generatedAt: string;
-  input: Omit<IctReplayInput, "candles" | "htfCandles"> & {
+  input: Omit<IctReplayInput, "candles" | "htfCandles" | "indexComparisonCandles"> & {
     candleCount: number;
+    indexComparisonSourceCount?: number;
   };
   summary: IctReplaySummary;
   results: IctReplayResult[];

@@ -8,6 +8,7 @@ import type {
   IctApprovedProfileId
 } from "./ictApprovedSetupProfileTypes";
 import type { IctReplayResult } from "./ictReplayValidationTypes";
+import type { IctSmtSignal } from "./ictIndexSmtTypes";
 
 const APPROVED_PROFILE_JOURNAL_STORAGE_KEY = "gotrader.ict-approved-setup-profile-summary.journal.v1";
 const MAX_APPROVED_PROFILE_JOURNAL_EVENTS = 100;
@@ -179,6 +180,19 @@ const externalLiquidityTypes = new Set([
 
 const normalizeInput = (input: IctApprovedSetupProfileInput) => {
   const replay = isReplayInput(input);
+  const smt: Partial<IctSmtSignal> | undefined = replay
+    ? input.smtDivergenceType
+      ? {
+          divergenceType: input.smtDivergenceType,
+          confirmsCandidate: Boolean(input.smtConfirmsCandidate),
+          rejectsCandidate: Boolean(input.smtRejectsCandidate),
+          relativeStrengthLeader: input.relativeStrengthLeader,
+          relativeWeaknessLeader: input.relativeWeaknessLeader,
+          confidenceAdjustment: input.smtConfidenceAdjustment ?? 0,
+          reason: input.smtReason ?? ""
+        }
+      : undefined
+    : input.smt;
   const confidence = confidencePct(input.confidence);
   const htfTimeframes = replay ? [] : input.htfTimeframes;
   const htfAligned = replay ? input.htfAligned : htfAlignedForSignal(input);
@@ -236,6 +250,7 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
     session: replay ? sessionForTimestamp(input.tradePath.signalTime) : "current",
     setup: input.setup,
     side: input.side,
+    smt,
     strategyId: input.strategyId,
     symbol: input.symbol,
     targetTooClose
@@ -253,6 +268,8 @@ export const calculateApprovalScore = (input: IctApprovedSetupProfileInput, prof
   score += normalized.hasDisplacement ? 10 : 0;
   score += normalized.hasLiquiditySweep ? 10 : 0;
   score += normalized.hasFvg ? 5 : 0;
+  if (normalized.smt?.confirmsCandidate) score += 5;
+  if (normalized.smt?.rejectsCandidate) score -= 10;
   if (normalized.dealingRangeLocation === "equilibrium") score -= 10;
   if (normalized.targetTooClose) score -= 10;
   return Math.round(clamp(score));
@@ -285,6 +302,7 @@ export const evaluateApprovedSetupProfile = (
   if (profile.requireExternalLiquidityTarget && !normalized.hasExternalLiquidityTarget) hardRejects.push("External liquidity target missing.");
   if (profile.rejectEquilibrium && normalized.dealingRangeLocation === "equilibrium") hardRejects.push("Price is at equilibrium.");
   if (profile.rejectTargetTooClose && normalized.targetTooClose) hardRejects.push("Target is too close.");
+  if (normalized.smt?.rejectsCandidate) hardRejects.push(`SMT/relative strength rejects candidate: ${normalized.smt.reason}`);
 
   if (normalized.confidence < profile.minConfidence) {
     if (nearConfidence) {
@@ -315,6 +333,11 @@ export const evaluateApprovedSetupProfile = (
   if (normalized.hasExternalLiquidityTarget) approvedReasons.push(`External liquidity target ${normalized.liquidityTargetType}.`);
   if (normalized.hasDisplacement) approvedReasons.push("Displacement evidence present.");
   if (normalized.hasLiquiditySweep) approvedReasons.push("Liquidity sweep evidence present.");
+  if (normalized.smt?.confirmsCandidate) approvedReasons.push(`SMT/relative strength confirms candidate: ${normalized.smt.reason}`);
+  if (normalized.smt?.divergenceType === "insufficient_data") watchlistReasons.push("SMT/relative strength unavailable; candidate remains governed by deterministic ICT filters.");
+  if (normalized.smt && !normalized.smt.confirmsCandidate && !normalized.smt.rejectsCandidate && (normalized.smt.confidenceAdjustment ?? 0) < 0) {
+    watchlistReasons.push(`SMT/relative strength confidence drag: ${normalized.smt.reason}`);
+  }
 
   const status =
     normalized.decision === "no_trade" || normalized.side === "flat"
@@ -344,6 +367,13 @@ export const evaluateApprovedSetupProfile = (
     dealingRangeLocation: normalized.dealingRangeLocation,
     liquidityTargetType: normalized.liquidityTargetType,
     fvgStatus: normalized.fvgStatus,
+    smtDivergenceType: normalized.smt?.divergenceType,
+    smtConfirmsCandidate: normalized.smt?.confirmsCandidate,
+    smtRejectsCandidate: normalized.smt?.rejectsCandidate,
+    relativeStrengthLeader: normalized.smt?.relativeStrengthLeader,
+    relativeWeaknessLeader: normalized.smt?.relativeWeaknessLeader,
+    smtConfidenceAdjustment: normalized.smt?.confidenceAdjustment,
+    smtReason: normalized.smt?.reason,
     approvalScore: calculateApprovalScore(input, profile),
     approvedReasons: Array.from(new Set(approvedReasons)).slice(0, 8),
     rejectionReasons: Array.from(new Set(hardRejects)).slice(0, 8),

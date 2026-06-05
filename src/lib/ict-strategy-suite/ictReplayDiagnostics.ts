@@ -136,6 +136,11 @@ export const buildReplayDiagnostics = (results: IctReplayResult[]): IctReplayDia
     byFvgStatus: buildBreakdown(results, (result) => result.fvgStatus),
     byDealingRangeLocation: buildBreakdown(results, (result) => result.dealingRangeLocation ?? "unknown"),
     byLiquidityTargetType: buildBreakdown(results, (result) => result.liquidityTargetType ?? "none"),
+    bySmtDivergenceType: buildBreakdown(results, (result) => result.smtDivergenceType ?? "not_evaluated"),
+    bySmtConfirmsCandidate: buildBreakdown(results, (result) => (result.smtConfirmsCandidate === undefined ? "not_evaluated" : result.smtConfirmsCandidate ? "confirms" : "does_not_confirm")),
+    bySmtRejectsCandidate: buildBreakdown(results, (result) => (result.smtRejectsCandidate === undefined ? "not_evaluated" : result.smtRejectsCandidate ? "rejects" : "does_not_reject")),
+    byRelativeStrengthLeader: buildBreakdown(results, (result) => result.relativeStrengthLeader ?? "none"),
+    byRelativeWeaknessLeader: buildBreakdown(results, (result) => result.relativeWeaknessLeader ?? "none"),
     mostCommonNoTradeReasons: countMostCommonNoTradeReasons(results),
     safety
   });
@@ -149,6 +154,10 @@ export const getDefaultReplayCalibrationFilters = (): IctReplayCalibrationFilter
   { id: "fvg_present_required", label: "FVG present required", enabled: true, requireFvgPresent: true },
   { id: "fvg_respected_required", label: "FVG respected required", enabled: true, requireFvgRespected: true },
   { id: "external_liquidity_target_required", label: "External liquidity target required", enabled: true, requireExternalLiquidityTarget: true },
+  { id: "require_smt_confirmation_for_index", label: "Require SMT/RS confirmation for index candidates", enabled: true, requireSmtConfirmationForIndex: true },
+  { id: "reject_smt_against_candidate", label: "Reject SMT/RS against candidate", enabled: true, rejectSmtAgainstCandidate: true },
+  { id: "prefer_relative_strength_leader", label: "Prefer relative strength leader", enabled: true, preferRelativeStrengthLeader: true },
+  { id: "reject_mixed_index_alignment", label: "Reject mixed index alignment", enabled: true, rejectMixedIndexAlignment: true },
   { id: "reject_equilibrium", label: "Reject equilibrium entries", enabled: true, rejectEquilibrium: true },
   { id: "ny_session_only", label: "New York session only", enabled: true, allowedSessions: ["New York"] },
   { id: "london_and_ny_only", label: "London and New York only", enabled: true, allowedSessions: ["London", "New York"] }
@@ -168,6 +177,10 @@ const passesFilter = (result: IctReplayResult, filter: IctReplayCalibrationFilte
   if (filter.allowedSides?.length && !filter.allowedSides.includes(result.side as "long" | "short")) return false;
   if (filter.rejectEquilibrium && result.dealingRangeLocation === "equilibrium") return false;
   if (filter.rejectTargetTooClose && (result.rrEstimate ?? 0) < 1.5) return false;
+  if (filter.requireSmtConfirmationForIndex && result.smtConfirmsCandidate !== true) return false;
+  if (filter.rejectSmtAgainstCandidate && result.smtRejectsCandidate === true) return false;
+  if (filter.preferRelativeStrengthLeader && result.relativeStrengthLeader && result.brokerSymbol !== result.relativeStrengthLeader) return false;
+  if (filter.rejectMixedIndexAlignment && result.smtDivergenceType === "no_smt" && (result.smtConfidenceAdjustment ?? 0) < 0) return false;
   return true;
 };
 

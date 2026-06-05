@@ -43,6 +43,11 @@ export interface IctReplayDiagnostics {
   byFvgStatus: Record<string, IctReplayBreakdownMetric>;
   byDealingRangeLocation: Record<string, IctReplayBreakdownMetric>;
   byLiquidityTargetType: Record<string, IctReplayBreakdownMetric>;
+  bySmtDivergenceType: Record<string, IctReplayBreakdownMetric>;
+  bySmtConfirmsCandidate: Record<string, IctReplayBreakdownMetric>;
+  bySmtRejectsCandidate: Record<string, IctReplayBreakdownMetric>;
+  byRelativeStrengthLeader: Record<string, IctReplayBreakdownMetric>;
+  byRelativeWeaknessLeader: Record<string, IctReplayBreakdownMetric>;
   mostCommonNoTradeReasons: Array<{ reason: string; count: number }>;
   safety: {
     rawCandlesExcluded: true;
@@ -69,6 +74,10 @@ export interface IctReplayCalibrationFilter {
   allowedSides?: Array<"long" | "short">;
   rejectEquilibrium?: boolean;
   rejectTargetTooClose?: boolean;
+  requireSmtConfirmationForIndex?: boolean;
+  rejectSmtAgainstCandidate?: boolean;
+  preferRelativeStrengthLeader?: boolean;
+  rejectMixedIndexAlignment?: boolean;
 }
 
 export interface IctReplayCalibrationResult {

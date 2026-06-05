@@ -7,6 +7,8 @@ import type { ResearchRuntimeSnapshot } from "../runtime";
 import type { Candle, FuturesSymbol, Timeframe } from "../types";
 import { buildIctAdvisorSignals } from "./ictAdvisorEngine";
 import type { IctAdvisorSignal } from "./ictAdvisorTypes";
+import { ICT_INDEX_SMT_INSTRUMENTS } from "./ictIndexSmt";
+import type { IctIndexComparisonCandles } from "./ictIndexSmtTypes";
 import { normalizeCandles } from "./ictStrategySuiteHelpers";
 import type {
   IctFvgReplayStatus,
@@ -65,6 +67,34 @@ const coerceHtfCandles = (input: IctReplayInput): Record<string, Candle[]> =>
       coerceCandles(candles, { ...input, primaryTimeframe: timeframe })
     ])
   );
+
+const coerceIndexComparisonCandles = (input: IctReplayInput): IctIndexComparisonCandles =>
+  Object.fromEntries(
+    Object.entries(input.indexComparisonCandles ?? {}).map(([brokerSymbol, candles]) => [
+      brokerSymbol,
+      coerceCandles(Array.isArray(candles) ? candles : [], {
+        ...input,
+        symbol: brokerSymbol,
+        requestedSymbol: brokerSymbol
+      })
+    ])
+  );
+
+const sliceIndexComparisonForSignal = (
+  comparisonCandles: IctIndexComparisonCandles,
+  signalTimestamp: string,
+  replayWindowSize: number
+): IctIndexComparisonCandles => {
+  const cutoff = Date.parse(signalTimestamp);
+  return Object.fromEntries(
+    Object.entries(comparisonCandles).map(([brokerSymbol, candles]) => [
+      brokerSymbol,
+      (candles ?? [])
+        .filter((candle) => Date.parse(candle.timestamp) <= cutoff)
+        .slice(-Math.max(8, replayWindowSize))
+    ])
+  );
+};
 
 export const sliceReplayWindows = (input: IctReplayInput) => {
   const candles = coerceCandles(input.candles, input);
@@ -215,6 +245,13 @@ export const evaluateSignalOutcome = ({
     liquidityTargetType: signal.drawOnLiquidity?.type,
     orderBlockVariant: signal.orderBlock?.variant,
     approvedProfileStatus: signal.approvedProfileDecision?.status,
+    smtDivergenceType: signal.smt?.divergenceType,
+    smtConfirmsCandidate: signal.smt?.confirmsCandidate,
+    smtRejectsCandidate: signal.smt?.rejectsCandidate,
+    relativeStrengthLeader: signal.smt?.relativeStrengthLeader,
+    relativeWeaknessLeader: signal.smt?.relativeWeaknessLeader,
+    smtConfidenceAdjustment: signal.smt?.confidenceAdjustment,
+    smtReason: signal.smt?.reason,
     rrEstimate: signal.rrEstimate,
     outcome,
     fvgStatus,
@@ -307,6 +344,13 @@ export const buildIctReplayJournalEvent = (result: IctReplayResult, htfTimeframe
   fvgStatus: result.fvgStatus,
   orderBlockVariant: result.orderBlockVariant,
   approvedProfileStatus: result.approvedProfileStatus,
+  smtDivergenceType: result.smtDivergenceType,
+  smtConfirmsCandidate: result.smtConfirmsCandidate,
+  smtRejectsCandidate: result.smtRejectsCandidate,
+  relativeStrengthLeader: result.relativeStrengthLeader,
+  relativeWeaknessLeader: result.relativeWeaknessLeader,
+  smtConfidenceAdjustment: result.smtConfidenceAdjustment,
+  smtReason: result.smtReason,
   entryReference: result.tradePath.entryReference,
   invalidation: result.tradePath.invalidation,
   target: result.tradePath.target,
@@ -366,14 +410,17 @@ const compactSourceSummary = (input: IctReplayInput, candleCount: number): Canon
 export const runIctReplayValidation = (input: IctReplayInput): IctReplayValidationReport => {
   const candles = coerceCandles(input.candles, input);
   const htfCandles = coerceHtfCandles(input);
+  const indexComparisonCandles = coerceIndexComparisonCandles(input);
   const htfTimeframes = input.htfTimeframes.length ? input.htfTimeframes : Object.keys(htfCandles);
   const windows = sliceReplayWindows(input);
   const sourceSummary = compactSourceSummary(input, candles.length);
   const results = windows.flatMap(({ futureCandles, historicalCandles, signalCandle }) => {
+    const comparisonWindow = sliceIndexComparisonForSignal(indexComparisonCandles, signalCandle.timestamp, input.replayWindowSize);
     const signals = buildIctAdvisorSignals({
       brokerSymbol: input.brokerSymbol,
       candles: historicalCandles,
       htfCandles,
+      indexComparisonCandles: comparisonWindow,
       primaryTimeframe: input.primaryTimeframe,
       requestedSymbol: input.requestedSymbol,
       sourceSummary,
@@ -407,7 +454,8 @@ export const runIctReplayValidation = (input: IctReplayInput): IctReplayValidati
       replayWindowSize: input.replayWindowSize,
       lookaheadCandles: input.lookaheadCandles,
       researchOnly: true,
-      candleCount: candles.length
+      candleCount: candles.length,
+      indexComparisonSourceCount: Object.values(indexComparisonCandles).filter((values) => values?.length).length
     },
     summary: summarizeReplayResults(input, results, windows.length),
     results,
@@ -475,6 +523,28 @@ export async function buildIctReplayValidationFromRuntime(
   const rawCandles = activeSource?.candles ?? [];
   const candles = options.maxCandles ? rawCandles.slice(-Math.max(options.maxCandles, 1)) : rawCandles;
   const htfCandles = await resolveHtfSourcesForRuntime(snapshot);
+  const sourceSummaries = await listCanonicalCandleSourceSummaries();
+  const indexComparisonCandles: IctIndexComparisonCandles = {};
+  for (const instrument of ICT_INDEX_SMT_INSTRUMENTS) {
+    const activeBrokerSymbol = activeSource?.provenance.providerSymbol ?? snapshot.marketData.activeResearchSource.provenance.providerSymbol;
+    if (
+      activeSource?.candles?.length &&
+      (activeBrokerSymbol === instrument.brokerSymbol || activeSource.symbol === instrument.requestedSymbol) &&
+      activeSource.timeframe === (snapshot.marketData.activeResearchSource.timeframe ?? snapshot.marketData.timeframe)
+    ) {
+      indexComparisonCandles[instrument.brokerSymbol] = activeSource.candles;
+      continue;
+    }
+    const matching = sourceSummaries.find(
+      (source) =>
+        source.provider === "mt5_read_only" &&
+        source.timeframe === (snapshot.marketData.activeResearchSource.timeframe ?? snapshot.marketData.timeframe) &&
+        (source.symbol === instrument.requestedSymbol || source.provenance.providerSymbol === instrument.brokerSymbol)
+    );
+    if (!matching) continue;
+    const source = await loadCanonicalCandleSource(matching.sourceId);
+    if (source?.candles?.length) indexComparisonCandles[instrument.brokerSymbol] = source.candles;
+  }
   return runIctReplayValidation({
     symbol: snapshot.marketData.symbol,
     requestedSymbol: snapshot.marketData.symbol,
@@ -483,6 +553,7 @@ export async function buildIctReplayValidationFromRuntime(
     htfTimeframes: Object.keys(htfCandles),
     candles,
     htfCandles,
+    indexComparisonCandles,
     replayWindowSize: options.replayWindowSize ?? 80,
     lookaheadCandles: options.lookaheadCandles ?? 12,
     researchOnly: true

@@ -6,6 +6,8 @@ import type {
   IctPhase2Setup,
   IctPhase2StrategyId
 } from "./ictPhase2Types";
+import type { IctSmtSignal } from "./ictIndexSmtTypes";
+import type { IctIndexSmtJournalEvent } from "./ictIndexSmtTypes";
 
 export type IctBias = "bullish" | "bearish" | "neutral";
 export type IctSide = "long" | "short" | "flat";
@@ -106,6 +108,7 @@ export interface IctAdvisorSignal {
   summary: string;
   noTradeReasons: string[];
   riskNotes: string[];
+  smt?: IctSmtSignal;
   approvedProfileDecision?: IctApprovedSetupDecision;
   provenance: {
     methodology: "ICT";
@@ -132,6 +135,13 @@ export interface IctAdvisorJournalEvent {
   approvedProfileStatus?: IctApprovedSetupDecision["status"];
   approvalScore?: number;
   rejectionReasons?: string[];
+  smtDivergenceType?: IctSmtSignal["divergenceType"];
+  smtConfirmsCandidate?: boolean;
+  smtRejectsCandidate?: boolean;
+  relativeStrengthLeader?: string;
+  relativeWeaknessLeader?: string;
+  smtConfidenceAdjustment?: number;
+  smtReason?: string;
   liquiditySwept?: IctAdvisorLiquidityPool;
   drawOnLiquidity?: IctAdvisorLiquidityPool;
   dealingRangeLocation?: IctLocation;
@@ -167,6 +177,7 @@ export interface IctAdvisorPacket {
   };
   signals: IctAdvisorSignal[];
   recommendedSignal: IctAdvisorSignal;
+  indexSmt?: IctSmtSignal;
   compactSummary: {
     compositeBias: IctBias;
     drawOnLiquidity?: string;
@@ -176,10 +187,17 @@ export interface IctAdvisorPacket {
     confidence: number;
     approvedProfileStatus: IctApprovedSetupDecision["status"];
     approvalScore: number;
+    smtDivergenceType?: IctSmtSignal["divergenceType"];
+    smtConfirmsCandidate?: boolean;
+    smtRejectsCandidate?: boolean;
+    relativeStrengthLeader?: string;
+    relativeWeaknessLeader?: string;
+    smtConfidenceAdjustment?: number;
     noTradeReasonCount: number;
   };
   approvedProfileDecision: IctApprovedSetupDecision;
   journalEvents: IctAdvisorJournalEvent[];
+  indexSmtJournalEvents: IctIndexSmtJournalEvent[];
   journalStatus: "written" | "memory_only" | "unavailable" | "skipped";
   safetyLocks: {
     rawCandlesIncluded: false;
