@@ -11,6 +11,7 @@
     "diagnose:local-stack": "node scripts/diagnose-local-stack.mjs",
     "llm:bridge": "node scripts/llm-local-bridge-server.mjs",
     "openclaw:phone-bridge": "node scripts/openclaw-phone-advisory-bridge.mjs",
+    "openclaw:skill-server": "node scripts/openclaw-gotrader-advisory-skill-server.mjs",
     "tradingview:mcp-bridge": "node scripts/start-tradingview-mcp-bridge.mjs",
     "tradingview:mcp-diagnose-port": "node scripts/diagnose-tradingview-bridge-port.mjs",
     "tradingview:mcp-stop": "node scripts/stop-tradingview-mcp-bridge.mjs",
@@ -38,6 +39,7 @@
     "test:mt5-readonly-safety": "node scripts/test-mt5-readonly-safety.mjs",
     "test:openclaw-advisory": "node scripts/test-openclaw-advisory.mjs",
     "test:openclaw-phone-bridge": "node scripts/test-openclaw-phone-bridge-routing.mjs",
+    "test:openclaw-skill-server": "node scripts/test-openclaw-skill-server.mjs",
     "test:auto-research-candidate": "node scripts/run-auto-research-candidate.mjs",
     "test:regime-classifier": "node scripts/test-regime-classifier.mjs"
   },

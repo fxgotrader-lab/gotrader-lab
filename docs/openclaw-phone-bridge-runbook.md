@@ -210,7 +210,7 @@ The bridge does not:
 
 Set `OPENCLAW_AGENT_ENDPOINT` only to a local OpenClaw/Hermes advisory skill endpoint running on the phone or inside the phone's Termux/Ubuntu environment. The phone bridge forwards only a compact packet with source, cycle, source-context, layer-contribution, safety, and user-question fields. It does not forward candle arrays, raw runtime snapshots, screenshots, secrets, MT5 credentials, account data, order data, or position data.
 
-Use `docs/openclaw-gotrader-research-advisor-skill.md` as the OpenClaw-side skill instruction and endpoint contract for the **GoTrader Research Advisor** skill.
+Use `docs/openclaw-gotrader-research-advisor-skill.md` as the OpenClaw-side skill instruction and endpoint contract for the **GoTrader Research Advisor** skill. To run the included Node skill server on the phone, follow `docs/openclaw-gotrader-skill-server-runbook.md`.
 
 Expected skill endpoint:
 
@@ -257,6 +257,12 @@ That test verifies:
 - no MT5, secrets, or candle arrays are sent
 
 Full phone routing example:
+
+```bash
+node openclaw-gotrader-advisory-skill-server.mjs
+```
+
+Then start the public bridge in a second phone terminal:
 
 ```bash
 export OPENCLAW_AGENT_ENDPOINT="http://127.0.0.1:<skill-port>/gotrader/advisory-skill"
