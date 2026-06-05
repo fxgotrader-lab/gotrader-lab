@@ -8,25 +8,32 @@ import ts from "typescript";
 
 const projectRoot = process.cwd();
 const sourceRoot = path.join(projectRoot, "src", "lib", "ict-strategy-suite");
+const mt5Root = path.join(projectRoot, "src", "lib", "integrations", "mt5");
 const outRoot = path.join(projectRoot, ".gotrader", "ict-replay-validation-test");
 const sourceFiles = [
-  "ictStrategySuiteTypes.ts",
-  "ictAdvisorTypes.ts",
-  "ictReplayValidationTypes.ts",
-  "ictStrategySuiteJournal.ts",
-  "ictAdvisorJournal.ts",
-  "ictStrategySuiteHelpers.ts",
-  "ictStrategySuiteEngines.ts",
-  "ictAdvisorEngine.ts",
-  "ictReplayValidation.ts",
-  "index.ts"
+  { root: sourceRoot, file: "ictStrategySuiteTypes.ts" },
+  { root: sourceRoot, file: "ictAdvisorTypes.ts" },
+  { root: sourceRoot, file: "ictReplayValidationTypes.ts" },
+  { root: sourceRoot, file: "ictRealReplayRunnerTypes.ts" },
+  { root: sourceRoot, file: "ictStrategySuiteJournal.ts" },
+  { root: sourceRoot, file: "ictAdvisorJournal.ts" },
+  { root: sourceRoot, file: "ictStrategySuiteHelpers.ts" },
+  { root: sourceRoot, file: "ictStrategySuiteEngines.ts" },
+  { root: sourceRoot, file: "ictAdvisorEngine.ts" },
+  { root: sourceRoot, file: "ictReplayValidation.ts" },
+  { root: sourceRoot, file: "ictRealReplayRunner.ts" },
+  { root: mt5Root, file: "mt5ReadOnlyTypes.ts" },
+  { root: mt5Root, file: "mt5SymbolSettings.ts" },
+  { root: mt5Root, file: "mt5ReadOnlyNormalizer.ts" },
+  { root: mt5Root, file: "mt5ReadOnlyClient.ts" },
+  { root: sourceRoot, file: "index.ts" }
 ];
 
 function compileSuiteForNode() {
   fs.rmSync(outRoot, { recursive: true, force: true });
   fs.mkdirSync(outRoot, { recursive: true });
-  for (const file of sourceFiles) {
-    const sourcePath = path.join(sourceRoot, file);
+  for (const { file, root } of sourceFiles) {
+    const sourcePath = path.join(root, file);
     const source = fs.readFileSync(sourcePath, "utf8");
     const transpiled = ts.transpileModule(source, {
       compilerOptions: {
@@ -40,6 +47,10 @@ function compileSuiteForNode() {
     const rewritten = transpiled
       .replace(/from\s+"\.\/([^"]+)"/g, 'from "./$1.mjs"')
       .replace(/from\s+'\.\/([^']+)'/g, "from './$1.mjs'")
+      .replace(/from\s+"..\/integrations\/mt5\/([^"]+)"/g, 'from "./$1.mjs"')
+      .replace(/from\s+'..\/integrations\/mt5\/([^']+)'/g, "from './$1.mjs'")
+      .replace(/from\s+"@\/lib\/integrations\/mt5\/([^"]+)"/g, 'from "./$1.mjs"')
+      .replace(/from\s+'@\/lib\/integrations\/mt5\/([^']+)'/g, "from './$1.mjs'")
       .replace(/from\s+"..\/candleSources"/g, 'from "./candleSourcesStub.mjs"')
       .replace(/from\s+'..\/candleSources'/g, "from './candleSourcesStub.mjs'");
     fs.writeFileSync(path.join(outRoot, file.replace(/\.ts$/, ".mjs")), rewritten, "utf8");

@@ -213,6 +213,7 @@ export const evaluateSignalOutcome = ({
     noTradeReasons: signal.noTradeReasons,
     riskNotes: Array.from(new Set([...signal.riskNotes, "ICT replay validation is research-only; authority remains none."])),
     summary: `${signal.strategyId} replay marked ${outcome.replace(/_/g, " ")} over ${futureCandles.length}/${lookaheadCandles} future candles.`,
+    researchOnly: true,
     provenance: {
       methodology: "ICT",
       sourceSet: "ICT Mentorship Core Content",

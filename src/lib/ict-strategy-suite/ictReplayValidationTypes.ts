@@ -56,6 +56,7 @@ export interface IctReplayResult {
   noTradeReasons: string[];
   riskNotes: string[];
   summary: string;
+  researchOnly: true;
   provenance: {
     methodology: "ICT";
     sourceSet: "ICT Mentorship Core Content";

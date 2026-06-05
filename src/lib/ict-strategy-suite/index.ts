@@ -7,3 +7,5 @@ export * from "./ictAdvisorJournal";
 export * from "./ictAdvisorEngine";
 export * from "./ictReplayValidationTypes";
 export * from "./ictReplayValidation";
+export * from "./ictRealReplayRunnerTypes";
+export * from "./ictRealReplayRunner";
