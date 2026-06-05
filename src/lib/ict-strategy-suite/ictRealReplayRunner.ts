@@ -11,6 +11,7 @@ import {
 import type { Candle, Timeframe } from "../types";
 import { ICT_INDEX_SMT_INSTRUMENTS, smtSymbolMatchesIndexGroup } from "./ictIndexSmt";
 import type { IctIndexComparisonCandles } from "./ictIndexSmtTypes";
+import type { IctNewsSessionRiskContextInput } from "./ictNewsSessionRiskTypes";
 import { runIctReplayValidation, sanitizeReplayOutput } from "./ictReplayValidation";
 import {
   appendIctApprovedSetupProfileJournalEvents,
@@ -85,6 +86,7 @@ export interface IctRealReplayRunOptions {
   fetchCandles?: IctRealReplayCandleFetcher;
   appendJournal?: boolean;
   includeDiagnostics?: boolean;
+  newsSessionRiskContext?: IctNewsSessionRiskContextInput;
 }
 
 const average = (values: number[]) => (values.length ? round(values.reduce((total, value) => total + value, 0) / values.length, 4) : 0);
@@ -421,6 +423,7 @@ export async function runIctRealReplay(configInput: Partial<IctRealReplayRunConf
             candles: primary.candles,
             htfCandles,
             indexComparisonCandles,
+            newsSessionRiskContext: options.newsSessionRiskContext ?? { syntheticNoRisk: true, provider: "historical_replay" },
             replayWindowSize: config.replayWindowSize,
             lookaheadCandles: config.lookaheadCandles,
             researchOnly: true

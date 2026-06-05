@@ -1,5 +1,10 @@
 import type { IctAdvisorSignal } from "./ictAdvisorTypes";
 import type { IctReplayResult } from "./ictReplayValidationTypes";
+import type {
+  IctNewsRiskLevel,
+  IctRiskGovernorAction,
+  IctSessionRiskState
+} from "./ictNewsSessionRiskTypes";
 
 export type IctApprovedCandidateStatus =
   | "approved_research_candidate"
@@ -63,6 +68,13 @@ export interface IctApprovedSetupDecision {
   relativeWeaknessLeader?: string;
   smtConfidenceAdjustment?: number;
   smtReason?: string;
+  newsRiskLevel?: IctNewsRiskLevel;
+  sessionRiskState?: IctSessionRiskState;
+  riskGovernorAction?: IctRiskGovernorAction;
+  riskGovernorConfidenceAdjustment?: number;
+  blockingEventsCount?: number;
+  cautionEventsCount?: number;
+  newsSessionRiskNotes?: string[];
   approvalScore: number;
   approvedReasons: string[];
   rejectionReasons: string[];

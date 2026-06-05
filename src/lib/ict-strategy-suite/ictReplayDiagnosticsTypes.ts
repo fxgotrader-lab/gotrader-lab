@@ -1,4 +1,9 @@
 import type { IctReplayResult } from "./ictReplayValidationTypes";
+import type {
+  IctNewsRiskLevel,
+  IctRiskGovernorAction,
+  IctSessionRiskState
+} from "./ictNewsSessionRiskTypes";
 
 export type IctConfidenceBucket = "0-20" | "21-40" | "41-60" | "61-80" | "81-100";
 export type IctRrBucket = "lt_1r" | "1r_to_1_5r" | "1_5r_to_2r" | "2r_to_3r" | "gt_3r";
@@ -48,6 +53,9 @@ export interface IctReplayDiagnostics {
   bySmtRejectsCandidate: Record<string, IctReplayBreakdownMetric>;
   byRelativeStrengthLeader: Record<string, IctReplayBreakdownMetric>;
   byRelativeWeaknessLeader: Record<string, IctReplayBreakdownMetric>;
+  byNewsRiskLevel: Record<string, IctReplayBreakdownMetric>;
+  bySessionRiskState: Record<string, IctReplayBreakdownMetric>;
+  byRiskGovernorAction: Record<string, IctReplayBreakdownMetric>;
   mostCommonNoTradeReasons: Array<{ reason: string; count: number }>;
   safety: {
     rawCandlesExcluded: true;
@@ -78,6 +86,15 @@ export interface IctReplayCalibrationFilter {
   rejectSmtAgainstCandidate?: boolean;
   preferRelativeStrengthLeader?: boolean;
   rejectMixedIndexAlignment?: boolean;
+  rejectHighNewsRisk?: boolean;
+  rejectMediumNewsRisk?: boolean;
+  preferredSessionsOnly?: boolean;
+  rejectLunchSession?: boolean;
+  rejectOpeningMinutes?: boolean;
+  rejectAfterHours?: boolean;
+  allowedNewsRiskLevels?: IctNewsRiskLevel[];
+  allowedSessionRiskStates?: IctSessionRiskState[];
+  allowedRiskGovernorActions?: IctRiskGovernorAction[];
 }
 
 export interface IctReplayCalibrationResult {

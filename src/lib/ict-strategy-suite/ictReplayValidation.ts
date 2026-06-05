@@ -252,6 +252,14 @@ export const evaluateSignalOutcome = ({
     relativeWeaknessLeader: signal.smt?.relativeWeaknessLeader,
     smtConfidenceAdjustment: signal.smt?.confidenceAdjustment,
     smtReason: signal.smt?.reason,
+    newsRiskLevel: signal.newsSessionRisk?.newsRiskLevel,
+    sessionRiskState: signal.newsSessionRisk?.sessionRiskState,
+    riskGovernorAction: signal.newsSessionRisk?.riskGovernorAction,
+    riskGovernorConfidenceAdjustment: signal.newsSessionRisk?.riskGovernorConfidenceAdjustment,
+    blockingEventsCount: signal.newsSessionRisk?.blockingEventsCount,
+    cautionEventsCount: signal.newsSessionRisk?.cautionEventsCount,
+    sessionName: signal.newsSessionRisk?.session.sessionName,
+    newsSessionRiskNotes: signal.newsSessionRisk?.newsSessionRiskNotes,
     rrEstimate: signal.rrEstimate,
     outcome,
     fvgStatus,
@@ -351,6 +359,14 @@ export const buildIctReplayJournalEvent = (result: IctReplayResult, htfTimeframe
   relativeWeaknessLeader: result.relativeWeaknessLeader,
   smtConfidenceAdjustment: result.smtConfidenceAdjustment,
   smtReason: result.smtReason,
+  newsRiskLevel: result.newsRiskLevel,
+  sessionRiskState: result.sessionRiskState,
+  riskGovernorAction: result.riskGovernorAction,
+  riskGovernorConfidenceAdjustment: result.riskGovernorConfidenceAdjustment,
+  blockingEventsCount: result.blockingEventsCount,
+  cautionEventsCount: result.cautionEventsCount,
+  sessionName: result.sessionName,
+  newsSessionRiskNotes: result.newsSessionRiskNotes,
   entryReference: result.tradePath.entryReference,
   invalidation: result.tradePath.invalidation,
   target: result.tradePath.target,
@@ -421,6 +437,7 @@ export const runIctReplayValidation = (input: IctReplayInput): IctReplayValidati
       candles: historicalCandles,
       htfCandles,
       indexComparisonCandles: comparisonWindow,
+      newsSessionRiskContext: input.newsSessionRiskContext ?? { syntheticNoRisk: true },
       primaryTimeframe: input.primaryTimeframe,
       requestedSymbol: input.requestedSymbol,
       sourceSummary,
@@ -455,7 +472,12 @@ export const runIctReplayValidation = (input: IctReplayInput): IctReplayValidati
       lookaheadCandles: input.lookaheadCandles,
       researchOnly: true,
       candleCount: candles.length,
-      indexComparisonSourceCount: Object.values(indexComparisonCandles).filter((values) => values?.length).length
+      indexComparisonSourceCount: Object.values(indexComparisonCandles).filter((values) => values?.length).length,
+      newsSessionRiskContextStatus: input.newsSessionRiskContext
+        ? input.newsSessionRiskContext.syntheticNoRisk
+          ? "synthetic_no_risk"
+          : "provided"
+        : "synthetic_no_risk"
     },
     summary: summarizeReplayResults(input, results, windows.length),
     results,

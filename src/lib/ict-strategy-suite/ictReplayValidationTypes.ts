@@ -1,5 +1,12 @@
 import type { IctAdvisorSignal } from "./ictAdvisorTypes";
 import type { IctIndexComparisonCandles, IctSmtSignal } from "./ictIndexSmtTypes";
+import type {
+  IctNewsRiskLevel,
+  IctNewsSessionRiskContextInput,
+  IctRiskGovernorAction,
+  IctSessionName,
+  IctSessionRiskState
+} from "./ictNewsSessionRiskTypes";
 
 export type IctReplayOutcome =
   | "target_first"
@@ -25,6 +32,7 @@ export interface IctReplayInput {
   candles: unknown[];
   htfCandles?: Record<string, unknown[]>;
   indexComparisonCandles?: IctIndexComparisonCandles | Record<string, unknown[]>;
+  newsSessionRiskContext?: IctNewsSessionRiskContextInput;
   replayWindowSize: number;
   lookaheadCandles: number;
   researchOnly: true;
@@ -65,6 +73,14 @@ export interface IctReplayResult {
   relativeWeaknessLeader?: string;
   smtConfidenceAdjustment?: number;
   smtReason?: string;
+  newsRiskLevel?: IctNewsRiskLevel;
+  sessionRiskState?: IctSessionRiskState;
+  riskGovernorAction?: IctRiskGovernorAction;
+  riskGovernorConfidenceAdjustment?: number;
+  blockingEventsCount?: number;
+  cautionEventsCount?: number;
+  sessionName?: IctSessionName;
+  newsSessionRiskNotes?: string[];
   rrEstimate?: number;
   outcome: IctReplayOutcome;
   fvgStatus: IctFvgReplayStatus;
@@ -135,6 +151,14 @@ export interface IctReplayJournalEvent {
   relativeWeaknessLeader?: string;
   smtConfidenceAdjustment?: number;
   smtReason?: string;
+  newsRiskLevel?: IctNewsRiskLevel;
+  sessionRiskState?: IctSessionRiskState;
+  riskGovernorAction?: IctRiskGovernorAction;
+  riskGovernorConfidenceAdjustment?: number;
+  blockingEventsCount?: number;
+  cautionEventsCount?: number;
+  sessionName?: IctSessionName;
+  newsSessionRiskNotes?: string[];
   entryReference?: number;
   invalidation?: number;
   target?: number;
@@ -151,9 +175,10 @@ export interface IctReplayJournalEvent {
 export interface IctReplayValidationReport {
   replayId: string;
   generatedAt: string;
-  input: Omit<IctReplayInput, "candles" | "htfCandles" | "indexComparisonCandles"> & {
+  input: Omit<IctReplayInput, "candles" | "htfCandles" | "indexComparisonCandles" | "newsSessionRiskContext"> & {
     candleCount: number;
     indexComparisonSourceCount?: number;
+    newsSessionRiskContextStatus?: "synthetic_no_risk" | "provided" | "unavailable";
   };
   summary: IctReplaySummary;
   results: IctReplayResult[];

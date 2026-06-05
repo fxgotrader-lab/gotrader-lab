@@ -141,6 +141,9 @@ export const buildReplayDiagnostics = (results: IctReplayResult[]): IctReplayDia
     bySmtRejectsCandidate: buildBreakdown(results, (result) => (result.smtRejectsCandidate === undefined ? "not_evaluated" : result.smtRejectsCandidate ? "rejects" : "does_not_reject")),
     byRelativeStrengthLeader: buildBreakdown(results, (result) => result.relativeStrengthLeader ?? "none"),
     byRelativeWeaknessLeader: buildBreakdown(results, (result) => result.relativeWeaknessLeader ?? "none"),
+    byNewsRiskLevel: buildBreakdown(results, (result) => result.newsRiskLevel ?? "not_evaluated"),
+    bySessionRiskState: buildBreakdown(results, (result) => result.sessionRiskState ?? "not_evaluated"),
+    byRiskGovernorAction: buildBreakdown(results, (result) => result.riskGovernorAction ?? "not_evaluated"),
     mostCommonNoTradeReasons: countMostCommonNoTradeReasons(results),
     safety
   });
@@ -158,6 +161,12 @@ export const getDefaultReplayCalibrationFilters = (): IctReplayCalibrationFilter
   { id: "reject_smt_against_candidate", label: "Reject SMT/RS against candidate", enabled: true, rejectSmtAgainstCandidate: true },
   { id: "prefer_relative_strength_leader", label: "Prefer relative strength leader", enabled: true, preferRelativeStrengthLeader: true },
   { id: "reject_mixed_index_alignment", label: "Reject mixed index alignment", enabled: true, rejectMixedIndexAlignment: true },
+  { id: "reject_high_news_risk", label: "Reject high or blocked news risk", enabled: true, rejectHighNewsRisk: true },
+  { id: "reject_medium_news_risk", label: "Reject medium-or-worse news risk", enabled: true, rejectMediumNewsRisk: true },
+  { id: "preferred_sessions_only", label: "Preferred sessions only", enabled: true, preferredSessionsOnly: true },
+  { id: "reject_lunch_session", label: "Reject New York lunch candidates", enabled: true, rejectLunchSession: true },
+  { id: "reject_opening_minutes", label: "Reject opening-minute caution candidates", enabled: true, rejectOpeningMinutes: true },
+  { id: "reject_after_hours", label: "Reject after-hours / dead-zone candidates", enabled: true, rejectAfterHours: true },
   { id: "reject_equilibrium", label: "Reject equilibrium entries", enabled: true, rejectEquilibrium: true },
   { id: "ny_session_only", label: "New York session only", enabled: true, allowedSessions: ["New York"] },
   { id: "london_and_ny_only", label: "London and New York only", enabled: true, allowedSessions: ["London", "New York"] }
@@ -181,6 +190,15 @@ const passesFilter = (result: IctReplayResult, filter: IctReplayCalibrationFilte
   if (filter.rejectSmtAgainstCandidate && result.smtRejectsCandidate === true) return false;
   if (filter.preferRelativeStrengthLeader && result.relativeStrengthLeader && result.brokerSymbol !== result.relativeStrengthLeader) return false;
   if (filter.rejectMixedIndexAlignment && result.smtDivergenceType === "no_smt" && (result.smtConfidenceAdjustment ?? 0) < 0) return false;
+  if (filter.rejectHighNewsRisk && (result.newsRiskLevel === "blocked" || result.newsRiskLevel === "high")) return false;
+  if (filter.rejectMediumNewsRisk && ["blocked", "high", "medium"].includes(result.newsRiskLevel ?? "")) return false;
+  if (filter.preferredSessionsOnly && result.sessionRiskState !== "preferred") return false;
+  if (filter.rejectLunchSession && result.sessionName === "new_york_lunch") return false;
+  if (filter.rejectOpeningMinutes && result.sessionRiskState === "caution" && /open/i.test((result.newsSessionRiskNotes ?? []).join(" "))) return false;
+  if (filter.rejectAfterHours && (result.sessionName === "after_hours" || result.sessionRiskState === "avoid")) return false;
+  if (filter.allowedNewsRiskLevels?.length && !filter.allowedNewsRiskLevels.includes(result.newsRiskLevel ?? "unknown")) return false;
+  if (filter.allowedSessionRiskStates?.length && !filter.allowedSessionRiskStates.includes(result.sessionRiskState ?? "unknown")) return false;
+  if (filter.allowedRiskGovernorActions?.length && !filter.allowedRiskGovernorActions.includes(result.riskGovernorAction ?? "reject_candidate")) return false;
   return true;
 };
 

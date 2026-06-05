@@ -9,6 +9,7 @@ import type {
 } from "./ictApprovedSetupProfileTypes";
 import type { IctReplayResult } from "./ictReplayValidationTypes";
 import type { IctSmtSignal } from "./ictIndexSmtTypes";
+import type { IctNewsSessionRiskDecision } from "./ictNewsSessionRiskTypes";
 
 const APPROVED_PROFILE_JOURNAL_STORAGE_KEY = "gotrader.ict-approved-setup-profile-summary.journal.v1";
 const MAX_APPROVED_PROFILE_JOURNAL_EVENTS = 100;
@@ -193,6 +194,19 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
         }
       : undefined
     : input.smt;
+  const newsSessionRisk: Partial<IctNewsSessionRiskDecision> | undefined = replay
+    ? input.riskGovernorAction
+      ? {
+          newsRiskLevel: input.newsRiskLevel,
+          sessionRiskState: input.sessionRiskState,
+          riskGovernorAction: input.riskGovernorAction,
+          riskGovernorConfidenceAdjustment: input.riskGovernorConfidenceAdjustment ?? 0,
+          blockingEventsCount: input.blockingEventsCount ?? 0,
+          cautionEventsCount: input.cautionEventsCount ?? 0,
+          newsSessionRiskNotes: input.newsSessionRiskNotes ?? []
+        }
+      : undefined
+    : input.newsSessionRisk;
   const confidence = confidencePct(input.confidence);
   const htfTimeframes = replay ? [] : input.htfTimeframes;
   const htfAligned = replay ? input.htfAligned : htfAlignedForSignal(input);
@@ -251,6 +265,7 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
     setup: input.setup,
     side: input.side,
     smt,
+    newsSessionRisk,
     strategyId: input.strategyId,
     symbol: input.symbol,
     targetTooClose
@@ -270,6 +285,12 @@ export const calculateApprovalScore = (input: IctApprovedSetupProfileInput, prof
   score += normalized.hasFvg ? 5 : 0;
   if (normalized.smt?.confirmsCandidate) score += 5;
   if (normalized.smt?.rejectsCandidate) score -= 10;
+  if (normalized.newsSessionRisk?.riskGovernorAction === "reject_candidate" || normalized.newsSessionRisk?.riskGovernorAction === "no_trade") score -= 25;
+  if (normalized.newsSessionRisk?.riskGovernorAction === "downgrade_to_watchlist") score -= 10;
+  if (normalized.newsSessionRisk?.newsRiskLevel === "blocked" || normalized.newsSessionRisk?.newsRiskLevel === "high") score -= 20;
+  if (normalized.newsSessionRisk?.newsRiskLevel === "medium") score -= 10;
+  if (normalized.newsSessionRisk?.sessionRiskState === "avoid") score -= 15;
+  if (normalized.newsSessionRisk?.sessionRiskState === "caution") score -= 5;
   if (normalized.dealingRangeLocation === "equilibrium") score -= 10;
   if (normalized.targetTooClose) score -= 10;
   return Math.round(clamp(score));
@@ -303,6 +324,16 @@ export const evaluateApprovedSetupProfile = (
   if (profile.rejectEquilibrium && normalized.dealingRangeLocation === "equilibrium") hardRejects.push("Price is at equilibrium.");
   if (profile.rejectTargetTooClose && normalized.targetTooClose) hardRejects.push("Target is too close.");
   if (normalized.smt?.rejectsCandidate) hardRejects.push(`SMT/relative strength rejects candidate: ${normalized.smt.reason}`);
+  if (normalized.newsSessionRisk?.riskGovernorAction === "reject_candidate") {
+    hardRejects.push(`News/session risk governor rejects candidate: ${(normalized.newsSessionRisk.newsSessionRiskNotes ?? []).join(" ")}`);
+  }
+  if (normalized.newsSessionRisk?.riskGovernorAction === "no_trade") {
+    hardRejects.push(`News/session risk governor marks no-trade: ${(normalized.newsSessionRisk.newsSessionRiskNotes ?? []).join(" ")}`);
+  }
+  if (normalized.newsSessionRisk?.newsRiskLevel === "blocked" || normalized.newsSessionRisk?.newsRiskLevel === "high") {
+    hardRejects.push(`News risk ${normalized.newsSessionRisk.newsRiskLevel}.`);
+  }
+  if (normalized.newsSessionRisk?.sessionRiskState === "avoid") hardRejects.push("Session risk state is avoid.");
 
   if (normalized.confidence < profile.minConfidence) {
     if (nearConfidence) {
@@ -338,6 +369,12 @@ export const evaluateApprovedSetupProfile = (
   if (normalized.smt && !normalized.smt.confirmsCandidate && !normalized.smt.rejectsCandidate && (normalized.smt.confidenceAdjustment ?? 0) < 0) {
     watchlistReasons.push(`SMT/relative strength confidence drag: ${normalized.smt.reason}`);
   }
+  if (normalized.newsSessionRisk?.riskGovernorAction === "downgrade_to_watchlist") {
+    watchlistReasons.push(`News/session risk governor downgrades candidate: ${(normalized.newsSessionRisk.newsSessionRiskNotes ?? []).join(" ")}`);
+  }
+  if (normalized.newsSessionRisk?.newsRiskLevel === "medium") watchlistReasons.push("Medium news risk is active near this candidate.");
+  if (normalized.newsSessionRisk?.sessionRiskState === "caution") watchlistReasons.push("Session risk state is caution.");
+  if (normalized.newsSessionRisk?.riskGovernorAction === "allow") approvedReasons.push("News/session risk governor allows normal ICT gate review.");
 
   const status =
     normalized.decision === "no_trade" || normalized.side === "flat"
@@ -374,6 +411,13 @@ export const evaluateApprovedSetupProfile = (
     relativeWeaknessLeader: normalized.smt?.relativeWeaknessLeader,
     smtConfidenceAdjustment: normalized.smt?.confidenceAdjustment,
     smtReason: normalized.smt?.reason,
+    newsRiskLevel: normalized.newsSessionRisk?.newsRiskLevel,
+    sessionRiskState: normalized.newsSessionRisk?.sessionRiskState,
+    riskGovernorAction: normalized.newsSessionRisk?.riskGovernorAction,
+    riskGovernorConfidenceAdjustment: normalized.newsSessionRisk?.riskGovernorConfidenceAdjustment,
+    blockingEventsCount: normalized.newsSessionRisk?.blockingEventsCount,
+    cautionEventsCount: normalized.newsSessionRisk?.cautionEventsCount,
+    newsSessionRiskNotes: normalized.newsSessionRisk?.newsSessionRiskNotes,
     approvalScore: calculateApprovalScore(input, profile),
     approvedReasons: Array.from(new Set(approvedReasons)).slice(0, 8),
     rejectionReasons: Array.from(new Set(hardRejects)).slice(0, 8),

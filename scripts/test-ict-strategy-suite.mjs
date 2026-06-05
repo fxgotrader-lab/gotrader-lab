@@ -26,6 +26,8 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictReplayDiagnosticsTypes.ts" },
   { root: sourceRoot, file: "ictApprovedSetupProfileTypes.ts" },
   { root: sourceRoot, file: "ictIndexSmtTypes.ts" },
+  { root: sourceRoot, file: "ictNewsSessionRiskTypes.ts" },
+  { root: sourceRoot, file: "ictNewsSessionRisk.ts" },
   { root: sourceRoot, file: "ictReplayValidation.ts" },
   { root: sourceRoot, file: "ictReplayDiagnostics.ts" },
   { root: sourceRoot, file: "ictApprovedSetupProfile.ts" },

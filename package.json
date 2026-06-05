@@ -30,6 +30,7 @@
     "test:ict-approved-setup-profile": "node scripts/test-ict-approved-setup-profile.mjs",
     "test:ict-phase2-models": "node scripts/test-ict-phase2-models.mjs",
     "test:ict-index-smt": "node scripts/test-ict-index-smt.mjs",
+    "test:ict-news-session-risk": "node scripts/test-ict-news-session-risk.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "smoke:http": "node scripts/smoke-routes.mjs",
     "smoke:browser": "node scripts/run-playwright-smoke.mjs",

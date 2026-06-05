@@ -8,6 +8,13 @@ import type {
 } from "./ictPhase2Types";
 import type { IctSmtSignal } from "./ictIndexSmtTypes";
 import type { IctIndexSmtJournalEvent } from "./ictIndexSmtTypes";
+import type {
+  IctNewsRiskLevel,
+  IctNewsSessionRiskDecision,
+  IctNewsSessionRiskJournalEvent,
+  IctRiskGovernorAction,
+  IctSessionRiskState
+} from "./ictNewsSessionRiskTypes";
 
 export type IctBias = "bullish" | "bearish" | "neutral";
 export type IctSide = "long" | "short" | "flat";
@@ -109,6 +116,7 @@ export interface IctAdvisorSignal {
   noTradeReasons: string[];
   riskNotes: string[];
   smt?: IctSmtSignal;
+  newsSessionRisk?: IctNewsSessionRiskDecision;
   approvedProfileDecision?: IctApprovedSetupDecision;
   provenance: {
     methodology: "ICT";
@@ -142,6 +150,13 @@ export interface IctAdvisorJournalEvent {
   relativeWeaknessLeader?: string;
   smtConfidenceAdjustment?: number;
   smtReason?: string;
+  newsRiskLevel?: IctNewsRiskLevel;
+  sessionRiskState?: IctSessionRiskState;
+  riskGovernorAction?: IctRiskGovernorAction;
+  riskGovernorConfidenceAdjustment?: number;
+  blockingEventsCount?: number;
+  cautionEventsCount?: number;
+  newsSessionRiskNotes?: string[];
   liquiditySwept?: IctAdvisorLiquidityPool;
   drawOnLiquidity?: IctAdvisorLiquidityPool;
   dealingRangeLocation?: IctLocation;
@@ -193,11 +208,20 @@ export interface IctAdvisorPacket {
     relativeStrengthLeader?: string;
     relativeWeaknessLeader?: string;
     smtConfidenceAdjustment?: number;
+    newsRiskLevel?: IctNewsRiskLevel;
+    sessionRiskState?: IctSessionRiskState;
+    riskGovernorAction?: IctRiskGovernorAction;
+    riskGovernorConfidenceAdjustment?: number;
+    blockingEventsCount?: number;
+    cautionEventsCount?: number;
+    newsSessionRiskNotes?: string[];
     noTradeReasonCount: number;
   };
   approvedProfileDecision: IctApprovedSetupDecision;
   journalEvents: IctAdvisorJournalEvent[];
   indexSmtJournalEvents: IctIndexSmtJournalEvent[];
+  newsSessionRisk?: IctNewsSessionRiskDecision;
+  newsSessionRiskJournalEvents: IctNewsSessionRiskJournalEvent[];
   journalStatus: "written" | "memory_only" | "unavailable" | "skipped";
   safetyLocks: {
     rawCandlesIncluded: false;

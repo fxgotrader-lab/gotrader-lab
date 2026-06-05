@@ -38,6 +38,13 @@ import {
   evaluateIndexSmt,
   smtSymbolMatchesIndexGroup
 } from "./ictIndexSmt";
+import {
+  appendIctNewsSessionRiskJournalEvents,
+  applyNewsSessionRiskToApprovedDecision,
+  applyNewsSessionRiskToSignal,
+  buildIctNewsSessionRiskJournalEvent,
+  evaluateNewsSessionRisk
+} from "./ictNewsSessionRisk";
 import type {
   IctAdvisorDealingRange,
   IctAdvisorDisplacement,
@@ -51,6 +58,7 @@ import type {
   IctSide
 } from "./ictAdvisorTypes";
 import type { IctIndexComparisonCandles } from "./ictIndexSmtTypes";
+import type { IctNewsSessionRiskContextInput } from "./ictNewsSessionRiskTypes";
 import type { IctLiquidityPool as SuiteLiquidityPool } from "./ictStrategySuiteTypes";
 
 const createId = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -224,6 +232,7 @@ export const buildIctAdvisorSignals = ({
   candles,
   htfCandles,
   indexComparisonCandles,
+  newsSessionRiskContext,
   primaryTimeframe,
   requestedSymbol,
   sourceSummary,
@@ -233,6 +242,7 @@ export const buildIctAdvisorSignals = ({
   candles: Candle[];
   htfCandles: Record<string, Candle[]>;
   indexComparisonCandles?: IctIndexComparisonCandles;
+  newsSessionRiskContext?: IctNewsSessionRiskContextInput;
   primaryTimeframe: string;
   requestedSymbol: string;
   sourceSummary: CanonicalCandleSourceSummary;
@@ -487,12 +497,14 @@ export const buildIctAdvisorSignals = ({
           confidence: clamp(signal.confidence + smt.confidenceAdjustment)
         }
       : signal;
-    const approvedProfileDecision = applySmtToApprovedDecision(
-      evaluateApprovedSetupProfile(signalWithSmt, approvedProfile),
-      smt
+    const newsSessionRisk = evaluateNewsSessionRisk(signalWithSmt, newsSessionRiskContext);
+    const signalWithRisk = applyNewsSessionRiskToSignal(signalWithSmt, newsSessionRisk);
+    const approvedProfileDecision = applyNewsSessionRiskToApprovedDecision(
+      applySmtToApprovedDecision(evaluateApprovedSetupProfile(signalWithRisk, approvedProfile), smt),
+      newsSessionRisk
     );
     return {
-      ...signalWithSmt,
+      ...signalWithRisk,
       approvedProfileDecision
     };
   });
@@ -559,6 +571,7 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
         candles,
         htfCandles,
         indexComparisonCandles,
+        newsSessionRiskContext: { syntheticNoRisk: true },
         primaryTimeframe,
         requestedSymbol,
         sourceSummary,
@@ -591,10 +604,18 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
     evaluateApprovedSetupProfile(recommendedSignal, approvedProfile),
     recommendedSignal.smt
   );
+  const finalApprovedProfileDecision = applyNewsSessionRiskToApprovedDecision(
+    approvedProfileDecision,
+    recommendedSignal.newsSessionRisk
+  );
   const journalEvents = signals.map((signal) => buildIctAdvisorJournalEvent(signal));
   const indexSmtJournalEvents = signals.filter((signal) => signal.smt).map((signal) => buildIctIndexSmtJournalEvent(signal.smt!));
+  const newsSessionRiskJournalEvents = signals
+    .filter((signal) => signal.newsSessionRisk)
+    .map((signal) => buildIctNewsSessionRiskJournalEvent(signal.newsSessionRisk!, signal));
   const journalWrite = appendIctAdvisorJournalEvents(journalEvents);
   appendIctIndexSmtJournalEvents(indexSmtJournalEvents);
+  appendIctNewsSessionRiskJournalEvents(newsSessionRiskJournalEvents);
   return {
     packetId: createId("ict_advisor_packet"),
     source: "gotrader_ict_strategy_suite",
@@ -615,6 +636,7 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
     signals,
     recommendedSignal,
     indexSmt: recommendedSignal.smt,
+    newsSessionRisk: recommendedSignal.newsSessionRisk,
     compactSummary: {
       compositeBias: recommendedSignal.bias.composite,
       drawOnLiquidity: recommendedSignal.drawOnLiquidity
@@ -624,19 +646,27 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
       decision: recommendedSignal.decision,
       side: recommendedSignal.side,
       confidence: clamp(recommendedSignal.confidence),
-      approvedProfileStatus: approvedProfileDecision.status,
-      approvalScore: approvedProfileDecision.approvalScore,
+      approvedProfileStatus: finalApprovedProfileDecision.status,
+      approvalScore: finalApprovedProfileDecision.approvalScore,
       smtDivergenceType: recommendedSignal.smt?.divergenceType,
       smtConfirmsCandidate: recommendedSignal.smt?.confirmsCandidate,
       smtRejectsCandidate: recommendedSignal.smt?.rejectsCandidate,
       relativeStrengthLeader: recommendedSignal.smt?.relativeStrengthLeader,
       relativeWeaknessLeader: recommendedSignal.smt?.relativeWeaknessLeader,
       smtConfidenceAdjustment: recommendedSignal.smt?.confidenceAdjustment,
+      newsRiskLevel: recommendedSignal.newsSessionRisk?.newsRiskLevel,
+      sessionRiskState: recommendedSignal.newsSessionRisk?.sessionRiskState,
+      riskGovernorAction: recommendedSignal.newsSessionRisk?.riskGovernorAction,
+      riskGovernorConfidenceAdjustment: recommendedSignal.newsSessionRisk?.riskGovernorConfidenceAdjustment,
+      blockingEventsCount: recommendedSignal.newsSessionRisk?.blockingEventsCount,
+      cautionEventsCount: recommendedSignal.newsSessionRisk?.cautionEventsCount,
+      newsSessionRiskNotes: recommendedSignal.newsSessionRisk?.newsSessionRiskNotes,
       noTradeReasonCount: recommendedSignal.noTradeReasons.length
     },
-    approvedProfileDecision,
+    approvedProfileDecision: finalApprovedProfileDecision,
     journalEvents,
     indexSmtJournalEvents,
+    newsSessionRiskJournalEvents,
     journalStatus: journalWrite.storage === "localStorage" ? "written" : journalWrite.storage === "memory_unavailable" ? "memory_only" : "unavailable",
     safetyLocks: {
       rawCandlesIncluded: false,

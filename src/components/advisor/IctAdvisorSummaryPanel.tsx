@@ -8,6 +8,7 @@ import {
   buildIctAdvisorPacketFromRuntime,
   buildIctReplayValidationFromRuntime,
   formatIctAdvisorSignalSummary,
+  summarizeNewsSessionRisk,
   type IctAdvisorPacket,
   type IctReplayValidationReport
 } from "@/lib/ict-strategy-suite";
@@ -39,6 +40,23 @@ const smtLabel = (packet?: IctAdvisorPacket) => {
   if (packet.compactSummary.smtRejectsCandidate) return "SMT rejects";
   if (packet.compactSummary.smtConfirmsCandidate) return "SMT confirms";
   return formatToken(packet.compactSummary.smtDivergenceType);
+};
+const riskVariant = (packet?: IctAdvisorPacket) =>
+  packet?.compactSummary.riskGovernorAction === "reject_candidate" ||
+  packet?.compactSummary.riskGovernorAction === "no_trade" ||
+  packet?.compactSummary.sessionRiskState === "avoid"
+    ? "danger"
+    : packet?.compactSummary.riskGovernorAction === "downgrade_to_watchlist" ||
+        packet?.compactSummary.sessionRiskState === "caution" ||
+        packet?.compactSummary.newsRiskLevel === "medium"
+      ? "warning"
+      : "success";
+const riskLabel = (packet?: IctAdvisorPacket) => {
+  const action = packet?.compactSummary.riskGovernorAction;
+  if (!action) return "Risk pending";
+  if (action === "allow") return "Risk clear";
+  if (action === "downgrade_to_watchlist") return "Risk caution";
+  return "Risk blocked";
 };
 
 export function IctAdvisorSummaryPanel({
@@ -129,13 +147,15 @@ export function IctAdvisorSummaryPanel({
           </div>
           <Badge variant={statusVariant(packet?.approvedProfileDecision.status)}>{formatToken(packet?.approvedProfileDecision.status)}</Badge>
           <Badge variant={smtVariant(packet)}>{smtLabel(packet)}</Badge>
+          <Badge variant={riskVariant(packet)}>{riskLabel(packet)}</Badge>
         </div>
         {packet ? (
           <>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-7">
               <AdvisorMini label="Composite bias" value={formatToken(packet.compactSummary.compositeBias)} />
               <AdvisorMini label="Phase 2 setup" value={formatToken(topPhaseTwo?.setup)} />
               <AdvisorMini label="SMT / RS" value={smtLabel(packet)} detail={packet.indexSmt?.relativeStrengthLeader ? `RS ${packet.indexSmt.relativeStrengthLeader}` : undefined} />
+              <AdvisorMini label="Risk Governor" value={riskLabel(packet)} detail={formatToken(packet.compactSummary.sessionRiskState)} />
               <AdvisorMini label="Decision" value={formatToken(packet.compactSummary.decision)} />
               <AdvisorMini label="Setup" value={formatToken(packet.compactSummary.setup)} />
               <AdvisorMini label="Confidence" value={pct(packet.compactSummary.confidence)} />
@@ -177,6 +197,7 @@ export function IctAdvisorSummaryPanel({
         <div className="flex flex-wrap gap-2">
           <Badge variant={statusVariant(packet?.approvedProfileDecision.status)}>{formatToken(packet?.approvedProfileDecision.status)}</Badge>
           <Badge variant={smtVariant(packet)}>{smtLabel(packet)}</Badge>
+          <Badge variant={riskVariant(packet)}>{riskLabel(packet)}</Badge>
           <Badge variant={recommended?.decision === "research_only" ? "success" : "warning"}>{formatToken(recommended?.decision)}</Badge>
           <Badge variant="danger">execution none</Badge>
           <Badge variant="secondary">compact packet</Badge>
@@ -201,6 +222,10 @@ export function IctAdvisorSummaryPanel({
               detail={packet.indexSmt ? `${formatToken(packet.indexSmt.divergenceType)} / ${packet.indexSmt.reason}` : "awaiting index comparison"}
             />
             <AdvisorMini label="RS leader" value={packet.indexSmt?.relativeStrengthLeader ?? "n/a"} detail={`weakness ${packet.indexSmt?.relativeWeaknessLeader ?? "n/a"}`} />
+            <AdvisorMini label="Risk Governor" value={riskLabel(packet)} detail={summarizeNewsSessionRisk(packet.newsSessionRisk)} />
+            <AdvisorMini label="News risk" value={formatToken(packet.compactSummary.newsRiskLevel)} detail={`${packet.compactSummary.blockingEventsCount ?? 0} block / ${packet.compactSummary.cautionEventsCount ?? 0} caution`} />
+            <AdvisorMini label="Session risk" value={formatToken(packet.compactSummary.sessionRiskState)} detail={formatToken(packet.newsSessionRisk?.session.sessionName)} />
+            <AdvisorMini label="Confidence adjustment" value={`${Math.round((packet.compactSummary.riskGovernorConfidenceAdjustment ?? 0) * 100)} pts`} />
             <AdvisorMini label="Draw-on-liquidity" value={packet.compactSummary.drawOnLiquidity ?? "none"} />
             <AdvisorMini label="Swept liquidity" value={recommended?.liquiditySwept ? `${recommended.liquiditySwept.type} @ ${compactPrice(recommended.liquiditySwept.price)}` : "none"} />
             <AdvisorMini label="Dealing range" value={formatToken(recommended?.dealingRange?.currentLocation)} detail={recommended?.dealingRange ? `${compactPrice(recommended.dealingRange.low)} / ${compactPrice(recommended.dealingRange.midpoint)} / ${compactPrice(recommended.dealingRange.high)}` : undefined} />
@@ -252,6 +277,50 @@ export function IctAdvisorSummaryPanel({
             ) : (
               <p className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
                 Index SMT is waiting for the active index futures research context.
+              </p>
+            )}
+          </div>
+          <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">ICT News / Session Risk Governor</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Confirms acceptable timing or downgrades/rejects existing ICT candidates. It cannot create standalone signals, change readiness, or create execution intent.
+                </p>
+              </div>
+              <Badge variant={riskVariant(packet)}>{riskLabel(packet)}</Badge>
+            </div>
+            {packet.newsSessionRisk ? (
+              <>
+                <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                  <AdvisorMini label="News risk level" value={formatToken(packet.newsSessionRisk.newsRiskLevel)} />
+                  <AdvisorMini label="Session state" value={formatToken(packet.newsSessionRisk.sessionRiskState)} detail={`${formatToken(packet.newsSessionRisk.session.sessionName)} ${packet.newsSessionRisk.session.localTime}`} />
+                  <AdvisorMini label="Action" value={formatToken(packet.newsSessionRisk.riskGovernorAction)} />
+                  <AdvisorMini label="Confidence adjustment" value={`${Math.round(packet.newsSessionRisk.riskGovernorConfidenceAdjustment * 100)} pts`} />
+                  <AdvisorMini label="Blocking events" value={packet.newsSessionRisk.blockingEventsCount.toLocaleString()} />
+                  <AdvisorMini label="Caution events" value={packet.newsSessionRisk.cautionEventsCount.toLocaleString()} />
+                  <AdvisorMini label="Timing zone" value={packet.newsSessionRisk.session.timingZone} />
+                  <AdvisorMini label="Journal" value={`${packet.newsSessionRiskJournalEvents.length} compact events`} />
+                </div>
+                <div className="mt-3 grid gap-2 lg:grid-cols-2">
+                  <AdvisorList
+                    label="Risk notes"
+                    values={packet.newsSessionRisk.newsSessionRiskNotes}
+                    empty="none"
+                  />
+                  <AdvisorList
+                    label="Blocking / caution events"
+                    values={[
+                      ...packet.newsSessionRisk.blockingEvents.map((event) => `${event.title}: ${event.riskLevel}`),
+                      ...packet.newsSessionRisk.cautionEvents.map((event) => `${event.title}: ${event.riskLevel}`)
+                    ]}
+                    empty="none"
+                  />
+                </div>
+              </>
+            ) : (
+              <p className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
+                News/session governor is waiting for an ICT candidate timestamp.
               </p>
             )}
           </div>

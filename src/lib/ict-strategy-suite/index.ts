@@ -17,5 +17,7 @@ export * from "./ictApprovedSetupProfileTypes";
 export * from "./ictApprovedSetupProfile";
 export * from "./ictIndexSmtTypes";
 export * from "./ictIndexSmt";
+export * from "./ictNewsSessionRiskTypes";
+export * from "./ictNewsSessionRisk";
 export * from "./ictRealReplayRunnerTypes";
 export * from "./ictRealReplayRunner";
