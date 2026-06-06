@@ -21,6 +21,7 @@ const configuredUpstreamPaths = {
   status: process.env.MT5_READONLY_UPSTREAM_STATUS_PATH,
   quote: process.env.MT5_READONLY_UPSTREAM_QUOTE_PATH,
   candles: process.env.MT5_READONLY_UPSTREAM_CANDLES_PATH,
+  candleRange: process.env.MT5_READONLY_UPSTREAM_CANDLES_RANGE_PATH,
   symbols: process.env.MT5_READONLY_UPSTREAM_SYMBOLS_PATH,
   symbolInfo: process.env.MT5_READONLY_UPSTREAM_SYMBOL_INFO_PATH
 };
@@ -33,6 +34,15 @@ const upstreamPathCandidates = {
     "/rates",
     "/ohlcv",
     "/api/v1/market/candles/latest"
+  ].filter(Boolean),
+  candleRange: [
+    configuredUpstreamPaths.candleRange,
+    "/api/v1/market/candles/range",
+    "/api/v1/market/candles/by-date",
+    "/api/v1/market/candles",
+    "/candles/range",
+    "/candles/by-date",
+    "/candles"
   ].filter(Boolean),
   symbols: [configuredUpstreamPaths.symbols, "/symbols", "/api/v1/market/symbols"].filter(Boolean),
   symbolInfo: [
@@ -86,6 +96,7 @@ const plannedStatus = () => ({
     status: discoveredUpstreamPaths.status ?? configuredUpstreamPaths.status,
     quote: discoveredUpstreamPaths.quote ?? configuredUpstreamPaths.quote,
     candles: discoveredUpstreamPaths.candles ?? configuredUpstreamPaths.candles,
+    candleRange: discoveredUpstreamPaths.candleRange ?? configuredUpstreamPaths.candleRange,
     symbols: discoveredUpstreamPaths.symbols ?? configuredUpstreamPaths.symbols,
     symbolInfo: discoveredUpstreamPaths.symbolInfo ?? configuredUpstreamPaths.symbolInfo
   },
@@ -95,6 +106,7 @@ const plannedStatus = () => ({
     status: upstreamPathCandidates.status,
     quote: upstreamPathCandidates.quote,
     candles: upstreamPathCandidates.candles,
+    candleRange: upstreamPathCandidates.candleRange,
     symbols: upstreamPathCandidates.symbols,
     symbolInfo: upstreamPathCandidates.symbolInfo
   },
@@ -137,6 +149,13 @@ const parseTimestamp = (value) => {
   }
   return new Date().toISOString();
 };
+const parseDateInput = (value) => {
+  if (typeof value !== "string" || !value.trim()) {
+    return undefined;
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+};
 const mt5TimeframeFor = (timeframe) => ({
   "1m": "M1",
   "5m": "M5",
@@ -176,6 +195,23 @@ const upstreamRequestFor = (path, params = {}) => {
       params: {
         symbol_name: brokerSymbol,
         timeframe: params.mt5_timeframe ?? params.mt5Timeframe ?? mt5TimeframeFor(params.timeframe),
+        count: params.count ?? params.limit
+      }
+    };
+  }
+
+  if (
+    path === "/api/v1/market/candles/range" ||
+    path === "/api/v1/market/candles/by-date" ||
+    path === "/api/v1/market/candles"
+  ) {
+    return {
+      path,
+      params: {
+        symbol_name: brokerSymbol,
+        timeframe: params.mt5_timeframe ?? params.mt5Timeframe ?? mt5TimeframeFor(params.timeframe),
+        date_from: params.date_from ?? params.from ?? params.start ?? params.start_date,
+        date_to: params.date_to ?? params.to ?? params.end ?? params.end_date,
         count: params.count ?? params.limit
       }
     };
@@ -437,6 +473,55 @@ const upstreamCandles = async ({ requestedSymbol, brokerSymbol, timeframe, limit
   };
 };
 
+const upstreamCandleRange = async ({ requestedSymbol, brokerSymbol, timeframe, limit, from, to }) => {
+  const mt5Timeframe = mt5TimeframeFor(timeframe);
+  const { payload, path } = await fetchUpstreamJson("candleRange", {
+    symbol_name: brokerSymbol,
+    symbol: brokerSymbol,
+    timeframe,
+    mt5_timeframe: mt5Timeframe,
+    mt5Timeframe,
+    date_from: from,
+    date_to: to,
+    from,
+    to,
+    start: from,
+    end: to,
+    from_date: from,
+    to_date: to,
+    start_date: from,
+    end_date: to,
+    start_time: from,
+    end_time: to,
+    utc_from: from,
+    utc_to: to,
+    count: limit,
+    limit
+  }, candleLikePayload);
+  const candles = normalizeCandles({ payload, brokerSymbol, timeframe, limit });
+  return {
+    provider: "mt5_read_only",
+    symbol: brokerSymbol,
+    requestedSymbol,
+    brokerSymbol,
+    timeframe,
+    requestedTimeframe: timeframe,
+    requestedLimit: limit,
+    requestedFrom: from,
+    requestedTo: to,
+    returnedCount: candles.length,
+    candles,
+    firstTimestamp: candles[0]?.timestamp,
+    lastTimestamp: candles[candles.length - 1]?.timestamp,
+    connectionStatus: candles.length ? "connected" : "degraded",
+    depthStatus: candles.length >= limit ? "capped_by_provider" : candles.length ? "partial" : "insufficient_history",
+    sourceMethod: `upstream_http:${path}`,
+    warnings: ["MT5 date-range candles were retrieved through the GoTrader read-only wrapper; no execution authority."],
+    missingEvidence: candles.length ? [] : ["Upstream date-range candle payload did not include a valid OHLCV series."],
+    ...authority
+  };
+};
+
 const server = createServer(async (req, res) => {
   requestCount += 1;
   if (req.method === "OPTIONS") {
@@ -528,6 +613,60 @@ const server = createServer(async (req, res) => {
         ...disconnectedQuote({ requestedSymbol, brokerSymbol: symbol }),
         connectionStatus: "degraded",
         missingEvidence: await failureEvidence({ action: "quote", brokerSymbol: symbol, error })
+      });
+    }
+    return;
+  }
+
+  if (url.pathname === "/candles/range" || url.pathname === "/candles/by-date" || url.pathname === "/candles-by-date") {
+    const from = parseDateInput(
+      url.searchParams.get("from") ||
+        url.searchParams.get("date_from") ||
+        url.searchParams.get("start") ||
+        url.searchParams.get("start_date") ||
+        ""
+    );
+    const to = parseDateInput(
+      url.searchParams.get("to") ||
+        url.searchParams.get("date_to") ||
+        url.searchParams.get("end") ||
+        url.searchParams.get("end_date") ||
+        ""
+    );
+    if (!from || !to) {
+      json(res, 400, {
+        provider: "mt5_read_only",
+        connectionStatus: "error",
+        message: "GET /candles/range requires parseable from/to ISO timestamps.",
+        warnings: ["Date-range MT5 history requests are explicit diagnostics only and remain read-only."],
+        missingEvidence: ["Provide from and to query parameters to request an explicit historical chunk."],
+        ...authority
+      });
+      return;
+    }
+    if (!upstreamBaseUrl) {
+      json(res, 200, {
+        ...disconnectedCandles({ requestedSymbol, brokerSymbol: symbol, timeframe, limit }),
+        sourceMethod: "contract_stub:/candles/range",
+        warnings: ["No local MT5 read-only date-range candle connector is configured."],
+        missingEvidence: [
+          "Start or connect a local MT5 read-only service that implements date-range candle reads before 90-day chunking can run."
+        ]
+      });
+      return;
+    }
+    try {
+      const candles = await upstreamCandleRange({ requestedSymbol, brokerSymbol: symbol, timeframe, limit, from, to });
+      lastUpstreamError = undefined;
+      json(res, 200, candles);
+    } catch (error) {
+      lastUpstreamError = error instanceof Error ? error.message : String(error);
+      json(res, 200, {
+        ...disconnectedCandles({ requestedSymbol, brokerSymbol: symbol, timeframe, limit }),
+        connectionStatus: "degraded",
+        sourceMethod: "upstream_http:/candles/range",
+        warnings: ["Configured MT5 upstream date-range candle endpoint failed."],
+        missingEvidence: await failureEvidence({ action: "date-range candle", brokerSymbol: symbol, error })
       });
     }
     return;

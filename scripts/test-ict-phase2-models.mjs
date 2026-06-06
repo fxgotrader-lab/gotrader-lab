@@ -58,6 +58,7 @@ const sourceFiles = [
   { root: mt5Root, file: "mt5ReadOnlyTypes.ts" },
   { root: mt5Root, file: "mt5SymbolSettings.ts" },
   { root: mt5Root, file: "mt5ReadOnlyNormalizer.ts" },
+  { root: mt5Root, file: "mt5ReadOnlyDepth.ts" },
   { root: mt5Root, file: "mt5ReadOnlyClient.ts" },
   { root: sourceRoot, file: "index.ts" }
 ];

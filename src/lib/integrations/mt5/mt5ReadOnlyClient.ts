@@ -12,6 +12,11 @@ import {
   evaluateMt5ReadOnlyResearchEligibility
 } from "@/lib/integrations/mt5/mt5ReadOnlyNormalizer";
 import {
+  normalizeAndDeduplicateCandles,
+  summarizeHistoryDepth,
+  type Mt5ReadOnlyDepthSummary
+} from "@/lib/integrations/mt5/mt5ReadOnlyDepth";
+import {
   displayLabelForMt5Mapping,
   findDefaultMt5SymbolMapping,
   sanitizeMt5HigherTimeframes,
@@ -343,6 +348,208 @@ export async function fetchMt5ReadOnlyCandles(
   } catch {
     return disconnectedCandles(request, settings);
   }
+}
+
+export interface Mt5ReadOnlyDateRangeRequest {
+  brokerSymbol?: string;
+  from: string;
+  limit?: number;
+  symbol: string;
+  timeframe: string;
+  to: string;
+}
+
+export interface Mt5ReadOnlyChunkedHistoryRequest {
+  brokerSymbol?: string;
+  chunkDays?: number;
+  from?: string;
+  limitPerChunk?: number;
+  lookbackDays?: number;
+  symbol: string;
+  timeframe: string;
+  to?: string;
+}
+
+export interface Mt5ReadOnlyHistoryChunk {
+  from: string;
+  to: string;
+  returnedCount: number;
+  firstTimestamp?: string;
+  lastTimestamp?: string;
+  connectionStatus: Mt5ReadOnlyCandlesResponse["connectionStatus"];
+  depthStatus: Mt5ReadOnlyCandlesResponse["depthStatus"];
+  sourceMethod?: string;
+  warnings: string[];
+  missingEvidence: string[];
+}
+
+export interface Mt5ReadOnlyChunkedHistoryResult {
+  provider: "mt5_read_only";
+  requestedSymbol: string;
+  brokerSymbol: string;
+  timeframe: string;
+  requestedLookbackDays: number;
+  candles: Mt5ReadOnlyCandlesResponse["candles"];
+  chunks: Mt5ReadOnlyHistoryChunk[];
+  summary: Mt5ReadOnlyDepthSummary;
+  warnings: string[];
+  missingEvidence: string[];
+  authority: typeof authority;
+}
+
+const parseDateOrUndefined = (value?: string) => {
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+};
+
+const dateRangeWindows = ({
+  chunkDays,
+  from,
+  lookbackDays,
+  to
+}: {
+  chunkDays: number;
+  from?: string;
+  lookbackDays: number;
+  to?: string;
+}) => {
+  const end = parseDateOrUndefined(to) ?? new Date();
+  const start = parseDateOrUndefined(from) ?? new Date(end.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+  const chunkMillis = Math.max(1, chunkDays) * 24 * 60 * 60 * 1000;
+  const windows: Array<{ from: string; to: string }> = [];
+  let cursor = start.getTime();
+  const endTime = end.getTime();
+  while (cursor < endTime && windows.length < 80) {
+    const next = Math.min(cursor + chunkMillis, endTime);
+    windows.push({
+      from: new Date(cursor).toISOString(),
+      to: new Date(next).toISOString()
+    });
+    cursor = next;
+  }
+  return windows;
+};
+
+export async function fetchMt5CandlesByDateRange(
+  request: Mt5ReadOnlyDateRangeRequest,
+  settings: Mt5ReadOnlySettings = loadMt5ReadOnlySettings()
+): Promise<Mt5ReadOnlyCandlesResponse> {
+  const brokerSymbol = selectedBrokerSymbol(request.brokerSymbol, settings.brokerSymbolOverride);
+  const safeLimit = Math.max(1, Math.min(5000, request.limit ?? 5000));
+  try {
+    const payload = await fetchJson<Partial<Mt5ReadOnlyCandlesResponse>>(
+      endpoint(settings, "candles/range", {
+        requestedSymbol: request.symbol,
+        symbol: brokerSymbol,
+        timeframe: request.timeframe,
+        from: request.from,
+        to: request.to,
+        limit: safeLimit
+      })
+    );
+    const candles = normalizeAndDeduplicateCandles(Array.isArray(payload.candles) ? payload.candles : []);
+    return {
+      provider: "mt5_read_only",
+      symbol: payload.symbol ?? brokerSymbol ?? request.symbol,
+      requestedSymbol: payload.requestedSymbol ?? request.symbol,
+      brokerSymbol: payload.brokerSymbol ?? brokerSymbol,
+      timeframe: payload.timeframe ?? request.timeframe,
+      requestedTimeframe: payload.requestedTimeframe ?? request.timeframe,
+      requestedLimit: payload.requestedLimit ?? safeLimit,
+      returnedCount: payload.returnedCount ?? candles.length,
+      candles,
+      firstTimestamp: payload.firstTimestamp ?? candles[0]?.timestamp,
+      lastTimestamp: payload.lastTimestamp ?? candles[candles.length - 1]?.timestamp,
+      sourceMethod: payload.sourceMethod ?? "GET /candles/range",
+      connectionStatus: normalizeConnectionStatus(payload.connectionStatus, candles.length ? "connected" : "degraded"),
+      depthStatus: payload.depthStatus ?? (candles.length >= safeLimit ? "capped_by_provider" : candles.length ? "partial" : "insufficient_history"),
+      warnings: [
+        ...(payload.warnings ?? []),
+        "MT5 date-range candles are explicit read-only diagnostics and have no execution authority."
+      ],
+      missingEvidence: payload.missingEvidence ?? [],
+      ...authority
+    };
+  } catch {
+    return {
+      ...disconnectedCandles({ symbol: request.symbol, timeframe: request.timeframe, limit: safeLimit, brokerSymbol }, settings),
+      sourceMethod: "GET /candles/range",
+      warnings: ["MT5 read-only date-range candle endpoint is unavailable."],
+      missingEvidence: [
+        `The running wrapper at ${settings.bridgeUrl} did not provide a usable /candles/range response. Restart/update the wrapper or configure MT5_READONLY_UPSTREAM_CANDLES_RANGE_PATH.`
+      ]
+    };
+  }
+}
+
+export async function fetchMt5CandlesInChunks(
+  request: Mt5ReadOnlyChunkedHistoryRequest,
+  settings: Mt5ReadOnlySettings = loadMt5ReadOnlySettings()
+): Promise<Mt5ReadOnlyChunkedHistoryResult> {
+  const brokerSymbol = selectedBrokerSymbol(request.brokerSymbol, settings.brokerSymbolOverride) ?? request.symbol;
+  const requestedLookbackDays = Math.max(1, request.lookbackDays ?? 90);
+  const chunkDays = Math.max(1, request.chunkDays ?? 10);
+  const limitPerChunk = Math.max(1, Math.min(5000, request.limitPerChunk ?? 5000));
+  const windows = dateRangeWindows({
+    chunkDays,
+    from: request.from,
+    lookbackDays: requestedLookbackDays,
+    to: request.to
+  });
+  const chunks: Mt5ReadOnlyHistoryChunk[] = [];
+  const candles: Mt5ReadOnlyCandlesResponse["candles"] = [];
+  for (const window of windows) {
+    const response = await fetchMt5CandlesByDateRange({
+      brokerSymbol,
+      from: window.from,
+      limit: limitPerChunk,
+      symbol: request.symbol,
+      timeframe: request.timeframe,
+      to: window.to
+    }, settings);
+    chunks.push({
+      from: window.from,
+      to: window.to,
+      returnedCount: response.returnedCount,
+      firstTimestamp: response.firstTimestamp,
+      lastTimestamp: response.lastTimestamp,
+      connectionStatus: response.connectionStatus,
+      depthStatus: response.depthStatus,
+      sourceMethod: response.sourceMethod,
+      warnings: response.warnings,
+      missingEvidence: response.missingEvidence
+    });
+    candles.push(...response.candles);
+    if (!response.candles.length && response.connectionStatus === "disconnected") {
+      break;
+    }
+  }
+  const normalized = normalizeAndDeduplicateCandles(candles);
+  const failedRange = chunks.find((chunk) => !chunk.returnedCount && chunk.missingEvidence.length)?.missingEvidence[0];
+  const summary = summarizeHistoryDepth({
+    brokerSymbol,
+    candles: normalized,
+    chunkCount: chunks.length,
+    chunkingStatus: normalized.length ? "chunked_cached" : "not_supported_by_wrapper",
+    limitationReason: normalized.length ? undefined : failedRange,
+    requestedLookbackDays,
+    requestedSymbol: request.symbol,
+    timeframe: request.timeframe
+  });
+  return {
+    provider: "mt5_read_only",
+    requestedSymbol: request.symbol,
+    brokerSymbol,
+    timeframe: request.timeframe,
+    requestedLookbackDays,
+    candles: normalized,
+    chunks,
+    summary,
+    warnings: summary.warnings,
+    missingEvidence: summary.missingEvidence,
+    authority
+  };
 }
 
 export async function fetchAndStoreMt5ReadOnlyCandleFeed({
