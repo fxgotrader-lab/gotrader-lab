@@ -795,6 +795,11 @@ export const buildIctSessionNarrative = (
     referenceLevel: nyPreopenConsolidation?.low ?? midnight.candle?.open ?? asia?.low,
     timeZone
   });
+  const mitigationContextWithExpansion = {
+    ...mitigationContext,
+    direction: bearishExpansion ? "bearish" as const : bullishExpansion ? "bullish" as const : mitigationContext.direction,
+    expansionConfirmed: Boolean(mitigationContext.detected && (bearishExpansion || bullishExpansion))
+  };
   const classified = decideNarrativeProfile({
     activeDealingRange,
     buysideSweep,
@@ -803,7 +808,7 @@ export const buildIctSessionNarrative = (
     fvgTarget,
     londonEqualLows,
     londonSweepAsiaHigh,
-    mitigation: mitigationContext,
+    mitigation: mitigationContextWithExpansion,
     midnightReclaim,
     nyOpenConsolidationLowSweep,
     nyPreopenConsolidation,
@@ -847,15 +852,15 @@ export const buildIctSessionNarrative = (
           note: fvgTarget.note
         }
       : undefined,
-    mitigationContext.detected
+    mitigationContextWithExpansion.detected
       ? {
           eventType: "ny_open_mitigation" as const,
-          timestamp: mitigationContext.tapTimestamp,
-          localTime: mitigationContext.tapLocalTime,
-          high: mitigationContext.zoneHigh,
-          low: mitigationContext.zoneLow,
+          timestamp: mitigationContextWithExpansion.tapTimestamp,
+          localTime: mitigationContextWithExpansion.tapLocalTime,
+          high: mitigationContextWithExpansion.zoneHigh,
+          low: mitigationContextWithExpansion.zoneLow,
           confidence: 0.72,
-          note: mitigationContext.note
+          note: mitigationContextWithExpansion.note
         }
       : undefined,
     bearishExpansion,
@@ -879,7 +884,7 @@ export const buildIctSessionNarrative = (
     nyReversalHigher ? "NY reversed higher toward the premium FVG draw." : undefined,
     buysideSweep ? "Buy-side sweep above the Asia/London/midnight reference was detected." : undefined,
     midnightReclaim ? "Price reclaimed the 12AM opening price before NY decision context." : undefined,
-    mitigationContext.detected ? "NY open mitigation context was detected." : undefined,
+    mitigationContextWithExpansion.detected ? "NY open mitigation context was detected." : undefined,
     bearishExpansion ? "Bearish expansion delivered away from the NY mitigation/open context." : undefined,
     depth.status !== "sufficient" ? depth.note : undefined
   ].filter((reason): reason is string => Boolean(reason));
@@ -888,7 +893,7 @@ export const buildIctSessionNarrative = (
     !london?.candleCount ? "London window is missing for the active timing-zone date." : undefined,
     !londonEqualLows && !londonEqualHighs ? "No London equal-high/equal-low liquidity family was detected." : undefined,
     !buysideSweep && !sellsideSweep ? "No post-London liquidity sweep was detected." : undefined,
-    !mitigationContext.detected ? mitigationContext.note : undefined,
+    !mitigationContextWithExpansion.detected ? mitigationContextWithExpansion.note : undefined,
     classified.profile !== "ny_session_reversal_to_premium_fvg" && !fvgTarget.detected ? fvgTarget.note : undefined,
     !bearishExpansion && !bullishExpansion ? "No clean directional expansion away from the mitigation/open context was detected." : undefined
   ].filter((reason): reason is string => Boolean(reason));
@@ -917,7 +922,7 @@ export const buildIctSessionNarrative = (
     ranges,
     events,
     fvgTarget,
-    mitigationContext,
+    mitigationContext: mitigationContextWithExpansion,
     dataDepth: depth,
     topReasons: topReasons.length ? topReasons.slice(0, 6) : ["Session narrative did not find a complete manipulation/expansion sequence."],
     noTradeReasons: noTradeReasons.slice(0, 8),
