@@ -113,6 +113,15 @@ console.log(
       wrapperResponded,
       connected,
       connectionStatus: status?.connectionStatus ?? health?.connectionStatus ?? "disconnected",
+      bridgeMode: status?.bridgeMode ?? health?.bridgeMode,
+      upstreamConfigured: status?.upstreamConfigured ?? health?.upstreamConfigured,
+      upstreamUrl: status?.upstreamUrl ?? health?.upstreamUrl,
+      upstreamSource: status?.upstreamSource ?? health?.upstreamSource,
+      latestEndpointAvailable: status?.latestEndpointAvailable ?? health?.latestEndpointAvailable,
+      rangeEndpointAvailable: status?.rangeEndpointAvailable ?? health?.rangeEndpointAvailable,
+      latestEndpointPath: status?.latestEndpointPath ?? health?.latestEndpointPath,
+      rangeEndpointPath: status?.rangeEndpointPath ?? health?.rangeEndpointPath,
+      lastUpstreamError: status?.lastUpstreamError ?? health?.lastUpstreamError,
       quote: quote
         ? {
             bid: quote.bid,
@@ -129,6 +138,7 @@ console.log(
             firstTimestamp: candles.firstTimestamp,
             lastTimestamp: candles.lastTimestamp,
             depthStatus: candles.depthStatus,
+            sourceMethod: candles.sourceMethod,
             researchMinimumCandles,
             researchEligibleByDepth: returnedCount >= researchMinimumCandles,
             warnings: candles.warnings,

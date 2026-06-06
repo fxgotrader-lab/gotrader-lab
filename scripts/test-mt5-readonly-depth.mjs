@@ -118,6 +118,8 @@ const compactSummary = ({
     limitationReason ??
     (dataDepthStatus === "sufficient"
       ? undefined
+      : !candleCount && String(sourceMethod ?? payload?.sourceMethod ?? "").includes("contract_stub")
+        ? "The wrapper is running in contract-stub mode or without a reachable MT5 upstream connector, so no real latest candles were returned."
       : chunkingStatus === "not_supported_by_wrapper"
         ? "The running MT5 read-only wrapper does not expose /candles/range; restart the updated wrapper or configure MT5_READONLY_UPSTREAM_CANDLES_RANGE_PATH."
         : chunkingStatus === "single_window"
@@ -181,6 +183,11 @@ const fetchLatestWindow = async () => {
     rawCandleCount: Array.isArray(candles) ? candles.length : 0,
     lastTimestamp: response.payload?.lastTimestamp ?? candles.at?.(-1)?.timestamp
   };
+};
+
+const fetchBridgeStatus = async () => {
+  const response = await fetchWithTimeout(endpoint("status"));
+  return response.ok && response.payload && typeof response.payload === "object" ? response.payload : undefined;
 };
 
 const dateWindows = (endTime) => {
@@ -290,6 +297,7 @@ const fetchMt5CandlesInChunks = async ({ endTime }) => {
 
 let result;
 try {
+  const bridgeStatus = await fetchBridgeStatus();
   const latestWindow = await fetchLatestWindow();
   const latestEndTime = Date.parse(latestWindow.lastTimestamp);
   const chunkedHistory = await fetchMt5CandlesInChunks({ endTime: latestEndTime });
@@ -301,13 +309,30 @@ try {
     bridgeUrl,
     ok: Boolean(latestWindow.ok || chunkedHistory.summary.candleCount),
     status: latestWindow.status,
+    bridgeDiagnostics: bridgeStatus
+      ? {
+          bridgeMode: bridgeStatus.bridgeMode,
+          upstreamConfigured: bridgeStatus.upstreamConfigured,
+          upstreamUrl: bridgeStatus.upstreamUrl,
+          upstreamSource: bridgeStatus.upstreamSource,
+          latestEndpointAvailable: bridgeStatus.latestEndpointAvailable,
+          rangeEndpointAvailable: bridgeStatus.rangeEndpointAvailable,
+          latestEndpointPath: bridgeStatus.latestEndpointPath,
+          rangeEndpointPath: bridgeStatus.rangeEndpointPath,
+          lastUpstreamError: bridgeStatus.lastUpstreamError
+        }
+      : undefined,
     rootCause: {
       latestEndpointCap: "GoTrader latest-candle client, wrapper, and depth diagnostic cap /candles requests at 5000 candles.",
+      wrapperMode: bridgeStatus?.bridgeMode ?? "unknown",
+      upstreamConfigured: Boolean(bridgeStatus?.upstreamConfigured),
       wrapperRangeRoute: chunkedHistory.summary.chunkingStatus === "chunked_cached" ? "available" : "unavailable_or_not_supported_by_running_wrapper",
       brokerOrUpstreamHistoryLimit:
         chunkedHistory.summary.chunkingStatus === "chunked_cached"
           ? "Date-range route returned candles; compare availableLookbackDays to requestedLookbackDays for broker/upstream depth."
-          : "Not proven yet because the running wrapper/upstream did not return usable date-range chunks."
+          : bridgeStatus?.upstreamConfigured
+            ? "Not proven yet because the configured upstream did not return usable date-range chunks."
+            : "Not proven yet because the wrapper is running without a configured/upstream-reachable MT5 market-data connector."
     },
     singleWindow: latestWindow.summary,
     chunkedHistory,

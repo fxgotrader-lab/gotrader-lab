@@ -9,14 +9,14 @@ Implemented now:
 - MT5 read-only browser client and runtime state.
 - Local endpoint contract at `http://127.0.0.1:7341`.
 - Diagnostic/test scripts.
-- Optional contract stub: `npm.cmd run mt5:readonly-bridge`.
-- Optional upstream REST market-data bridge via `MT5_READONLY_UPSTREAM_BASE_URL`.
+- Optional contract stub: `MT5_READONLY_DISABLE_DEFAULT_UPSTREAM=true; npm.cmd run mt5:readonly-bridge`.
+- MT5-first upstream REST market-data bridge via `MT5_READONLY_UPSTREAM_BASE_URL`.
 - Safe upstream endpoint discovery across common REST market-data paths.
 - Hard read-only tool policy with explicit account/order/position/history blocking.
 - Canonical candle-source normalization for MT5 candles when a real read-only bridge returns data.
 - Dashboard and Market Data controls for fetch, chart activation, and guarded research-source activation.
 
-The included local wrapper is a contract stub. It returns `planned`/`disconnected` with empty candles until a real local MT5 read-only connector is provided.
+The included local wrapper defaults to proxying the local MT5 upstream at `http://127.0.0.1:8000`. It returns `degraded` with explicit upstream errors when that service is unavailable. Set `MT5_READONLY_DISABLE_DEFAULT_UPSTREAM=true` only when you intentionally want the safe contract-stub mode with empty candles.
 
 ## Upstream MCP Inspection
 
@@ -90,6 +90,8 @@ $env:MT5_READONLY_UPSTREAM_BASE_URL="http://127.0.0.1:8000"
 npm.cmd run mt5:readonly-bridge
 ```
 
+For the default local desktop workflow, `npm.cmd run mt5:readonly-bridge` also uses `http://127.0.0.1:8000` when no upstream variable is set. The older alias `MT5_READONLY_UPSTREAM_URL` is accepted too. The wrapper will not expose arbitrary upstream tools; it only proxies safe market-data endpoints.
+
 For the inspected `ariadng/metatrader-mcp-server` clone, install and start the upstream OpenAPI server locally outside the GoTrader frontend:
 
 ```powershell
@@ -123,6 +125,7 @@ Discovery candidates:
 - status: `/health`, `/status`, `/api/v1/market/symbols`, `/symbols`
 - quote: `/quote`, `/price`, `/tick`, `/api/v1/market/price`
 - candles: `/candles`, `/rates`, `/ohlcv`, `/api/v1/market/candles/latest`
+- candle range: `/api/v1/market/candles/range`, `/api/v1/market/candles/by-date`, `/api/v1/market/candles`, `/candles/range`, `/candles/by-date`, `/candles`
 - symbols: `/symbols`, `/api/v1/market/symbols`
 - symbol info: `/symbol-info`, `/symbol_info`, `/api/v1/market/symbol/info/{symbol_name}`
 
@@ -131,6 +134,7 @@ Override these only for a compatible local read-only server:
 ```powershell
 $env:MT5_READONLY_UPSTREAM_QUOTE_PATH="/api/v1/market/price"
 $env:MT5_READONLY_UPSTREAM_CANDLES_PATH="/api/v1/market/candles/latest"
+$env:MT5_READONLY_UPSTREAM_CANDLES_RANGE_PATH="/api/v1/market/candles/range"
 $env:MT5_READONLY_DEFAULT_SYMBOL="NAS100"
 ```
 
@@ -166,6 +170,14 @@ GoTrader maps app timeframes such as `5m` to MT5 values such as `M5` before call
 ```text
 GET /api/v1/market/symbol/info/EURUSD
 ```
+
+The current upstream may not implement a date-range HTTP route. If `npm.cmd run test:mt5-readonly-depth` reports latest candles as live but `rangeEndpointAvailable=false`, the required upstream addition is a read-only endpoint such as:
+
+```text
+GET /api/v1/market/candles/range?symbol_name=USTECH&timeframe=M5&date_from=2026-03-01T00:00:00.000Z&date_to=2026-03-11T00:00:00.000Z&count=5000
+```
+
+The response should be an array or object containing `candles`, `rates`, `data`, or `items`; each item must include OHLC values and a timestamp/time field. It must not expose account, order, position, deal/history, credential, or execution operations.
 
 ## Quote Shape
 

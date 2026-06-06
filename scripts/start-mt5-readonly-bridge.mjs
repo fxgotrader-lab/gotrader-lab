@@ -8,14 +8,26 @@ import {
 
 const host = process.env.MT5_READONLY_BRIDGE_HOST || "127.0.0.1";
 const port = Number(process.env.MT5_READONLY_BRIDGE_PORT || 7341);
-const upstreamBaseUrl = (process.env.MT5_READONLY_UPSTREAM_BASE_URL || "").replace(/\/$/, "");
+const explicitUpstreamBaseUrl =
+  process.env.MT5_READONLY_UPSTREAM_BASE_URL ||
+  process.env.MT5_READONLY_UPSTREAM_URL ||
+  "";
+const disableDefaultUpstream = /^(1|true|yes)$/i.test(process.env.MT5_READONLY_DISABLE_DEFAULT_UPSTREAM || "");
+const upstreamBaseUrl = (explicitUpstreamBaseUrl || (disableDefaultUpstream ? "" : "http://127.0.0.1:8000")).replace(/\/$/, "");
+const upstreamSource = explicitUpstreamBaseUrl
+  ? process.env.MT5_READONLY_UPSTREAM_BASE_URL
+    ? "MT5_READONLY_UPSTREAM_BASE_URL"
+    : "MT5_READONLY_UPSTREAM_URL"
+  : upstreamBaseUrl
+    ? "default_local_8000"
+    : "disabled";
 const upstreamTransport = process.env.MT5_READONLY_UPSTREAM_TRANSPORT || "rest";
 const upstreamTimeoutMs = Number(process.env.MT5_READONLY_UPSTREAM_TIMEOUT_MS || 2500);
 const defaultRequestedSymbol = process.env.MT5_READONLY_REQUESTED_SYMBOL || "MNQ";
 const defaultBrokerSymbol =
   process.env.MT5_READONLY_BROKER_SYMBOL ||
   process.env.MT5_READONLY_DEFAULT_SYMBOL ||
-  defaultRequestedSymbol;
+  "USTECH";
 const brokerSymbolSuggestions = ["USTECH", "US500", "US30", "XAUUSD", "EURUSD.pro", "EURUSD", "NAS100", "US100"];
 const configuredUpstreamPaths = {
   status: process.env.MT5_READONLY_UPSTREAM_STATUS_PATH,
@@ -55,6 +67,12 @@ const upstreamPathCandidates = {
 const startedAt = new Date();
 let requestCount = 0;
 let lastUpstreamError;
+let latestEndpointAvailable;
+let rangeEndpointAvailable;
+let latestEndpointPath;
+let rangeEndpointPath;
+let latestEndpointError;
+let rangeEndpointError;
 const discoveredUpstreamPaths = {};
 
 const authority = {
@@ -73,13 +91,33 @@ const json = (res, statusCode, payload) => {
   res.end(JSON.stringify(payload, null, 2));
 };
 
+const redactUrl = (value) => {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    if (url.username) url.username = "[redacted]";
+    if (url.password) url.password = "[redacted]";
+    url.search = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return String(value).replace(/\/\/([^:@/]+):([^@/]+)@/, "//[redacted]:[redacted]@").replace(/\?.*$/, "");
+  }
+};
+
 const plannedStatus = () => ({
   provider: "mt5_read_only",
   connectionStatus: upstreamBaseUrl ? "degraded" : "planned",
+  bridgeMode: upstreamBaseUrl
+    ? latestEndpointAvailable === true
+      ? "live"
+      : "degraded"
+    : "stub",
   endpoint: `http://${host}:${port}`,
   upstreamConfigured: Boolean(upstreamBaseUrl),
+  upstreamUrl: redactUrl(upstreamBaseUrl),
+  upstreamSource,
   upstreamTransport,
-  upstreamBaseUrl: upstreamBaseUrl || undefined,
+  upstreamBaseUrl: redactUrl(upstreamBaseUrl),
   wrapperStatus: "running",
   message: upstreamBaseUrl
     ? "GoTrader MT5 read-only wrapper is running with an upstream market-data endpoint configured."
@@ -90,8 +128,18 @@ const plannedStatus = () => ({
     upstreamBaseUrl
       ? "Only market-data paths are called; arbitrary MCP tools are not exposed to the frontend."
       : "Connect a local read-only MT5 data service to replace this planned/disconnected stub.",
+    upstreamSource === "default_local_8000"
+      ? "Using default MT5 upstream URL http://127.0.0.1:8000. Set MT5_READONLY_DISABLE_DEFAULT_UPSTREAM=true for explicit contract-stub mode."
+      : undefined,
     lastUpstreamError ? `Last upstream error: ${lastUpstreamError}` : undefined
   ].filter(Boolean),
+  latestEndpointAvailable: latestEndpointAvailable ?? false,
+  rangeEndpointAvailable: rangeEndpointAvailable ?? false,
+  latestEndpointPath,
+  rangeEndpointPath,
+  latestEndpointError,
+  rangeEndpointError,
+  lastUpstreamError,
   upstreamPaths: {
     status: discoveredUpstreamPaths.status ?? configuredUpstreamPaths.status,
     quote: discoveredUpstreamPaths.quote ?? configuredUpstreamPaths.quote,
@@ -283,6 +331,69 @@ const fetchUpstreamJson = async (kind, params, validator = () => true) => {
     }
   }
   throw new Error(`No safe upstream ${kind} endpoint responded. Tried: ${errors.join("; ")}`);
+};
+const compactProbeError = (error) =>
+  error instanceof Error
+    ? error.message
+    : String(error);
+const probeUpstream = async (kind, params, validator = () => true) => {
+  try {
+    const { path } = await fetchUpstreamJson(kind, params, validator);
+    return { available: true, path };
+  } catch (error) {
+    return { available: false, error: compactProbeError(error) };
+  }
+};
+const updateEndpointAvailability = async () => {
+  if (!upstreamBaseUrl) {
+    latestEndpointAvailable = false;
+    rangeEndpointAvailable = false;
+    latestEndpointPath = undefined;
+    rangeEndpointPath = undefined;
+    latestEndpointError = "MT5_READONLY_UPSTREAM_BASE_URL is not configured.";
+    rangeEndpointError = "MT5_READONLY_UPSTREAM_BASE_URL is not configured.";
+    lastUpstreamError = latestEndpointError;
+    return {
+      latest: { available: false, error: latestEndpointError },
+      range: { available: false, error: rangeEndpointError }
+    };
+  }
+  const mt5Timeframe = mt5TimeframeFor("5m");
+  const now = new Date();
+  const from = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+  const to = now.toISOString();
+  const latest = await probeUpstream("candles", {
+    symbol_name: defaultBrokerSymbol,
+    symbol: defaultBrokerSymbol,
+    timeframe: "5m",
+    mt5_timeframe: mt5Timeframe,
+    mt5Timeframe,
+    count: 1,
+    limit: 1
+  }, candleLikePayload);
+  const range = await probeUpstream("candleRange", {
+    symbol_name: defaultBrokerSymbol,
+    symbol: defaultBrokerSymbol,
+    timeframe: "5m",
+    mt5_timeframe: mt5Timeframe,
+    mt5Timeframe,
+    date_from: from,
+    date_to: to,
+    from,
+    to,
+    start: from,
+    end: to,
+    count: 1,
+    limit: 1
+  }, candleLikePayload);
+  latestEndpointAvailable = latest.available;
+  rangeEndpointAvailable = range.available;
+  latestEndpointPath = latest.path;
+  rangeEndpointPath = range.path;
+  latestEndpointError = latest.error;
+  rangeEndpointError = range.error;
+  lastUpstreamError = latest.available ? range.error : latest.error;
+  return { latest, range };
 };
 const payloadArray = (payload) => {
   if (Array.isArray(payload)) {
@@ -579,20 +690,35 @@ const server = createServer(async (req, res) => {
       json(res, 200, plannedStatus());
       return;
     }
-    try {
-      await fetchUpstreamJson("status", {});
-      lastUpstreamError = undefined;
+    const statusProbe = await probeUpstream("status", {});
+    const endpointProbe = await updateEndpointAvailability();
+    const latestLive = endpointProbe.latest.available;
+    if (statusProbe.available || latestLive) {
       json(res, 200, {
         ...plannedStatus(),
-        connectionStatus: "connected",
-        message: "GoTrader MT5 read-only wrapper reached the configured upstream market-data service."
+        connectionStatus: latestLive ? "connected" : "degraded",
+        bridgeMode: latestLive ? "live" : "degraded",
+        upstreamDiagnostics: {
+          status: statusProbe,
+          latest: endpointProbe.latest,
+          range: endpointProbe.range
+        },
+        message: latestLive
+          ? "GoTrader MT5 read-only wrapper reached the configured upstream latest-candle market-data service."
+          : "GoTrader MT5 read-only wrapper reached upstream status, but latest-candle market data is not available."
       });
-    } catch (error) {
-      lastUpstreamError = error instanceof Error ? error.message : String(error);
+    } else {
+      lastUpstreamError = statusProbe.error || endpointProbe.latest.error;
       json(res, 200, {
         ...plannedStatus(),
         connectionStatus: "degraded",
-        message: "GoTrader MT5 read-only wrapper is running, but upstream market-data status failed."
+        bridgeMode: "degraded",
+        upstreamDiagnostics: {
+          status: statusProbe,
+          latest: endpointProbe.latest,
+          range: endpointProbe.range
+        },
+        message: "GoTrader MT5 read-only wrapper is running, but upstream market-data probes failed."
       });
     }
     return;
@@ -612,6 +738,8 @@ const server = createServer(async (req, res) => {
       json(res, 200, {
         ...disconnectedQuote({ requestedSymbol, brokerSymbol: symbol }),
         connectionStatus: "degraded",
+        sourceMethod: "upstream_http:/quote",
+        warnings: ["Configured MT5 upstream quote endpoint failed."],
         missingEvidence: await failureEvidence({ action: "quote", brokerSymbol: symbol, error })
       });
     }
@@ -686,6 +814,8 @@ const server = createServer(async (req, res) => {
       json(res, 200, {
         ...disconnectedCandles({ requestedSymbol, brokerSymbol: symbol, timeframe, limit }),
         connectionStatus: "degraded",
+        sourceMethod: "upstream_http:/candles",
+        warnings: ["Configured MT5 upstream latest candle endpoint failed."],
         missingEvidence: await failureEvidence({ action: "candle", brokerSymbol: symbol, error })
       });
     }
@@ -700,7 +830,13 @@ const server = createServer(async (req, res) => {
       });
       const candles = await upstreamCandles({ requestedSymbol, brokerSymbol: symbol, timeframe, limit }).catch((error) => {
         lastUpstreamError = error instanceof Error ? error.message : String(error);
-        return disconnectedCandles({ requestedSymbol, brokerSymbol: symbol, timeframe, limit });
+        return {
+          ...disconnectedCandles({ requestedSymbol, brokerSymbol: symbol, timeframe, limit }),
+          connectionStatus: "degraded",
+          sourceMethod: "upstream_http:/candles",
+          warnings: ["Configured MT5 upstream latest candle endpoint failed."],
+          missingEvidence: [lastUpstreamError]
+        };
       });
       json(res, 200, {
         provider: "mt5_read_only",
@@ -819,7 +955,9 @@ server.on("error", (error) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`GoTrader MT5 read-only bridge contract stub listening at http://${host}:${port}`);
-  console.log("Status: planned/disconnected until a local MT5 read-only connector is configured.");
+  console.log(`GoTrader MT5 read-only bridge listening at http://${host}:${port}`);
+  console.log(upstreamBaseUrl
+    ? `Upstream market-data URL: ${redactUrl(upstreamBaseUrl)} (${upstreamSource})`
+    : "Status: planned/disconnected contract-stub mode; no local MT5 read-only connector is configured.");
   console.log("Authority: execution none, broker none, readiness override none.");
 });
