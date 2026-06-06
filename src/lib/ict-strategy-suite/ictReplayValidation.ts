@@ -14,7 +14,7 @@ import {
 import type { IctApprovedSetupDecision } from "./ictApprovedSetupProfileTypes";
 import { ICT_INDEX_SMT_INSTRUMENTS } from "./ictIndexSmt";
 import type { IctIndexComparisonCandles } from "./ictIndexSmtTypes";
-import { buildIctSessionNarrative } from "./ictSessionNarrative";
+import { buildIctSessionNarrative, tradingDateFor } from "./ictSessionNarrative";
 import { normalizeCandles } from "./ictStrategySuiteHelpers";
 import type {
   IctFvgReplayStatus,
@@ -482,18 +482,28 @@ export const runIctReplayValidation = (input: IctReplayInput): IctReplayValidati
   const htfTimeframes = input.htfTimeframes.length ? input.htfTimeframes : Object.keys(htfCandles);
   const windows = sliceReplayWindows(input);
   const sourceSummary = compactSourceSummary(input, candles.length);
-  const sessionNarrative = candles.length
-    ? buildIctSessionNarrative(candles, {
-        requestedSymbol: input.requestedSymbol,
-        brokerSymbol: input.brokerSymbol,
-        primaryTimeframe: input.primaryTimeframe,
-        requestedLookbackDays: input.requestedLookbackDays ?? 90,
-        availableLookbackDays: input.availableLookbackDays,
-        depthSource: "current_window"
-      })
-    : undefined;
+  const sessionNarrativeCache = new Map<string, ReturnType<typeof buildIctSessionNarrative>>();
+  const sessionNarrativeForSignal = (signalTimestamp: string) => {
+    if (!candles.length) return undefined;
+    const tradingDate = tradingDateFor(signalTimestamp);
+    const cacheKey = `${tradingDate}|${input.requestedLookbackDays ?? 90}|${input.availableLookbackDays ?? "unknown"}`;
+    const cached = sessionNarrativeCache.get(cacheKey);
+    if (cached) return cached;
+    const sessionNarrative = buildIctSessionNarrative(candles, {
+      requestedSymbol: input.requestedSymbol,
+      brokerSymbol: input.brokerSymbol,
+      primaryTimeframe: input.primaryTimeframe,
+      requestedLookbackDays: input.requestedLookbackDays ?? 90,
+      availableLookbackDays: input.availableLookbackDays,
+      depthSource: "current_window",
+      tradingDate
+    });
+    sessionNarrativeCache.set(cacheKey, sessionNarrative);
+    return sessionNarrative;
+  };
   const results = windows.flatMap(({ futureCandles, historicalCandles, signalCandle }) => {
     const comparisonWindow = sliceIndexComparisonForSignal(indexComparisonCandles, signalCandle.timestamp, input.replayWindowSize);
+    const sessionNarrative = sessionNarrativeForSignal(signalCandle.timestamp);
     const signals = buildIctAdvisorSignals({
       brokerSymbol: input.brokerSymbol,
       candles: historicalCandles,

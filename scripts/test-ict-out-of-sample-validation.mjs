@@ -24,6 +24,7 @@ const limitPerChunk = Math.max(1, Math.min(5000, Number(process.env.ICT_OOS_LIMI
 const windowDays = Math.max(5, Number(process.env.ICT_OOS_WINDOW_DAYS || 30));
 const stepDays = Math.max(1, Number(process.env.ICT_OOS_STEP_DAYS || 15));
 const maxReplayWindowsPerSlice = Math.max(1, Number(process.env.ICT_OOS_MAX_REPLAY_WINDOWS || 250));
+const aggregateReferenceMaxReplayWindows = Math.max(1, Number(process.env.ICT_APPROVED_OUTCOME_MAX_WINDOWS || 1000));
 const replayWindowSize = Math.max(3, Number(process.env.ICT_OOS_REPLAY_WINDOW_SIZE || 80));
 const lookaheadCandles = Math.max(1, Number(process.env.ICT_OOS_LOOKAHEAD_CANDLES || 12));
 const minRequiredCandles = Math.max(120, Number(process.env.ICT_OOS_MIN_REQUIRED_CANDLES || 120));
@@ -304,6 +305,19 @@ const rollingWindowsFor = (candles) => {
     });
     cursor += stepMillis;
   }
+  const lastWindow = windows.at(-1);
+  if (lastWindow && Date.parse(lastWindow.to) < last) {
+    const trailingFrom = Math.max(first, last - windowMillis);
+    const duplicateTrailing = windows.some((window) => Date.parse(window.from) === trailingFrom && Date.parse(window.to) === last);
+    if (!duplicateTrailing) {
+      windows.push({
+        id: `oos_${windows.length + 1}_trailing`,
+        from: new Date(trailingFrom).toISOString(),
+        to: new Date(last).toISOString(),
+        trailingPartial: true
+      });
+    }
+  }
   if (!windows.length) {
     windows.push({ id: "oos_1", from: new Date(first).toISOString(), to: new Date(last).toISOString() });
   }
@@ -442,6 +456,15 @@ const approvedMetricsFor = (replayResults) => {
   };
 };
 
+const signalTimeFor = (result) => result.tradePath?.signalTime;
+const signalDateFor = (result) => signalTimeFor(result)?.slice(0, 10) ?? "unknown";
+const replayFieldCompleteness = (results) => ({
+  missingTargetCount: results.filter((result) => typeof result.tradePath?.target !== "number").length,
+  missingInvalidationCount: results.filter((result) => typeof result.tradePath?.invalidation !== "number").length,
+  missingRrCount: results.filter((result) => typeof result.tradePath?.rrAchieved !== "number" && typeof result.rrEstimate !== "number").length,
+  missingApprovedStatusCount: results.filter((result) => !result.approvedProfileStatus).length
+});
+
 const rejectionReasonFor = (decision) =>
   [...(decision.rejectionReasons ?? []), ...(decision.watchlistReasons ?? [])][0] ?? "no rejection/watchlist reason supplied";
 
@@ -456,6 +479,32 @@ const compactMonteCarlo = (summary) => ({
   recommendedMaxRiskPerTradePct: summary.recommendation.recommendedMaxRiskPerTradePct
 });
 
+const coverageReportFor = (candles, windows) => {
+  const first = candles[0]?.timestamp;
+  const last = candles.at(-1)?.timestamp;
+  const coveredCandles = candles.filter((candle) =>
+    windows.some((window) => {
+      const time = Date.parse(candle.timestamp);
+      return time >= Date.parse(window.from) && time <= Date.parse(window.to);
+    })
+  );
+  return {
+    firstCandleTime: first,
+    lastCandleTime: last,
+    windowCount: windows.length,
+    trailingPartialIncluded: windows.some((window) => window.trailingPartial),
+    coveredCandleCount: coveredCandles.length,
+    totalCandleCount: candles.length,
+    coveragePct: candles.length ? round(coveredCandles.length / candles.length, 4) : 0,
+    windows: windows.map((window) => ({
+      windowId: window.id,
+      from: window.from,
+      to: window.to,
+      trailingPartial: Boolean(window.trailingPartial)
+    }))
+  };
+};
+
 function classifyOutOfSample({ aggregate, windows }) {
   const approvedWindows = windows.filter((window) => window.approvedCount > 0);
   const totalApproved = aggregate.approvedCount;
@@ -467,8 +516,11 @@ function classifyOutOfSample({ aggregate, windows }) {
 
   if (totalApproved < 8 || approvedWindows.length < 2) {
     return {
-      classification: "insufficient_data",
-      reason: "Too few approved outcomes or approved windows to judge rolling-window robustness."
+      classification: totalApproved > 0 ? "promising_but_unproven" : "insufficient_data",
+      reason:
+        totalApproved > 0
+          ? "Approved outcomes exist, but not across enough independent rolling windows to claim robustness."
+          : "Too few approved outcomes or approved windows to judge rolling-window robustness."
     };
   }
   if (concentration >= 0.65 || approvedWindows.length === 1) {
@@ -504,6 +556,7 @@ function classifyOutOfSample({ aggregate, windows }) {
 const recommendationFor = (classification) =>
   ({
     robust: "Keep the calibrated profile for further research review; do not promote execution readiness without normal paper-demo gates.",
+    promising_but_unproven: "Keep as research-only and add train/validation optimization before trusting the aggregate result.",
     promising_but_small_sample: "Collect more data and test other symbols before changing readiness; keep profile as research-only.",
     unstable: "Tighten or segment the profile by session narrative before relying on the aggregate 90-day result.",
     overfit_risk: "Do not rely on the current calibrated profile; approved outcomes are too concentrated in one period.",
@@ -539,6 +592,7 @@ async function main() {
   assert.ok(primary.candleCount >= minRequiredCandles, `Need at least ${minRequiredCandles} primary candles for OOS validation.`);
 
   const windows = rollingWindowsFor(primary.candles);
+  const windowCoverage = coverageReportFor(primary.candles, windows);
   const windowReports = [];
   const allCalibratedReplayResults = [];
 
@@ -561,10 +615,18 @@ async function main() {
         dominantSessionNarratives: topCounts(narratives, (narrative) => narrative.profile, 4),
         totalSignals: 0,
         approvedCount: 0,
+        approvedCountBeforeMonteCarloExtraction: 0,
+        approvedCountAfterMonteCarloExtraction: 0,
         calibratedProfileOnlyApprovedCount: 0,
         watchlistCount: 0,
         rejectedCount: 0,
         noTradeCount: 0,
+        fieldCompleteness: {
+          missingTargetCount: 0,
+          missingInvalidationCount: 0,
+          missingRrCount: 0,
+          missingApprovedStatusCount: 0
+        },
         selectedProfileCounts: {},
         approvedTargetFirstRate: 0,
         approvedAverageRr: 0,
@@ -626,13 +688,20 @@ async function main() {
       dominantSessionNarratives: topCounts(narratives, (narrative) => narrative.profile, 4),
       totalSignals: replayReport.results.length,
       approvedCount: approvedMetrics.approvedCount,
+      approvedCountBeforeMonteCarloExtraction: approvedMetrics.approvedCount,
+      approvedCountAfterMonteCarloExtraction: monteCarlo.input.usableOutcomes,
       calibratedProfileOnlyApprovedCount: calibrated.filter(
         (item) => item.calibratedProfileDecision.status === "approved_research_candidate"
       ).length,
       watchlistCount: calibrated.filter((item) => item.decision.status === "watchlist_candidate").length,
       rejectedCount: calibrated.filter((item) => item.decision.status === "rejected_candidate").length,
       noTradeCount: calibrated.filter((item) => item.decision.status === "no_trade").length,
+      fieldCompleteness: replayFieldCompleteness(calibratedReplayResults),
       selectedProfileCounts: countBy(calibrated, (item) => item.decision.profileId),
+      approvedByDate: countBy(
+        calibratedReplayResults.filter((item) => item.approvedProfileStatus === "approved_research_candidate"),
+        signalDateFor
+      ),
       approvedTargetFirstRate: approvedMetrics.approvedTargetFirstRate,
       approvedAverageRr: approvedMetrics.approvedAverageRr,
       monteCarlo: compactMonteCarlo(monteCarlo),
@@ -661,10 +730,17 @@ async function main() {
     approvedWindowCount: windowReports.filter((window) => window.approvedCount > 0).length,
     totalSignals: allCalibratedReplayResults.length,
     approvedCount: aggregateMetrics.approvedCount,
+    approvedCountBeforeMonteCarloExtraction: aggregateMetrics.approvedCount,
+    approvedCountAfterMonteCarloExtraction: aggregateMonteCarlo.input.usableOutcomes,
     calibratedProfileOnlyApprovedCount: windowReports.reduce((total, window) => total + window.calibratedProfileOnlyApprovedCount, 0),
     watchlistCount: windowReports.reduce((total, window) => total + window.watchlistCount, 0),
     rejectedCount: windowReports.reduce((total, window) => total + window.rejectedCount, 0),
     noTradeCount: windowReports.reduce((total, window) => total + window.noTradeCount, 0),
+    fieldCompleteness: replayFieldCompleteness(allCalibratedReplayResults),
+    approvedByDate: countBy(
+      allCalibratedReplayResults.filter((item) => item.approvedProfileStatus === "approved_research_candidate"),
+      signalDateFor
+    ),
     selectedProfileCounts: Object.fromEntries(
       Object.entries(
         windowReports.reduce((counts, window) => {
@@ -700,6 +776,16 @@ async function main() {
     )
   };
   const robustness = classifyOutOfSample({ aggregate, windows: windowReports });
+  const approvedExtractionDroppedCount = Math.max(
+    0,
+    aggregate.approvedCountBeforeMonteCarloExtraction - aggregate.approvedCountAfterMonteCarloExtraction
+  );
+  const settingMismatches = Object.entries({
+    maxReplayWindows: maxReplayWindowsPerSlice === aggregateReferenceMaxReplayWindows,
+    contextScope: false
+  })
+    .filter(([, matches]) => !matches)
+    .map(([key]) => key);
 
   const report = {
     status: dataDepth.dataDepthStatus === "sufficient" ? "passed" : "limited",
@@ -727,7 +813,41 @@ async function main() {
       replayWindowSize,
       lookaheadCandles
     },
+    aggregateSettingsComparison: {
+      matchesAggregateCalibration: {
+        requestedSymbol: requestedSymbol === (process.env.MT5_READONLY_REQUESTED_SYMBOL || "MNQ"),
+        brokerSymbol: brokerSymbol === (process.env.MT5_READONLY_BROKER_SYMBOL || process.env.MT5_READONLY_DEFAULT_SYMBOL || "USTECH"),
+        primaryTimeframe: primaryTimeframe === (process.env.MT5_READONLY_TIMEFRAME || "5m"),
+        replayWindowSize: replayWindowSize === 80,
+        lookaheadCandles: lookaheadCandles === 12,
+        selectedProfileComparison: true,
+        chunked90DayPath: true,
+        maxReplayWindows: maxReplayWindowsPerSlice === aggregateReferenceMaxReplayWindows
+      },
+      aggregateReferenceMaxReplayWindows,
+      oosMaxReplayWindowsPerSlice: maxReplayWindowsPerSlice,
+      note:
+        maxReplayWindowsPerSlice === aggregateReferenceMaxReplayWindows
+          ? "OOS slice replay-window cap matches aggregate calibration."
+          : "OOS slices use a smaller replay-window cap than aggregate calibration for CLI runtime; use ICT_OOS_MAX_REPLAY_WINDOWS=1000 for exact cap matching."
+    },
+    pipelineDiagnostics: {
+      sessionNarrativeResolution: "per_signal_trading_date",
+      approvalStatusPropagation: aggregate.fieldCompleteness.missingApprovedStatusCount === 0 ? "preserved" : "missing_status_detected",
+      approvedCountBeforeMonteCarloExtraction: aggregate.approvedCountBeforeMonteCarloExtraction,
+      approvedCountAfterMonteCarloExtraction: aggregate.approvedCountAfterMonteCarloExtraction,
+      approvedExtractionDroppedCount,
+      monteCarloExtractionDroppedApprovedOutcomes: approvedExtractionDroppedCount > 0,
+      settingMismatches,
+      contextComparison:
+        "Aggregate calibration scans the explicit 90-day context; rolling OOS uses each 30-day slice as the available validation context.",
+      interpretation:
+        aggregate.approvedCount === 0
+          ? "Rolling OOS produced zero approved outcomes before Monte Carlo extraction, so the blocker is validation approval quality rather than Monte Carlo extraction."
+          : "Rolling OOS produced approved outcomes; use robustness classification before interpreting aggregate calibration."
+    },
     dataDepth,
+    windowCoverage,
     windows: windowReports,
     aggregate,
     robustness: {
@@ -755,6 +875,25 @@ async function main() {
   assert.equal(report.authority.brokerAuthority, "none");
   assert.equal(report.authority.readinessOverrideAuthority, "none");
   assert.ok(report.windows.length >= 1, "OOS report must include at least one window.");
+  assert.equal(report.profile.profileId, "gotrader_ict_90d_session_calibrated", "OOS must use the same calibrated profile reference as aggregate calibration.");
+  assert.ok(report.windowCoverage?.windowCount >= 1, "OOS window date coverage must be reported.");
+  assert.ok(report.aggregate && "approvedByDate" in report.aggregate, "Approved outcome distribution by date must be reported.");
+  assert.ok(
+    report.windows.every((window) => "approvedCountBeforeMonteCarloExtraction" in window && "approvedCountAfterMonteCarloExtraction" in window),
+    "Each OOS window must separate approval count from Monte Carlo usable count."
+  );
+  assert.ok(
+    report.windows.every((window) => window.fieldCompleteness && "missingApprovedStatusCount" in window.fieldCompleteness),
+    "Each OOS window must report approval status propagation diagnostics."
+  );
+  assert.equal(report.pipelineDiagnostics.sessionNarrativeResolution, "per_signal_trading_date");
+  assert.equal(report.pipelineDiagnostics.approvalStatusPropagation, "preserved", "Approved status propagation should be preserved before OOS interpretation.");
+  assert.ok(
+    ["robust", "promising_but_small_sample", "promising_but_unproven", "unstable", "overfit_risk", "insufficient_data"].includes(
+      report.robustness.classification
+    ),
+    "OOS classification must be explicit and honest."
+  );
 
   console.log(JSON.stringify(report, null, 2));
 }

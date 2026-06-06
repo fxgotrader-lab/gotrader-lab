@@ -71,7 +71,7 @@ const addCalendarDay = (date: string) => {
   return next.toISOString().slice(0, 10);
 };
 
-const tradingDateFor = (timestamp: string, timeZone = DEFAULT_TIMING_ZONE) => {
+export const tradingDateFor = (timestamp: string, timeZone = DEFAULT_TIMING_ZONE) => {
   const parts = localParts(timestamp, timeZone);
   return parts.hour >= 20 ? addCalendarDay(parts.date) : parts.date;
 };

@@ -289,6 +289,71 @@ const safeApprovedMetrics = (results) => {
   };
 };
 
+const signalTimeFor = (result) => result.tradePath?.signalTime;
+const signalDateFor = (result) => signalTimeFor(result)?.slice(0, 10) ?? "unknown";
+const signalTimeRangeFor = (results) => {
+  const times = results.map((result) => Date.parse(signalTimeFor(result))).filter(Number.isFinite).sort((left, right) => left - right);
+  return {
+    firstSignalTime: times.length ? new Date(times[0]).toISOString() : undefined,
+    lastSignalTime: times.length ? new Date(times.at(-1)).toISOString() : undefined
+  };
+};
+
+const rollingSignalWindowsFor = (results, windowDays = 30, stepDays = 15) => {
+  const times = results.map((result) => Date.parse(signalTimeFor(result))).filter(Number.isFinite).sort((left, right) => left - right);
+  if (!times.length) return [];
+  const first = times[0];
+  const last = times.at(-1);
+  const windowMillis = windowDays * 86_400_000;
+  const stepMillis = stepDays * 86_400_000;
+  const windows = [];
+  let cursor = first;
+  while (cursor <= last && windows.length < 20) {
+    const end = Math.min(cursor + windowMillis, last);
+    windows.push({
+      id: `aggregate_window_${windows.length + 1}`,
+      from: new Date(cursor).toISOString(),
+      to: new Date(end).toISOString()
+    });
+    if (end >= last) break;
+    cursor += stepMillis;
+  }
+  const lastWindow = windows.at(-1);
+  if (lastWindow && Date.parse(lastWindow.to) < last) {
+    windows.push({
+      id: `aggregate_window_${windows.length + 1}_trailing`,
+      from: new Date(Math.max(first, last - windowMillis)).toISOString(),
+      to: new Date(last).toISOString()
+    });
+  }
+  return windows;
+};
+
+const approvedByRollingWindow = (approved) =>
+  rollingSignalWindowsFor(approved).map((window) => {
+    const from = Date.parse(window.from);
+    const to = Date.parse(window.to);
+    const inWindow = approved.filter((result) => {
+      const time = Date.parse(signalTimeFor(result));
+      return time >= from && time <= to;
+    });
+    return {
+      ...window,
+      approvedCount: inWindow.length,
+      approvedTargetFirstRate: inWindow.length ? round(inWindow.filter((result) => result.outcome === "target_first").length / inWindow.length, 4) : 0,
+      approvedAverageRr: average(inWindow.map((result) => result.tradePath.rrAchieved).filter((value) => typeof value === "number"))
+    };
+  });
+
+const approvedAvailability = (approved) => ({
+  targetPresent: approved.filter((result) => typeof result.tradePath.target === "number").length,
+  invalidationPresent: approved.filter((result) => typeof result.tradePath.invalidation === "number").length,
+  rrPresent: approved.filter((result) => typeof result.tradePath.rrAchieved === "number" || typeof result.rrEstimate === "number").length,
+  targetMissing: approved.filter((result) => typeof result.tradePath.target !== "number").length,
+  invalidationMissing: approved.filter((result) => typeof result.tradePath.invalidation !== "number").length,
+  rrMissing: approved.filter((result) => typeof result.tradePath.rrAchieved !== "number" && typeof result.rrEstimate !== "number").length
+});
+
 async function main() {
   compileSuiteForNode();
   const suite = await import(pathToFileURL(path.join(outRoot, "index.mjs")));
@@ -350,6 +415,14 @@ async function main() {
 
   const approved = selectedResults.filter((item) => item.approvedProfileStatus === "approved_research_candidate");
   const rejectedOrWatchlist = selectedDecisions.filter((decision) => decision?.status !== "approved_research_candidate");
+  const approvedStatusMissingCount = selectedResults.filter((item) => !item.approvedProfileStatus).length;
+  const approvedExtractionDroppedCount = Math.max(0, approved.length - afterMc.input.usableOutcomes);
+  const robustnessClassification =
+    approved.length >= 30 && afterMc.recommendation.robustnessRating !== "insufficient_data"
+      ? "aggregate_supportive_pending_oos"
+      : approved.length > 0
+        ? "promising_but_unproven"
+        : "insufficient_data";
   const missingFieldCounts = {
     missingTarget: replayResults.filter((item) => typeof item.tradePath.target !== "number").length,
     missingInvalidation: replayResults.filter((item) => typeof item.tradePath.invalidation !== "number").length,
@@ -397,6 +470,32 @@ async function main() {
       countBySmtStatus: countBy(selectedResults, (item) =>
         item.smtRejectsCandidate ? "rejects" : item.smtConfirmsCandidate ? "confirms" : item.smtDivergenceType ?? "not_evaluated"
       ),
+      approvedOutcomeDistribution: {
+        signalTimeRange: signalTimeRangeFor(approved),
+        byDate: countBy(approved, signalDateFor),
+        byRollingWindow: approvedByRollingWindow(approved),
+        bySessionNarrativeProfile: countBy(approved, (item) => item.sessionNarrativeProfile),
+        bySetup: countBy(approved, (item) => item.setup),
+        bySide: countBy(approved, (item) => item.side),
+        byReason: topCounts(
+          approved.map((item, index) => ({
+            result: item,
+            decision: selectedDecisions[index]
+          })),
+          (item) => item.result.approvedProfileReasons?.[0] ?? item.decision?.approvedReasons?.[0] ?? "approved reason unavailable"
+        ),
+        targetInvalidationRrAvailability: approvedAvailability(approved)
+      },
+      pipelineDiagnostics: {
+        sessionNarrativeResolution: "per_signal_trading_date",
+        approvedCountBeforeMonteCarloExtraction: approved.length,
+        approvedCountAfterMonteCarloExtraction: afterMc.input.usableOutcomes,
+        approvedExtractionDroppedCount,
+        approvedStatusMissingCount,
+        robustnessClassification,
+        note:
+          "Aggregate calibration is an in-sample scan over the explicit 90-day context. Rolling OOS must confirm these approvals before any readiness interpretation."
+      },
       missingFieldCounts,
       topRemainingRejectionReasons: topCounts(rejectedOrWatchlist, (decision) =>
         [...(decision.rejectionReasons ?? []), ...(decision.watchlistReasons ?? [])][0] ?? "no reason supplied"
@@ -428,6 +527,8 @@ async function main() {
   assert.equal(report.authority.executionAuthority, "none");
   assert.equal(report.authority.brokerAuthority, "none");
   assert.equal(report.authority.readinessOverrideAuthority, "none");
+  assert.ok("approvedOutcomeDistribution" in report.replay, "approved outcome distribution must be reported");
+  assert.equal(report.replay.pipelineDiagnostics.sessionNarrativeResolution, "per_signal_trading_date");
   assert.ok(
     report.replay.missingFieldCounts.rangeBoundProfile >= report.replay.approvedCount ||
       report.replay.approvedCount > 0,
