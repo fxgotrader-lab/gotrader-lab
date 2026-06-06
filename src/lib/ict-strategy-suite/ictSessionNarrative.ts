@@ -4,6 +4,7 @@ import type {
   IctDataDepthStatus,
   IctKillzoneName,
   IctMitigationContext,
+  IctSessionFvgTarget,
   IctSessionDirectionalRead,
   IctSessionNarrative,
   IctSessionNarrativeDataDepth,
@@ -103,6 +104,41 @@ const averageRange = (candles: Candle[]) =>
 
 const dynamicTolerance = (candles: Candle[], fallbackRange = 1) =>
   Math.max(0.01, averageRange(candles) * 0.65, Math.max(0.01, fallbackRange) * 0.035);
+
+const localMinutesFor = (timestamp: string, timeZone = DEFAULT_TIMING_ZONE) => {
+  const { hour, minute } = localParts(timestamp, timeZone);
+  return hour * 60 + minute;
+};
+
+const candlesBetweenLocal = (candles: Candle[], timeZone: string, startMinutes: number, endMinutes: number) =>
+  candles.filter((candle) => {
+    const minutes = localMinutesFor(candle.timestamp, timeZone);
+    return minutes >= startMinutes && minutes < endMinutes;
+  });
+
+const rangeFromCandles = (candles: Candle[]) => {
+  if (!candles.length) return undefined;
+  const high = Math.max(...candles.map((candle) => candle.high));
+  const low = Math.min(...candles.map((candle) => candle.low));
+  return {
+    high: round(high),
+    low: round(low),
+    midpoint: round((high + low) / 2),
+    range: round(high - low),
+    candleCount: candles.length,
+    startTimestamp: candles[0]?.timestamp,
+    endTimestamp: candles.at(-1)?.timestamp
+  };
+};
+
+const locationFor = (price: number, range?: { high: number; low: number; midpoint: number }) => {
+  if (!range) return "equilibrium" as const;
+  const width = Math.max(0.01, range.high - range.low);
+  const equilibriumBand = width * 0.08;
+  if (price > range.midpoint + equilibriumBand) return "premium" as const;
+  if (price < range.midpoint - equilibriumBand) return "discount" as const;
+  return "equilibrium" as const;
+};
 
 export const calculateIctSessionRanges = (
   candles: Candle[],
@@ -214,6 +250,36 @@ const detectLondonCompression = (london: IctSessionRange | undefined, asia: IctS
   };
 };
 
+const detectLondonSweepOfAsia = ({
+  asia,
+  londonCandles,
+  direction,
+  timeZone
+}: {
+  asia?: IctSessionRange;
+  londonCandles: Candle[];
+  direction: "high" | "low";
+  timeZone: string;
+}): IctSessionNarrativeEvent | undefined => {
+  const level = direction === "high" ? asia?.high : asia?.low;
+  if (level === undefined || !londonCandles.length) return undefined;
+  const tolerance = dynamicTolerance(londonCandles, asia?.range ?? averageRange(londonCandles));
+  const candle =
+    direction === "high"
+      ? londonCandles.find((item) => item.high > level + tolerance * 0.2)
+      : londonCandles.find((item) => item.low < level - tolerance * 0.2);
+  if (!candle) return undefined;
+  return {
+    eventType: direction === "high" ? "london_swept_asia_high" : "london_swept_asia_low",
+    timestamp: candle.timestamp,
+    localTime: eventLocalTime(candle.timestamp, timeZone),
+    price: round(direction === "high" ? candle.high : candle.low),
+    direction: direction === "high" ? "bearish" : "bullish",
+    confidence: 0.72,
+    note: `London swept the Asia ${direction} reference near ${round(level)}.`
+  };
+};
+
 const detectSweep = ({
   afterCandles,
   direction,
@@ -258,6 +324,147 @@ const detectMidnightReclaim = (candles: Candle[], midnightPrice: number | undefi
     : undefined;
 };
 
+const detectMidnightRejection = (candles: Candle[], midnightPrice: number | undefined, timeZone: string) => {
+  if (midnightPrice === undefined) return undefined;
+  const candle = candles.find((item) => item.high >= midnightPrice && item.close < midnightPrice);
+  return candle
+    ? {
+        eventType: "midnight_open_rejection" as const,
+        timestamp: candle.timestamp,
+        localTime: eventLocalTime(candle.timestamp, timeZone),
+        price: round(midnightPrice),
+        confidence: 0.64,
+        note: "Price traded into the 12AM opening price and rejected below it."
+      }
+    : undefined;
+};
+
+const detectNyPreopenConsolidation = (
+  candles: Candle[],
+  midnightPrice: number | undefined,
+  timeZone: string
+): IctSessionNarrativeEvent | undefined => {
+  const preopen = candlesBetweenLocal(candles, timeZone, 8 * 60, 9 * 60 + 30);
+  const range = rangeFromCandles(preopen);
+  if (!range || range.candleCount < 3) return undefined;
+  const avg = averageRange(candles);
+  const mostlyBelowMidnight =
+    midnightPrice === undefined ? true : preopen.filter((candle) => candle.close < midnightPrice).length >= Math.ceil(preopen.length * 0.6);
+  if (!mostlyBelowMidnight || range.range > avg * Math.max(3.2, preopen.length * 0.8)) return undefined;
+  return {
+    eventType: "ny_preopen_consolidation",
+    timestamp: range.startTimestamp,
+    localTime: eventLocalTime(range.startTimestamp, timeZone),
+    high: range.high,
+    low: range.low,
+    confidence: 0.7,
+    note: "NY preopen consolidated below the 12AM opening price."
+  };
+};
+
+const detectNyOpenConsolidationSweep = ({
+  candles,
+  consolidation,
+  direction,
+  timeZone
+}: {
+  candles: Candle[];
+  consolidation?: IctSessionNarrativeEvent;
+  direction: "low" | "high";
+  timeZone: string;
+}): IctSessionNarrativeEvent | undefined => {
+  const level = direction === "low" ? consolidation?.low : consolidation?.high;
+  if (level === undefined) return undefined;
+  const nyOpen = candlesBetweenLocal(candles, timeZone, 9 * 60 + 30, 10 * 60 + 30);
+  if (!nyOpen.length) return undefined;
+  const tolerance = dynamicTolerance(nyOpen, averageRange(nyOpen));
+  const candle =
+    direction === "low"
+      ? nyOpen.find((item) => item.low < level - tolerance * 0.2)
+      : nyOpen.find((item) => item.high > level + tolerance * 0.2);
+  if (!candle) return undefined;
+  return {
+    eventType: direction === "low" ? "ny_open_consolidation_low_sweep" : "ny_open_consolidation_high_sweep",
+    timestamp: candle.timestamp,
+    localTime: eventLocalTime(candle.timestamp, timeZone),
+    price: round(direction === "low" ? candle.low : candle.high),
+    direction: direction === "low" ? "bullish" : "bearish",
+    confidence: 0.72,
+    note: `NY 9:30 swept the preopen consolidation ${direction}.`
+  };
+};
+
+const calculateActiveDealingRange = (candles: Candle[], referencePrice?: number) => {
+  const range = rangeFromCandles(candles);
+  if (!range || referencePrice === undefined) return undefined;
+  return {
+    high: range.high,
+    low: range.low,
+    midpoint: range.midpoint,
+    currentLocation: locationFor(referencePrice, range),
+    referencePrice: round(referencePrice)
+  };
+};
+
+const detectFvgTarget = ({
+  candles,
+  activeRange,
+  direction,
+  referencePrice
+}: {
+  candles: Candle[];
+  activeRange?: { high: number; low: number; midpoint: number };
+  direction: "premium" | "discount";
+  referencePrice?: number;
+}): IctSessionFvgTarget => {
+  if (!activeRange || referencePrice === undefined || candles.length < 3) {
+    return {
+      detected: false,
+      direction,
+      note: "FVG target could not be evaluated because dealing range or reference price is missing."
+    };
+  }
+  const candidates: Array<{ high: number; low: number; midpoint: number; timestamp: string }> = [];
+  for (let index = 2; index < candles.length; index += 1) {
+    const left = candles[index - 2];
+    const right = candles[index];
+    if (left.high < right.low) {
+      const low = left.high;
+      const high = right.low;
+      candidates.push({ low, high, midpoint: (low + high) / 2, timestamp: right.timestamp });
+    }
+    if (left.low > right.high) {
+      const low = right.high;
+      const high = left.low;
+      candidates.push({ low, high, midpoint: (low + high) / 2, timestamp: right.timestamp });
+    }
+  }
+  const target =
+    direction === "premium"
+      ? candidates.find((gap) => gap.midpoint > referencePrice && gap.midpoint > activeRange.midpoint)
+      : candidates
+          .slice()
+          .reverse()
+          .find((gap) => gap.midpoint < referencePrice && gap.midpoint < activeRange.midpoint);
+  if (!target) {
+    return {
+      detected: false,
+      direction,
+      note: `${direction === "premium" ? "Premium" : "Discount"} FVG target was not detected from compact candle context.`
+    };
+  }
+  return {
+    detected: true,
+    direction,
+    high: round(target.high),
+    low: round(target.low),
+    midpoint: round(target.midpoint),
+    sourceTimestamp: target.timestamp,
+    distanceFromCurrent: round(target.midpoint - referencePrice),
+    note: `${direction === "premium" ? "Premium" : "Discount"} FVG target identified as a draw, not an entry trigger.`
+  };
+};
+
 export const detectNyOpenMitigationTap = ({
   candles,
   londonRange,
@@ -300,12 +507,14 @@ export const detectNyOpenMitigationTap = ({
 const detectExpansion = ({
   candles,
   direction,
+  eventType,
   fromTimestamp,
   referenceLevel,
   timeZone
 }: {
   candles: Candle[];
   direction: "bearish" | "bullish";
+  eventType?: "bearish_expansion" | "bullish_expansion" | "ny_reversal_higher" | "ny_reversal_lower";
   fromTimestamp?: string;
   referenceLevel?: number;
   timeZone: string;
@@ -320,7 +529,7 @@ const detectExpansion = ({
       : after.find((item) => item.close > referenceLevel + recentRange * 0.75);
   if (!candle) return undefined;
   return {
-    eventType: direction === "bearish" ? "bearish_expansion" : "bullish_expansion",
+    eventType: eventType ?? (direction === "bearish" ? "bearish_expansion" : "bullish_expansion"),
     timestamp: candle.timestamp,
     localTime: eventLocalTime(candle.timestamp, timeZone),
     price: round(candle.close),
@@ -379,19 +588,31 @@ export const buildIctSessionNarrativeDataDepth = (
 };
 
 const decideNarrativeProfile = ({
+  activeDealingRange,
   buysideSweep,
   expansionBearish,
+  expansionBullish,
+  fvgTarget,
   londonEqualLows,
+  londonSweepAsiaHigh,
   mitigation,
   midnightReclaim,
+  nyOpenConsolidationLowSweep,
+  nyPreopenConsolidation,
   sellsideSweep
 }: {
+  activeDealingRange?: { currentLocation: "premium" | "discount" | "equilibrium" };
   buysideSweep?: IctSessionNarrativeEvent;
   sellsideSweep?: IctSessionNarrativeEvent;
+  londonSweepAsiaHigh?: IctSessionNarrativeEvent;
   londonEqualLows?: IctSessionNarrativeEvent;
   midnightReclaim?: IctSessionNarrativeEvent;
+  nyPreopenConsolidation?: IctSessionNarrativeEvent;
+  nyOpenConsolidationLowSweep?: IctSessionNarrativeEvent;
   mitigation: IctMitigationContext;
   expansionBearish?: IctSessionNarrativeEvent;
+  expansionBullish?: IctSessionNarrativeEvent;
+  fvgTarget?: IctSessionFvgTarget;
 }): {
   confidence: number;
   directionalRead: IctSessionDirectionalRead;
@@ -402,6 +623,22 @@ const decideNarrativeProfile = ({
       profile: "consolidation_manipulation_distribution",
       directionalRead: "bearish",
       confidence: 0.82
+    };
+  }
+  if (
+    activeDealingRange?.currentLocation === "discount" &&
+    fvgTarget?.detected &&
+    fvgTarget.direction === "premium" &&
+    (londonSweepAsiaHigh || midnightReclaim) &&
+    sellsideSweep &&
+    nyPreopenConsolidation &&
+    nyOpenConsolidationLowSweep &&
+    expansionBullish
+  ) {
+    return {
+      profile: "ny_session_reversal_to_premium_fvg",
+      directionalRead: "bullish",
+      confidence: 0.84
     };
   }
   if (sellsideSweep && mitigation.detected) {
@@ -437,6 +674,11 @@ export const buildIctSessionNarrative = (
   const asia = ranges.find((range) => range.session === "asia");
   const london = ranges.find((range) => range.session === "london");
   const londonCandles = dayCandles.filter((candle) => classifyIctKillzone(candle.timestamp, timeZone) === "london");
+  const preNyReferenceCandle =
+    candlesBetweenLocal(dayCandles, timeZone, 8 * 60, 9 * 60 + 30).at(-1) ??
+    candlesBetweenLocal(dayCandles, timeZone, 5 * 60, 9 * 60 + 30).at(-1) ??
+    dayCandles.at(-1);
+  const activeDealingRange = calculateActiveDealingRange(normalized, preNyReferenceCandle?.close);
   const earlyAmCandles = dayCandles.filter((candle) => {
     const { hour, minute } = localParts(candle.timestamp, timeZone);
     const minutes = hour * 60 + minute;
@@ -455,6 +697,18 @@ export const buildIctSessionNarrative = (
     sessionCandles: londonCandles,
     timeZone,
     type: "high"
+  });
+  const londonSweepAsiaHigh = detectLondonSweepOfAsia({
+    asia,
+    londonCandles,
+    direction: "high",
+    timeZone
+  });
+  const londonSweepAsiaLow = detectLondonSweepOfAsia({
+    asia,
+    londonCandles,
+    direction: "low",
+    timeZone
   });
   const compression = detectLondonCompression(london, asia);
   const buysideLevel = Math.max(
@@ -478,6 +732,33 @@ export const buildIctSessionNarrative = (
     timeZone
   });
   const midnightReclaim = detectMidnightReclaim(earlyAmCandles, midnight.candle?.open, timeZone);
+  const midnightRejection = detectMidnightRejection(earlyAmCandles, midnight.candle?.open, timeZone);
+  const nyPreopenConsolidation = detectNyPreopenConsolidation(dayCandles, midnight.candle?.open, timeZone);
+  const nyOpenConsolidationLowSweep = detectNyOpenConsolidationSweep({
+    candles: dayCandles,
+    consolidation: nyPreopenConsolidation,
+    direction: "low",
+    timeZone
+  });
+  const nyOpenConsolidationHighSweep = detectNyOpenConsolidationSweep({
+    candles: dayCandles,
+    consolidation: nyPreopenConsolidation,
+    direction: "high",
+    timeZone
+  });
+  const premiumFvgTarget = detectFvgTarget({
+    candles: normalized,
+    activeRange: activeDealingRange,
+    direction: "premium",
+    referencePrice: preNyReferenceCandle?.close
+  });
+  const discountFvgTarget = detectFvgTarget({
+    candles: normalized,
+    activeRange: activeDealingRange,
+    direction: "discount",
+    referencePrice: preNyReferenceCandle?.close
+  });
+  const fvgTarget = premiumFvgTarget.detected ? premiumFvgTarget : discountFvgTarget.detected ? discountFvgTarget : premiumFvgTarget;
   const mitigationContext = detectNyOpenMitigationTap({
     candles: dayCandles,
     londonRange: london,
@@ -498,12 +779,34 @@ export const buildIctSessionNarrative = (
     referenceLevel: london?.high ?? asia?.high ?? midnight.candle?.open,
     timeZone
   });
+  const nyReversalHigher = detectExpansion({
+    candles: dayCandles,
+    direction: "bullish",
+    eventType: "ny_reversal_higher",
+    fromTimestamp: nyOpenConsolidationLowSweep?.timestamp ?? sellsideSweep?.timestamp,
+    referenceLevel: nyPreopenConsolidation?.high ?? midnight.candle?.open ?? asia?.high,
+    timeZone
+  });
+  const nyReversalLower = detectExpansion({
+    candles: dayCandles,
+    direction: "bearish",
+    eventType: "ny_reversal_lower",
+    fromTimestamp: nyOpenConsolidationHighSweep?.timestamp ?? buysideSweep?.timestamp,
+    referenceLevel: nyPreopenConsolidation?.low ?? midnight.candle?.open ?? asia?.low,
+    timeZone
+  });
   const classified = decideNarrativeProfile({
+    activeDealingRange,
     buysideSweep,
     expansionBearish: bearishExpansion,
+    expansionBullish: nyReversalHigher ?? bullishExpansion,
+    fvgTarget,
     londonEqualLows,
+    londonSweepAsiaHigh,
     mitigation: mitigationContext,
     midnightReclaim,
+    nyOpenConsolidationLowSweep,
+    nyPreopenConsolidation,
     sellsideSweep
   });
   const depth = buildIctSessionNarrativeDataDepth(normalized, options);
@@ -522,10 +825,28 @@ export const buildIctSessionNarrative = (
       : undefined,
     londonEqualLows,
     londonEqualHighs,
+    londonSweepAsiaHigh,
+    londonSweepAsiaLow,
     compression,
     buysideSweep,
     sellsideSweep,
     midnightReclaim,
+    midnightRejection,
+    nyPreopenConsolidation,
+    nyOpenConsolidationLowSweep,
+    nyOpenConsolidationHighSweep,
+    fvgTarget.detected
+      ? {
+          eventType: fvgTarget.direction === "premium" ? "premium_fvg_target" as const : "discount_fvg_target" as const,
+          timestamp: fvgTarget.sourceTimestamp,
+          high: fvgTarget.high,
+          low: fvgTarget.low,
+          price: fvgTarget.midpoint,
+          direction: fvgTarget.direction === "premium" ? "bullish" : "bearish",
+          confidence: 0.68,
+          note: fvgTarget.note
+        }
+      : undefined,
     mitigationContext.detected
       ? {
           eventType: "ny_open_mitigation" as const,
@@ -538,12 +859,24 @@ export const buildIctSessionNarrative = (
         }
       : undefined,
     bearishExpansion,
-    bullishExpansion
+    bullishExpansion,
+    nyReversalHigher,
+    nyReversalLower
   ].filter((event): event is IctSessionNarrativeEvent => Boolean(event));
   const topReasons = [
     classified.profile === "consolidation_manipulation_distribution"
       ? "Asia range, London equal-lows/compression, buy-side sweep, NY mitigation, and bearish expansion align."
       : undefined,
+    classified.profile === "ny_session_reversal_to_premium_fvg"
+      ? "Discount context, London raid/expansion lower, NY consolidation-low sweep, and reversal toward premium FVG align."
+      : undefined,
+    activeDealingRange?.currentLocation ? `Pre-NY reference price is in ${activeDealingRange.currentLocation} of the active dealing range.` : undefined,
+    londonSweepAsiaHigh ? "London swept the Asian high / 12AM context and reversed lower." : undefined,
+    sellsideSweep ? "Sell-side liquidity below Asia/prior lows was taken before the NY reversal evaluation." : undefined,
+    nyPreopenConsolidation ? "NY preopen consolidated below the 12AM opening price." : undefined,
+    nyOpenConsolidationLowSweep ? "NY 9:30 swept the preopen consolidation low." : undefined,
+    fvgTarget.detected ? fvgTarget.note : undefined,
+    nyReversalHigher ? "NY reversed higher toward the premium FVG draw." : undefined,
     buysideSweep ? "Buy-side sweep above the Asia/London/midnight reference was detected." : undefined,
     midnightReclaim ? "Price reclaimed the 12AM opening price before NY decision context." : undefined,
     mitigationContext.detected ? "NY open mitigation context was detected." : undefined,
@@ -556,6 +889,7 @@ export const buildIctSessionNarrative = (
     !londonEqualLows && !londonEqualHighs ? "No London equal-high/equal-low liquidity family was detected." : undefined,
     !buysideSweep && !sellsideSweep ? "No post-London liquidity sweep was detected." : undefined,
     !mitigationContext.detected ? mitigationContext.note : undefined,
+    classified.profile !== "ny_session_reversal_to_premium_fvg" && !fvgTarget.detected ? fvgTarget.note : undefined,
     !bearishExpansion && !bullishExpansion ? "No clean directional expansion away from the mitigation/open context was detected." : undefined
   ].filter((reason): reason is string => Boolean(reason));
   return sanitizeIctSessionNarrative({
@@ -579,8 +913,10 @@ export const buildIctSessionNarrative = (
       localTime: eventLocalTime(sundayOpen?.timestamp, timeZone),
       price: sundayOpen ? round(sundayOpen.open) : undefined
     },
+    activeDealingRange,
     ranges,
     events,
+    fvgTarget,
     mitigationContext,
     dataDepth: depth,
     topReasons: topReasons.length ? topReasons.slice(0, 6) : ["Session narrative did not find a complete manipulation/expansion sequence."],
@@ -588,6 +924,8 @@ export const buildIctSessionNarrative = (
     summary:
       classified.profile === "consolidation_manipulation_distribution"
         ? "Consolidation profile: Asia/London liquidity formed, buy-side liquidity was swept, NY mitigation appeared, and bearish expansion followed."
+        : classified.profile === "ny_session_reversal_to_premium_fvg"
+          ? "NY reversal profile: price traded from discount, sell-side liquidity was swept, and NY reversed higher toward a premium FVG draw."
         : `Session narrative is ${classified.profile.replace(/_/g, " ")} with ${classified.directionalRead} read.`,
     authority,
     safety

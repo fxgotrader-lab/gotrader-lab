@@ -1120,6 +1120,11 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
           value={currentRead.sessionMitigationDetected ? "mitigation detected" : "mitigation missing"}
           detail={`${formatToken(currentRead.dataDepthStatus)} / ${currentRead.availableLookbackDays ?? 0} of ${currentRead.requestedLookbackDays ?? 90} days`}
         />
+        <AdvisorReadout
+          label="FVG target"
+          value={currentRead.fvgTargetDetected ? formatToken(currentRead.fvgTargetDirection) : "missing"}
+          detail="draw target only"
+        />
         <AdvisorReadout label="SMT" value={formatToken(currentRead.smtStatus)} />
         <AdvisorReadout label="Risk" value={formatToken(currentRead.riskStatus)} />
         <AdvisorReadout label="RR / location" value={rr(currentRead.rrEstimate)} detail={formatToken(currentRead.dealingRangeLocation)} />
@@ -1164,6 +1169,7 @@ function CurrentReadDataFlowPanel({ currentRead }: { currentRead: IctCurrentRead
     ["Session narrative", currentRead.sessionNarrativeProfile ?? "none"],
     ["Session read", currentRead.sessionDirectionalRead ?? "none"],
     ["Session mitigation", currentRead.sessionMitigationDetected ? "detected" : "missing"],
+    ["FVG target", currentRead.fvgTargetDetected ? currentRead.fvgTargetDirection ?? "detected" : "missing"],
     ["Data depth", currentRead.dataDepthStatus ?? "unknown"],
     ["Phase 1 signal count", currentRead.debug.phase1SignalCount.toLocaleString()],
     ["Phase 2 signal count", currentRead.debug.phase2SignalCount.toLocaleString()],

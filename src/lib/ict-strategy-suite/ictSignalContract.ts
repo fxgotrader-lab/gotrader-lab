@@ -215,6 +215,12 @@ export const buildIctResearchSignalFromCurrentRead = (
     smtStatus: currentRead.smtStatus,
     newsSessionRisk: currentRead.riskStatus,
     riskGovernorAction: currentRead.riskStatus,
+    sessionNarrativeProfile: currentRead.sessionNarrativeProfile,
+    sessionDirectionalRead: currentRead.sessionDirectionalRead,
+    sessionNarrativeConfidence: currentRead.sessionNarrativeConfidence,
+    fvgTargetDirection: currentRead.fvgTargetDirection,
+    sessionNarrativeReasons: currentRead.sessionTopReasons?.slice(0, 5),
+    dataDepthStatus: currentRead.dataDepthStatus,
     monteCarlo: latestState?.latestMonteCarlo
       ? {
           robustnessRating: latestState.latestMonteCarlo.robustnessRating,

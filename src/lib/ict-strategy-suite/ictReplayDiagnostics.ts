@@ -149,6 +149,10 @@ export const buildReplayDiagnostics = (results: IctReplayResult[]): IctReplayDia
     bySessionMitigationDetected: buildBreakdown(results, (result) =>
       result.sessionMitigationDetected === undefined ? "not_evaluated" : result.sessionMitigationDetected ? "detected" : "missing"
     ),
+    byFvgTargetDetected: buildBreakdown(results, (result) =>
+      result.fvgTargetDetected === undefined ? "not_evaluated" : result.fvgTargetDetected ? "detected" : "missing"
+    ),
+    byFvgTargetDirection: buildBreakdown(results, (result) => result.fvgTargetDirection ?? "not_evaluated"),
     byDataDepthStatus: buildBreakdown(results, (result) => result.dataDepthStatus ?? "not_evaluated"),
     mostCommonNoTradeReasons: countMostCommonNoTradeReasons(results),
     safety

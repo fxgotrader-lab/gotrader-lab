@@ -253,6 +253,8 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
       : !replay
         ? input.sessionMitigationContext?.detected
         : undefined;
+  const fvgTargetDetected = "fvgTargetDetected" in input ? input.fvgTargetDetected : undefined;
+  const fvgTargetDirection = "fvgTargetDirection" in input ? input.fvgTargetDirection : undefined;
   const dataDepthStatus = input.dataDepthStatus;
   const sessionNarrativeReasons =
     "sessionNarrativeReasons" in input
@@ -291,6 +293,8 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
     sessionDirectionalRead,
     sessionNarrativeConfidence,
     sessionMitigationDetected,
+    fvgTargetDetected,
+    fvgTargetDirection,
     dataDepthStatus,
     availableLookbackDays: input.availableLookbackDays,
     requestedLookbackDays: input.requestedLookbackDays,
@@ -324,6 +328,8 @@ export const calculateApprovalScore = (input: IctApprovedSetupProfileInput, prof
   if (normalized.targetTooClose) score -= 10;
   if (directionConfirmsSide(normalized.sessionDirectionalRead, normalized.side)) score += 5;
   if (directionContradictsSide(normalized.sessionDirectionalRead, normalized.side)) score -= 12;
+  if (normalized.side === "long" && normalized.fvgTargetDetected && normalized.fvgTargetDirection === "premium") score += 3;
+  if (normalized.side === "short" && normalized.fvgTargetDetected && normalized.fvgTargetDirection === "discount") score += 3;
   if (normalized.dataDepthStatus === "limited") score -= 3;
   if (normalized.dataDepthStatus === "insufficient" || normalized.dataDepthStatus === "unavailable") score -= 8;
   return Math.round(clamp(score));
@@ -411,6 +417,12 @@ export const evaluateApprovedSetupProfile = (
   if (directionConfirmsSide(normalized.sessionDirectionalRead, normalized.side)) {
     approvedReasons.push(`Session narrative confirms ${normalized.side} candidate: ${normalized.sessionNarrativeProfile ?? "profile pending"}.`);
   }
+  if (normalized.side === "long" && normalized.fvgTargetDetected && normalized.fvgTargetDirection === "premium") {
+    approvedReasons.push("Premium FVG draw supports long candidate context from discount.");
+  }
+  if (normalized.side === "short" && normalized.fvgTargetDetected && normalized.fvgTargetDirection === "discount") {
+    approvedReasons.push("Discount FVG draw supports short candidate context from premium.");
+  }
   if (directionContradictsSide(normalized.sessionDirectionalRead, normalized.side)) {
     watchlistReasons.push(`Session narrative ${normalized.sessionDirectionalRead} read conflicts with ${normalized.side} candidate.`);
   }
@@ -470,6 +482,8 @@ export const evaluateApprovedSetupProfile = (
     sessionDirectionalRead: normalized.sessionDirectionalRead,
     sessionNarrativeConfidence: normalized.sessionNarrativeConfidence,
     sessionMitigationDetected: normalized.sessionMitigationDetected,
+    fvgTargetDetected: normalized.fvgTargetDetected,
+    fvgTargetDirection: normalized.fvgTargetDirection,
     dataDepthStatus: normalized.dataDepthStatus,
     availableLookbackDays: normalized.availableLookbackDays,
     requestedLookbackDays: normalized.requestedLookbackDays,

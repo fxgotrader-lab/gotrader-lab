@@ -59,6 +59,8 @@ export interface IctReplayDiagnostics {
   bySessionNarrativeProfile: Record<string, IctReplayBreakdownMetric>;
   bySessionDirectionalRead: Record<string, IctReplayBreakdownMetric>;
   bySessionMitigationDetected: Record<string, IctReplayBreakdownMetric>;
+  byFvgTargetDetected: Record<string, IctReplayBreakdownMetric>;
+  byFvgTargetDirection: Record<string, IctReplayBreakdownMetric>;
   byDataDepthStatus: Record<string, IctReplayBreakdownMetric>;
   mostCommonNoTradeReasons: Array<{ reason: string; count: number }>;
   safety: {

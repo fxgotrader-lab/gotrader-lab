@@ -80,6 +80,13 @@ const currentReadFixture = (overrides = {}) => ({
   fvgStatus: "bullish_present",
   displacementStatus: "bullish_with_fvg",
   entryZone: "30510.25-30528.75",
+  sessionNarrativeProfile: "ny_session_reversal_to_premium_fvg",
+  sessionDirectionalRead: "bullish",
+  sessionNarrativeConfidence: 0.84,
+  fvgTargetDetected: true,
+  fvgTargetDirection: "premium",
+  dataDepthStatus: "limited",
+  sessionTopReasons: ["NY reversal higher toward premium FVG."],
   topReasons: ["Current read passed the approved-profile research gate."],
   nextAction: "Run replay and walk-forward before readiness review.",
   debug: {
@@ -154,6 +161,11 @@ async function main() {
   assert.equal(approved.monteCarlo.robustnessRating, "strong");
   assert.equal(approved.monteCarlo.riskOfRuinPct, 2.4);
   assert.equal(approved.monteCarlo.recommendedMaxRiskPerTradePct, 0.35);
+  assert.equal(approved.sessionNarrativeProfile, "ny_session_reversal_to_premium_fvg");
+  assert.equal(approved.sessionDirectionalRead, "bullish");
+  assert.equal(approved.fvgTargetDirection, "premium");
+  assert.deepEqual(approved.sessionNarrativeReasons, ["NY reversal higher toward premium FVG."]);
+  assert.equal(approved.dataDepthStatus, "limited");
   assert.equal(suite.validateResearchSignalCompleteness(approved).ok, true);
   assertSafeSignal(approved, suite);
 

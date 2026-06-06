@@ -210,6 +210,11 @@ export function IctAdvisorSummaryPanel({
                 value={formatToken(currentRead.sessionNarrativeProfile)}
                 detail={`${formatToken(currentRead.sessionDirectionalRead)} / ${pct(currentRead.sessionNarrativeConfidence)}`}
               />
+              <AdvisorMini
+                label="FVG target"
+                value={currentRead.fvgTargetDetected ? formatToken(currentRead.fvgTargetDirection) : "missing"}
+                detail="session draw context"
+              />
               <AdvisorMini label="Active setup" value={formatToken(currentRead.bestSetup)} detail={`Phase 2 ${formatToken(topPhaseTwo?.setup ?? currentRead.bestPhase2Setup)}`} />
               <AdvisorMini label="Decision" value={formatToken(currentRead.approvedStatus)} detail={formatToken(currentRead.dataStatus)} />
               <AdvisorMini
@@ -314,6 +319,11 @@ export function IctAdvisorSummaryPanel({
               label="NY mitigation"
               value={packet.compactSummary.sessionMitigationDetected ? "detected" : "missing"}
               detail={`depth ${formatToken(packet.compactSummary.dataDepthStatus)}`}
+            />
+            <AdvisorMini
+              label="FVG target"
+              value={packet.compactSummary.fvgTargetDetected ? formatToken(packet.compactSummary.fvgTargetDirection) : "missing"}
+              detail="draw target only"
             />
             <AdvisorMini label="Active setup" value={formatToken(packet.compactSummary.setup)} />
             <AdvisorMini label="Research side" value={formatToken(packet.compactSummary.side)} />

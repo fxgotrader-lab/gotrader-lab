@@ -184,6 +184,7 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     ...(recommended.newsSessionRisk?.newsSessionRiskNotes ?? []),
     recommended.smt?.reason,
     ...(packet.sessionNarrative?.topReasons ?? []),
+    packet.sessionNarrative?.fvgTarget?.detected ? packet.sessionNarrative.fvgTarget.note : undefined,
     packet.sessionNarrative?.dataDepth.status !== "sufficient" ? packet.sessionNarrative?.dataDepth.note : undefined
   ]);
   const packetSource = packetSourceFor(packet);
@@ -229,6 +230,8 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     sessionDirectionalRead: packet.sessionNarrative?.directionalRead ?? packet.compactSummary.sessionDirectionalRead,
     sessionNarrativeConfidence: packet.sessionNarrative?.confidence ?? packet.compactSummary.sessionNarrativeConfidence,
     sessionMitigationDetected: packet.sessionNarrative?.mitigationContext.detected ?? packet.compactSummary.sessionMitigationDetected,
+    fvgTargetDetected: packet.sessionNarrative?.fvgTarget?.detected ?? packet.compactSummary.fvgTargetDetected,
+    fvgTargetDirection: packet.sessionNarrative?.fvgTarget?.direction ?? packet.compactSummary.fvgTargetDirection,
     dataDepthStatus: packet.sessionNarrative?.dataDepth.status ?? packet.compactSummary.dataDepthStatus,
     availableLookbackDays: packet.sessionNarrative?.dataDepth.availableLookbackDays ?? packet.compactSummary.availableLookbackDays,
     requestedLookbackDays: packet.sessionNarrative?.dataDepth.requestedLookbackDays ?? packet.compactSummary.requestedLookbackDays,

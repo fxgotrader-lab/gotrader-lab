@@ -84,6 +84,8 @@ export interface IctApprovedSetupDecision {
   sessionDirectionalRead?: IctSessionDirectionalRead;
   sessionNarrativeConfidence?: number;
   sessionMitigationDetected?: boolean;
+  fvgTargetDetected?: boolean;
+  fvgTargetDirection?: "premium" | "discount" | "unknown";
   dataDepthStatus?: IctDataDepthStatus;
   availableLookbackDays?: number;
   requestedLookbackDays?: number;

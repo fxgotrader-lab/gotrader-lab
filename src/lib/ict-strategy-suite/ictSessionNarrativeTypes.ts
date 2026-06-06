@@ -11,6 +11,8 @@ export type IctKillzoneName =
 export type IctSessionNarrativeProfile =
   | "consolidation_manipulation_distribution"
   | "accumulation_manipulation_expansion"
+  | "ny_session_reversal_to_premium_fvg"
+  | "ny_session_reversal_from_premium_to_discount"
   | "trend_continuation"
   | "range_bound"
   | "insufficient_data";
@@ -39,12 +41,22 @@ export interface IctSessionNarrativeEvent {
     | "london_equal_lows"
     | "london_equal_highs"
     | "london_compression"
+    | "london_swept_asia_high"
+    | "london_swept_asia_low"
     | "buyside_sweep"
     | "sellside_sweep"
     | "midnight_open_reclaim"
+    | "midnight_open_rejection"
+    | "ny_preopen_consolidation"
+    | "ny_open_consolidation_low_sweep"
+    | "ny_open_consolidation_high_sweep"
+    | "premium_fvg_target"
+    | "discount_fvg_target"
     | "ny_open_mitigation"
     | "bearish_expansion"
-    | "bullish_expansion";
+    | "bullish_expansion"
+    | "ny_reversal_higher"
+    | "ny_reversal_lower";
   timestamp?: string;
   localTime?: string;
   price?: number;
@@ -57,12 +69,25 @@ export interface IctSessionNarrativeEvent {
 
 export interface IctMitigationContext {
   detected: boolean;
+  direction?: "bullish" | "bearish" | "unknown";
   sourceSession?: IctKillzoneName;
   sourceLabel?: string;
   zoneHigh?: number;
   zoneLow?: number;
   tapTimestamp?: string;
   tapLocalTime?: string;
+  expansionConfirmed?: boolean;
+  note: string;
+}
+
+export interface IctSessionFvgTarget {
+  detected: boolean;
+  direction: "premium" | "discount" | "unknown";
+  high?: number;
+  low?: number;
+  midpoint?: number;
+  sourceTimestamp?: string;
+  distanceFromCurrent?: number;
   note: string;
 }
 
@@ -98,8 +123,16 @@ export interface IctSessionNarrative {
     localTime?: string;
     price?: number;
   };
+  activeDealingRange?: {
+    high: number;
+    low: number;
+    midpoint: number;
+    currentLocation: "premium" | "discount" | "equilibrium";
+    referencePrice: number;
+  };
   ranges: IctSessionRange[];
   events: IctSessionNarrativeEvent[];
+  fvgTarget?: IctSessionFvgTarget;
   mitigationContext: IctMitigationContext;
   dataDepth: IctSessionNarrativeDataDepth;
   topReasons: string[];

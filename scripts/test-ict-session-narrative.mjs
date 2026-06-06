@@ -89,6 +89,28 @@ const fixture = [
   candle("ny_3", "2026-06-05", "10:15", 85, 87, 78, 80)
 ];
 
+const reversalFixture = [
+  candle("prior_range_low", "2026-06-02", "09:30", 125, 130, 90, 112),
+  candle("prior_fvg_left", "2026-06-03", "06:00", 150, 154, 148, 152),
+  candle("prior_fvg_mid", "2026-06-03", "06:15", 152, 158, 151, 156),
+  candle("prior_fvg_right", "2026-06-03", "06:30", 170, 190, 170, 184),
+  candle("reversal_asia_0", "2026-06-03", "20:00", 128, 132, 122, 130),
+  candle("reversal_asia_1", "2026-06-03", "20:15", 130, 134, 121, 126),
+  candle("reversal_asia_2", "2026-06-03", "21:00", 126, 135, 120, 132),
+  candle("reversal_asia_3", "2026-06-03", "23:45", 132, 134, 123, 129),
+  candle("reversal_midnight", "2026-06-04", "00:00", 130, 131, 126, 128),
+  candle("reversal_london_sweep", "2026-06-04", "02:00", 128, 139, 126, 137),
+  candle("reversal_london_reject", "2026-06-04", "02:15", 137, 138, 124, 126),
+  candle("reversal_london_drive_0", "2026-06-04", "03:00", 126, 128, 118, 120),
+  candle("reversal_london_drive_1", "2026-06-04", "04:15", 120, 121, 112, 115),
+  candle("reversal_preopen_0", "2026-06-04", "08:00", 115, 120, 113, 118),
+  candle("reversal_preopen_1", "2026-06-04", "08:30", 118, 121, 114, 117),
+  candle("reversal_preopen_2", "2026-06-04", "09:00", 117, 120, 114, 116),
+  candle("reversal_ny_sweep", "2026-06-04", "09:30", 116, 122, 108, 119),
+  candle("reversal_ny_drive_0", "2026-06-04", "09:45", 119, 136, 118, 134),
+  candle("reversal_ny_drive_1", "2026-06-04", "10:00", 134, 156, 132, 150)
+];
+
 function baseSignal(overrides = {}) {
   return {
     strategyId: "ict-fvg-displacement",
@@ -147,6 +169,26 @@ async function main() {
   assert.ok(narrative.events.some((event) => event.eventType === "bearish_expansion"));
   assert.equal(suite.assertIctSessionNarrativeIsCompact(narrative).ok, true);
 
+  const reversalNarrative = suite.buildIctSessionNarrative(reversalFixture, {
+    requestedSymbol: "MNQ",
+    brokerSymbol: "USTECH",
+    primaryTimeframe: "15m",
+    requestedLookbackDays: 90,
+    tradingDate: "2026-06-04"
+  });
+  assert.equal(reversalNarrative.activeDealingRange?.currentLocation, "discount");
+  assert.equal(reversalNarrative.fvgTarget?.detected, true);
+  assert.equal(reversalNarrative.fvgTarget?.direction, "premium");
+  assert.ok(reversalNarrative.events.some((event) => event.eventType === "london_swept_asia_high"));
+  assert.ok(reversalNarrative.events.some((event) => event.eventType === "sellside_sweep"));
+  assert.ok(reversalNarrative.events.some((event) => event.eventType === "ny_preopen_consolidation"));
+  assert.ok(reversalNarrative.events.some((event) => event.eventType === "ny_open_consolidation_low_sweep"));
+  assert.ok(reversalNarrative.events.some((event) => event.eventType === "premium_fvg_target"));
+  assert.ok(reversalNarrative.events.some((event) => event.eventType === "ny_reversal_higher"));
+  assert.equal(reversalNarrative.profile, "ny_session_reversal_to_premium_fvg");
+  assert.equal(reversalNarrative.directionalRead, "bullish");
+  assert.equal(suite.assertIctSessionNarrativeIsCompact(reversalNarrative).ok, true);
+
   const profile = suite.getDefaultApprovedSetupProfiles()[1];
   const supportiveSignal = baseSignal({
     sessionNarrativeProfile: narrative.profile,
@@ -187,9 +229,13 @@ async function main() {
         status: "passed",
         profile: narrative.profile,
         directionalRead: narrative.directionalRead,
+        reversalProfile: reversalNarrative.profile,
+        reversalDirectionalRead: reversalNarrative.directionalRead,
+        reversalFvgTarget: reversalNarrative.fvgTarget?.direction,
         mitigationDetected: narrative.mitigationContext.detected,
         dataDepthStatus: narrative.dataDepth.status,
         eventTypes: narrative.events.map((event) => event.eventType),
+        reversalEventTypes: reversalNarrative.events.map((event) => event.eventType),
         compactBytes: suite.assertIctSessionNarrativeIsCompact(narrative).serializedBytes
       },
       null,

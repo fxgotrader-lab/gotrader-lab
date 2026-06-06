@@ -95,6 +95,8 @@ export interface IctReplayResult {
   sessionDirectionalRead?: IctSessionDirectionalRead;
   sessionNarrativeConfidence?: number;
   sessionMitigationDetected?: boolean;
+  fvgTargetDetected?: boolean;
+  fvgTargetDirection?: "premium" | "discount" | "unknown";
   dataDepthStatus?: IctDataDepthStatus;
   availableLookbackDays?: number;
   requestedLookbackDays?: number;
@@ -180,6 +182,8 @@ export interface IctReplayJournalEvent {
   sessionNarrativeProfile?: IctSessionNarrativeProfile;
   sessionDirectionalRead?: IctSessionDirectionalRead;
   sessionMitigationDetected?: boolean;
+  fvgTargetDetected?: boolean;
+  fvgTargetDirection?: "premium" | "discount" | "unknown";
   dataDepthStatus?: IctDataDepthStatus;
   entryReference?: number;
   invalidation?: number;

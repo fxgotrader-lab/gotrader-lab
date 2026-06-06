@@ -128,6 +128,8 @@ export interface IctAdvisorSignal {
   sessionDirectionalRead?: IctSessionDirectionalRead;
   sessionNarrativeConfidence?: number;
   sessionMitigationContext?: IctMitigationContext;
+  fvgTargetDetected?: boolean;
+  fvgTargetDirection?: "premium" | "discount" | "unknown";
   dataDepthStatus?: IctDataDepthStatus;
   availableLookbackDays?: number;
   requestedLookbackDays?: number;
@@ -235,6 +237,8 @@ export interface IctAdvisorPacket {
     sessionDirectionalRead?: IctSessionDirectionalRead;
     sessionNarrativeConfidence?: number;
     sessionMitigationDetected?: boolean;
+    fvgTargetDetected?: boolean;
+    fvgTargetDirection?: "premium" | "discount" | "unknown";
     sessionTopReasons?: string[];
     dataDepthStatus?: IctDataDepthStatus;
     availableLookbackDays?: number;

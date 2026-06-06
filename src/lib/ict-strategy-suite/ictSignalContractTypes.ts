@@ -1,6 +1,11 @@
 import type { IctBias, IctLocation, IctSide } from "./ictAdvisorTypes";
 import type { IctApprovedCandidateStatus } from "./ictApprovedSetupProfileTypes";
 import type { IctMonteCarloRobustnessRating } from "./ictMonteCarloTypes";
+import type {
+  IctDataDepthStatus,
+  IctSessionDirectionalRead,
+  IctSessionNarrativeProfile
+} from "./ictSessionNarrativeTypes";
 
 export type IctResearchSignalStatus =
   | "approved_research_signal"
@@ -54,6 +59,12 @@ export interface IctResearchSignal {
   smtStatus?: string;
   newsSessionRisk?: string;
   riskGovernorAction?: string;
+  sessionNarrativeProfile?: IctSessionNarrativeProfile;
+  sessionDirectionalRead?: IctSessionDirectionalRead;
+  sessionNarrativeConfidence?: number;
+  fvgTargetDirection?: "premium" | "discount" | "unknown";
+  sessionNarrativeReasons?: string[];
+  dataDepthStatus?: IctDataDepthStatus;
   monteCarlo?: IctResearchSignalMonteCarlo;
   reasons: string[];
   rejectionReasons: string[];
