@@ -8,7 +8,6 @@ import {
   buildIctAdvisorPacketFromRuntime,
   buildIctCurrentReadFromPacket,
   buildIctResearchSignalFromCurrentRead,
-  buildIctReplayValidationFromRuntime,
   formatIctAdvisorSignalSummary,
   ICT_LATEST_RESEARCH_STATE_UPDATED_EVENT,
   isResearchSignalEligibleForPaperSim,
@@ -16,8 +15,7 @@ import {
   summarizeNewsSessionRisk,
   type IctAdvisorPacket,
   type IctLatestResearchState,
-  type IctResearchSignal,
-  type IctReplayValidationReport
+  type IctResearchSignal
 } from "@/lib/ict-strategy-suite";
 import type { ResearchRuntimeSnapshot } from "@/lib/runtime";
 
@@ -84,10 +82,8 @@ export function IctAdvisorSummaryPanel({
   snapshot?: ResearchRuntimeSnapshot;
 }) {
   const [packet, setPacket] = useState<IctAdvisorPacket>();
-  const [replayReport, setReplayReport] = useState<IctReplayValidationReport>();
   const [latestResearchState, setLatestResearchState] = useState<IctLatestResearchState>();
   const [error, setError] = useState<string>();
-  const [replayError, setReplayError] = useState<string>();
 
   useEffect(() => {
     const refreshLatestState = () => setLatestResearchState(readLatestResearchState());
@@ -132,32 +128,6 @@ export function IctAdvisorSummaryPanel({
       mounted = false;
     };
   }, [packetOverride, snapshot?.snapshotId, snapshot?.marketData.activeResearchSource.sourceId, snapshot?.marketData.activeResearchSource.fingerprint, snapshot?.mt5ReadOnly.higherTimeframeSources?.map((source) => source.fingerprint).join("|")]);
-
-  useEffect(() => {
-    let mounted = true;
-    if (!snapshot || mode === "compact") {
-      setReplayReport(undefined);
-      return () => {
-        mounted = false;
-      };
-    }
-    void buildIctReplayValidationFromRuntime(snapshot, { maxCandles: 220, replayWindowSize: 60, lookaheadCandles: 12 })
-      .then((report) => {
-        if (mounted) {
-          setReplayReport(report);
-          setReplayError(undefined);
-        }
-      })
-      .catch((reason) => {
-        if (mounted) {
-          setReplayReport(undefined);
-          setReplayError(reason instanceof Error ? reason.message : String(reason));
-        }
-      });
-    return () => {
-      mounted = false;
-    };
-  }, [mode, snapshot?.snapshotId, snapshot?.marketData.activeResearchSource.sourceId, snapshot?.marketData.activeResearchSource.fingerprint, snapshot?.mt5ReadOnly.higherTimeframeSources?.map((source) => source.fingerprint).join("|")]);
 
   const recommended = packet?.recommendedSignal;
   const currentRead = useMemo(() => buildIctCurrentReadFromPacket(packet, latestResearchState), [packet, latestResearchState]);
@@ -530,36 +500,9 @@ export function IctAdvisorSummaryPanel({
               </div>
               <Badge variant="danger">authority none</Badge>
             </div>
-            {replayReport ? (
-              <>
-                <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-                  <AdvisorMini label="Replay windows" value={replayReport.summary.totalWindows.toLocaleString()} />
-                  <AdvisorMini label="Total signals" value={replayReport.summary.totalSignals.toLocaleString()} />
-                  <AdvisorMini label="Target-first rate" value={pct(replayReport.summary.targetFirstRate)} />
-                  <AdvisorMini label="Invalidation-first rate" value={pct(replayReport.summary.invalidationFirstRate)} />
-                  <AdvisorMini label="Average RR achieved" value={`${replayReport.summary.averageRrAchieved.toFixed(2)}R`} />
-                  <AdvisorMini label="Partial targets" value={replayReport.summary.partialTargetCount.toLocaleString()} />
-                  <AdvisorMini label="Stalled" value={replayReport.summary.stalledCount.toLocaleString()} />
-                  <AdvisorMini label="No-trades" value={replayReport.summary.totalNoTrades.toLocaleString()} />
-                </div>
-                <div className="mt-3 grid gap-2 lg:grid-cols-2">
-                  <AdvisorList
-                    label="Most common no-trade reasons"
-                    values={replayReport.summary.mostCommonNoTradeReasons.map((item) => `${item.reason} (${item.count})`)}
-                    empty="none"
-                  />
-                  <AdvisorList
-                    label="By-strategy target-first"
-                    values={Object.entries(replayReport.summary.byStrategyId).map(([strategyId, summary]) => `${strategyId}: ${Math.round(summary.targetFirstRate * 100)}% / ${summary.totalSignals}`)}
-                    empty="none"
-                  />
-                </div>
-              </>
-            ) : (
-              <p className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
-                {replayError ?? "Replay validation summary is waiting for compact source hydration."}
-              </p>
-            )}
+            <p className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
+              Replay validation is manual-only in the Advisor workspace. Use Manual Replay Review to run the browser-safe replay action; this summary panel does not auto-run replay, scorecard, optimizer, or Monte Carlo work.
+            </p>
           </div>
         </>
       ) : (

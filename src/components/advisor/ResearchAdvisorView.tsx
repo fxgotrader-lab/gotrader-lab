@@ -79,6 +79,9 @@ const compactPrice = (value?: number) =>
   typeof value === "number" && Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "n/a";
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error ?? "unknown_error");
 const isAbortError = (error: unknown) => (error as { name?: string })?.name === "AbortError";
+const browserSafeReplayCandleLimit = Math.min(1000, DEFAULT_ICT_BROWSER_RESEARCH_LIMITS.maxCandlesPerSymbol);
+const browserSafeMonteCarloSimulationCount = 300;
+const browserSafeMonteCarloTradeCount = 60;
 const safeList = <T,>(values: T[] | undefined | null): T[] => Array.isArray(values) ? values : [];
 const safeCount = (value?: number) => (typeof value === "number" && Number.isFinite(value) ? value.toLocaleString() : "0");
 type MarketScorecardRunStatus = "idle" | "running" | "partial" | "completed" | "unavailable" | "failed" | "timed_out";
@@ -177,6 +180,21 @@ const smtLabel = (packet?: IctAdvisorPacket) => {
 };
 const entryZoneLabel = (entryZone?: IctAdvisorPacket["recommendedSignal"]["entryZone"]) =>
   entryZone ? `${compactPrice(entryZone.low)}-${compactPrice(entryZone.high)}` : "n/a";
+const researchSignalJournalKey = (signal: IctResearchSignal) =>
+  [
+    signal.requestedSymbol,
+    signal.brokerSymbol,
+    signal.primaryTimeframe,
+    signal.status,
+    signal.side,
+    signal.setup,
+    signal.approvedProfileStatus,
+    signal.entryZone?.low,
+    signal.entryZone?.high,
+    signal.invalidation,
+    signal.target,
+    signal.rrEstimate
+  ].map((value) => String(value ?? "none")).join("|");
 
 function buildLocalAdvisorReply(
   prompt: string,
@@ -249,6 +267,7 @@ export function ResearchAdvisorView() {
   ]);
   const deepActionRunIdRef = useRef(0);
   const deepActionAbortRef = useRef<AbortController | undefined>(undefined);
+  const lastResearchSignalJournalKeyRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     let mounted = true;
@@ -367,7 +386,7 @@ export function ResearchAdvisorView() {
       requestedSymbol: snapshot?.marketData.symbol ?? "MNQ",
       primaryTimeframe,
       htfTimeframes: htfTimeframes?.length ? htfTimeframes : ["15m", "1h"],
-      candleLimit: 1000,
+      candleLimit: browserSafeReplayCandleLimit,
       replayWindowSize: 80,
       lookaheadCandles: 12
     };
@@ -396,8 +415,11 @@ export function ResearchAdvisorView() {
 
   useEffect(() => {
     if (!advisorPacket || !researchSignal.signalId) return;
+    const stableJournalKey = researchSignalJournalKey(researchSignal);
+    if (lastResearchSignalJournalKeyRef.current === stableJournalKey) return;
+    lastResearchSignalJournalKeyRef.current = stableJournalKey;
     appendIctResearchSignalJournalEvent(buildIctResearchSignalJournalEvent(researchSignal));
-  }, [advisorPacket?.packetId, researchSignal.signalId]);
+  }, [advisorPacket?.packetId, researchSignal]);
 
   if (!snapshot) {
     return (
@@ -429,13 +451,20 @@ export function ResearchAdvisorView() {
   const isCurrentDeepResearchRun = (runId: number) => deepActionRunIdRef.current === runId;
   const runManualReplayReview = async () => {
     if (deepResearchActionRunning) return;
+    const { controller, runId } = beginDeepResearchAction();
     setManualReplayStatus("running");
     setManualReplayError(undefined);
     setMonteCarloStatus("idle");
     setMonteCarloSummary(undefined);
     setMonteCarloError(undefined);
     try {
-      const result = await runManualIctReplayReview(manualReplayRequest);
+      const result = await runManualIctReplayReview(manualReplayRequest, {
+        appendJournal: false,
+        includeDiagnostics: true,
+        includeReplayResults: true,
+        maxReplayWindows: DEFAULT_ICT_BROWSER_RESEARCH_LIMITS.maxReplayWindows
+      });
+      if (!isCurrentDeepResearchRun(runId)) return;
       setManualReplayResult(result);
       setManualReplayStatus(result.status);
       if (result.status === "completed") {
@@ -451,9 +480,14 @@ export function ResearchAdvisorView() {
         setManualReplayError(result.unavailableReason ?? result.errors[0] ?? undefined);
       }
     } catch (error) {
+      if (!isCurrentDeepResearchRun(runId)) return;
       setManualReplayResult(undefined);
       setManualReplayStatus("failed");
       setManualReplayError(errorMessage(error));
+    } finally {
+      if (isCurrentDeepResearchRun(runId) && deepActionAbortRef.current === controller) {
+        deepActionAbortRef.current = undefined;
+      }
     }
   };
   const runMarketScorecard = async () => {
@@ -539,6 +573,8 @@ export function ResearchAdvisorView() {
       const summary = runMonteCarloBatch(manualOutcomes, {
         source: "manual_replay_review",
         randomSeed: 20260605,
+        simulationCount: browserSafeMonteCarloSimulationCount,
+        tradesPerSimulation: Math.min(browserSafeMonteCarloTradeCount, Math.max(manualOutcomes.length, 1)),
         researchOnly: true
       });
       appendIctMonteCarloJournalEvent(buildIctMonteCarloJournalEvent(summary));

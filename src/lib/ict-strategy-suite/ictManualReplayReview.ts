@@ -17,6 +17,7 @@ import type {
 
 const MANUAL_REPLAY_REVIEW_JOURNAL_STORAGE_KEY = "gotrader.ict-manual-replay-review.journal.v1";
 const MAX_MANUAL_REPLAY_REVIEW_JOURNAL_EVENTS = 100;
+const MAX_MANUAL_REPLAY_MONTE_CARLO_OUTCOMES = 300;
 
 const authority = {
   executionAuthority: "none" as const,
@@ -179,7 +180,7 @@ export const buildIctManualReplayReviewResult = (
     },
     topCalibrationFilterImprovements: buildCalibrationImprovements(result),
     approvedProfileComparison,
-    monteCarloOutcomes: extractMonteCarloOutcomesFromReplayResults(result.replayResults ?? []),
+    monteCarloOutcomes: extractMonteCarloOutcomesFromReplayResults(result.replayResults ?? []).slice(0, MAX_MANUAL_REPLAY_MONTE_CARLO_OUTCOMES),
     unavailableReason: status === "unavailable" ? firstReason(result) : undefined,
     errors,
     warnings,
@@ -330,6 +331,7 @@ export const sanitizeIctManualReplayReviewResult = (
   sanitized.researchOnly = true;
   sanitized.authority = authority;
   sanitized.safety = safety;
+  sanitized.monteCarloOutcomes = sanitized.monteCarloOutcomes?.slice(0, MAX_MANUAL_REPLAY_MONTE_CARLO_OUTCOMES);
   sanitized.targetFirstRate = round(sanitized.targetFirstRate);
   sanitized.invalidationFirstRate = round(sanitized.invalidationFirstRate);
   sanitized.averageRrAchieved = round(sanitized.averageRrAchieved, 2);

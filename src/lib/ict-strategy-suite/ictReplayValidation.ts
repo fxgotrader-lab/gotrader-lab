@@ -609,7 +609,7 @@ const resolveHtfSourcesForRuntime = async (snapshot: ResearchRuntimeSnapshot) =>
 
 export async function buildIctReplayValidationFromRuntime(
   snapshot: ResearchRuntimeSnapshot,
-  options: Partial<Pick<IctReplayInput, "lookaheadCandles" | "replayWindowSize">> & { maxCandles?: number } = {}
+  options: Partial<Pick<IctReplayInput, "lookaheadCandles" | "maxReplayWindows" | "replayWindowSize">> & { maxCandles?: number } = {}
 ) {
   const activeSource = await loadCanonicalCandleSource(snapshot.marketData.activeResearchSource.sourceId);
   const rawCandles = activeSource?.candles ?? [];
@@ -648,6 +648,8 @@ export async function buildIctReplayValidationFromRuntime(
     indexComparisonCandles,
     replayWindowSize: options.replayWindowSize ?? 80,
     lookaheadCandles: options.lookaheadCandles ?? 12,
+    maxReplayWindows: options.maxReplayWindows ?? 250,
+    appendJournal: false,
     researchOnly: true
   });
 }

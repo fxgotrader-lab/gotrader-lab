@@ -408,9 +408,7 @@ export async function buildIctMarketScorecardBrowserSafe(
       completedSymbols: symbols.length,
       totalSymbols: config.requestedSymbols.length
     });
-    if (symbols.length % limits.yieldEveryIterations === 0) {
-      await yieldToBrowser();
-    }
+    await yieldToBrowser();
   }
 
   const completedSymbols = symbols.filter((symbol) => symbol.status !== "unavailable").length;
