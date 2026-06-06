@@ -63,6 +63,166 @@ const sourceFiles = [
   { root: sourceRoot, file: "index.ts" }
 ];
 
+const bridgeUrl = (process.env.MT5_READONLY_BRIDGE_URL || "http://127.0.0.1:7341").replace(/\/$/, "");
+const deepReplayMode = process.env.ICT_REAL_REPLAY_90D === "true";
+const deepReplayDays = Number(process.env.ICT_REAL_REPLAY_90D_DAYS || 90);
+const deepReplayChunkDays = Number(process.env.ICT_REAL_REPLAY_90D_CHUNK_DAYS || 10);
+const deepReplayLimit = Math.max(1, Math.min(5000, Number(process.env.ICT_REAL_REPLAY_90D_LIMIT || 5000)));
+const deepReplayTimeoutMs = Number(process.env.MT5_READONLY_TEST_TIMEOUT_MS || 10000);
+const deepReplayCache = new Map();
+
+const endpoint = (pathName, params = {}) => {
+  const url = new URL(`${bridgeUrl}/${pathName.replace(/^\//, "")}`);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== "") url.searchParams.set(key, String(value));
+  });
+  return url.toString();
+};
+
+async function fetchWithTimeout(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), deepReplayTimeoutMs);
+  try {
+    const response = await fetch(url, { cache: "no-store", signal: controller.signal });
+    return {
+      ok: response.ok,
+      status: response.status,
+      payload: response.headers.get("content-type")?.includes("application/json")
+        ? await response.json()
+        : await response.text()
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+const parseCandleTime = (candle) => {
+  const parsed = Date.parse(candle?.timestamp);
+  if (Number.isFinite(parsed)) return parsed;
+  return Number.isFinite(candle?.time) ? candle.time * 1000 : 0;
+};
+
+const normalizeMt5Candles = ({ candles = [], requestedSymbol, brokerSymbol, timeframe }) => {
+  const seen = new Set();
+  return candles
+    .filter(
+      (candle) =>
+        candle &&
+        typeof candle === "object" &&
+        Boolean(candle.timestamp) &&
+        Number.isFinite(Number(candle.open)) &&
+        Number.isFinite(Number(candle.high)) &&
+        Number.isFinite(Number(candle.low)) &&
+        Number.isFinite(Number(candle.close))
+    )
+    .sort((left, right) => parseCandleTime(left) - parseCandleTime(right))
+    .filter((candle) => {
+      const key = parseCandleTime(candle);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((candle, index) => ({
+      id: `mt5_deep_${brokerSymbol}_${timeframe}_${parseCandleTime(candle)}_${index}`,
+      symbol: requestedSymbol,
+      timeframe,
+      timestamp: candle.timestamp,
+      open: Number(candle.open),
+      high: Number(candle.high),
+      low: Number(candle.low),
+      close: Number(candle.close),
+      volume: Number(candle.volume ?? candle.tickVolume ?? candle.tick_volume ?? 0)
+    }));
+};
+
+const dateWindows = (endTimestamp) => {
+  const end = Date.parse(endTimestamp);
+  const start = end - deepReplayDays * 24 * 60 * 60 * 1000;
+  const chunkMillis = Math.max(1, deepReplayChunkDays) * 24 * 60 * 60 * 1000;
+  const windows = [];
+  let cursor = start;
+  while (cursor < end && windows.length < 80) {
+    const next = Math.min(cursor + chunkMillis, end);
+    windows.push({
+      from: new Date(cursor).toISOString(),
+      to: new Date(next).toISOString()
+    });
+    cursor = next;
+  }
+  return windows;
+};
+
+async function fetchChunkedReplayCandles({ brokerSymbol, limit, requestedSymbol, timeframe }) {
+  const key = `${requestedSymbol}:${brokerSymbol}:${timeframe}:${deepReplayDays}`;
+  const cached = deepReplayCache.get(key);
+  if (cached) return cached;
+  try {
+    const latest = await fetchWithTimeout(endpoint("candles", {
+      requestedSymbol,
+      symbol: brokerSymbol,
+      timeframe,
+      limit: Math.min(limit, deepReplayLimit)
+    }));
+    if (!latest.ok) throw new Error(`Latest MT5 candles returned HTTP ${latest.status}`);
+    const latestCandles = Array.isArray(latest.payload?.candles) ? latest.payload.candles : [];
+    const lastTimestamp = latest.payload?.lastTimestamp ?? latestCandles.at(-1)?.timestamp;
+    if (!lastTimestamp) throw new Error("Latest MT5 candles did not include a last timestamp.");
+    const chunkReports = [];
+    const rawCandles = [];
+    for (const window of dateWindows(lastTimestamp)) {
+      const response = await fetchWithTimeout(endpoint("candles/range", {
+        requestedSymbol,
+        symbol: brokerSymbol,
+        timeframe,
+        from: window.from,
+        to: window.to,
+        limit: deepReplayLimit
+      }));
+      if (!response.ok) throw new Error(`Range MT5 candles returned HTTP ${response.status}`);
+      const payload = response.payload && typeof response.payload === "object" ? response.payload : {};
+      const chunkCandles = Array.isArray(payload.candles) ? payload.candles : [];
+      chunkReports.push({
+        returnedCount: Number(payload.returnedCount ?? chunkCandles.length ?? 0),
+        firstTimestamp: payload.firstTimestamp ?? payload.firstCandleTime ?? chunkCandles[0]?.timestamp,
+        lastTimestamp: payload.lastTimestamp ?? payload.lastCandleTime ?? chunkCandles.at(-1)?.timestamp
+      });
+      rawCandles.push(...chunkCandles);
+    }
+    const candles = normalizeMt5Candles({ candles: rawCandles, requestedSymbol, brokerSymbol, timeframe });
+    const result = {
+      requestedSymbol,
+      brokerSymbol,
+      timeframe,
+      candles,
+      candleCount: candles.length,
+      connectionStatus: candles.length ? "connected" : "disconnected",
+      depthStatus: candles.length > 5000 ? "full" : candles.length ? "partial" : "disconnected",
+      firstTimestamp: candles[0]?.timestamp,
+      lastTimestamp: candles.at(-1)?.timestamp,
+      warnings: [
+        `Explicit 90-day replay chunk mode used ${chunkReports.length} read-only range chunk(s); raw candles stay internal.`
+      ],
+      missingEvidence: candles.length ? [] : ["No usable MT5 range candles returned for deep replay."]
+    };
+    deepReplayCache.set(key, result);
+    return result;
+  } catch (error) {
+    const result = {
+      requestedSymbol,
+      brokerSymbol,
+      timeframe,
+      candles: [],
+      candleCount: 0,
+      connectionStatus: "disconnected",
+      depthStatus: "disconnected",
+      warnings: ["MT5 90-day replay chunk mode could not fetch candles."],
+      missingEvidence: [error instanceof Error ? error.message : String(error)]
+    };
+    deepReplayCache.set(key, result);
+    return result;
+  }
+}
+
 function compileSuiteForNode() {
   fs.rmSync(outRoot, { recursive: true, force: true });
   fs.mkdirSync(outRoot, { recursive: true });
@@ -246,22 +406,39 @@ async function main() {
 
   let liveStatus = "not_run";
   let liveResult;
+  let liveMonteCarlo;
   if (process.env.ICT_REAL_REPLAY_SKIP_LIVE !== "true") {
     liveResult = await suite.runIctRealReplay(
       {
         requestedSymbols: [process.env.MT5_READONLY_REQUESTED_SYMBOL || "MNQ"],
         primaryTimeframes: [process.env.MT5_READONLY_TIMEFRAME || "5m"],
         htfTimeframes: ["15m", "1h"],
-        candleLimit: Number(process.env.MT5_READONLY_CANDLE_LIMIT || 1000),
+        candleLimit: Number(process.env.MT5_READONLY_CANDLE_LIMIT || (deepReplayMode ? 5000 : 1000)),
         replayWindowSize: 80,
         lookaheadCandles: 12,
         minRequiredCandles: 120,
         researchOnly: true
       },
-      { appendJournal: false }
+      {
+        appendJournal: false,
+        fetchCandles: deepReplayMode ? fetchChunkedReplayCandles : undefined,
+        includeReplayResults: deepReplayMode,
+        maxReplayWindows: deepReplayMode ? Number(process.env.ICT_REAL_REPLAY_90D_MAX_WINDOWS || 240) : undefined
+      }
     );
     assertCompactRun(suite, liveResult, "live MT5");
     liveStatus = liveResult.aggregateSummary.completedSymbols > 0 ? "completed" : "mt5_unavailable";
+    if (deepReplayMode && liveResult.replayResults?.length) {
+      const outcomes = suite.extractMonteCarloOutcomesFromReplayResults(liveResult.replayResults);
+      liveMonteCarlo = suite.runMonteCarloBatch(outcomes, {
+        source: "real_replay",
+        simulationCount: Number(process.env.ICT_REAL_REPLAY_90D_MC_SIMULATIONS || 300),
+        tradesPerSimulation: Math.min(100, Math.max(1, outcomes.length)),
+        randomSeed: 90,
+        researchOnly: true
+      });
+      assert.equal(suite.assertIctMonteCarloSummaryIsCompact(liveMonteCarlo).ok, true, "deep replay Monte Carlo must stay compact");
+    }
   }
 
   process.stdout.write("GoTrader ICT Real Replay Runner smoke test passed.\n");
@@ -283,6 +460,27 @@ async function main() {
             targetFirstRate: symbol.summary?.targetFirstRate ?? 0,
             averageRrAchieved: symbol.summary?.averageRrAchieved ?? 0
           })),
+          deepReplayMode,
+          deepReplay: deepReplayMode
+            ? {
+                requestedLookbackDays: deepReplayDays,
+                cacheKeys: [...deepReplayCache.keys()],
+                maxReplayWindows: Number(process.env.ICT_REAL_REPLAY_90D_MAX_WINDOWS || 240),
+                replayResultsIncluded: Boolean(liveResult.replayResults?.length)
+              }
+            : undefined,
+          monteCarlo: liveMonteCarlo
+            ? {
+                usableOutcomes: liveMonteCarlo.input.usableOutcomes,
+                robustnessRating: liveMonteCarlo.recommendation.robustnessRating,
+                medianEndingR: liveMonteCarlo.performance.medianEndingR,
+                fifthPercentileEndingR: liveMonteCarlo.performance.fifthPercentileEndingR,
+                medianMaxDrawdownR: liveMonteCarlo.performance.medianMaxDrawdownR,
+                worstMaxDrawdownR: liveMonteCarlo.performance.worstMaxDrawdownR,
+                riskOfRuinPct: liveMonteCarlo.performance.riskOfRuinPct,
+                recommendedMaxRiskPerTradePct: liveMonteCarlo.recommendation.recommendedMaxRiskPerTradePct
+              }
+            : undefined,
           authority: liveResult.authority,
           safety: liveResult.safety
         },

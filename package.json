@@ -39,6 +39,7 @@
     "test:ict-signal-contract": "node scripts/test-ict-signal-contract.mjs",
     "test:ict-paper-signal-simulator": "node scripts/test-ict-paper-signal-simulator.mjs",
     "test:ict-session-narrative": "node scripts/test-ict-session-narrative.mjs",
+    "test:ict-session-narrative-90d": "node scripts/test-ict-session-narrative-90d.mjs",
     "test:ict-session-model-recognition": "node scripts/test-ict-session-model-recognition.mjs",
     "test:research-advisor-stability": "node scripts/test-research-advisor-stability.mjs",
     "test:research-advisor-heavy-actions": "node scripts/test-research-advisor-heavy-actions.mjs",
