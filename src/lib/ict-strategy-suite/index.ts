@@ -35,5 +35,7 @@ export * from "./ictLatestResearchStateTypes";
 export * from "./ictLatestResearchState";
 export * from "./ictSignalContractTypes";
 export * from "./ictSignalContract";
+export * from "./ictPaperSignalSimulatorTypes";
+export * from "./ictPaperSignalSimulator";
 export * from "./ictResearchReportTypes";
 export * from "./ictResearchReport";

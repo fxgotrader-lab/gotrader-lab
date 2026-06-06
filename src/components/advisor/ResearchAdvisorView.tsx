@@ -8,7 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   appendIctMonteCarloJournalEvent,
+  appendIctPaperSignalJournalEvent,
   appendIctResearchSignalJournalEvent,
+  buildIctPaperSignalJournalEvent,
   buildLatestMonteCarloSnapshot,
   buildLatestReplaySnapshot,
   buildLatestScorecardSnapshot,
@@ -19,12 +21,14 @@ import {
   buildIctResearchSignalFromCurrentRead,
   buildIctResearchSignalJournalEvent,
   buildMarketScorecardResearchReport,
+  createPaperSignalFromResearchSignal,
   appendIctApprovedProfileOptimizationJournalEvent,
   buildIctApprovedProfileOptimizationJournalEvent,
   buildIctMarketScorecard,
   DEFAULT_ICT_MARKET_SCORECARD_SYMBOLS,
   extractMonteCarloOutcomesFromManualReplay,
   extractMonteCarloOutcomesFromMarketScorecard,
+  isResearchSignalEligibleForPaperSim,
   listIctResearchReports,
   optimizeApprovedProfileFromReplayResults,
   readLatestResearchState,
@@ -47,6 +51,8 @@ import {
   type IctManualReplayReviewResult,
   type IctManualReplayReviewStatus,
   type IctMonteCarloSummary,
+  type IctPaperSignal,
+  type IctPaperSignalEligibility,
   type IctResearchSignal,
   type IctResearchReport,
   type IctResearchReportSaveResult
@@ -189,6 +195,7 @@ export function ResearchAdvisorView() {
   const [scorecardReportSaveResult, setScorecardReportSaveResult] = useState<IctResearchReportSaveResult>();
   const [advisorPacket, setAdvisorPacket] = useState<IctAdvisorPacket>();
   const [advisorPacketError, setAdvisorPacketError] = useState<string>();
+  const [paperSignal, setPaperSignal] = useState<IctPaperSignal>();
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<AdvisorChatMessage[]>([
     createAdvisorMessage(
@@ -289,6 +296,7 @@ export function ResearchAdvisorView() {
     setProfileOptimizationError(undefined);
     setManualReportSaveResult(undefined);
     setScorecardReportSaveResult(undefined);
+    setPaperSignal(undefined);
   }, [snapshot?.marketData.activeResearchSource.fingerprint]);
 
   const htfSummary = useMemo(
@@ -329,6 +337,10 @@ export function ResearchAdvisorView() {
   const researchSignal = useMemo(
     () => buildIctResearchSignalFromCurrentRead(currentRead, latestResearchState),
     [currentRead, latestResearchState]
+  );
+  const paperSimEligibility = useMemo(
+    () => isResearchSignalEligibleForPaperSim(researchSignal),
+    [researchSignal]
   );
 
   useEffect(() => {
@@ -508,6 +520,15 @@ export function ResearchAdvisorView() {
     submitAdvisorMessage(action);
   };
 
+  const createPaperSimulation = () => {
+    if (!paperSimEligibility.eligible) return;
+    const nextPaperSignal = createPaperSignalFromResearchSignal(researchSignal);
+    setPaperSignal(nextPaperSignal);
+    appendIctPaperSignalJournalEvent(
+      buildIctPaperSignalJournalEvent(nextPaperSignal, "ict_paper_signal_created")
+    );
+  };
+
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
       <section data-testid="research-advisor-page-header" className="rounded-[24px] border border-white/10 bg-slate-950/75 p-5 shadow-[0_0_45px_rgba(8,145,178,0.07)]">
@@ -530,6 +551,12 @@ export function ResearchAdvisorView() {
 
       <CurrentReadPanel currentRead={currentRead} packetError={advisorPacketError} />
       <ResearchSignalCard signal={researchSignal} />
+      <PaperSimulationCard
+        eligibility={paperSimEligibility}
+        onCreate={createPaperSimulation}
+        paperSignal={paperSignal}
+        signal={researchSignal}
+      />
       <LatestResearchStateStrip latestResearchState={latestResearchState} />
 
       <section data-testid="research-advisor-chat-workspace" className="grid items-start gap-4 xl:grid-cols-[minmax(220px,0.62fr)_minmax(420px,1.35fr)_minmax(240px,0.72fr)]">
@@ -737,6 +764,88 @@ function ResearchSignalCard({ signal }: { signal: IctResearchSignal }) {
       </div>
       <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">
         Next action: {signal.nextAction}
+      </p>
+    </section>
+  );
+}
+
+function PaperSimulationCard({
+  eligibility,
+  onCreate,
+  paperSignal,
+  signal
+}: {
+  eligibility: IctPaperSignalEligibility;
+  onCreate: () => void;
+  paperSignal?: IctPaperSignal;
+  signal: IctResearchSignal;
+}) {
+  const previewSignal = useMemo(() => createPaperSignalFromResearchSignal(signal), [signal]);
+  const displaySignal = paperSignal ?? previewSignal;
+  const status =
+    paperSignal?.status ??
+    (eligibility.eligible ? "eligible_for_paper_sim" : "not_eligible");
+  const statusVariant =
+    status === "paper_target_hit" || status === "eligible_for_paper_sim"
+      ? "success"
+      : status === "paper_open" || status === "paper_expired"
+        ? "warning"
+        : status === "paper_invalidation_hit" || status === "not_eligible"
+          ? "danger"
+          : "secondary";
+  const lifecycleLabel =
+    status === "paper_target_hit" || status === "paper_invalidation_hit" || status === "paper_expired" || status === "paper_cancelled"
+      ? "Complete"
+      : status === "paper_open"
+        ? "Open"
+        : eligibility.eligible
+          ? "Eligible"
+          : "Not Eligible";
+  const reasons = eligibility.eligible ? displaySignal.notes : eligibility.reasons;
+
+  return (
+    <section data-testid="ict-paper-signal-simulator" className="rounded-[24px] border border-sky-300/15 bg-[radial-gradient(circle_at_12%_0%,rgba(56,189,248,0.12),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.9),rgba(2,6,23,0.94))] p-5 shadow-[0_0_50px_rgba(56,189,248,0.07)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-300">Paper Signal Simulator</p>
+          <h3 className="mt-1 text-xl font-semibold text-slate-50">Simulated research lifecycle</h3>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+            Uses the compact research signal contract to simulate acceptance, entry, target, invalidation, and journal events. Paper only - no broker order.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge data-testid="ict-paper-signal-status" variant={statusVariant}>{formatToken(status)}</Badge>
+          <Badge variant="secondary">{lifecycleLabel}</Badge>
+          <Badge variant="danger">authority none</Badge>
+          <Button type="button" size="sm" onClick={onCreate} disabled={!eligibility.eligible || paperSignal?.status === "paper_open"}>
+            {paperSignal?.status === "paper_open" ? "Paper Simulation Open" : "Create Paper Simulation"}
+          </Button>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <AdvisorReadout label="Source signal" value={formatToken(signal.status)} detail={signal.signalId} />
+        <AdvisorReadout label="Side" value={formatToken(displaySignal.side)} detail={displaySignal.primaryTimeframe} />
+        <AdvisorReadout label="Simulated entry" value={compactPrice(displaySignal.simulatedEntry.price)} detail={formatToken(displaySignal.simulatedEntry.type)} />
+        <AdvisorReadout label="Target" value={compactPrice(displaySignal.target)} />
+        <AdvisorReadout label="Invalidation" value={compactPrice(displaySignal.invalidation)} />
+        <AdvisorReadout label="RR estimate" value={rr(displaySignal.rrEstimate)} />
+        <AdvisorReadout label="Paper risk" value={`${displaySignal.simulatedRisk.riskPerIdeaPct.toFixed(2)}%`} detail="research sizing note only" />
+        <AdvisorReadout label="Outcome" value={formatToken(displaySignal.outcome)} detail={displaySignal.paperOnly ? "paperOnly true" : "invalid"} />
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <AdvisorList
+          label={eligibility.eligible ? "Simulation notes" : "Blocked reasons"}
+          values={reasons}
+          empty={eligibility.eligible ? "No additional notes." : "No blocker recorded."}
+        />
+        <AdvisorList
+          label="Lifecycle"
+          values={displaySignal.lifecycle.map((event) => `${formatToken(event.event)}${typeof event.price === "number" ? ` @ ${compactPrice(event.price)}` : ""}: ${event.note}`)}
+          empty="No paper lifecycle event yet."
+        />
+      </div>
+      <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">
+        Safety: realOrderPlaced false, brokerMutation false, raw candles/snapshots/secrets/account/order/position data excluded.
       </p>
     </section>
   );

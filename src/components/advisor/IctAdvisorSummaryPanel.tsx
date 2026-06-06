@@ -11,6 +11,7 @@ import {
   buildIctReplayValidationFromRuntime,
   formatIctAdvisorSignalSummary,
   ICT_LATEST_RESEARCH_STATE_UPDATED_EVENT,
+  isResearchSignalEligibleForPaperSim,
   readLatestResearchState,
   summarizeNewsSessionRisk,
   type IctAdvisorPacket,
@@ -164,6 +165,12 @@ export function IctAdvisorSummaryPanel({
     () => buildIctResearchSignalFromCurrentRead(currentRead, latestResearchState),
     [currentRead, latestResearchState]
   );
+  const paperSimEligibility = useMemo(
+    () => isResearchSignalEligibleForPaperSim(researchSignal),
+    [researchSignal]
+  );
+  const paperSimLabel = paperSimEligibility.eligible ? "Paper Sim: Eligible" : "Paper Sim: Not Eligible";
+  const paperSimVariant = paperSimEligibility.eligible ? "success" as const : "warning" as const;
   const phaseOneSignals = useMemo(() => (packet?.signals ?? []).filter((signal) => signal.phase === "phase_1"), [packet?.signals]);
   const phaseTwoSignals = useMemo(() => (packet?.signals ?? []).filter((signal) => signal.phase === "phase_2"), [packet?.signals]);
   const topPhaseTwo = phaseTwoSignals
@@ -188,6 +195,7 @@ export function IctAdvisorSummaryPanel({
           <div className="flex flex-wrap gap-2">
             <Badge variant={statusVariant(packet?.approvedProfileDecision.status)}>{formatToken(packet?.approvedProfileDecision.status)}</Badge>
             <Badge data-testid="dashboard-ict-research-signal-status" variant={signalVariant(researchSignal)}>{formatToken(researchSignal.status)}</Badge>
+            <Badge data-testid="dashboard-ict-paper-sim-status" variant={paperSimVariant}>{paperSimLabel}</Badge>
             <Badge variant={smtVariant(packet)}>{smtLabel(packet)}</Badge>
             <Badge variant={riskVariant(packet)}>{riskLabel(packet)}</Badge>
           </div>
@@ -203,6 +211,11 @@ export function IctAdvisorSummaryPanel({
                 label="Research signal"
                 value={formatToken(researchSignal.status)}
                 detail={`${formatToken(researchSignal.side)} / execution disabled`}
+              />
+              <AdvisorMini
+                label="Paper Sim"
+                value={paperSimEligibility.eligible ? "Eligible" : "Not Eligible"}
+                detail={paperSimEligibility.eligible ? "No broker order" : paperSimEligibility.reasons[0] ?? "Waiting for approved signal"}
               />
               <AdvisorMini label="Confidence" value={pct(currentRead.confidence)} />
               <AdvisorMini label="Signal RR" value={typeof researchSignal.rrEstimate === "number" ? `${researchSignal.rrEstimate.toFixed(2)}R` : "n/a"} detail={typeof researchSignal.confidence === "number" ? pct(researchSignal.confidence) : "n/a"} />
@@ -272,6 +285,7 @@ export function IctAdvisorSummaryPanel({
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant={statusVariant(packet?.approvedProfileDecision.status)}>{formatToken(packet?.approvedProfileDecision.status)}</Badge>
+          <Badge data-testid="dashboard-ict-paper-sim-status-full" variant={paperSimVariant}>{paperSimLabel}</Badge>
           <Badge variant={smtVariant(packet)}>{smtLabel(packet)}</Badge>
           <Badge variant={riskVariant(packet)}>{riskLabel(packet)}</Badge>
           <Badge variant={recommended?.decision === "research_only" ? "success" : "warning"}>{formatToken(recommended?.decision)}</Badge>
