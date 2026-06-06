@@ -1,5 +1,6 @@
 import type { IctRealReplayRunResult } from "./ictRealReplayRunnerTypes";
 import type { IctMonteCarloTradeOutcome } from "./ictMonteCarloTypes";
+import type { IctBrowserResearchStatus } from "./ictBrowserResearchLimits";
 
 export type IctMarketScorecardStatus =
   | "research_preferred"
@@ -52,6 +53,15 @@ export interface IctMarketScorecard {
   runId: string;
   generatedAt: string;
   researchOnly: true;
+  status?: IctBrowserResearchStatus;
+  browserSafe?: boolean;
+  warnings?: string[];
+  progress?: {
+    completedSymbols: number;
+    totalSymbols: number;
+    currentSymbol?: string;
+  };
+  serializedBytes?: number;
   config: IctMarketScorecardConfig;
   symbols: IctMarketScorecardSymbolResult[];
   summary: {

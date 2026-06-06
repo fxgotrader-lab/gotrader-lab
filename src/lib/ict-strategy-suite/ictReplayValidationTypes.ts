@@ -35,6 +35,8 @@ export interface IctReplayInput {
   newsSessionRiskContext?: IctNewsSessionRiskContextInput;
   replayWindowSize: number;
   lookaheadCandles: number;
+  maxReplayWindows?: number;
+  appendJournal?: boolean;
   researchOnly: true;
 }
 

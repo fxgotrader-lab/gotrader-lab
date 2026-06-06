@@ -100,6 +100,7 @@ export const sliceReplayWindows = (input: IctReplayInput) => {
   const candles = coerceCandles(input.candles, input);
   const windowSize = Math.max(3, Math.floor(input.replayWindowSize));
   const lookaheadCandles = Math.max(1, Math.floor(input.lookaheadCandles));
+  const maxReplayWindows = Math.max(0, Math.floor(Number(input.maxReplayWindows ?? 0)));
   const windows: Array<{
     historicalCandles: Candle[];
     futureCandles: Candle[];
@@ -114,7 +115,7 @@ export const sliceReplayWindows = (input: IctReplayInput) => {
       windows.push({ historicalCandles, futureCandles, signalCandle, windowIndex: windows.length });
     }
   }
-  return windows;
+  return maxReplayWindows > 0 && windows.length > maxReplayWindows ? windows.slice(-maxReplayWindows) : windows;
 };
 
 export const calculateCandlesToTarget = (futureCandles: Candle[], side: IctAdvisorSignal["side"], target?: number) => {
@@ -458,7 +459,9 @@ export const runIctReplayValidation = (input: IctReplayInput): IctReplayValidati
     );
   });
   const journalEvents = results.map((result) => buildIctReplayJournalEvent(result, htfTimeframes));
-  appendIctReplayJournalEvents(journalEvents);
+  if (input.appendJournal !== false) {
+    appendIctReplayJournalEvents(journalEvents);
+  }
   return sanitizeReplayOutput({
     replayId: createId("ict_replay_validation"),
     generatedAt: new Date().toISOString(),
@@ -470,6 +473,8 @@ export const runIctReplayValidation = (input: IctReplayInput): IctReplayValidati
       htfTimeframes,
       replayWindowSize: input.replayWindowSize,
       lookaheadCandles: input.lookaheadCandles,
+      maxReplayWindows: input.maxReplayWindows,
+      appendJournal: input.appendJournal,
       researchOnly: true,
       candleCount: candles.length,
       indexComparisonSourceCount: Object.values(indexComparisonCandles).filter((values) => values?.length).length,

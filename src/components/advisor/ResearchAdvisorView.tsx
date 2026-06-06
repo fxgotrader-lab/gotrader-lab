@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useState, type ErrorInfo, type FormEvent, type ReactNode } from "react";
+import { Component, useEffect, useMemo, useRef, useState, type ErrorInfo, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { BarChart3, MessageSquareText, PlayCircle, Send, ShieldCheck, Sparkles } from "lucide-react";
 
@@ -21,16 +21,18 @@ import {
   buildIctResearchSignalFromCurrentRead,
   buildIctResearchSignalJournalEvent,
   buildMarketScorecardResearchReport,
+  buildIctMarketScorecardBrowserSafe,
   createPaperSignalFromResearchSignal,
+  DEFAULT_ICT_BROWSER_RESEARCH_LIMITS,
   appendIctApprovedProfileOptimizationJournalEvent,
   buildIctApprovedProfileOptimizationJournalEvent,
-  buildIctMarketScorecard,
   DEFAULT_ICT_MARKET_SCORECARD_SYMBOLS,
   extractMonteCarloOutcomesFromManualReplay,
   extractMonteCarloOutcomesFromMarketScorecard,
+  ictBrowserSafeNotice,
   isResearchSignalEligibleForPaperSim,
   listIctResearchReports,
-  optimizeApprovedProfileFromReplayResults,
+  optimizeApprovedProfileFromReplayResultsBrowserSafe,
   readLatestResearchState,
   researchReportSourceLabel,
   runMonteCarloBatch,
@@ -76,10 +78,11 @@ const rr = (value?: number) => (typeof value === "number" ? `${value.toFixed(2)}
 const compactPrice = (value?: number) =>
   typeof value === "number" && Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "n/a";
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error ?? "unknown_error");
+const isAbortError = (error: unknown) => (error as { name?: string })?.name === "AbortError";
 const safeList = <T,>(values: T[] | undefined | null): T[] => Array.isArray(values) ? values : [];
 const safeCount = (value?: number) => (typeof value === "number" && Number.isFinite(value) ? value.toLocaleString() : "0");
-type MarketScorecardRunStatus = "idle" | "running" | "completed" | "unavailable" | "failed";
-type ProfileOptimizationRunStatus = "idle" | "running" | "completed" | "unavailable" | "failed";
+type MarketScorecardRunStatus = "idle" | "running" | "partial" | "completed" | "unavailable" | "failed" | "timed_out";
+type ProfileOptimizationRunStatus = "idle" | "running" | "partial" | "completed" | "unavailable" | "failed" | "timed_out";
 type MonteCarloRunStatus = "idle" | "running" | "completed" | "unavailable" | "failed";
 type AdvisorChatMessage = {
   id: string;
@@ -244,6 +247,8 @@ export function ResearchAdvisorView() {
       "Advisor chat is UI-ready. I can summarize the current deterministic GoTrader read, setup blockers, replay status, risk, and SMT context. OpenClaw advisory can be connected separately when configured."
     )
   ]);
+  const deepActionRunIdRef = useRef(0);
+  const deepActionAbortRef = useRef<AbortController | undefined>(undefined);
 
   useEffect(() => {
     let mounted = true;
@@ -271,6 +276,11 @@ export function ResearchAdvisorView() {
       mounted = false;
       events.forEach((eventName) => window.removeEventListener(eventName, refresh));
     };
+  }, []);
+
+  useEffect(() => () => {
+    deepActionRunIdRef.current += 1;
+    deepActionAbortRef.current?.abort();
   }, []);
 
   useEffect(() => {
@@ -408,6 +418,15 @@ export function ResearchAdvisorView() {
     marketScorecardStatus === "running" ||
     monteCarloStatus === "running" ||
     profileOptimizationStatus === "running";
+  const beginDeepResearchAction = () => {
+    deepActionAbortRef.current?.abort();
+    const controller = new AbortController();
+    deepActionAbortRef.current = controller;
+    const runId = deepActionRunIdRef.current + 1;
+    deepActionRunIdRef.current = runId;
+    return { controller, runId };
+  };
+  const isCurrentDeepResearchRun = (runId: number) => deepActionRunIdRef.current === runId;
   const runManualReplayReview = async () => {
     if (deepResearchActionRunning) return;
     setManualReplayStatus("running");
@@ -439,13 +458,32 @@ export function ResearchAdvisorView() {
   };
   const runMarketScorecard = async () => {
     if (deepResearchActionRunning) return;
+    const { controller, runId } = beginDeepResearchAction();
     setMarketScorecardStatus("running");
     setMarketScorecardError(undefined);
     try {
-      const result = await buildIctMarketScorecard(marketScorecardConfig);
+      const result = await buildIctMarketScorecardBrowserSafe(
+        marketScorecardConfig,
+        {
+          limits: DEFAULT_ICT_BROWSER_RESEARCH_LIMITS,
+          signal: controller.signal,
+          onProgress: (progress) => {
+            if (isCurrentDeepResearchRun(runId)) {
+              setMarketScorecard((current) => current ? { ...current, progress } : current);
+            }
+          }
+        }
+      );
+      if (!isCurrentDeepResearchRun(runId)) return;
       setMarketScorecard(result);
       const completedSymbols = result.summary?.completedSymbols ?? 0;
-      setMarketScorecardStatus(completedSymbols > 0 ? "completed" : "unavailable");
+      setMarketScorecardStatus(
+        result.status === "partial" || result.status === "timed_out"
+          ? result.status
+          : completedSymbols > 0
+            ? "completed"
+            : "unavailable"
+      );
       if (completedSymbols > 0) {
         try {
           setLatestResearchState(
@@ -458,9 +496,21 @@ export function ResearchAdvisorView() {
         setMarketScorecardError("No configured market completed replay.");
       }
     } catch (error) {
+      if (isAbortError(error)) {
+        if (isCurrentDeepResearchRun(runId)) {
+          setMarketScorecardStatus("failed");
+          setMarketScorecardError("Market scorecard cancelled before completion.");
+        }
+        return;
+      }
+      if (!isCurrentDeepResearchRun(runId)) return;
       setMarketScorecard(undefined);
       setMarketScorecardStatus("failed");
       setMarketScorecardError(errorMessage(error));
+    } finally {
+      if (isCurrentDeepResearchRun(runId) && deepActionAbortRef.current === controller) {
+        deepActionAbortRef.current = undefined;
+      }
     }
   };
   const runMonteCarloRobustness = async () => {
@@ -509,6 +559,7 @@ export function ResearchAdvisorView() {
   };
   const runProfileOptimization = async () => {
     if (deepResearchActionRunning) return;
+    const { controller, runId } = beginDeepResearchAction();
     setProfileOptimizationStatus("running");
     setProfileOptimizationError(undefined);
     try {
@@ -517,25 +568,53 @@ export function ResearchAdvisorView() {
           requestedSymbols: [manualReplayRequest.requestedSymbol],
           primaryTimeframes: [manualReplayRequest.primaryTimeframe],
           htfTimeframes: manualReplayRequest.htfTimeframes,
-          candleLimit: manualReplayRequest.candleLimit,
+          candleLimit: Math.min(manualReplayRequest.candleLimit, DEFAULT_ICT_BROWSER_RESEARCH_LIMITS.maxCandlesPerSymbol),
           replayWindowSize: manualReplayRequest.replayWindowSize,
           lookaheadCandles: manualReplayRequest.lookaheadCandles,
           researchOnly: true
         },
         {
           appendJournal: false,
-          includeDiagnostics: true,
-          includeReplayResults: true
+          includeDiagnostics: false,
+          includeReplayResults: true,
+          maxReplayWindows: DEFAULT_ICT_BROWSER_RESEARCH_LIMITS.maxReplayWindows
         }
       );
-      const result = optimizeApprovedProfileFromReplayResults(replayRun.replayResults ?? [], "balanced_quality");
+      if (!isCurrentDeepResearchRun(runId)) return;
+      const result = await optimizeApprovedProfileFromReplayResultsBrowserSafe(
+        replayRun.replayResults ?? [],
+        "balanced_quality",
+        {
+          limits: DEFAULT_ICT_BROWSER_RESEARCH_LIMITS,
+          signal: controller.signal
+        }
+      );
+      if (!isCurrentDeepResearchRun(runId)) return;
       appendIctApprovedProfileOptimizationJournalEvent(buildIctApprovedProfileOptimizationJournalEvent(result));
       setProfileOptimization(result);
-      setProfileOptimizationStatus(result.baseline.totalSignals > 0 ? "completed" : "unavailable");
+      setProfileOptimizationStatus(
+        result.status === "partial" || result.status === "timed_out"
+          ? result.status
+          : result.baseline.totalSignals > 0
+            ? "completed"
+            : "unavailable"
+      );
     } catch (error) {
+      if (isAbortError(error)) {
+        if (isCurrentDeepResearchRun(runId)) {
+          setProfileOptimizationStatus("failed");
+          setProfileOptimizationError("Profile optimization cancelled before completion.");
+        }
+        return;
+      }
+      if (!isCurrentDeepResearchRun(runId)) return;
       setProfileOptimization(undefined);
       setProfileOptimizationStatus("failed");
       setProfileOptimizationError(errorMessage(error));
+    } finally {
+      if (isCurrentDeepResearchRun(runId) && deepActionAbortRef.current === controller) {
+        deepActionAbortRef.current = undefined;
+      }
     }
   };
   const saveManualReplayReport = () => {
@@ -1617,14 +1696,18 @@ function ApprovedProfileOptimizerPanel({
   status: ProfileOptimizationRunStatus;
 }) {
   const statusVariant =
-    status === "completed" ? "success" : status === "unavailable" || status === "running" ? "warning" : status === "failed" ? "danger" : "secondary";
+    status === "completed" ? "success" : status === "unavailable" || status === "running" || status === "partial" || status === "timed_out" ? "warning" : status === "failed" ? "danger" : "secondary";
   const statusMessage =
     status === "idle"
       ? "Idle. Profile optimization runs only after explicit user action and does not change production settings."
       : status === "running"
-        ? "Running compact real replay optimization..."
+        ? "Running browser-safe replay optimization..."
         : status === "completed"
-          ? "Approved-profile optimization completed."
+          ? "Approved-profile optimization completed in browser-safe mode."
+          : status === "partial"
+            ? "Profile optimization returned a partial browser-safe result. Use CLI/full replay for exhaustive calibration."
+            : status === "timed_out"
+              ? "Profile optimization timed out gracefully. Partial data was kept when available; production thresholds were not changed."
           : status === "unavailable"
             ? "Optimization unavailable: replay produced no research signals."
             : `Optimization failed: ${error ?? "unknown_error"}.`;
@@ -1664,6 +1747,9 @@ function ApprovedProfileOptimizerPanel({
         <AdvisorReadout label="Objective" value={formatToken(result?.objective ?? "balanced_quality")} detail="target-first, RR, and noise balance" />
       </div>
       <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">{statusMessage}</p>
+      <p className="mt-2 rounded-lg border border-cyan-300/15 bg-cyan-300/10 p-3 text-xs leading-5 text-cyan-100">
+        {ictBrowserSafeNotice} Limits: {DEFAULT_ICT_BROWSER_RESEARCH_LIMITS.maxCandlesPerSymbol} candles, {DEFAULT_ICT_BROWSER_RESEARCH_LIMITS.maxReplayWindows} replay windows, {DEFAULT_ICT_BROWSER_RESEARCH_LIMITS.maxOptimizerCandidates} candidates, {Math.round(DEFAULT_ICT_BROWSER_RESEARCH_LIMITS.maxRuntimeMs / 1000)}s runtime cap.
+      </p>
       {result && recommended ? (
         <>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -1679,6 +1765,8 @@ function ApprovedProfileOptimizerPanel({
             <AdvisorReadout label="FVG required" value={yesNo(recommended.requireFvgPresent)} />
             <AdvisorReadout label="SMT confirmation" value={yesNo(recommended.requireSmtConfirmationForIndex)} />
             <AdvisorReadout label="News filters" value={recommended.rejectMediumNewsRisk ? "high + medium" : "high only"} />
+            <AdvisorReadout label="Candidates evaluated" value={safeCount(result.evaluatedCandidateCount)} detail={`${safeCount(result.totalCandidateCount)} available / ${safeCount(result.omittedCandidateCount)} omitted`} />
+            <AdvisorReadout label="Payload size" value={safeCount(result.serializedBytes)} detail="compact browser state bytes" />
           </div>
           {tooFewSignals ? (
             <div className="mt-3 rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm leading-5 text-amber-100">
@@ -1688,6 +1776,7 @@ function ApprovedProfileOptimizerPanel({
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
             <AdvisorList label="Strengths" values={safeList(recommended.strengths)} empty="none" />
             <AdvisorList label="Weaknesses" values={safeList(recommended.weaknesses)} empty="none" />
+            <AdvisorList label="Browser-safe warnings" values={safeList(result.warnings)} empty="none" />
             <AdvisorList label="Recommendation" values={safeList([result.recommendationSummary, result.nextTestSuggestion].filter(Boolean))} empty="none" />
             <AdvisorList
               label="Safety"
@@ -1729,9 +1818,13 @@ function MarketScorecardPanel({
     status === "idle"
       ? "Idle. Market scorecard runs only after explicit user action."
       : status === "running"
-        ? "Running replay scorecard across configured markets with compact output only..."
+        ? "Running browser-safe replay scorecard with compact output only..."
         : status === "completed"
-          ? "Market scorecard completed. Latest Scorecard Saved as a compact research-only summary."
+          ? "Market scorecard completed in browser-safe mode. Latest Scorecard Saved as a compact research-only summary."
+          : status === "partial"
+            ? "Market scorecard returned a partial browser-safe result. Use CLI/full replay for deeper side-by-side coverage."
+            : status === "timed_out"
+              ? "Market scorecard timed out gracefully. Partial symbol summaries were kept when available."
           : status === "unavailable"
             ? "No configured market completed replay. Check MT5 read-only availability and symbol mappings."
             : `Market scorecard failed: ${error ?? "unknown_error"}.`;
@@ -1772,6 +1865,9 @@ function MarketScorecardPanel({
         <AdvisorReadout label="Replay shape" value={`${config.replayWindowSize}/${config.lookaheadCandles}`} detail="window / lookahead candles" />
       </div>
       <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">{statusMessage}</p>
+      <p className="mt-2 rounded-lg border border-cyan-300/15 bg-cyan-300/10 p-3 text-xs leading-5 text-cyan-100">
+        {ictBrowserSafeNotice} Limits: {DEFAULT_ICT_BROWSER_RESEARCH_LIMITS.maxSymbolsPerScorecard} symbols, {DEFAULT_ICT_BROWSER_RESEARCH_LIMITS.maxCandlesPerSymbol} candles each, {DEFAULT_ICT_BROWSER_RESEARCH_LIMITS.maxReplayWindows} replay windows, {Math.round(DEFAULT_ICT_BROWSER_RESEARCH_LIMITS.maxRuntimeMs / 1000)}s runtime cap.
+      </p>
       {saveResult ? <SaveResultNotice result={saveResult} /> : null}
       {scorecard ? (
         <>
@@ -1785,7 +1881,14 @@ function MarketScorecardPanel({
             <AdvisorReadout label="Best approved/rejected" value={scorecardSummary?.bestApprovedRejectedRatioSymbol ?? "n/a"} detail="approved-profile ratio" />
             <AdvisorReadout label="Cleanest symbol" value={scorecardSummary?.cleanestSymbol ?? "n/a"} detail="research scorecard only" />
             <AdvisorReadout label="Generated" value={formatDate(scorecard.generatedAt)} detail={scorecard.runId} />
+            <AdvisorReadout label="Browser progress" value={`${safeCount(scorecard.progress?.completedSymbols)} / ${safeCount(scorecard.progress?.totalSymbols)}`} detail={scorecard.progress?.currentSymbol ? `current ${scorecard.progress.currentSymbol}` : "compact run"} />
+            <AdvisorReadout label="Payload size" value={safeCount(scorecard.serializedBytes)} detail="compact browser state bytes" />
           </div>
+          {safeList(scorecard.warnings).length ? (
+            <div className="mt-4">
+              <AdvisorList label="Browser-safe warnings" values={safeList(scorecard.warnings)} empty="none" />
+            </div>
+          ) : null}
           <div className="mt-4 overflow-x-auto rounded-lg border border-white/10">
             <table className="min-w-[980px] w-full text-left text-sm">
               <thead className="bg-white/[0.04] text-xs uppercase tracking-[0.12em] text-slate-500">
@@ -1850,7 +1953,7 @@ function marketScorecardBadgeVariant(
   status: IctMarketScorecardStatus | MarketScorecardRunStatus
 ): "success" | "warning" | "danger" | "secondary" {
   if (status === "completed" || status === "research_preferred") return "success";
-  if (status === "running" || status === "watchlist_only" || status === "insufficient_data") return "warning";
+  if (status === "running" || status === "partial" || status === "timed_out" || status === "watchlist_only" || status === "insufficient_data") return "warning";
   if (status === "failed" || status === "unavailable") return "danger";
   return "secondary";
 }

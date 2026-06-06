@@ -4,6 +4,15 @@ import type {
   IctProfileOptimizationCandidate,
   IctProfileOptimizationObjective
 } from "./ictApprovedProfileOptimizerTypes";
+import {
+  approximateJsonBytes,
+  ictBrowserResearchDeadlineExceeded,
+  ictBrowserSafeNotice,
+  resolveIctBrowserResearchLimits,
+  throwIfIctBrowserResearchAborted,
+  yieldToBrowser,
+  type IctBrowserResearchLimits
+} from "./ictBrowserResearchLimits";
 import { smtSymbolMatchesIndexGroup } from "./ictIndexSmt";
 import type { IctReplayResult } from "./ictReplayValidationTypes";
 
@@ -277,6 +286,116 @@ export const rankOptimizationCandidates = (
         left.id.localeCompare(right.id)
     );
 
+const candidateBrowserPriority = (candidate: IctProfileOptimizationCandidate) => {
+  let score = 0;
+  score -= Math.abs(candidate.minConfidence - 70) * 0.8;
+  score -= Math.abs(candidate.minRr - 2) * 12;
+  if (candidate.requireHtfAlignment) score += 12;
+  if (candidate.requireFvgPresent) score += 10;
+  if (candidate.requireExternalLiquidityTarget) score += 8;
+  if (candidate.rejectEquilibrium) score += 4;
+  if (candidate.rejectHighNewsRisk) score += 4;
+  if (candidate.requireSmtConfirmationForIndex) score += 2;
+  if (candidate.preferredSessionsOnly) score += 2;
+  if (candidate.rejectMediumNewsRisk) score -= 1;
+  return score;
+};
+
+export const selectBrowserSafeOptimizationCandidates = (
+  limits: Partial<IctBrowserResearchLimits> = {}
+): IctProfileOptimizationCandidate[] => {
+  const resolved = resolveIctBrowserResearchLimits(limits);
+  return buildOptimizationCandidates()
+    .sort((left, right) => candidateBrowserPriority(right) - candidateBrowserPriority(left) || left.id.localeCompare(right.id))
+    .slice(0, resolved.maxOptimizerCandidates);
+};
+
+export interface IctBrowserSafeOptimizationOptions {
+  limits?: Partial<IctBrowserResearchLimits>;
+  signal?: AbortSignal;
+}
+
+export async function optimizeApprovedProfileFromReplayResultsBrowserSafe(
+  results: IctReplayResult[],
+  objective: IctProfileOptimizationObjective = "balanced_quality",
+  options: IctBrowserSafeOptimizationOptions = {}
+): Promise<IctApprovedProfileOptimizationResult> {
+  const limits = resolveIctBrowserResearchLimits(options.limits);
+  const startedAt = Date.now();
+  const deadlineAt = startedAt + limits.maxRuntimeMs;
+  const baseline = baselineFor(results);
+  const totalCandidateCount = buildOptimizationCandidates().length;
+  const selected = selectBrowserSafeOptimizationCandidates(limits);
+  const scored: IctProfileOptimizationCandidate[] = [];
+  const warnings = [ictBrowserSafeNotice];
+  let status: IctApprovedProfileOptimizationResult["status"] = "completed";
+
+  for (let index = 0; index < selected.length; index += 1) {
+    throwIfIctBrowserResearchAborted(options.signal);
+    if (ictBrowserResearchDeadlineExceeded(deadlineAt)) {
+      status = scored.length ? "partial" : "timed_out";
+      warnings.push(`Optimizer stopped after ${limits.maxRuntimeMs}ms browser-safe runtime cap.`);
+      break;
+    }
+    scored.push(scoreOptimizationCandidate(selected[index], results, objective));
+    if ((index + 1) % limits.yieldEveryIterations === 0) {
+      await yieldToBrowser();
+    }
+  }
+
+  const ranked = scored.sort(
+    (left, right) =>
+      right.score - left.score ||
+      right.results.targetFirstRate - left.results.targetFirstRate ||
+      right.results.averageRrAchieved - left.results.averageRrAchieved ||
+      left.results.signalReductionPct - right.results.signalReductionPct ||
+      left.id.localeCompare(right.id)
+  );
+  const recommendedProfile = ranked[0] ?? fallbackCandidate(baseline.totalSignals);
+  if (!baseline.totalSignals) {
+    status = status === "timed_out" ? status : "unavailable";
+    warnings.push("Replay produced no research signals; optimizer returned unavailable compact output.");
+  }
+  if (selected.length < totalCandidateCount) {
+    warnings.push(`Browser run evaluated ${selected.length} of ${totalCandidateCount} optimizer candidates.`);
+  }
+
+  let result = sanitizeOptimizationResult({
+    generatedAt: new Date().toISOString(),
+    researchOnly: true,
+    status,
+    browserSafe: true,
+    evaluatedCandidateCount: scored.length,
+    totalCandidateCount,
+    omittedCandidateCount: Math.max(0, totalCandidateCount - scored.length),
+    objective,
+    baseline: {
+      totalSignals: baseline.totalSignals,
+      targetFirstRate: baseline.targetFirstRate,
+      averageRrAchieved: baseline.averageRrAchieved
+    },
+    recommendedProfile,
+    candidates: ranked.slice(0, 10),
+    recommendationSummary: buildRecommendationSummary(recommendedProfile, baseline),
+    nextTestSuggestion: buildNextTestSuggestion(recommendedProfile),
+    warnings,
+    authority,
+    safety
+  });
+
+  while (approximateJsonBytes(result) > limits.maxStoredResultBytes && result.candidates.length > 1) {
+    result = sanitizeOptimizationResult({
+      ...result,
+      candidates: result.candidates.slice(0, Math.max(1, Math.floor(result.candidates.length / 2))),
+      warnings: [...(result.warnings ?? []), `Stored optimizer output compacted below ${limits.maxStoredResultBytes} bytes.`]
+    });
+  }
+  return {
+    ...result,
+    serializedBytes: approximateJsonBytes(result)
+  };
+}
+
 const fallbackCandidate = (totalSignals = 0): IctProfileOptimizationCandidate => ({
   id: "ict_profile_opt__unavailable",
   label: "Optimization unavailable",
@@ -352,6 +471,8 @@ export const sanitizeOptimizationResult = (
 ): IctApprovedProfileOptimizationResult => {
   const sanitized = JSON.parse(JSON.stringify(result)) as IctApprovedProfileOptimizationResult;
   sanitized.researchOnly = true;
+  sanitized.status = sanitized.status ?? "completed";
+  sanitized.warnings = sanitized.warnings?.slice(0, 8);
   sanitized.authority = authority;
   sanitized.safety = safety;
   sanitized.baseline = {

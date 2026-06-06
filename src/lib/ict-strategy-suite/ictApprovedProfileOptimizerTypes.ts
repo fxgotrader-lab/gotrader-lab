@@ -1,4 +1,5 @@
 import type { IctRealReplayRunResult } from "./ictRealReplayRunnerTypes";
+import type { IctBrowserResearchStatus } from "./ictBrowserResearchLimits";
 
 export type IctProfileOptimizationObjective =
   | "maximize_target_first_rate"
@@ -41,6 +42,13 @@ export interface IctProfileOptimizationCandidate {
 export interface IctApprovedProfileOptimizationResult {
   generatedAt: string;
   researchOnly: true;
+  status?: IctBrowserResearchStatus;
+  browserSafe?: boolean;
+  evaluatedCandidateCount?: number;
+  totalCandidateCount?: number;
+  omittedCandidateCount?: number;
+  serializedBytes?: number;
+  warnings?: string[];
   objective: IctProfileOptimizationObjective;
   baseline: {
     totalSignals: number;

@@ -1,5 +1,14 @@
 import type { IctRealReplayRunOptions } from "./ictRealReplayRunner";
 import {
+  approximateJsonBytes,
+  ictBrowserResearchDeadlineExceeded,
+  ictBrowserSafeNotice,
+  resolveIctBrowserResearchLimits,
+  throwIfIctBrowserResearchAborted,
+  yieldToBrowser,
+  type IctBrowserResearchLimits
+} from "./ictBrowserResearchLimits";
+import {
   defaultIctRealReplayConfig,
   resolveIctRealReplaySymbolMapping,
   runIctRealReplay
@@ -76,6 +85,42 @@ const chooseApprovedProfile = (profiles: IctApprovedSetupProfileRunSummary[] = [
         right.totalApproved - left.totalApproved ||
         left.profileId.localeCompare(right.profileId)
     )[0];
+
+const unavailableSymbolResult = ({
+  config,
+  reason,
+  requestedSymbol
+}: {
+  config: IctMarketScorecardConfig;
+  reason: string;
+  requestedSymbol: string;
+}): IctMarketScorecardSymbolResult => {
+  const mapping = resolveIctRealReplaySymbolMapping(requestedSymbol);
+  return {
+    requestedSymbol: mapping.requestedSymbol,
+    brokerSymbol: mapping.brokerSymbol,
+    displayLabel: mapping.displayLabel,
+    primaryTimeframe: config.primaryTimeframe,
+    htfTimeframes: config.htfTimeframes,
+    status: "unavailable",
+    statusReason: reason,
+    totalWindows: 0,
+    totalSignals: 0,
+    totalNoTrades: 0,
+    broadTargetFirstRate: 0,
+    broadAverageRr: 0,
+    approvedCount: 0,
+    watchlistCount: 0,
+    rejectedCount: 0,
+    noTradeCount: 0,
+    approvedRejectedRatio: 0,
+    approvedTargetFirstRate: 0,
+    approvedAverageRr: 0,
+    signalReductionPct: 0,
+    mostCommonNoTradeReasons: [],
+    researchOnly: true
+  };
+};
 
 export const classifyMarketScorecardStatus = (input: {
   approvedAverageRr: number;
@@ -262,31 +307,11 @@ export async function buildIctMarketScorecard(
       );
       symbols.push(scoreSymbolReplaySummary(result, requestedSymbol));
     } catch (error) {
-      const mapping = resolveIctRealReplaySymbolMapping(requestedSymbol);
-      symbols.push({
-        requestedSymbol: mapping.requestedSymbol,
-        brokerSymbol: mapping.brokerSymbol,
-        displayLabel: mapping.displayLabel,
-        primaryTimeframe: config.primaryTimeframe,
-        htfTimeframes: config.htfTimeframes,
-        status: "unavailable",
-        statusReason: error instanceof Error ? error.message : String(error),
-        totalWindows: 0,
-        totalSignals: 0,
-        totalNoTrades: 0,
-        broadTargetFirstRate: 0,
-        broadAverageRr: 0,
-        approvedCount: 0,
-        watchlistCount: 0,
-        rejectedCount: 0,
-        noTradeCount: 0,
-        approvedRejectedRatio: 0,
-        approvedTargetFirstRate: 0,
-        approvedAverageRr: 0,
-        signalReductionPct: 0,
-        mostCommonNoTradeReasons: [],
-        researchOnly: true
-      });
+      symbols.push(unavailableSymbolResult({
+        config,
+        requestedSymbol,
+        reason: error instanceof Error ? error.message : String(error)
+      }));
     }
   }
 
@@ -304,6 +329,127 @@ export async function buildIctMarketScorecard(
     appendIctMarketScorecardJournalEvent(buildIctMarketScorecardJournalEvent(scorecard));
   }
   return scorecard;
+}
+
+export interface IctBrowserSafeMarketScorecardOptions extends IctRealReplayRunOptions {
+  limits?: Partial<IctBrowserResearchLimits>;
+  signal?: AbortSignal;
+  onProgress?: (progress: NonNullable<IctMarketScorecard["progress"]>) => void;
+}
+
+export async function buildIctMarketScorecardBrowserSafe(
+  configInput: Partial<IctMarketScorecardConfig> = {},
+  options: IctBrowserSafeMarketScorecardOptions = {}
+): Promise<IctMarketScorecard> {
+  const limits = resolveIctBrowserResearchLimits(options.limits);
+  const defaults = defaultIctMarketScorecardConfig();
+  const requestedSymbols = (configInput.requestedSymbols?.length ? configInput.requestedSymbols : defaults.requestedSymbols)
+    .slice(0, limits.maxSymbolsPerScorecard);
+  const sourceSymbolCount = configInput.requestedSymbols?.length ?? defaults.requestedSymbols.length;
+  const config: IctMarketScorecardConfig = {
+    requestedSymbols,
+    primaryTimeframe: configInput.primaryTimeframe ?? defaults.primaryTimeframe,
+    htfTimeframes: configInput.htfTimeframes?.length ? configInput.htfTimeframes : defaults.htfTimeframes,
+    candleLimit: Math.min(configInput.candleLimit ?? defaults.candleLimit, limits.maxCandlesPerSymbol),
+    replayWindowSize: configInput.replayWindowSize ?? defaults.replayWindowSize,
+    lookaheadCandles: configInput.lookaheadCandles ?? defaults.lookaheadCandles
+  };
+  const startedAt = Date.now();
+  const deadlineAt = startedAt + limits.maxRuntimeMs;
+  const symbols: IctMarketScorecardSymbolResult[] = [];
+  const warnings = [ictBrowserSafeNotice];
+  if (sourceSymbolCount > config.requestedSymbols.length) {
+    warnings.push(`Browser scorecard limited to ${config.requestedSymbols.length} of ${sourceSymbolCount} configured symbols.`);
+  }
+  if ((configInput.candleLimit ?? defaults.candleLimit) > config.candleLimit) {
+    warnings.push(`Candle limit capped at ${config.candleLimit} per symbol in browser-safe mode.`);
+  }
+
+  for (const requestedSymbol of config.requestedSymbols) {
+    throwIfIctBrowserResearchAborted(options.signal);
+    if (ictBrowserResearchDeadlineExceeded(deadlineAt)) {
+      warnings.push(`Scorecard stopped after ${limits.maxRuntimeMs}ms browser-safe runtime cap.`);
+      break;
+    }
+    options.onProgress?.({
+      completedSymbols: symbols.length,
+      currentSymbol: requestedSymbol,
+      totalSymbols: config.requestedSymbols.length
+    });
+    try {
+      const result = await runIctRealReplay(
+        {
+          requestedSymbols: [requestedSymbol],
+          primaryTimeframes: [config.primaryTimeframe],
+          htfTimeframes: config.htfTimeframes,
+          candleLimit: config.candleLimit,
+          replayWindowSize: config.replayWindowSize,
+          lookaheadCandles: config.lookaheadCandles,
+          researchOnly: true
+        } satisfies Partial<IctRealReplayRunConfig>,
+        {
+          ...options,
+          appendJournal: false,
+          includeDiagnostics: options.includeDiagnostics ?? true,
+          includeReplayResults: false,
+          maxReplayWindows: limits.maxReplayWindows
+        }
+      );
+      symbols.push(scoreSymbolReplaySummary(result, requestedSymbol));
+    } catch (error) {
+      if ((error as { name?: string })?.name === "AbortError") throw error;
+      symbols.push(unavailableSymbolResult({
+        config,
+        requestedSymbol,
+        reason: error instanceof Error ? error.message : String(error)
+      }));
+    }
+    options.onProgress?.({
+      completedSymbols: symbols.length,
+      totalSymbols: config.requestedSymbols.length
+    });
+    if (symbols.length % limits.yieldEveryIterations === 0) {
+      await yieldToBrowser();
+    }
+  }
+
+  const completedSymbols = symbols.filter((symbol) => symbol.status !== "unavailable").length;
+  const timedOut = symbols.length < config.requestedSymbols.length && ictBrowserResearchDeadlineExceeded(deadlineAt);
+  const scorecard = sanitizeMarketScorecard({
+    runId: createId("ict_market_scorecard"),
+    generatedAt: new Date().toISOString(),
+    researchOnly: true,
+    status: timedOut ? (completedSymbols ? "partial" : "timed_out") : completedSymbols ? (symbols.length < sourceSymbolCount ? "partial" : "completed") : "unavailable",
+    browserSafe: true,
+    warnings,
+    progress: {
+      completedSymbols: symbols.length,
+      totalSymbols: config.requestedSymbols.length
+    },
+    config,
+    symbols,
+    summary: summarizeMarketScorecard(symbols),
+    authority,
+    safety
+  });
+  const compacted = approximateJsonBytes(scorecard) > limits.maxStoredResultBytes
+    ? sanitizeMarketScorecard({
+        ...scorecard,
+        warnings: [...(scorecard.warnings ?? []), `Scorecard output compacted below ${limits.maxStoredResultBytes} bytes.`],
+        symbols: scorecard.symbols.slice(0, limits.maxSymbolsPerScorecard).map((symbol) => ({
+          ...symbol,
+          mostCommonNoTradeReasons: symbol.mostCommonNoTradeReasons.slice(0, 3)
+        }))
+      })
+    : scorecard;
+  const finalScorecard = {
+    ...compacted,
+    serializedBytes: approximateJsonBytes(compacted)
+  };
+  if (options.appendJournal === true && completedSymbols > 0) {
+    appendIctMarketScorecardJournalEvent(buildIctMarketScorecardJournalEvent(finalScorecard));
+  }
+  return finalScorecard;
 }
 
 export const buildIctMarketScorecardJournalEvent = (scorecard: IctMarketScorecard): IctMarketScorecardJournalEvent => ({
@@ -352,6 +498,8 @@ export const appendIctMarketScorecardJournalEvent = (event: IctMarketScorecardJo
 export const sanitizeMarketScorecard = (scorecard: IctMarketScorecard): IctMarketScorecard => {
   const sanitized = JSON.parse(JSON.stringify(scorecard)) as IctMarketScorecard;
   sanitized.researchOnly = true;
+  sanitized.status = sanitized.status ?? "completed";
+  sanitized.warnings = sanitized.warnings?.slice(0, 8);
   sanitized.authority = authority;
   sanitized.safety = safety;
   sanitized.symbols = sanitized.symbols.map((symbol) => ({

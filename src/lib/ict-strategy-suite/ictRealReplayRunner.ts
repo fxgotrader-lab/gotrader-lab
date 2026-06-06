@@ -87,6 +87,7 @@ export interface IctRealReplayRunOptions {
   appendJournal?: boolean;
   includeDiagnostics?: boolean;
   includeReplayResults?: boolean;
+  maxReplayWindows?: number;
   newsSessionRiskContext?: IctNewsSessionRiskContextInput;
 }
 
@@ -427,6 +428,8 @@ export async function runIctRealReplay(configInput: Partial<IctRealReplayRunConf
             newsSessionRiskContext: options.newsSessionRiskContext ?? { syntheticNoRisk: true, provider: "historical_replay" },
             replayWindowSize: config.replayWindowSize,
             lookaheadCandles: config.lookaheadCandles,
+            maxReplayWindows: options.maxReplayWindows,
+            appendJournal: options.appendJournal,
             researchOnly: true
           })
         );
