@@ -7,6 +7,11 @@ import type {
   IctSessionName,
   IctSessionRiskState
 } from "./ictNewsSessionRiskTypes";
+import type {
+  IctDataDepthStatus,
+  IctSessionDirectionalRead,
+  IctSessionNarrativeProfile
+} from "./ictSessionNarrativeTypes";
 
 export type IctReplayOutcome =
   | "target_first"
@@ -36,6 +41,9 @@ export interface IctReplayInput {
   replayWindowSize: number;
   lookaheadCandles: number;
   maxReplayWindows?: number;
+  requestedLookbackDays?: number;
+  availableLookbackDays?: number;
+  dataDepthStatus?: IctDataDepthStatus;
   appendJournal?: boolean;
   researchOnly: true;
 }
@@ -83,6 +91,14 @@ export interface IctReplayResult {
   cautionEventsCount?: number;
   sessionName?: IctSessionName;
   newsSessionRiskNotes?: string[];
+  sessionNarrativeProfile?: IctSessionNarrativeProfile;
+  sessionDirectionalRead?: IctSessionDirectionalRead;
+  sessionNarrativeConfidence?: number;
+  sessionMitigationDetected?: boolean;
+  dataDepthStatus?: IctDataDepthStatus;
+  availableLookbackDays?: number;
+  requestedLookbackDays?: number;
+  sessionNarrativeReasons?: string[];
   rrEstimate?: number;
   outcome: IctReplayOutcome;
   fvgStatus: IctFvgReplayStatus;
@@ -161,6 +177,10 @@ export interface IctReplayJournalEvent {
   cautionEventsCount?: number;
   sessionName?: IctSessionName;
   newsSessionRiskNotes?: string[];
+  sessionNarrativeProfile?: IctSessionNarrativeProfile;
+  sessionDirectionalRead?: IctSessionDirectionalRead;
+  sessionMitigationDetected?: boolean;
+  dataDepthStatus?: IctDataDepthStatus;
   entryReference?: number;
   invalidation?: number;
   target?: number;

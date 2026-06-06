@@ -205,6 +205,11 @@ export function IctAdvisorSummaryPanel({
             <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               <AdvisorMini label="Packet source" value={formatToken(currentRead.packetSource)} detail={`${currentRead.candleCount?.toLocaleString() ?? 0} candles`} />
               <AdvisorMini label="Composite bias" value={formatToken(currentRead.bias)} />
+              <AdvisorMini
+                label="Session narrative"
+                value={formatToken(currentRead.sessionNarrativeProfile)}
+                detail={`${formatToken(currentRead.sessionDirectionalRead)} / ${pct(currentRead.sessionNarrativeConfidence)}`}
+              />
               <AdvisorMini label="Active setup" value={formatToken(currentRead.bestSetup)} detail={`Phase 2 ${formatToken(topPhaseTwo?.setup ?? currentRead.bestPhase2Setup)}`} />
               <AdvisorMini label="Decision" value={formatToken(currentRead.approvedStatus)} detail={formatToken(currentRead.dataStatus)} />
               <AdvisorMini
@@ -246,7 +251,7 @@ export function IctAdvisorSummaryPanel({
             </div>
             <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3">
               <p className="line-clamp-2 text-xs leading-5 text-slate-300">
-                Signal: {formatToken(researchSignal.status)} / {formatToken(researchSignal.side)} / execution disabled. {currentRead.topReasons[0] ?? recommended?.summary ?? "ICT advisor summary pending."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
+                Signal: {formatToken(researchSignal.status)} / {formatToken(researchSignal.side)} / execution disabled. Session: {formatToken(currentRead.sessionNarrativeProfile)} / {formatToken(currentRead.sessionDirectionalRead)}. {currentRead.topReasons[0] ?? recommended?.summary ?? "ICT advisor summary pending."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
               </p>
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -300,6 +305,16 @@ export function IctAdvisorSummaryPanel({
             <AdvisorMini label="Primary timeframe" value={packet.primaryTimeframe} detail={`${packet.activeSource.candleCount.toLocaleString()} candles`} />
             <AdvisorMini label="HTF context" value={packet.htfTimeframes.length ? packet.htfTimeframes.join(", ") : "missing"} detail="15m / 1h when fetched" />
             <AdvisorMini label="Composite bias" value={formatToken(packet.compactSummary.compositeBias)} detail={recommended?.bias.primary ? `primary ${recommended.bias.primary}` : undefined} />
+            <AdvisorMini
+              label="Session narrative"
+              value={formatToken(packet.compactSummary.sessionNarrativeProfile)}
+              detail={`${formatToken(packet.compactSummary.sessionDirectionalRead)} / ${pct(packet.compactSummary.sessionNarrativeConfidence)}`}
+            />
+            <AdvisorMini
+              label="NY mitigation"
+              value={packet.compactSummary.sessionMitigationDetected ? "detected" : "missing"}
+              detail={`depth ${formatToken(packet.compactSummary.dataDepthStatus)}`}
+            />
             <AdvisorMini label="Active setup" value={formatToken(packet.compactSummary.setup)} />
             <AdvisorMini label="Research side" value={formatToken(packet.compactSummary.side)} />
             <AdvisorMini label="Decision" value={formatToken(packet.compactSummary.decision)} />

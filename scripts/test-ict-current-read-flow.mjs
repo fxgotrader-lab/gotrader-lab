@@ -13,11 +13,13 @@ const outRoot = path.join(projectRoot, ".gotrader", "ict-current-read-flow-test"
 const sourceFiles = [
   { root: sourceRoot, file: "ictStrategySuiteTypes.ts" },
   { root: sourceRoot, file: "ictAdvisorTypes.ts" },
+  { root: sourceRoot, file: "ictSessionNarrativeTypes.ts" },
   { root: sourceRoot, file: "ictPhase2Types.ts" },
   { root: sourceRoot, file: "ictStrategySuiteJournal.ts" },
   { root: sourceRoot, file: "ictBrowserResearchLimits.ts" },
   { root: sourceRoot, file: "ictAdvisorJournal.ts" },
   { root: sourceRoot, file: "ictStrategySuiteHelpers.ts" },
+  { root: sourceRoot, file: "ictSessionNarrative.ts" },
   { root: sourceRoot, file: "ictStrategySuiteEngines.ts" },
   { root: sourceRoot, file: "ictPhase2OrderBlocks.ts" },
   { root: sourceRoot, file: "ictPhase2BreadAndButter.ts" },

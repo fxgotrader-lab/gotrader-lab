@@ -10,6 +10,7 @@ import type {
 import type { IctReplayResult } from "./ictReplayValidationTypes";
 import type { IctSmtSignal } from "./ictIndexSmtTypes";
 import type { IctNewsSessionRiskDecision } from "./ictNewsSessionRiskTypes";
+import type { IctSessionDirectionalRead } from "./ictSessionNarrativeTypes";
 
 const APPROVED_PROFILE_JOURNAL_STORAGE_KEY = "gotrader.ict-approved-setup-profile-summary.journal.v1";
 const MAX_APPROVED_PROFILE_JOURNAL_EVENTS = 100;
@@ -145,6 +146,10 @@ const hasForbiddenField = (value: unknown, depth = 0): boolean => {
 };
 
 const hasText = (values: string[] | undefined, pattern: RegExp) => (values ?? []).some((value) => pattern.test(value));
+const directionConfirmsSide = (read: IctSessionDirectionalRead | undefined, side: "long" | "short" | "flat") =>
+  (read === "bullish" && side === "long") || (read === "bearish" && side === "short");
+const directionContradictsSide = (read: IctSessionDirectionalRead | undefined, side: "long" | "short" | "flat") =>
+  (read === "bullish" && side === "short") || (read === "bearish" && side === "long");
 
 const htfAlignedForSignal = (signal: IctAdvisorSignal) => {
   const htfValues = Object.values(signal.bias.htf);
@@ -239,6 +244,22 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
   const mixedBias = replay ? input.htfAligned === false : mixedBiasForSignal(input);
   const missingHtfContext = replay ? input.htfAligned === undefined : htfTimeframes.length === 0;
   const targetTooClose = hasText(noTradeReasons, /target (is )?too close|too close to target/i);
+  const sessionNarrativeProfile = input.sessionNarrativeProfile;
+  const sessionDirectionalRead = input.sessionDirectionalRead;
+  const sessionNarrativeConfidence = input.sessionNarrativeConfidence;
+  const sessionMitigationDetected =
+    "sessionMitigationDetected" in input
+      ? input.sessionMitigationDetected
+      : !replay
+        ? input.sessionMitigationContext?.detected
+        : undefined;
+  const dataDepthStatus = input.dataDepthStatus;
+  const sessionNarrativeReasons =
+    "sessionNarrativeReasons" in input
+      ? input.sessionNarrativeReasons
+      : !replay
+        ? input.sessionTopReasons
+        : undefined;
   return {
     brokerSymbol: input.brokerSymbol,
     compositeBias: replay ? undefined : input.bias.composite,
@@ -266,6 +287,14 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
     side: input.side,
     smt,
     newsSessionRisk,
+    sessionNarrativeProfile,
+    sessionDirectionalRead,
+    sessionNarrativeConfidence,
+    sessionMitigationDetected,
+    dataDepthStatus,
+    availableLookbackDays: input.availableLookbackDays,
+    requestedLookbackDays: input.requestedLookbackDays,
+    sessionNarrativeReasons,
     strategyId: input.strategyId,
     symbol: input.symbol,
     targetTooClose
@@ -293,6 +322,10 @@ export const calculateApprovalScore = (input: IctApprovedSetupProfileInput, prof
   if (normalized.newsSessionRisk?.sessionRiskState === "caution") score -= 5;
   if (normalized.dealingRangeLocation === "equilibrium") score -= 10;
   if (normalized.targetTooClose) score -= 10;
+  if (directionConfirmsSide(normalized.sessionDirectionalRead, normalized.side)) score += 5;
+  if (directionContradictsSide(normalized.sessionDirectionalRead, normalized.side)) score -= 12;
+  if (normalized.dataDepthStatus === "limited") score -= 3;
+  if (normalized.dataDepthStatus === "insufficient" || normalized.dataDepthStatus === "unavailable") score -= 8;
   return Math.round(clamp(score));
 };
 
@@ -375,6 +408,21 @@ export const evaluateApprovedSetupProfile = (
   if (normalized.newsSessionRisk?.newsRiskLevel === "medium") watchlistReasons.push("Medium news risk is active near this candidate.");
   if (normalized.newsSessionRisk?.sessionRiskState === "caution") watchlistReasons.push("Session risk state is caution.");
   if (normalized.newsSessionRisk?.riskGovernorAction === "allow") approvedReasons.push("News/session risk governor allows normal ICT gate review.");
+  if (directionConfirmsSide(normalized.sessionDirectionalRead, normalized.side)) {
+    approvedReasons.push(`Session narrative confirms ${normalized.side} candidate: ${normalized.sessionNarrativeProfile ?? "profile pending"}.`);
+  }
+  if (directionContradictsSide(normalized.sessionDirectionalRead, normalized.side)) {
+    watchlistReasons.push(`Session narrative ${normalized.sessionDirectionalRead} read conflicts with ${normalized.side} candidate.`);
+  }
+  if (normalized.sessionMitigationDetected === false) {
+    watchlistReasons.push("Session narrative did not confirm NY mitigation context.");
+  }
+  if (normalized.dataDepthStatus === "limited") {
+    watchlistReasons.push("Session narrative depth is limited; use 90-day depth before over-weighting this profile.");
+  }
+  if (normalized.dataDepthStatus === "insufficient" || normalized.dataDepthStatus === "unavailable") {
+    watchlistReasons.push(`Session narrative depth is ${normalized.dataDepthStatus}.`);
+  }
 
   const status =
     normalized.decision === "no_trade" || normalized.side === "flat"
@@ -418,6 +466,14 @@ export const evaluateApprovedSetupProfile = (
     blockingEventsCount: normalized.newsSessionRisk?.blockingEventsCount,
     cautionEventsCount: normalized.newsSessionRisk?.cautionEventsCount,
     newsSessionRiskNotes: normalized.newsSessionRisk?.newsSessionRiskNotes,
+    sessionNarrativeProfile: normalized.sessionNarrativeProfile,
+    sessionDirectionalRead: normalized.sessionDirectionalRead,
+    sessionNarrativeConfidence: normalized.sessionNarrativeConfidence,
+    sessionMitigationDetected: normalized.sessionMitigationDetected,
+    dataDepthStatus: normalized.dataDepthStatus,
+    availableLookbackDays: normalized.availableLookbackDays,
+    requestedLookbackDays: normalized.requestedLookbackDays,
+    sessionNarrativeReasons: normalized.sessionNarrativeReasons,
     approvalScore: calculateApprovalScore(input, profile),
     approvedReasons: Array.from(new Set(approvedReasons)).slice(0, 8),
     rejectionReasons: Array.from(new Set(hardRejects)).slice(0, 8),

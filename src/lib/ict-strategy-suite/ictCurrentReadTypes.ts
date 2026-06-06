@@ -1,6 +1,11 @@
 import type { IctBias, IctLocation, IctSide } from "./ictAdvisorTypes";
 import type { IctApprovedCandidateStatus } from "./ictApprovedSetupProfileTypes";
 import type { IctMonteCarloRobustnessRating } from "./ictMonteCarloTypes";
+import type {
+  IctDataDepthStatus,
+  IctSessionDirectionalRead,
+  IctSessionNarrativeProfile
+} from "./ictSessionNarrativeTypes";
 
 export type IctCurrentReadPacketSource =
   | "live_mt5"
@@ -48,6 +53,14 @@ export interface IctCurrentRead {
   latestScorecardResearchPreferredSymbols?: string[];
   latestResearchStateUpdatedAt?: string;
   latestResearchStateNote?: string;
+  sessionNarrativeProfile?: IctSessionNarrativeProfile;
+  sessionDirectionalRead?: IctSessionDirectionalRead;
+  sessionNarrativeConfidence?: number;
+  sessionMitigationDetected?: boolean;
+  dataDepthStatus?: IctDataDepthStatus;
+  availableLookbackDays?: number;
+  requestedLookbackDays?: number;
+  sessionTopReasons?: string[];
   topReasons: string[];
   nextAction: string;
   debug: {

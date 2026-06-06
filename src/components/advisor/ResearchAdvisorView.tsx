@@ -1110,6 +1110,16 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
         <AdvisorReadout label="Phase 2" value={formatToken(currentRead.bestPhase2Setup)} detail={`${currentRead.debug.phase2SignalCount} signals evaluated`} />
         <AdvisorReadout label="Best setup" value={formatToken(currentRead.bestSetup)} detail={`${formatToken(currentRead.side)} / ${pct(currentRead.confidence)}`} />
         <AdvisorReadout label="Bias" value={formatToken(currentRead.bias)} detail={`HTF ${currentRead.htfTimeframes.length ? currentRead.htfTimeframes.join(", ") : "missing"}`} />
+        <AdvisorReadout
+          label="Session narrative"
+          value={formatToken(currentRead.sessionNarrativeProfile)}
+          detail={`${formatToken(currentRead.sessionDirectionalRead)} / ${pct(currentRead.sessionNarrativeConfidence)}`}
+        />
+        <AdvisorReadout
+          label="NY mitigation / depth"
+          value={currentRead.sessionMitigationDetected ? "mitigation detected" : "mitigation missing"}
+          detail={`${formatToken(currentRead.dataDepthStatus)} / ${currentRead.availableLookbackDays ?? 0} of ${currentRead.requestedLookbackDays ?? 90} days`}
+        />
         <AdvisorReadout label="SMT" value={formatToken(currentRead.smtStatus)} />
         <AdvisorReadout label="Risk" value={formatToken(currentRead.riskStatus)} />
         <AdvisorReadout label="RR / location" value={rr(currentRead.rrEstimate)} detail={formatToken(currentRead.dealingRangeLocation)} />
@@ -1134,6 +1144,12 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
         <AdvisorList label="Why this state" values={packetError ? [packetError, ...currentRead.topReasons] : currentRead.topReasons} empty="No blockers reported." />
         <AdvisorReadout label="Next action" value={currentRead.nextAction} detail="Research-only; does not promote readiness." />
       </div>
+      <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.035] p-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Session story</p>
+        <p className="mt-1 text-sm leading-6 text-slate-300">
+          {(currentRead.sessionTopReasons ?? [])[0] ?? "Session narrative is waiting for enough Asia/London/New York evidence."}
+        </p>
+      </div>
     </section>
   );
 }
@@ -1145,6 +1161,10 @@ function CurrentReadDataFlowPanel({ currentRead }: { currentRead: IctCurrentRead
     ["Candle count", currentRead.debug.candleCount.toLocaleString()],
     ["Primary TF available", currentRead.debug.primaryTimeframeAvailable ? "yes" : "no"],
     ["HTF available", currentRead.debug.htfTimeframesAvailable.join(", ") || "none"],
+    ["Session narrative", currentRead.sessionNarrativeProfile ?? "none"],
+    ["Session read", currentRead.sessionDirectionalRead ?? "none"],
+    ["Session mitigation", currentRead.sessionMitigationDetected ? "detected" : "missing"],
+    ["Data depth", currentRead.dataDepthStatus ?? "unknown"],
     ["Phase 1 signal count", currentRead.debug.phase1SignalCount.toLocaleString()],
     ["Phase 2 signal count", currentRead.debug.phase2SignalCount.toLocaleString()],
     ["Approved status", currentRead.debug.approvedStatus],

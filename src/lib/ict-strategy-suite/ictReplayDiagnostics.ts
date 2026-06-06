@@ -144,6 +144,12 @@ export const buildReplayDiagnostics = (results: IctReplayResult[]): IctReplayDia
     byNewsRiskLevel: buildBreakdown(results, (result) => result.newsRiskLevel ?? "not_evaluated"),
     bySessionRiskState: buildBreakdown(results, (result) => result.sessionRiskState ?? "not_evaluated"),
     byRiskGovernorAction: buildBreakdown(results, (result) => result.riskGovernorAction ?? "not_evaluated"),
+    bySessionNarrativeProfile: buildBreakdown(results, (result) => result.sessionNarrativeProfile ?? "not_evaluated"),
+    bySessionDirectionalRead: buildBreakdown(results, (result) => result.sessionDirectionalRead ?? "not_evaluated"),
+    bySessionMitigationDetected: buildBreakdown(results, (result) =>
+      result.sessionMitigationDetected === undefined ? "not_evaluated" : result.sessionMitigationDetected ? "detected" : "missing"
+    ),
+    byDataDepthStatus: buildBreakdown(results, (result) => result.dataDepthStatus ?? "not_evaluated"),
     mostCommonNoTradeReasons: countMostCommonNoTradeReasons(results),
     safety
   });

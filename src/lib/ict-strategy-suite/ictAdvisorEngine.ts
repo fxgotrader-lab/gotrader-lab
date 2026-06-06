@@ -59,6 +59,8 @@ import type {
 } from "./ictAdvisorTypes";
 import type { IctIndexComparisonCandles } from "./ictIndexSmtTypes";
 import type { IctNewsSessionRiskContextInput } from "./ictNewsSessionRiskTypes";
+import { buildIctSessionNarrative } from "./ictSessionNarrative";
+import type { IctSessionNarrative } from "./ictSessionNarrativeTypes";
 import type { IctLiquidityPool as SuiteLiquidityPool } from "./ictStrategySuiteTypes";
 
 const createId = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -235,6 +237,7 @@ export const buildIctAdvisorSignals = ({
   newsSessionRiskContext,
   primaryTimeframe,
   requestedSymbol,
+  sessionNarrative,
   sourceSummary,
   symbol
 }: {
@@ -245,6 +248,7 @@ export const buildIctAdvisorSignals = ({
   newsSessionRiskContext?: IctNewsSessionRiskContextInput;
   primaryTimeframe: string;
   requestedSymbol: string;
+  sessionNarrative?: IctSessionNarrative;
   sourceSummary: CanonicalCandleSourceSummary;
   symbol: string;
 }): IctAdvisorSignal[] => {
@@ -481,9 +485,22 @@ export const buildIctAdvisorSignals = ({
   };
   const shouldEvaluateSmt = smtSymbolMatchesIndexGroup(brokerSymbol) || smtSymbolMatchesIndexGroup(requestedSymbol);
   return [htfSignal, dailySignal, liquiditySignal, fvgSignal, ...phase2Signals].map((signal) => {
+    const signalWithSessionNarrative: IctAdvisorSignal = sessionNarrative
+      ? {
+          ...signal,
+          sessionNarrativeProfile: sessionNarrative.profile,
+          sessionDirectionalRead: sessionNarrative.directionalRead,
+          sessionNarrativeConfidence: sessionNarrative.confidence,
+          sessionMitigationContext: sessionNarrative.mitigationContext,
+          dataDepthStatus: sessionNarrative.dataDepth.status,
+          availableLookbackDays: sessionNarrative.dataDepth.availableLookbackDays,
+          requestedLookbackDays: sessionNarrative.dataDepth.requestedLookbackDays,
+          sessionTopReasons: sessionNarrative.topReasons
+        }
+      : signal;
     const smt = shouldEvaluateSmt
       ? evaluateIndexSmt({
-          candidateSide: signal.side,
+          candidateSide: signalWithSessionNarrative.side,
           candlesByBrokerSymbol: comparisonCandles,
           htfTimeframes,
           primarySymbol: brokerSymbol,
@@ -492,11 +509,11 @@ export const buildIctAdvisorSignals = ({
       : undefined;
     const signalWithSmt: IctAdvisorSignal = smt
       ? {
-          ...signal,
+          ...signalWithSessionNarrative,
           smt,
-          confidence: clamp(signal.confidence + smt.confidenceAdjustment)
+          confidence: clamp(signalWithSessionNarrative.confidence + smt.confidenceAdjustment)
         }
-      : signal;
+      : signalWithSessionNarrative;
     const newsSessionRisk = evaluateNewsSessionRisk(signalWithSmt, newsSessionRiskContext);
     const signalWithRisk = applyNewsSessionRiskToSignal(signalWithSmt, newsSessionRisk);
     const approvedProfileDecision = applyNewsSessionRiskToApprovedDecision(
@@ -565,6 +582,15 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
   const candles = activeSource?.candles ?? [];
   const indexComparisonCandles = await resolveIndexSmtSources({ activeSource, primaryTimeframe, snapshot });
   const htfTimeframes = Object.keys(htfCandles);
+  const sessionNarrative = candles.length
+    ? buildIctSessionNarrative(candles, {
+        requestedSymbol,
+        brokerSymbol,
+        primaryTimeframe,
+        requestedLookbackDays: 90,
+        depthSource: "current_window"
+      })
+    : undefined;
   const signals = activeSource?.candles?.length
     ? buildIctAdvisorSignals({
         brokerSymbol,
@@ -574,6 +600,7 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
         newsSessionRiskContext: { syntheticNoRisk: true },
         primaryTimeframe,
         requestedSymbol,
+        sessionNarrative,
         sourceSummary,
         symbol
       })
@@ -636,6 +663,7 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
     signals,
     recommendedSignal,
     indexSmt: recommendedSignal.smt,
+    sessionNarrative,
     newsSessionRisk: recommendedSignal.newsSessionRisk,
     compactSummary: {
       compositeBias: recommendedSignal.bias.composite,
@@ -661,6 +689,14 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
       blockingEventsCount: recommendedSignal.newsSessionRisk?.blockingEventsCount,
       cautionEventsCount: recommendedSignal.newsSessionRisk?.cautionEventsCount,
       newsSessionRiskNotes: recommendedSignal.newsSessionRisk?.newsSessionRiskNotes,
+      sessionNarrativeProfile: sessionNarrative?.profile,
+      sessionDirectionalRead: sessionNarrative?.directionalRead,
+      sessionNarrativeConfidence: sessionNarrative?.confidence,
+      sessionMitigationDetected: sessionNarrative?.mitigationContext.detected,
+      sessionTopReasons: sessionNarrative?.topReasons,
+      dataDepthStatus: sessionNarrative?.dataDepth.status,
+      availableLookbackDays: sessionNarrative?.dataDepth.availableLookbackDays,
+      requestedLookbackDays: sessionNarrative?.dataDepth.requestedLookbackDays,
       noTradeReasonCount: recommendedSignal.noTradeReasons.length
     },
     approvedProfileDecision: finalApprovedProfileDecision,

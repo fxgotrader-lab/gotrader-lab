@@ -9,6 +9,7 @@ import { buildIctAdvisorSignals } from "./ictAdvisorEngine";
 import type { IctAdvisorSignal } from "./ictAdvisorTypes";
 import { ICT_INDEX_SMT_INSTRUMENTS } from "./ictIndexSmt";
 import type { IctIndexComparisonCandles } from "./ictIndexSmtTypes";
+import { buildIctSessionNarrative } from "./ictSessionNarrative";
 import { normalizeCandles } from "./ictStrategySuiteHelpers";
 import type {
   IctFvgReplayStatus,
@@ -260,7 +261,15 @@ export const evaluateSignalOutcome = ({
     blockingEventsCount: signal.newsSessionRisk?.blockingEventsCount,
     cautionEventsCount: signal.newsSessionRisk?.cautionEventsCount,
     sessionName: signal.newsSessionRisk?.session.sessionName,
-    newsSessionRiskNotes: signal.newsSessionRisk?.newsSessionRiskNotes,
+  newsSessionRiskNotes: signal.newsSessionRisk?.newsSessionRiskNotes,
+    sessionNarrativeProfile: signal.sessionNarrativeProfile,
+    sessionDirectionalRead: signal.sessionDirectionalRead,
+    sessionNarrativeConfidence: signal.sessionNarrativeConfidence,
+    sessionMitigationDetected: signal.sessionMitigationContext?.detected,
+    dataDepthStatus: signal.dataDepthStatus,
+    availableLookbackDays: signal.availableLookbackDays,
+    requestedLookbackDays: signal.requestedLookbackDays,
+    sessionNarrativeReasons: signal.sessionTopReasons,
     rrEstimate: signal.rrEstimate,
     outcome,
     fvgStatus,
@@ -368,6 +377,10 @@ export const buildIctReplayJournalEvent = (result: IctReplayResult, htfTimeframe
   cautionEventsCount: result.cautionEventsCount,
   sessionName: result.sessionName,
   newsSessionRiskNotes: result.newsSessionRiskNotes,
+  sessionNarrativeProfile: result.sessionNarrativeProfile,
+  sessionDirectionalRead: result.sessionDirectionalRead,
+  sessionMitigationDetected: result.sessionMitigationDetected,
+  dataDepthStatus: result.dataDepthStatus,
   entryReference: result.tradePath.entryReference,
   invalidation: result.tradePath.invalidation,
   target: result.tradePath.target,
@@ -431,6 +444,16 @@ export const runIctReplayValidation = (input: IctReplayInput): IctReplayValidati
   const htfTimeframes = input.htfTimeframes.length ? input.htfTimeframes : Object.keys(htfCandles);
   const windows = sliceReplayWindows(input);
   const sourceSummary = compactSourceSummary(input, candles.length);
+  const sessionNarrative = candles.length
+    ? buildIctSessionNarrative(candles, {
+        requestedSymbol: input.requestedSymbol,
+        brokerSymbol: input.brokerSymbol,
+        primaryTimeframe: input.primaryTimeframe,
+        requestedLookbackDays: input.requestedLookbackDays ?? 90,
+        availableLookbackDays: input.availableLookbackDays,
+        depthSource: "current_window"
+      })
+    : undefined;
   const results = windows.flatMap(({ futureCandles, historicalCandles, signalCandle }) => {
     const comparisonWindow = sliceIndexComparisonForSignal(indexComparisonCandles, signalCandle.timestamp, input.replayWindowSize);
     const signals = buildIctAdvisorSignals({
@@ -441,6 +464,7 @@ export const runIctReplayValidation = (input: IctReplayInput): IctReplayValidati
       newsSessionRiskContext: input.newsSessionRiskContext ?? { syntheticNoRisk: true },
       primaryTimeframe: input.primaryTimeframe,
       requestedSymbol: input.requestedSymbol,
+      sessionNarrative,
       sourceSummary,
       symbol: input.symbol
     });
@@ -474,6 +498,9 @@ export const runIctReplayValidation = (input: IctReplayInput): IctReplayValidati
       replayWindowSize: input.replayWindowSize,
       lookaheadCandles: input.lookaheadCandles,
       maxReplayWindows: input.maxReplayWindows,
+      requestedLookbackDays: input.requestedLookbackDays,
+      availableLookbackDays: input.availableLookbackDays,
+      dataDepthStatus: input.dataDepthStatus,
       appendJournal: input.appendJournal,
       researchOnly: true,
       candleCount: candles.length,

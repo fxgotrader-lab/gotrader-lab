@@ -56,6 +56,10 @@ export interface IctReplayDiagnostics {
   byNewsRiskLevel: Record<string, IctReplayBreakdownMetric>;
   bySessionRiskState: Record<string, IctReplayBreakdownMetric>;
   byRiskGovernorAction: Record<string, IctReplayBreakdownMetric>;
+  bySessionNarrativeProfile: Record<string, IctReplayBreakdownMetric>;
+  bySessionDirectionalRead: Record<string, IctReplayBreakdownMetric>;
+  bySessionMitigationDetected: Record<string, IctReplayBreakdownMetric>;
+  byDataDepthStatus: Record<string, IctReplayBreakdownMetric>;
   mostCommonNoTradeReasons: Array<{ reason: string; count: number }>;
   safety: {
     rawCandlesExcluded: true;

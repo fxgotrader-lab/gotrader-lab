@@ -5,6 +5,11 @@ import type {
   IctRiskGovernorAction,
   IctSessionRiskState
 } from "./ictNewsSessionRiskTypes";
+import type {
+  IctDataDepthStatus,
+  IctSessionDirectionalRead,
+  IctSessionNarrativeProfile
+} from "./ictSessionNarrativeTypes";
 
 export type IctApprovedCandidateStatus =
   | "approved_research_candidate"
@@ -75,6 +80,14 @@ export interface IctApprovedSetupDecision {
   blockingEventsCount?: number;
   cautionEventsCount?: number;
   newsSessionRiskNotes?: string[];
+  sessionNarrativeProfile?: IctSessionNarrativeProfile;
+  sessionDirectionalRead?: IctSessionDirectionalRead;
+  sessionNarrativeConfidence?: number;
+  sessionMitigationDetected?: boolean;
+  dataDepthStatus?: IctDataDepthStatus;
+  availableLookbackDays?: number;
+  requestedLookbackDays?: number;
+  sessionNarrativeReasons?: string[];
   approvalScore: number;
   approvedReasons: string[];
   rejectionReasons: string[];

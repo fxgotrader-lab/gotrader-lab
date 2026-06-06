@@ -15,6 +15,13 @@ import type {
   IctRiskGovernorAction,
   IctSessionRiskState
 } from "./ictNewsSessionRiskTypes";
+import type {
+  IctDataDepthStatus,
+  IctMitigationContext,
+  IctSessionDirectionalRead,
+  IctSessionNarrative,
+  IctSessionNarrativeProfile
+} from "./ictSessionNarrativeTypes";
 
 export type IctBias = "bullish" | "bearish" | "neutral";
 export type IctSide = "long" | "short" | "flat";
@@ -117,6 +124,14 @@ export interface IctAdvisorSignal {
   riskNotes: string[];
   smt?: IctSmtSignal;
   newsSessionRisk?: IctNewsSessionRiskDecision;
+  sessionNarrativeProfile?: IctSessionNarrativeProfile;
+  sessionDirectionalRead?: IctSessionDirectionalRead;
+  sessionNarrativeConfidence?: number;
+  sessionMitigationContext?: IctMitigationContext;
+  dataDepthStatus?: IctDataDepthStatus;
+  availableLookbackDays?: number;
+  requestedLookbackDays?: number;
+  sessionTopReasons?: string[];
   approvedProfileDecision?: IctApprovedSetupDecision;
   provenance: {
     methodology: "ICT";
@@ -193,6 +208,7 @@ export interface IctAdvisorPacket {
   signals: IctAdvisorSignal[];
   recommendedSignal: IctAdvisorSignal;
   indexSmt?: IctSmtSignal;
+  sessionNarrative?: IctSessionNarrative;
   compactSummary: {
     compositeBias: IctBias;
     drawOnLiquidity?: string;
@@ -215,6 +231,14 @@ export interface IctAdvisorPacket {
     blockingEventsCount?: number;
     cautionEventsCount?: number;
     newsSessionRiskNotes?: string[];
+    sessionNarrativeProfile?: IctSessionNarrativeProfile;
+    sessionDirectionalRead?: IctSessionDirectionalRead;
+    sessionNarrativeConfidence?: number;
+    sessionMitigationDetected?: boolean;
+    sessionTopReasons?: string[];
+    dataDepthStatus?: IctDataDepthStatus;
+    availableLookbackDays?: number;
+    requestedLookbackDays?: number;
     noTradeReasonCount: number;
   };
   approvedProfileDecision: IctApprovedSetupDecision;
