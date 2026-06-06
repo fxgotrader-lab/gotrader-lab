@@ -29,6 +29,7 @@ const safety = {
 
 const createId = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 const isBrowser = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error ?? "unknown_error");
 const round = (value: number, decimals = 4) => Number(value.toFixed(decimals));
 const pct = (value?: number) => (typeof value === "number" ? `${Math.round(value * 100)}%` : "n/a");
 const rr = (value?: number) => (typeof value === "number" ? `${value.toFixed(2)}R` : "n/a");
@@ -267,10 +268,19 @@ export const appendIctResearchReportSavedJournalEvent = (event: IctResearchRepor
   if (!isBrowser()) {
     return { ok: true, storage: "memory_unavailable" as const, event: sanitized };
   }
-  const current = readIctResearchReportSavedJournalEvents();
-  const next = [...current, sanitized].slice(-MAX_ICT_RESEARCH_REPORT_JOURNAL_EVENTS);
-  window.localStorage.setItem(ICT_RESEARCH_REPORT_JOURNAL_STORAGE_KEY, JSON.stringify(next));
-  return { ok: true, storage: "localStorage" as const, event: sanitized, totalEvents: next.length };
+  try {
+    const current = readIctResearchReportSavedJournalEvents();
+    const next = [...current, sanitized].slice(-MAX_ICT_RESEARCH_REPORT_JOURNAL_EVENTS);
+    window.localStorage.setItem(ICT_RESEARCH_REPORT_JOURNAL_STORAGE_KEY, JSON.stringify(next));
+    return { ok: true, storage: "localStorage" as const, event: sanitized, totalEvents: next.length };
+  } catch (error) {
+    return {
+      ok: false,
+      storage: "localStorage_failed" as const,
+      event: sanitized,
+      error: errorMessage(error)
+    };
+  }
 };
 
 export const readIctResearchReportSavedJournalEvents = (): IctResearchReportJournalEvent[] => {
@@ -301,7 +311,17 @@ export const readIctResearchReport = (reportId: string): IctResearchReport | und
   listIctResearchReports().find((report) => report.reportId === reportId);
 
 export const saveIctResearchReport = (reportInput: IctResearchReport): IctResearchReportSaveResult => {
-  const report = sanitizeResearchReport(reportInput);
+  let report: IctResearchReport;
+  try {
+    report = sanitizeResearchReport(reportInput);
+  } catch (error) {
+    return {
+      status: "failed",
+      reportId: createId("ict_report_save_failed"),
+      message: `Research report could not be sanitized and was not saved: ${errorMessage(error)}`,
+      researchOnly: true
+    };
+  }
   if (!assertIctResearchReportOutputIsCompact({ report }).ok) {
     return {
       status: "failed",
@@ -323,20 +343,22 @@ export const saveIctResearchReport = (reportInput: IctResearchReport): IctResear
     const current = listIctResearchReports().filter((existing) => existing.reportId !== report.reportId);
     const next = [report, ...current].slice(0, MAX_ICT_RESEARCH_REPORTS);
     window.localStorage.setItem(ICT_RESEARCH_REPORT_STORAGE_KEY, JSON.stringify(next));
-    appendIctResearchReportSavedJournalEvent(buildIctResearchReportSavedJournalEvent(report));
+    const journalResult = appendIctResearchReportSavedJournalEvent(buildIctResearchReportSavedJournalEvent(report));
     window.dispatchEvent(new CustomEvent("gotrader:ict-research-report-saved", { detail: { reportId: report.reportId } }));
     return {
       status: "saved",
       reportId: report.reportId,
       path: `localStorage:${ICT_RESEARCH_REPORT_STORAGE_KEY}`,
-      message: "Saved compact ICT research report locally. No raw candles, snapshots, secrets, account, order, or position data were saved.",
+      message: journalResult.ok === false
+        ? `Saved compact ICT research report locally, but the saved-report journal was unavailable: ${journalResult.error}.`
+        : "Saved compact ICT research report locally. No raw candles, snapshots, secrets, account, order, or position data were saved.",
       researchOnly: true
     };
   } catch (error) {
     return {
       status: "failed",
       reportId: report.reportId,
-      message: error instanceof Error ? error.message : String(error),
+      message: errorMessage(error),
       researchOnly: true
     };
   }

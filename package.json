@@ -38,6 +38,7 @@
     "test:ict-latest-research-state": "node scripts/test-ict-latest-research-state.mjs",
     "test:ict-signal-contract": "node scripts/test-ict-signal-contract.mjs",
     "test:ict-paper-signal-simulator": "node scripts/test-ict-paper-signal-simulator.mjs",
+    "test:research-advisor-stability": "node scripts/test-research-advisor-stability.mjs",
     "test:gotrader-system-coordination": "node scripts/test-gotrader-system-coordination.mjs",
     "test:ict-current-read-flow": "node scripts/test-ict-current-read-flow.mjs",
     "test:ict-approved-profile-optimizer": "node scripts/test-ict-approved-profile-optimizer.mjs",

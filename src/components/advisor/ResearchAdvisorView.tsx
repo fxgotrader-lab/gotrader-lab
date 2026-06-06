@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { Component, useEffect, useMemo, useState, type ErrorInfo, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { BarChart3, MessageSquareText, PlayCircle, Send, ShieldCheck, Sparkles } from "lucide-react";
 
@@ -75,6 +75,9 @@ const pct = (value?: number) => (typeof value === "number" ? `${Math.round(value
 const rr = (value?: number) => (typeof value === "number" ? `${value.toFixed(2)}R` : "n/a");
 const compactPrice = (value?: number) =>
   typeof value === "number" && Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "n/a";
+const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error ?? "unknown_error");
+const safeList = <T,>(values: T[] | undefined | null): T[] => Array.isArray(values) ? values : [];
+const safeCount = (value?: number) => (typeof value === "number" && Number.isFinite(value) ? value.toLocaleString() : "0");
 type MarketScorecardRunStatus = "idle" | "running" | "completed" | "unavailable" | "failed";
 type ProfileOptimizationRunStatus = "idle" | "running" | "completed" | "unavailable" | "failed";
 type MonteCarloRunStatus = "idle" | "running" | "completed" | "unavailable" | "failed";
@@ -84,6 +87,44 @@ type AdvisorChatMessage = {
   content: string;
   timestamp: string;
 };
+
+class ResearchPanelErrorBoundary extends Component<
+  { children: ReactNode; panelName: string; resetKey?: string },
+  { error?: string }
+> {
+  state: { error?: string } = {};
+
+  static getDerivedStateFromError(error: unknown) {
+    return { error: errorMessage(error) };
+  }
+
+  componentDidCatch(error: unknown, errorInfo: ErrorInfo) {
+    console.warn("Research Advisor panel unavailable", {
+      panelName: this.props.panelName,
+      message: errorMessage(error),
+      componentStack: errorInfo.componentStack
+    });
+  }
+
+  componentDidUpdate(previousProps: { resetKey?: string }) {
+    if (previousProps.resetKey !== this.props.resetKey && this.state.error) {
+      this.setState({ error: undefined });
+    }
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <section className="rounded-xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm leading-6 text-amber-100">
+          <p className="font-semibold">{this.props.panelName} unavailable.</p>
+          <p>Panel unavailable. See console/logs. Research safety preserved.</p>
+          <p className="mt-2 text-xs text-amber-200/80">Authority remains none/none/none. No broker execution was attempted.</p>
+        </section>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const createAdvisorMessage = (role: AdvisorChatMessage["role"], content: string): AdvisorChatMessage => ({
   id: `advisor_msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -362,8 +403,13 @@ export function ResearchAdvisorView() {
 
   const activeSource = snapshot.marketData.activeResearchSource;
   const brokerSymbol = snapshot.mt5ReadOnly.brokerSymbol ?? activeSource.provenance.providerSymbol ?? "n/a";
+  const deepResearchActionRunning =
+    manualReplayStatus === "running" ||
+    marketScorecardStatus === "running" ||
+    monteCarloStatus === "running" ||
+    profileOptimizationStatus === "running";
   const runManualReplayReview = async () => {
-    if (manualReplayStatus === "running") return;
+    if (deepResearchActionRunning) return;
     setManualReplayStatus("running");
     setManualReplayError(undefined);
     setMonteCarloStatus("idle");
@@ -374,38 +420,51 @@ export function ResearchAdvisorView() {
       setManualReplayResult(result);
       setManualReplayStatus(result.status);
       if (result.status === "completed") {
-        setLatestResearchState(
-          saveLatestResearchStatePatch({ latestReplay: buildLatestReplaySnapshot(result) }, "manual_replay_review")
-        );
+        try {
+          setLatestResearchState(
+            saveLatestResearchStatePatch({ latestReplay: buildLatestReplaySnapshot(result) }, "manual_replay_review")
+          );
+        } catch (persistError) {
+          setManualReplayError(`Replay completed, but latest-state persistence failed: ${errorMessage(persistError)}`);
+        }
       }
-      setManualReplayError(undefined);
+      if (result.status !== "completed") {
+        setManualReplayError(result.unavailableReason ?? result.errors[0] ?? undefined);
+      }
     } catch (error) {
       setManualReplayResult(undefined);
       setManualReplayStatus("failed");
-      setManualReplayError(error instanceof Error ? error.message : String(error));
+      setManualReplayError(errorMessage(error));
     }
   };
   const runMarketScorecard = async () => {
-    if (marketScorecardStatus === "running") return;
+    if (deepResearchActionRunning) return;
     setMarketScorecardStatus("running");
     setMarketScorecardError(undefined);
     try {
       const result = await buildIctMarketScorecard(marketScorecardConfig);
       setMarketScorecard(result);
-      setMarketScorecardStatus(result.summary.completedSymbols > 0 ? "completed" : "unavailable");
-      if (result.summary.completedSymbols > 0) {
-        setLatestResearchState(
-          saveLatestResearchStatePatch({ latestScorecard: buildLatestScorecardSnapshot(result) }, "market_scorecard")
-        );
+      const completedSymbols = result.summary?.completedSymbols ?? 0;
+      setMarketScorecardStatus(completedSymbols > 0 ? "completed" : "unavailable");
+      if (completedSymbols > 0) {
+        try {
+          setLatestResearchState(
+            saveLatestResearchStatePatch({ latestScorecard: buildLatestScorecardSnapshot(result) }, "market_scorecard")
+          );
+        } catch (persistError) {
+          setMarketScorecardError(`Scorecard completed, but latest-state persistence failed: ${errorMessage(persistError)}`);
+        }
+      } else {
+        setMarketScorecardError("No configured market completed replay.");
       }
     } catch (error) {
       setMarketScorecard(undefined);
       setMarketScorecardStatus("failed");
-      setMarketScorecardError(error instanceof Error ? error.message : String(error));
+      setMarketScorecardError(errorMessage(error));
     }
   };
   const runMonteCarloRobustness = async () => {
-    if (monteCarloStatus === "running") return;
+    if (deepResearchActionRunning) return;
     setMonteCarloStatus("running");
     setMonteCarloError(undefined);
     try {
@@ -435,17 +494,21 @@ export function ResearchAdvisorView() {
       appendIctMonteCarloJournalEvent(buildIctMonteCarloJournalEvent(summary));
       setMonteCarloSummary(summary);
       setMonteCarloStatus("completed");
-      setLatestResearchState(
-        saveLatestResearchStatePatch({ latestMonteCarlo: buildLatestMonteCarloSnapshot(summary) }, "monte_carlo")
-      );
+      try {
+        setLatestResearchState(
+          saveLatestResearchStatePatch({ latestMonteCarlo: buildLatestMonteCarloSnapshot(summary) }, "monte_carlo")
+        );
+      } catch (persistError) {
+        setMonteCarloError(`Monte Carlo completed, but latest-state persistence failed: ${errorMessage(persistError)}`);
+      }
     } catch (error) {
       setMonteCarloSummary(undefined);
       setMonteCarloStatus("failed");
-      setMonteCarloError(error instanceof Error ? error.message : String(error));
+      setMonteCarloError(errorMessage(error));
     }
   };
   const runProfileOptimization = async () => {
-    if (profileOptimizationStatus === "running") return;
+    if (deepResearchActionRunning) return;
     setProfileOptimizationStatus("running");
     setProfileOptimizationError(undefined);
     try {
@@ -472,20 +535,36 @@ export function ResearchAdvisorView() {
     } catch (error) {
       setProfileOptimization(undefined);
       setProfileOptimizationStatus("failed");
-      setProfileOptimizationError(error instanceof Error ? error.message : String(error));
+      setProfileOptimizationError(errorMessage(error));
     }
   };
   const saveManualReplayReport = () => {
     if (!manualReplayResult || manualReplayResult.status !== "completed") return;
-    const saveResult = saveIctResearchReport(buildManualReplayResearchReport(manualReplayResult));
-    setManualReportSaveResult(saveResult);
-    setSavedReports(listIctResearchReports());
+    try {
+      const saveResult = saveIctResearchReport(buildManualReplayResearchReport(manualReplayResult));
+      setManualReportSaveResult(saveResult);
+      setSavedReports(listIctResearchReports());
+    } catch (error) {
+      setManualReportSaveResult({
+        status: "failed",
+        message: `Replay report save failed: ${errorMessage(error)}`,
+        researchOnly: true
+      });
+    }
   };
   const saveMarketScorecardReport = () => {
     if (!marketScorecard || marketScorecardStatus !== "completed") return;
-    const saveResult = saveIctResearchReport(buildMarketScorecardResearchReport(marketScorecard));
-    setScorecardReportSaveResult(saveResult);
-    setSavedReports(listIctResearchReports());
+    try {
+      const saveResult = saveIctResearchReport(buildMarketScorecardResearchReport(marketScorecard));
+      setScorecardReportSaveResult(saveResult);
+      setSavedReports(listIctResearchReports());
+    } catch (error) {
+      setScorecardReportSaveResult({
+        status: "failed",
+        message: `Scorecard report save failed: ${errorMessage(error)}`,
+        researchOnly: true
+      });
+    }
   };
   const submitAdvisorMessage = (content: string) => {
     const normalized = content.trim();
@@ -503,17 +582,17 @@ export function ResearchAdvisorView() {
   };
   const handleQuickAction = (action: string) => {
     if (action === "Run Replay Review") {
-      void runManualReplayReview();
+      if (!deepResearchActionRunning) void runManualReplayReview();
       submitAdvisorMessage("Run Replay Review");
       return;
     }
     if (action === "Run Market Scorecard") {
-      void runMarketScorecard();
+      if (!deepResearchActionRunning) void runMarketScorecard();
       submitAdvisorMessage("Run Market Scorecard");
       return;
     }
     if (action === "Optimize Profile") {
-      void runProfileOptimization();
+      if (!deepResearchActionRunning) void runProfileOptimization();
       submitAdvisorMessage("Optimize Profile");
       return;
     }
@@ -624,25 +703,31 @@ export function ResearchAdvisorView() {
         <details data-testid="advisor-manual-replay-section" open className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
           <summary className="cursor-pointer text-sm font-semibold text-slate-100">Manual Replay Review</summary>
           <div className="mt-4">
-            <ManualReplayReviewPanel
-              brokerSymbol={brokerSymbol}
-              onRun={runManualReplayReview}
-              onSave={saveManualReplayReport}
-              request={manualReplayRequest}
-              result={manualReplayResult}
-              saveResult={manualReportSaveResult}
-              status={manualReplayStatus}
-              error={manualReplayError}
-            />
-            <div className="mt-4">
-              <MonteCarloRobustnessPanel
-                error={monteCarloError}
-                hasManualReplayResult={manualReplayResult?.status === "completed"}
-                hasScorecard={marketScorecardStatus === "completed" && Boolean(marketScorecard)}
-                onRun={runMonteCarloRobustness}
-                status={monteCarloStatus}
-                summary={monteCarloSummary}
+            <ResearchPanelErrorBoundary panelName="Manual Replay Review" resetKey={`${activeSource.fingerprint}:${manualReplayStatus}`}>
+              <ManualReplayReviewPanel
+                brokerSymbol={brokerSymbol}
+                disabled={deepResearchActionRunning && manualReplayStatus !== "running"}
+                onRun={runManualReplayReview}
+                onSave={saveManualReplayReport}
+                request={manualReplayRequest}
+                result={manualReplayResult}
+                saveResult={manualReportSaveResult}
+                status={manualReplayStatus}
+                error={manualReplayError}
               />
+            </ResearchPanelErrorBoundary>
+            <div className="mt-4">
+              <ResearchPanelErrorBoundary panelName="Monte Carlo Robustness" resetKey={`${activeSource.fingerprint}:${monteCarloStatus}`}>
+                <MonteCarloRobustnessPanel
+                  disabled={deepResearchActionRunning && monteCarloStatus !== "running"}
+                  error={monteCarloError}
+                  hasManualReplayResult={manualReplayResult?.status === "completed"}
+                  hasScorecard={marketScorecardStatus === "completed" && Boolean(marketScorecard)}
+                  onRun={runMonteCarloRobustness}
+                  status={monteCarloStatus}
+                  summary={monteCarloSummary}
+                />
+              </ResearchPanelErrorBoundary>
             </div>
           </div>
         </details>
@@ -650,42 +735,52 @@ export function ResearchAdvisorView() {
         <details open className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
           <summary className="cursor-pointer text-sm font-semibold text-slate-100">Optimize Profile</summary>
           <div className="mt-4">
-            <ApprovedProfileOptimizerPanel
-              error={profileOptimizationError}
-              onRun={runProfileOptimization}
-              request={manualReplayRequest}
-              result={profileOptimization}
-              status={profileOptimizationStatus}
-            />
+            <ResearchPanelErrorBoundary panelName="Optimize Profile" resetKey={`${activeSource.fingerprint}:${profileOptimizationStatus}`}>
+              <ApprovedProfileOptimizerPanel
+                disabled={deepResearchActionRunning && profileOptimizationStatus !== "running"}
+                error={profileOptimizationError}
+                onRun={runProfileOptimization}
+                request={manualReplayRequest}
+                result={profileOptimization}
+                status={profileOptimizationStatus}
+              />
+            </ResearchPanelErrorBoundary>
           </div>
         </details>
 
         <details data-testid="advisor-market-scorecard-section" open className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
           <summary className="cursor-pointer text-sm font-semibold text-slate-100">Market Scorecard</summary>
           <div className="mt-4">
-            <MarketScorecardPanel
-              config={marketScorecardConfig}
-              error={marketScorecardError}
-              onRun={runMarketScorecard}
-              onSave={saveMarketScorecardReport}
-              scorecard={marketScorecard}
-              saveResult={scorecardReportSaveResult}
-              status={marketScorecardStatus}
-            />
+            <ResearchPanelErrorBoundary panelName="Market Scorecard" resetKey={`${activeSource.fingerprint}:${marketScorecardStatus}`}>
+              <MarketScorecardPanel
+                config={marketScorecardConfig}
+                disabled={deepResearchActionRunning && marketScorecardStatus !== "running"}
+                error={marketScorecardError}
+                onRun={runMarketScorecard}
+                onSave={saveMarketScorecardReport}
+                scorecard={marketScorecard}
+                saveResult={scorecardReportSaveResult}
+                status={marketScorecardStatus}
+              />
+            </ResearchPanelErrorBoundary>
           </div>
         </details>
 
         <details open className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
           <summary className="cursor-pointer text-sm font-semibold text-slate-100">Saved Research Reports</summary>
           <div className="mt-4">
-            <SavedResearchReportsPanel reports={savedReports} />
+            <ResearchPanelErrorBoundary panelName="Saved Research Reports" resetKey={`${savedReports.length}`}>
+              <SavedResearchReportsPanel reports={savedReports} />
+            </ResearchPanelErrorBoundary>
           </div>
         </details>
 
         <details className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
           <summary className="cursor-pointer text-sm font-semibold text-slate-100">External Advisory Bridge</summary>
           <div className="mt-4">
-            <LLMAdvisoryReviewPanel snapshot={snapshot} />
+            <ResearchPanelErrorBoundary panelName="External Advisory Bridge" resetKey={snapshot.snapshotId}>
+              <LLMAdvisoryReviewPanel snapshot={snapshot} />
+            </ResearchPanelErrorBoundary>
           </div>
         </details>
 
@@ -1242,6 +1337,7 @@ function AdvisorMetricCard({
 
 function ManualReplayReviewPanel({
   brokerSymbol,
+  disabled,
   error,
   onRun,
   onSave,
@@ -1251,6 +1347,7 @@ function ManualReplayReviewPanel({
   status
 }: {
   brokerSymbol: string;
+  disabled?: boolean;
   error?: string;
   onRun: () => Promise<void>;
   onSave: () => void;
@@ -1270,9 +1367,25 @@ function ManualReplayReviewPanel({
           ? "Manual replay review completed. Latest Replay Saved as a compact research-only summary."
           : status === "unavailable"
             ? `Replay unavailable: ${result?.unavailableReason ?? "mt5_unavailable_or_not_configured"}.`
-            : `Replay failed: ${error ?? result?.errors[0] ?? "unknown_error"}.`;
+            : `Replay failed: ${error ?? result?.errors?.[0] ?? "unknown_error"}.`;
   const rowLabel = (row: { key: string; totalSignals: number; targetFirstRate: number; averageRrAchieved: number }) =>
     `${formatToken(row.key)}: ${row.totalSignals} signals / ${pct(row.targetFirstRate)} / ${rr(row.averageRrAchieved)}`;
+  const approvedCounts = result?.approvedProfileCounts ?? {
+    totalApproved: 0,
+    totalWatchlist: 0,
+    totalRejected: 0,
+    totalNoTrade: 0
+  };
+  const smtSummary = result?.smtSummary ?? {
+    confirmation: [],
+    rejection: [],
+    divergenceTypes: []
+  };
+  const newsSessionRiskSummary = result?.newsSessionRiskSummary ?? {
+    newsRiskLevels: [],
+    sessionRiskStates: [],
+    riskGovernorActions: []
+  };
 
   return (
     <section data-testid="ict-manual-replay-review" className="rounded-xl border border-cyan-300/15 bg-slate-950/85 p-5">
@@ -1291,11 +1404,11 @@ function ManualReplayReviewPanel({
           <Badge data-testid="ict-manual-replay-status" variant={statusVariant}>{formatToken(status)}</Badge>
           <Badge variant="danger">authority none</Badge>
           <Badge variant="secondary">researchOnly true</Badge>
-          <Button type="button" size="sm" onClick={onRun} disabled={status === "running"}>
+          <Button type="button" size="sm" onClick={onRun} disabled={status === "running" || disabled}>
             <PlayCircle className="h-4 w-4" aria-hidden="true" />
             {status === "running" ? "Running..." : "Run Real Replay Review"}
           </Button>
-          <Button type="button" size="sm" variant="secondary" onClick={onSave} disabled={result?.status !== "completed"}>
+          <Button type="button" size="sm" variant="secondary" onClick={onSave} disabled={result?.status !== "completed" || disabled}>
             Save Replay Report
           </Button>
         </div>
@@ -1312,27 +1425,27 @@ function ManualReplayReviewPanel({
         <>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <AdvisorReadout label="Run ID" value={result.runId ?? "n/a"} detail={formatDate(result.generatedAt)} />
-            <AdvisorReadout label="Total windows" value={result.totalWindows.toLocaleString()} />
-            <AdvisorReadout label="Total signals" value={result.totalSignals.toLocaleString()} />
-            <AdvisorReadout label="Total no-trades" value={result.totalNoTrades.toLocaleString()} />
+            <AdvisorReadout label="Total windows" value={safeCount(result.totalWindows)} />
+            <AdvisorReadout label="Total signals" value={safeCount(result.totalSignals)} />
+            <AdvisorReadout label="Total no-trades" value={safeCount(result.totalNoTrades)} />
             <AdvisorReadout label="Target-first rate" value={pct(result.targetFirstRate)} />
             <AdvisorReadout label="Invalidation-first rate" value={pct(result.invalidationFirstRate)} />
             <AdvisorReadout label="Average RR achieved" value={rr(result.averageRrAchieved)} />
             <AdvisorReadout label="Approved target-first" value={pct(result.approvedTargetFirstRate)} detail={rr(result.approvedAverageRr)} />
-            <AdvisorReadout label="Approved" value={result.approvedProfileCounts.totalApproved.toLocaleString()} detail="approved profile count" />
-            <AdvisorReadout label="Watchlist" value={result.approvedProfileCounts.totalWatchlist.toLocaleString()} />
-            <AdvisorReadout label="Rejected" value={result.approvedProfileCounts.totalRejected.toLocaleString()} />
-            <AdvisorReadout label="No-trade profile" value={result.approvedProfileCounts.totalNoTrade.toLocaleString()} />
+            <AdvisorReadout label="Approved" value={safeCount(approvedCounts.totalApproved)} detail="approved profile count" />
+            <AdvisorReadout label="Watchlist" value={safeCount(approvedCounts.totalWatchlist)} />
+            <AdvisorReadout label="Rejected" value={safeCount(approvedCounts.totalRejected)} />
+            <AdvisorReadout label="No-trade profile" value={safeCount(approvedCounts.totalNoTrade)} />
           </div>
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
             <AdvisorList
               label="Most common no-trade reasons"
-              values={result.mostCommonNoTradeReasons.map((item) => `${item.reason} (${item.count})`)}
+              values={safeList(result.mostCommonNoTradeReasons).map((item) => `${item.reason} (${item.count})`)}
               empty="none"
             />
             <AdvisorList
               label="Top calibration filter improvements"
-              values={result.topCalibrationFilterImprovements.map((item) => `${item.label}: ${pct(item.targetFirstRateChange)} / ${rr(item.averageRrChange)}`)}
+              values={safeList(result.topCalibrationFilterImprovements).map((item) => `${item.label}: ${pct(item.targetFirstRateChange)} / ${rr(item.averageRrChange)}`)}
               empty="none"
             />
             <AdvisorList
@@ -1345,7 +1458,7 @@ function ManualReplayReviewPanel({
             />
             <AdvisorList
               label="Approved-profile comparison"
-              values={result.approvedProfileComparison.map(
+              values={safeList(result.approvedProfileComparison).map(
                 (profile) =>
                   `${profile.label}: ${profile.totalApproved} approved / ${profile.totalWatchlist} watchlist / ${profile.totalRejected} rejected`
               )}
@@ -1354,18 +1467,18 @@ function ManualReplayReviewPanel({
             <AdvisorList
               label="SMT confirmation / rejection"
               values={[
-                ...result.smtSummary.confirmation.map(rowLabel),
-                ...result.smtSummary.rejection.map(rowLabel),
-                ...result.smtSummary.divergenceTypes.map(rowLabel)
+                ...safeList(smtSummary.confirmation).map(rowLabel),
+                ...safeList(smtSummary.rejection).map(rowLabel),
+                ...safeList(smtSummary.divergenceTypes).map(rowLabel)
               ]}
               empty="none"
             />
             <AdvisorList
               label="News / session risk"
               values={[
-                ...result.newsSessionRiskSummary.newsRiskLevels.map(rowLabel),
-                ...result.newsSessionRiskSummary.sessionRiskStates.map(rowLabel),
-                ...result.newsSessionRiskSummary.riskGovernorActions.map(rowLabel)
+                ...safeList(newsSessionRiskSummary.newsRiskLevels).map(rowLabel),
+                ...safeList(newsSessionRiskSummary.sessionRiskStates).map(rowLabel),
+                ...safeList(newsSessionRiskSummary.riskGovernorActions).map(rowLabel)
               ]}
               empty="none"
             />
@@ -1374,7 +1487,7 @@ function ManualReplayReviewPanel({
             <AdvisorReadout label="Safety" value="raw candles excluded" detail="No raw candles, snapshots, secrets, account/order/position data." />
             <AdvisorReadout
               label="Authority"
-              value={`${result.authority.executionAuthority}/${result.authority.brokerAuthority}/${result.authority.readinessOverrideAuthority}`}
+              value={`${result.authority?.executionAuthority ?? "none"}/${result.authority?.brokerAuthority ?? "none"}/${result.authority?.readinessOverrideAuthority ?? "none"}`}
               detail="Replay review cannot promote readiness."
             />
             <AdvisorReadout label="Journal" value="compact manual event" detail="ict_manual_replay_review / researchOnly true" />
@@ -1386,6 +1499,7 @@ function ManualReplayReviewPanel({
 }
 
 function MonteCarloRobustnessPanel({
+  disabled,
   error,
   hasManualReplayResult,
   hasScorecard,
@@ -1393,6 +1507,7 @@ function MonteCarloRobustnessPanel({
   status,
   summary
 }: {
+  disabled?: boolean;
   error?: string;
   hasManualReplayResult: boolean;
   hasScorecard: boolean;
@@ -1400,9 +1515,12 @@ function MonteCarloRobustnessPanel({
   status: MonteCarloRunStatus;
   summary?: IctMonteCarloSummary;
 }) {
+  const recommendation = summary?.recommendation;
+  const performance = summary?.performance;
+  const input = summary?.input;
   const statusVariant =
     status === "completed"
-      ? summary?.recommendation.robustnessRating === "weak" || summary?.recommendation.robustnessRating === "insufficient_data"
+      ? recommendation?.robustnessRating === "weak" || recommendation?.robustnessRating === "insufficient_data"
         ? "warning"
         : "success"
       : status === "running" || status === "unavailable"
@@ -1422,7 +1540,7 @@ function MonteCarloRobustnessPanel({
           : status === "unavailable"
             ? error ?? (hasScorecard ? "Scorecard summary is compact; run Manual Replay Review for full Monte Carlo input." : "Run Replay Review first.")
             : `Monte Carlo failed: ${error ?? "unknown_error"}.`;
-  const warnings = summary?.recommendation.warnings ?? [];
+  const warnings = safeList(recommendation?.warnings);
 
   return (
     <section data-testid="ict-monte-carlo-robustness" className="rounded-xl border border-fuchsia-300/15 bg-slate-950/85 p-5">
@@ -1441,7 +1559,7 @@ function MonteCarloRobustnessPanel({
           <Badge data-testid="ict-monte-carlo-status" variant={statusVariant}>{formatToken(status)}</Badge>
           <Badge variant="danger">authority none</Badge>
           <Badge variant="secondary">researchOnly true</Badge>
-          <Button type="button" size="sm" onClick={onRun} disabled={status === "running"}>
+          <Button type="button" size="sm" onClick={onRun} disabled={status === "running" || disabled}>
             <PlayCircle className="h-4 w-4" aria-hidden="true" />
             {status === "running" ? "Running..." : "Run Monte Carlo Robustness"}
           </Button>
@@ -1456,13 +1574,13 @@ function MonteCarloRobustnessPanel({
       {summary ? (
         <>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <AdvisorReadout label="Robustness" value={formatToken(summary.recommendation.robustnessRating)} detail={summary.recommendation.reason} />
-            <AdvisorReadout label="Usable outcomes" value={summary.input.usableOutcomes.toLocaleString()} detail={`${summary.input.totalOutcomes.toLocaleString()} total compact outcomes`} />
-            <AdvisorReadout label="Median ending R" value={rr(summary.performance.medianEndingR)} detail={`5th ${rr(summary.performance.fifthPercentileEndingR)} / 95th ${rr(summary.performance.ninetyFifthPercentileEndingR)}`} />
-            <AdvisorReadout label="Median max DD" value={`${summary.performance.medianMaxDrawdownPct.toFixed(2)}%`} detail={`worst ${summary.performance.worstMaxDrawdownPct.toFixed(2)}%`} />
-            <AdvisorReadout label="Risk of ruin" value={`${summary.performance.riskOfRuinPct.toFixed(2)}%`} detail={`limit ${summary.performance.probabilityDrawdownOverLimitPct.toFixed(2)}%`} />
-            <AdvisorReadout label="Worst losing streak" value={summary.performance.worstLongestLosingStreak.toLocaleString()} detail={`median ${summary.performance.medianLongestLosingStreak.toFixed(0)}`} />
-            <AdvisorReadout label="Risk per idea" value={`${summary.recommendation.recommendedMaxRiskPerTradePct.toFixed(2)}%`} detail={`${summary.input.simulationCount.toLocaleString()} simulations`} />
+            <AdvisorReadout label="Robustness" value={formatToken(recommendation?.robustnessRating)} detail={recommendation?.reason ?? "n/a"} />
+            <AdvisorReadout label="Usable outcomes" value={safeCount(input?.usableOutcomes)} detail={`${safeCount(input?.totalOutcomes)} total compact outcomes`} />
+            <AdvisorReadout label="Median ending R" value={rr(performance?.medianEndingR)} detail={`5th ${rr(performance?.fifthPercentileEndingR)} / 95th ${rr(performance?.ninetyFifthPercentileEndingR)}`} />
+            <AdvisorReadout label="Median max DD" value={typeof performance?.medianMaxDrawdownPct === "number" ? `${performance.medianMaxDrawdownPct.toFixed(2)}%` : "n/a"} detail={typeof performance?.worstMaxDrawdownPct === "number" ? `worst ${performance.worstMaxDrawdownPct.toFixed(2)}%` : "worst n/a"} />
+            <AdvisorReadout label="Risk of ruin" value={typeof performance?.riskOfRuinPct === "number" ? `${performance.riskOfRuinPct.toFixed(2)}%` : "n/a"} detail={typeof performance?.probabilityDrawdownOverLimitPct === "number" ? `limit ${performance.probabilityDrawdownOverLimitPct.toFixed(2)}%` : "limit n/a"} />
+            <AdvisorReadout label="Worst losing streak" value={safeCount(performance?.worstLongestLosingStreak)} detail={typeof performance?.medianLongestLosingStreak === "number" ? `median ${performance.medianLongestLosingStreak.toFixed(0)}` : "median n/a"} />
+            <AdvisorReadout label="Risk per idea" value={typeof recommendation?.recommendedMaxRiskPerTradePct === "number" ? `${recommendation.recommendedMaxRiskPerTradePct.toFixed(2)}%` : "n/a"} detail={`${safeCount(input?.simulationCount)} simulations`} />
             <AdvisorReadout label="Journal" value="compact MC summary" detail="ict_monte_carlo_summary / raw excluded" />
           </div>
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
@@ -1471,7 +1589,7 @@ function MonteCarloRobustnessPanel({
               label="Safety"
               values={[
                 "No raw candles, snapshots, secrets, account data, orders, or positions.",
-                `Authority ${summary.authority.executionAuthority}/${summary.authority.brokerAuthority}/${summary.authority.readinessOverrideAuthority}.`,
+                `Authority ${summary.authority?.executionAuthority ?? "none"}/${summary.authority?.brokerAuthority ?? "none"}/${summary.authority?.readinessOverrideAuthority ?? "none"}.`,
                 "Monte Carlo is research-only and cannot approve Paper-Demo Candidate readiness."
               ]}
               empty="none"
@@ -1484,12 +1602,14 @@ function MonteCarloRobustnessPanel({
 }
 
 function ApprovedProfileOptimizerPanel({
+  disabled,
   error,
   onRun,
   request,
   result,
   status
 }: {
+  disabled?: boolean;
   error?: string;
   onRun: () => Promise<void>;
   request: IctManualReplayReviewRequest;
@@ -1509,6 +1629,7 @@ function ApprovedProfileOptimizerPanel({
             ? "Optimization unavailable: replay produced no research signals."
             : `Optimization failed: ${error ?? "unknown_error"}.`;
   const recommended = result?.recommendedProfile;
+  const baseline = result?.baseline;
   const yesNo = (value?: boolean) => (value ? "yes" : "no");
   const tooFewSignals =
     recommended && recommended.results.approvedCount > 0 && recommended.results.approvedCount < Math.max(3, recommended.results.totalSignalsBefore * 0.03);
@@ -1530,7 +1651,7 @@ function ApprovedProfileOptimizerPanel({
           <Badge data-testid="ict-approved-profile-optimizer-status" variant={statusVariant}>{formatToken(status)}</Badge>
           <Badge variant="danger">authority none</Badge>
           <Badge variant="secondary">researchOnly true</Badge>
-          <Button type="button" size="sm" onClick={onRun} disabled={status === "running"}>
+          <Button type="button" size="sm" onClick={onRun} disabled={status === "running" || disabled}>
             <PlayCircle className="h-4 w-4" aria-hidden="true" />
             {status === "running" ? "Optimizing..." : "Run Profile Optimization"}
           </Button>
@@ -1546,8 +1667,8 @@ function ApprovedProfileOptimizerPanel({
       {result && recommended ? (
         <>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <AdvisorReadout label="Baseline target-first" value={pct(result.baseline.targetFirstRate)} detail={`${result.baseline.totalSignals.toLocaleString()} replay signals`} />
-            <AdvisorReadout label="Baseline average RR" value={rr(result.baseline.averageRrAchieved)} />
+            <AdvisorReadout label="Baseline target-first" value={pct(baseline?.targetFirstRate)} detail={`${safeCount(baseline?.totalSignals)} replay signals`} />
+            <AdvisorReadout label="Baseline average RR" value={rr(baseline?.averageRrAchieved)} />
             <AdvisorReadout label="Recommended confidence" value={`${recommended.minConfidence}%`} detail={recommended.label} />
             <AdvisorReadout label="Recommended min RR" value={rr(recommended.minRr)} />
             <AdvisorReadout label="Signal reduction" value={pct(recommended.results.signalReductionPct)} detail={`${recommended.results.approvedCount} approved / ${recommended.results.rejectedCount} rejected`} />
@@ -1565,14 +1686,14 @@ function ApprovedProfileOptimizerPanel({
             </div>
           ) : null}
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            <AdvisorList label="Strengths" values={recommended.strengths} empty="none" />
-            <AdvisorList label="Weaknesses" values={recommended.weaknesses} empty="none" />
-            <AdvisorList label="Recommendation" values={[result.recommendationSummary, result.nextTestSuggestion]} empty="none" />
+            <AdvisorList label="Strengths" values={safeList(recommended.strengths)} empty="none" />
+            <AdvisorList label="Weaknesses" values={safeList(recommended.weaknesses)} empty="none" />
+            <AdvisorList label="Recommendation" values={safeList([result.recommendationSummary, result.nextTestSuggestion].filter(Boolean))} empty="none" />
             <AdvisorList
               label="Safety"
               values={[
                 "Draft recommendation only; no production profile mutation.",
-                `Authority ${result.authority.executionAuthority}/${result.authority.brokerAuthority}/${result.authority.readinessOverrideAuthority}.`,
+                `Authority ${result.authority?.executionAuthority ?? "none"}/${result.authority?.brokerAuthority ?? "none"}/${result.authority?.readinessOverrideAuthority ?? "none"}.`,
                 "Raw candles, snapshots, secrets, account data, orders, and positions excluded."
               ]}
               empty="none"
@@ -1586,6 +1707,7 @@ function ApprovedProfileOptimizerPanel({
 
 function MarketScorecardPanel({
   config,
+  disabled,
   error,
   onRun,
   onSave,
@@ -1594,6 +1716,7 @@ function MarketScorecardPanel({
   status
 }: {
   config: IctMarketScorecardConfig;
+  disabled?: boolean;
   error?: string;
   onRun: () => Promise<void>;
   onSave: () => void;
@@ -1612,7 +1735,9 @@ function MarketScorecardPanel({
           : status === "unavailable"
             ? "No configured market completed replay. Check MT5 read-only availability and symbol mappings."
             : `Market scorecard failed: ${error ?? "unknown_error"}.`;
-  const configuredSymbols = config.requestedSymbols.join(", ");
+  const configuredSymbols = safeList(config.requestedSymbols).join(", ");
+  const scorecardSummary = scorecard?.summary;
+  const scorecardSymbols = safeList(scorecard?.symbols);
 
   return (
     <section data-testid="ict-market-scorecard" className="rounded-xl border border-emerald-300/15 bg-slate-950/85 p-5">
@@ -1631,11 +1756,11 @@ function MarketScorecardPanel({
           <Badge data-testid="ict-market-scorecard-status" variant={statusVariant}>{formatToken(status)}</Badge>
           <Badge variant="danger">authority none</Badge>
           <Badge variant="secondary">researchOnly true</Badge>
-          <Button type="button" size="sm" onClick={onRun} disabled={status === "running"}>
+          <Button type="button" size="sm" onClick={onRun} disabled={status === "running" || disabled}>
             <PlayCircle className="h-4 w-4" aria-hidden="true" />
             {status === "running" ? "Running..." : "Run Market Scorecard"}
           </Button>
-          <Button type="button" size="sm" variant="secondary" onClick={onSave} disabled={status !== "completed" || !scorecard}>
+          <Button type="button" size="sm" variant="secondary" onClick={onSave} disabled={status !== "completed" || !scorecard || disabled}>
             Save Scorecard Report
           </Button>
         </div>
@@ -1651,14 +1776,14 @@ function MarketScorecardPanel({
       {scorecard ? (
         <>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <AdvisorReadout label="Completed" value={scorecard.summary.completedSymbols.toLocaleString()} detail={`${scorecard.summary.unavailableSymbols} unavailable`} />
-            <AdvisorReadout label="Research-preferred" value={scorecard.summary.researchPreferredSymbols.join(", ") || "none"} />
-            <AdvisorReadout label="Watchlist-only" value={scorecard.summary.watchlistOnlySymbols.join(", ") || "none"} />
-            <AdvisorReadout label="Noisy" value={scorecard.summary.noisySymbols.join(", ") || "none"} />
-            <AdvisorReadout label="Best target-first" value={scorecard.summary.bestApprovedTargetFirstSymbol ?? "n/a"} detail="approved-profile basis" />
-            <AdvisorReadout label="Best average RR" value={scorecard.summary.bestApprovedRrSymbol ?? "n/a"} detail="approved-profile basis" />
-            <AdvisorReadout label="Best approved/rejected" value={scorecard.summary.bestApprovedRejectedRatioSymbol ?? "n/a"} detail="approved-profile ratio" />
-            <AdvisorReadout label="Cleanest symbol" value={scorecard.summary.cleanestSymbol ?? "n/a"} detail="research scorecard only" />
+            <AdvisorReadout label="Completed" value={safeCount(scorecardSummary?.completedSymbols)} detail={`${safeCount(scorecardSummary?.unavailableSymbols)} unavailable`} />
+            <AdvisorReadout label="Research-preferred" value={safeList(scorecardSummary?.researchPreferredSymbols).join(", ") || "none"} />
+            <AdvisorReadout label="Watchlist-only" value={safeList(scorecardSummary?.watchlistOnlySymbols).join(", ") || "none"} />
+            <AdvisorReadout label="Noisy" value={safeList(scorecardSummary?.noisySymbols).join(", ") || "none"} />
+            <AdvisorReadout label="Best target-first" value={scorecardSummary?.bestApprovedTargetFirstSymbol ?? "n/a"} detail="approved-profile basis" />
+            <AdvisorReadout label="Best average RR" value={scorecardSummary?.bestApprovedRrSymbol ?? "n/a"} detail="approved-profile basis" />
+            <AdvisorReadout label="Best approved/rejected" value={scorecardSummary?.bestApprovedRejectedRatioSymbol ?? "n/a"} detail="approved-profile ratio" />
+            <AdvisorReadout label="Cleanest symbol" value={scorecardSummary?.cleanestSymbol ?? "n/a"} detail="research scorecard only" />
             <AdvisorReadout label="Generated" value={formatDate(scorecard.generatedAt)} detail={scorecard.runId} />
           </div>
           <div className="mt-4 overflow-x-auto rounded-lg border border-white/10">
@@ -1679,8 +1804,8 @@ function MarketScorecardPanel({
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/10">
-                {scorecard.symbols.map((symbol) => {
-                  const noTradeReason = symbol.mostCommonNoTradeReasons[0];
+                {scorecardSymbols.map((symbol) => {
+                  const noTradeReason = safeList(symbol.mostCommonNoTradeReasons)[0];
                   return (
                     <tr key={`${symbol.requestedSymbol}:${symbol.primaryTimeframe}`} className="text-slate-300">
                       <td className="px-3 py-3 align-top">
@@ -1710,7 +1835,7 @@ function MarketScorecardPanel({
             <AdvisorReadout label="Safety" value="raw candles excluded" detail="No raw candles, snapshots, secrets, account/order/position data." />
             <AdvisorReadout
               label="Authority"
-              value={`${scorecard.authority.executionAuthority}/${scorecard.authority.brokerAuthority}/${scorecard.authority.readinessOverrideAuthority}`}
+              value={`${scorecard.authority?.executionAuthority ?? "none"}/${scorecard.authority?.brokerAuthority ?? "none"}/${scorecard.authority?.readinessOverrideAuthority ?? "none"}`}
               detail="Scorecard cannot promote readiness."
             />
             <AdvisorReadout label="Journal" value="compact scorecard event" detail="ict_market_scorecard_summary / researchOnly true" />
@@ -1747,6 +1872,7 @@ function SaveResultNotice({ result }: { result: IctResearchReportSaveResult }) {
 }
 
 function SavedResearchReportsPanel({ reports }: { reports: IctResearchReport[] }) {
+  const compactReports = safeList(reports);
   return (
     <section data-testid="ict-saved-research-reports" className="rounded-xl border border-white/10 bg-slate-950/65 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1758,13 +1884,13 @@ function SavedResearchReportsPanel({ reports }: { reports: IctResearchReport[] }
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Badge variant="secondary">{reports.length} saved</Badge>
+          <Badge variant="secondary">{compactReports.length} saved</Badge>
           <Badge variant="danger">authority none</Badge>
         </div>
       </div>
-      {reports.length ? (
+      {compactReports.length ? (
         <div className="mt-4 grid gap-3">
-          {reports.slice(0, 6).map((report) => (
+          {compactReports.slice(0, 6).map((report) => (
             <div key={report.reportId} className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">

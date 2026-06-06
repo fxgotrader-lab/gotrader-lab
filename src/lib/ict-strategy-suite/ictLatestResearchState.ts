@@ -37,6 +37,7 @@ let memoryJournal: IctLatestResearchStateJournalEvent[] = [];
 const isBrowser = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 const generatedNow = () => new Date().toISOString();
 const createId = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error ?? "unknown_error");
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 const round = (value: number, decimals = 4) => Number(value.toFixed(decimals));
 const copyStringList = (values: unknown) =>
@@ -208,9 +209,19 @@ export const appendIctLatestResearchStateJournalEvent = (event: IctLatestResearc
     memoryJournal = [...memoryJournal, sanitized].slice(-MAX_LATEST_RESEARCH_STATE_JOURNAL_EVENTS);
     return { ok: true, storage: "memory" as const, event: sanitized, totalEvents: memoryJournal.length };
   }
-  const next = [...readIctLatestResearchStateJournalEvents(), sanitized].slice(-MAX_LATEST_RESEARCH_STATE_JOURNAL_EVENTS);
-  window.localStorage.setItem(ICT_LATEST_RESEARCH_STATE_JOURNAL_STORAGE_KEY, JSON.stringify(next));
-  return { ok: true, storage: "localStorage" as const, event: sanitized, totalEvents: next.length };
+  try {
+    const next = [...readIctLatestResearchStateJournalEvents(), sanitized].slice(-MAX_LATEST_RESEARCH_STATE_JOURNAL_EVENTS);
+    window.localStorage.setItem(ICT_LATEST_RESEARCH_STATE_JOURNAL_STORAGE_KEY, JSON.stringify(next));
+    return { ok: true, storage: "localStorage" as const, event: sanitized, totalEvents: next.length };
+  } catch (error) {
+    memoryJournal = [...memoryJournal, sanitized].slice(-MAX_LATEST_RESEARCH_STATE_JOURNAL_EVENTS);
+    return {
+      ok: false,
+      storage: "localStorage_failed" as const,
+      event: sanitized,
+      error: errorMessage(error)
+    };
+  }
 };
 
 export const saveLatestResearchStatePatch = (
@@ -231,20 +242,31 @@ export const saveLatestResearchStatePatch = (
     authority,
     safety
   };
+  memoryState = next;
   if (isBrowser()) {
-    window.localStorage.setItem(ICT_LATEST_RESEARCH_STATE_STORAGE_KEY, JSON.stringify(next));
-  } else {
-    memoryState = next;
+    try {
+      window.localStorage.setItem(ICT_LATEST_RESEARCH_STATE_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // Memory fallback keeps the advisor responsive when localStorage is blocked or full.
+    }
   }
   appendIctLatestResearchStateJournalEvent(buildIctLatestResearchStateJournalEvent(next, source));
-  publish(next, source);
+  try {
+    publish(next, source);
+  } catch {
+    // A failed event dispatch should not interrupt a manual advisor action.
+  }
   return next;
 };
 
 export const clearLatestResearchState = () => {
   memoryState = undefined;
   if (isBrowser()) {
-    window.localStorage.removeItem(ICT_LATEST_RESEARCH_STATE_STORAGE_KEY);
+    try {
+      window.localStorage.removeItem(ICT_LATEST_RESEARCH_STATE_STORAGE_KEY);
+    } catch {
+      // Clearing memory state is enough when browser storage is unavailable.
+    }
   }
   return { ok: true, authority, safety };
 };

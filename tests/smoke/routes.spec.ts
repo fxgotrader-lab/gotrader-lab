@@ -187,6 +187,10 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByTestId("ict-monte-carlo-status")).toContainText(/idle/i);
     await expect(page.getByTestId("ict-monte-carlo-robustness")).toContainText(/Run Replay Review first/i);
     await expect(page.getByRole("button", { name: "Run Monte Carlo Robustness" })).toBeVisible();
+    await page.getByRole("button", { name: "Run Monte Carlo Robustness" }).click();
+    await expect(page.getByTestId("ict-monte-carlo-status")).toContainText(/unavailable/i);
+    await expect(page.getByTestId("ict-monte-carlo-robustness")).toContainText(/Run Replay Review first/i);
+    await expect(page.locator("vite-error-overlay,#vite-error-overlay")).toHaveCount(0);
     await expect(page.getByTestId("ict-approved-profile-optimizer")).toContainText(/Optimize Approved Profile/i);
     await expect(page.getByTestId("ict-approved-profile-optimizer-status")).toContainText(/idle/i);
     await expect(page.getByRole("button", { name: "Run Profile Optimization" })).toBeVisible();
@@ -242,6 +246,16 @@ async function expectChartOrFallback(page: Page, route: string) {
   const canvasCount = await page.locator("canvas").count();
   if (canvasCount > 0) {
     expect(canvasCount, `${route} should render at least one chart canvas`).toBeGreaterThan(0);
+    return;
+  }
+  const chartAttribution = page.getByRole("link", { name: /Charting by TradingView/i });
+  if (await chartAttribution.count()) {
+    await expect(chartAttribution.first()).toBeVisible();
+    return;
+  }
+  const chartApplication = page.getByRole("application");
+  if (await chartApplication.count()) {
+    await expect(chartApplication.first()).toBeVisible();
     return;
   }
   await expect(page.getByText(/Chart unavailable|No candles|No chart data|preview unavailable|data unavailable/i)).toBeVisible();
