@@ -20,7 +20,8 @@ export type IctApprovedCandidateStatus =
 export type IctApprovedProfileId =
   | "gotrader_ict_phase1_strict"
   | "gotrader_ict_phase1_balanced"
-  | "gotrader_ict_phase1_experimental";
+  | "gotrader_ict_phase1_experimental"
+  | "gotrader_ict_90d_session_calibrated";
 
 export interface IctApprovedSetupProfile {
   id: IctApprovedProfileId;

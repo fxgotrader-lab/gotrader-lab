@@ -1,4 +1,5 @@
 import type { IctAdvisorSignal } from "./ictAdvisorTypes";
+import type { IctApprovedCandidateStatus, IctApprovedProfileId } from "./ictApprovedSetupProfileTypes";
 import type { IctIndexComparisonCandles, IctSmtSignal } from "./ictIndexSmtTypes";
 import type {
   IctNewsRiskLevel,
@@ -75,7 +76,10 @@ export interface IctReplayResult {
   dealingRangeLocation?: "premium" | "discount" | "equilibrium";
   liquidityTargetType?: string;
   orderBlockVariant?: string;
-  approvedProfileStatus?: string;
+  approvedProfileStatus?: IctApprovedCandidateStatus;
+  approvedProfileId?: IctApprovedProfileId;
+  approvedProfileScore?: number;
+  approvedProfileReasons?: string[];
   smtDivergenceType?: IctSmtSignal["divergenceType"];
   smtConfirmsCandidate?: boolean;
   smtRejectsCandidate?: boolean;
@@ -163,7 +167,9 @@ export interface IctReplayJournalEvent {
   outcome: IctReplayOutcome;
   fvgStatus: IctFvgReplayStatus;
   orderBlockVariant?: string;
-  approvedProfileStatus?: string;
+  approvedProfileStatus?: IctApprovedCandidateStatus;
+  approvedProfileId?: IctApprovedProfileId;
+  approvedProfileScore?: number;
   smtDivergenceType?: IctSmtSignal["divergenceType"];
   smtConfirmsCandidate?: boolean;
   smtRejectsCandidate?: boolean;

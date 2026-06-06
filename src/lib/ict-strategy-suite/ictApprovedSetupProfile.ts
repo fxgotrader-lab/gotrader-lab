@@ -126,6 +126,25 @@ export const getDefaultApprovedSetupProfiles = (): IctApprovedSetupProfile[] => 
       rejectNoDisplacement: true,
       rejectNoLiquiditySweep: true
     }
+  },
+  {
+    id: "gotrader_ict_90d_session_calibrated",
+    label: "GoTrader ICT 90D Session Calibrated",
+    researchOnly: true,
+    minConfidence: 50,
+    minRr: 1.25,
+    requireHtfAlignment: false,
+    requireFvgPresent: false,
+    requireExternalLiquidityTarget: true,
+    rejectEquilibrium: false,
+    rejectTargetTooClose: true,
+    riskFilters: {
+      rejectHighImpactNews: true,
+      rejectMissingHtfContext: false,
+      rejectMixedBias: false,
+      rejectNoDisplacement: true,
+      rejectNoLiquiditySweep: true
+    }
   }
 ];
 
@@ -150,6 +169,7 @@ const directionConfirmsSide = (read: IctSessionDirectionalRead | undefined, side
   (read === "bullish" && side === "long") || (read === "bearish" && side === "short");
 const directionContradictsSide = (read: IctSessionDirectionalRead | undefined, side: "long" | "short" | "flat") =>
   (read === "bullish" && side === "short") || (read === "bearish" && side === "long");
+const isSessionCalibratedProfile = (profile: IctApprovedSetupProfile) => profile.id === "gotrader_ict_90d_session_calibrated";
 
 const htfAlignedForSignal = (signal: IctAdvisorSignal) => {
   const htfValues = Object.values(signal.bias.htf);
@@ -262,6 +282,8 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
       : !replay
         ? input.sessionTopReasons
         : undefined;
+  const hasTarget = replay ? typeof input.tradePath.target === "number" : typeof input.target === "number";
+  const hasInvalidation = replay ? typeof input.tradePath.invalidation === "number" : typeof input.invalidation === "number";
   return {
     brokerSymbol: input.brokerSymbol,
     compositeBias: replay ? undefined : input.bias.composite,
@@ -274,7 +296,9 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
     hasExternalLiquidityTarget: Boolean(liquidityTargetType && externalLiquidityTypes.has(liquidityTargetType)),
     hasForbiddenField: hasForbiddenField(input),
     hasFvg: fvgStatus !== "not_applicable" && fvgStatus !== undefined,
+    hasInvalidation,
     hasLiquiditySweep,
+    hasTarget,
     htfAligned,
     htfTimeframes,
     liquidityTargetType,
@@ -328,6 +352,17 @@ export const calculateApprovalScore = (input: IctApprovedSetupProfileInput, prof
   if (normalized.targetTooClose) score -= 10;
   if (directionConfirmsSide(normalized.sessionDirectionalRead, normalized.side)) score += 5;
   if (directionContradictsSide(normalized.sessionDirectionalRead, normalized.side)) score -= 12;
+  if (
+    isSessionCalibratedProfile(profile) &&
+    (normalized.sessionNarrativeProfile === "accumulation_manipulation_expansion" ||
+      normalized.sessionNarrativeProfile === "consolidation_manipulation_distribution" ||
+      normalized.sessionNarrativeProfile === "ny_session_reversal_to_premium_fvg" ||
+      normalized.sessionNarrativeProfile === "ny_session_reversal_from_premium_to_discount") &&
+    directionConfirmsSide(normalized.sessionDirectionalRead, normalized.side)
+  ) {
+    score += 8;
+  }
+  if (isSessionCalibratedProfile(profile) && normalized.sessionNarrativeProfile === "range_bound") score -= 25;
   if (normalized.side === "long" && normalized.fvgTargetDetected && normalized.fvgTargetDirection === "premium") score += 3;
   if (normalized.side === "short" && normalized.fvgTargetDetected && normalized.fvgTargetDirection === "discount") score += 3;
   if (normalized.dataDepthStatus === "limited") score -= 3;
@@ -346,11 +381,38 @@ export const evaluateApprovedSetupProfile = (
   const rr = normalized.rrEstimate ?? 0;
   const nearConfidence = normalized.confidence >= profile.minConfidence - 5;
   const nearRr = rr >= profile.minRr - 0.25;
+  const sessionCalibrated = isSessionCalibratedProfile(profile);
+  const sessionModel = normalized.sessionNarrativeProfile;
+  const sessionConfirmsSide = directionConfirmsSide(normalized.sessionDirectionalRead, normalized.side);
+  const isAmeModel = sessionModel === "accumulation_manipulation_expansion";
+  const isCmdModel = sessionModel === "consolidation_manipulation_distribution";
+  const isNyReversalModel =
+    sessionModel === "ny_session_reversal_to_premium_fvg" ||
+    sessionModel === "ny_session_reversal_from_premium_to_discount";
+  const sessionModelSupported =
+    (isAmeModel && sessionConfirmsSide) ||
+    (isCmdModel && normalized.side === "short" && normalized.sessionDirectionalRead === "bearish") ||
+    (isNyReversalModel && sessionConfirmsSide);
 
   if (normalized.hasForbiddenField) hardRejects.push("Input contains a forbidden unsafe field.");
   if (!strategyIds.has(normalized.strategyId)) hardRejects.push("Unknown ICT strategy id.");
   if (normalized.decision !== "research_only") hardRejects.push("Original signal is not research-only.");
   if (normalized.side !== "long" && normalized.side !== "short") hardRejects.push("Signal is not directional.");
+  if (sessionCalibrated && !normalized.hasTarget) hardRejects.push("Target is missing.");
+  if (sessionCalibrated && !normalized.hasInvalidation) hardRejects.push("Invalidation is missing.");
+  if (sessionCalibrated && sessionModel === "range_bound") hardRejects.push("Range-bound profile -- no expansion model confirmed.");
+  if (
+    sessionCalibrated &&
+    sessionModel &&
+    !sessionModelSupported &&
+    sessionModel !== "range_bound" &&
+    sessionModel !== "insufficient_data"
+  ) {
+    hardRejects.push(`Session narrative profile ${sessionModel} does not confirm this candidate.`);
+  }
+  if (sessionCalibrated && (!sessionModel || sessionModel === "insufficient_data")) {
+    watchlistReasons.push("Session narrative model is unavailable or insufficient for 90-day approval.");
+  }
   if (profile.allowedSides?.length && !profile.allowedSides.includes(normalized.side as "long" | "short")) hardRejects.push("Side is outside approved profile allowed sides.");
   if (profile.allowedSetups?.length && !profile.allowedSetups.includes(normalized.setup)) hardRejects.push("Setup is outside approved profile allowed setups.");
   if (profile.allowedSessions?.length && !profile.allowedSessions.includes(normalized.session)) hardRejects.push("Session is outside approved profile allowed sessions.");
@@ -416,6 +478,9 @@ export const evaluateApprovedSetupProfile = (
   if (normalized.newsSessionRisk?.riskGovernorAction === "allow") approvedReasons.push("News/session risk governor allows normal ICT gate review.");
   if (directionConfirmsSide(normalized.sessionDirectionalRead, normalized.side)) {
     approvedReasons.push(`Session narrative confirms ${normalized.side} candidate: ${normalized.sessionNarrativeProfile ?? "profile pending"}.`);
+  }
+  if (sessionCalibrated && sessionModelSupported) {
+    approvedReasons.push(`90-day calibrated session model supports candidate: ${sessionModel}.`);
   }
   if (normalized.side === "long" && normalized.fvgTargetDetected && normalized.fvgTargetDirection === "premium") {
     approvedReasons.push("Premium FVG draw supports long candidate context from discount.");
@@ -489,7 +554,7 @@ export const evaluateApprovedSetupProfile = (
     requestedLookbackDays: normalized.requestedLookbackDays,
     sessionNarrativeReasons: normalized.sessionNarrativeReasons,
     approvalScore: calculateApprovalScore(input, profile),
-    approvedReasons: Array.from(new Set(approvedReasons)).slice(0, 8),
+    approvedReasons: Array.from(new Set(approvedReasons)).slice(0, 10),
     rejectionReasons: Array.from(new Set(hardRejects)).slice(0, 8),
     watchlistReasons: Array.from(new Set(watchlistReasons)).slice(0, 8),
     authority,

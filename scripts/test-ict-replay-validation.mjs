@@ -129,6 +129,35 @@ const signal = (overrides = {}) => ({
     htf: { "15m": "bullish", "1h": "bullish" },
     composite: "bullish"
   },
+  dealingRange: {
+    high: 112,
+    low: 94,
+    midpoint: 103,
+    currentLocation: "discount",
+    sourceTimeframe: "5m"
+  },
+  liquiditySwept: {
+    type: "old_swing_low",
+    price: 95,
+    timeframe: "5m",
+    swept: true,
+    distanceFromCurrent: -6
+  },
+  drawOnLiquidity: {
+    type: "previous_day_high",
+    price: 111,
+    timeframe: "daily",
+    swept: false,
+    distanceFromCurrent: 10
+  },
+  displacement: {
+    direction: "bullish",
+    candleTime: "2026-06-05T13:00:00.000Z",
+    impulseHigh: 104,
+    impulseLow: 98,
+    bodySize: 4,
+    createdFvg: true
+  },
   setup: "fvg_retracement",
   entryZone: { type: "fair_value_gap", high: 102, low: 100, midpoint: 101 },
   invalidation: 95,
@@ -143,6 +172,19 @@ const signal = (overrides = {}) => ({
     mitigated: false,
     createdAt: "2026-06-05T13:00:00.000Z"
   },
+  sessionNarrativeProfile: "accumulation_manipulation_expansion",
+  sessionDirectionalRead: "bullish",
+  sessionNarrativeConfidence: 0.66,
+  sessionMitigationContext: {
+    detected: true,
+    direction: "bullish",
+    note: "Fixture mitigation."
+  },
+  fvgTargetDetected: true,
+  fvgTargetDirection: "premium",
+  dataDepthStatus: "sufficient",
+  availableLookbackDays: 88.95,
+  requestedLookbackDays: 90,
   noTradeReasons: [],
   riskNotes: ["Research-only replay validation. No broker execution authority."],
   provenance: {
@@ -179,6 +221,8 @@ async function main() {
   ]);
   assert.equal(longTarget.outcome, "target_first", "long setup should reach target before invalidation");
   assert.equal(longTarget.fvgStatus, "respected", "bullish FVG should be respected after tap and target delivery");
+  assert.equal(longTarget.approvedProfileStatus, "approved_research_candidate", "replay result should preserve selected approved status");
+  assert.ok(longTarget.approvedProfileId, "replay result should preserve selected approved profile id");
 
   const shortTarget = evaluate(
     suite,
@@ -309,6 +353,7 @@ async function main() {
   assert.equal(report.authority.brokerAuthority, "none");
   assert.equal(report.authority.readinessOverrideAuthority, "none");
   assert.ok(report.results.length > 0, "full replay validation should produce compact results");
+  assert.ok(report.results.some((result) => result.approvedProfileStatus), "replay report should preserve approved profile status on results");
   assert.ok(report.journalEvents.length === report.results.length, "each replay result should create a compact journal event");
   for (const event of report.journalEvents) {
     assert.equal(event.eventType, "ict_replay_result");

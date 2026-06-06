@@ -7,6 +7,11 @@ import type { ResearchRuntimeSnapshot } from "../runtime";
 import type { Candle, FuturesSymbol, Timeframe } from "../types";
 import { buildIctAdvisorSignals } from "./ictAdvisorEngine";
 import type { IctAdvisorSignal } from "./ictAdvisorTypes";
+import {
+  evaluateApprovedSetupProfiles,
+  sanitizeApprovedSetupDecision
+} from "./ictApprovedSetupProfile";
+import type { IctApprovedSetupDecision } from "./ictApprovedSetupProfileTypes";
 import { ICT_INDEX_SMT_INSTRUMENTS } from "./ictIndexSmt";
 import type { IctIndexComparisonCandles } from "./ictIndexSmtTypes";
 import { buildIctSessionNarrative } from "./ictSessionNarrative";
@@ -27,6 +32,8 @@ const MAX_REPLAY_JOURNAL_EVENTS = 500;
 const createId = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 const round = (value: number, decimals = 2) => Number(value.toFixed(decimals));
 const isBrowser = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+const approvalStatusWeight = (status?: string) =>
+  status === "approved_research_candidate" ? 4 : status === "watchlist_candidate" ? 3 : status === "rejected_candidate" ? 2 : status === "no_trade" ? 1 : 0;
 
 const coerceCandle = (value: unknown, index: number, input: Pick<IctReplayInput, "primaryTimeframe" | "requestedSymbol" | "symbol">): Candle | undefined => {
   if (!value || typeof value !== "object") return undefined;
@@ -170,6 +177,16 @@ export const evaluateFvgReplayStatus = (signal: IctAdvisorSignal, futureCandles:
 const entryReferenceFor = (signal: IctAdvisorSignal, signalCandle: Candle) =>
   signal.entryZone?.midpoint ?? signal.entryZone?.low ?? signal.entryZone?.high ?? signalCandle.close;
 
+const selectReplayApprovalDecision = (decisions: IctApprovedSetupDecision[]) =>
+  decisions
+    .slice()
+    .sort(
+      (left, right) =>
+        approvalStatusWeight(right.status) - approvalStatusWeight(left.status) ||
+        right.approvalScore - left.approvalScore ||
+        left.profileId.localeCompare(right.profileId)
+    )[0];
+
 export const evaluateSignalOutcome = ({
   brokerSymbol,
   futureCandles,
@@ -229,7 +246,7 @@ export const evaluateSignalOutcome = ({
     rrAchieved
   };
   const fvgStatus = evaluateFvgReplayStatus(signal, futureCandles);
-  return {
+  const baseResult: IctReplayResult = {
     strategyId: signal.strategyId,
     phase: signal.phase ?? "phase_1",
     symbol,
@@ -247,6 +264,11 @@ export const evaluateSignalOutcome = ({
     liquidityTargetType: signal.drawOnLiquidity?.type,
     orderBlockVariant: signal.orderBlock?.variant,
     approvedProfileStatus: signal.approvedProfileDecision?.status,
+    approvedProfileId: signal.approvedProfileDecision?.profileId,
+    approvedProfileScore: signal.approvedProfileDecision?.approvalScore,
+    approvedProfileReasons: signal.approvedProfileDecision
+      ? [...signal.approvedProfileDecision.approvedReasons, ...signal.approvedProfileDecision.watchlistReasons, ...signal.approvedProfileDecision.rejectionReasons].slice(0, 6)
+      : undefined,
     smtDivergenceType: signal.smt?.divergenceType,
     smtConfirmsCandidate: signal.smt?.confirmsCandidate,
     smtRejectsCandidate: signal.smt?.rejectsCandidate,
@@ -288,6 +310,16 @@ export const evaluateSignalOutcome = ({
       generatedAt: new Date().toISOString()
     }
   };
+  const replayDecision = selectReplayApprovalDecision(evaluateApprovedSetupProfiles(baseResult).map(sanitizeApprovedSetupDecision));
+  return replayDecision
+    ? {
+        ...baseResult,
+        approvedProfileStatus: replayDecision.status,
+        approvedProfileId: replayDecision.profileId,
+        approvedProfileScore: replayDecision.approvalScore,
+        approvedProfileReasons: [...replayDecision.approvedReasons, ...replayDecision.watchlistReasons, ...replayDecision.rejectionReasons].slice(0, 6)
+      }
+    : baseResult;
 };
 
 export const countNoTradeReasons = (results: IctReplayResult[]) => {
@@ -364,6 +396,8 @@ export const buildIctReplayJournalEvent = (result: IctReplayResult, htfTimeframe
   fvgStatus: result.fvgStatus,
   orderBlockVariant: result.orderBlockVariant,
   approvedProfileStatus: result.approvedProfileStatus,
+  approvedProfileId: result.approvedProfileId,
+  approvedProfileScore: result.approvedProfileScore,
   smtDivergenceType: result.smtDivergenceType,
   smtConfirmsCandidate: result.smtConfirmsCandidate,
   smtRejectsCandidate: result.smtRejectsCandidate,

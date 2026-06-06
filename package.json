@@ -28,6 +28,7 @@
     "test:ict-real-replay-runner": "node scripts/test-ict-real-replay-runner.mjs",
     "test:ict-replay-diagnostics": "node scripts/test-ict-replay-diagnostics.mjs",
     "test:ict-approved-setup-profile": "node scripts/test-ict-approved-setup-profile.mjs",
+    "test:ict-approved-outcome-calibration": "node scripts/test-ict-approved-outcome-calibration.mjs",
     "test:ict-phase2-models": "node scripts/test-ict-phase2-models.mjs",
     "test:ict-index-smt": "node scripts/test-ict-index-smt.mjs",
     "test:ict-news-session-risk": "node scripts/test-ict-news-session-risk.mjs",

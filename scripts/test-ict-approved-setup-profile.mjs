@@ -187,10 +187,12 @@ async function main() {
   const strict = profiles.find((profile) => profile.id === "gotrader_ict_phase1_strict");
   const balanced = profiles.find((profile) => profile.id === "gotrader_ict_phase1_balanced");
   const experimental = profiles.find((profile) => profile.id === "gotrader_ict_phase1_experimental");
+  const calibrated = profiles.find((profile) => profile.id === "gotrader_ict_90d_session_calibrated");
 
   assert.ok(strict, "strict profile should exist");
   assert.ok(balanced, "balanced profile should exist");
   assert.ok(experimental, "experimental profile should exist");
+  assert.ok(calibrated, "90-day session calibrated profile should exist");
 
   const approved = suite.evaluateApprovedSetupProfile(baseSignal(), strict);
   assert.equal(approved.status, "approved_research_candidate");
@@ -233,6 +235,94 @@ async function main() {
   const experimentalNoSweep = suite.evaluateApprovedSetupProfile(baseSignal({ liquiditySwept: undefined }), experimental);
   assert.equal(experimentalNoSweep.status, "rejected_candidate", "experimental should still reject no liquidity sweep");
   assert.match(experimentalNoSweep.rejectionReasons.join(" "), /sweep/i);
+
+  const calibratedAme = suite.evaluateApprovedSetupProfile(
+    baseSignal({
+      confidence: 0.56,
+      rrEstimate: 1.35,
+      sessionNarrativeProfile: "accumulation_manipulation_expansion",
+      sessionDirectionalRead: "bullish",
+      sessionNarrativeConfidence: 0.66,
+      sessionMitigationDetected: true,
+      fvgTargetDetected: true,
+      fvgTargetDirection: "premium",
+      dataDepthStatus: "sufficient",
+      availableLookbackDays: 88.95,
+      requestedLookbackDays: 90
+    }),
+    calibrated
+  );
+  assert.equal(calibratedAme.status, "approved_research_candidate", "calibrated profile should approve valid AME candidate");
+  assert.match(calibratedAme.approvedReasons.join(" "), /90-day calibrated session model/i);
+
+  const calibratedCmd = suite.evaluateApprovedSetupProfile(
+    baseSignal({
+      side: "short",
+      confidence: 0.58,
+      rrEstimate: 1.4,
+      bias: {
+        primary: "bearish",
+        htf: {
+          "15m": "neutral",
+          "1h": "bearish"
+        },
+        composite: "bearish"
+      },
+      dealingRange: {
+        ...baseSignal().dealingRange,
+        currentLocation: "premium"
+      },
+      drawOnLiquidity: {
+        type: "previous_day_low",
+        price: 88,
+        timeframe: "daily",
+        swept: false,
+        distanceFromCurrent: -12
+      },
+      displacement: {
+        direction: "bearish",
+        candleTime: "2026-06-05T13:00:00.000Z",
+        impulseHigh: 105,
+        impulseLow: 98,
+        bodySize: 4,
+        createdFvg: true
+      },
+      fairValueGap: {
+        direction: "bearish",
+        high: 101,
+        low: 99,
+        midpoint: 100,
+        timeframe: "5m",
+        mitigated: false,
+        createdAt: "2026-06-05T13:00:00.000Z"
+      },
+      invalidation: 104,
+      target: 88,
+      sessionNarrativeProfile: "consolidation_manipulation_distribution",
+      sessionDirectionalRead: "bearish",
+      sessionNarrativeConfidence: 0.64,
+      sessionMitigationDetected: true,
+      fvgTargetDetected: true,
+      fvgTargetDirection: "discount",
+      dataDepthStatus: "sufficient",
+      availableLookbackDays: 88.95,
+      requestedLookbackDays: 90
+    }),
+    calibrated
+  );
+  assert.equal(calibratedCmd.status, "approved_research_candidate", "calibrated profile should approve valid CMD bearish candidate");
+
+  const calibratedRangeBound = suite.evaluateApprovedSetupProfile(
+    baseSignal({
+      sessionNarrativeProfile: "range_bound",
+      sessionDirectionalRead: "neutral",
+      sessionNarrativeConfidence: 0.6,
+      dataDepthStatus: "sufficient"
+    }),
+    calibrated
+  );
+  assert.equal(calibratedRangeBound.status, "rejected_candidate", "calibrated profile should reject range-bound without expansion confirmation");
+  assert.match(calibratedRangeBound.rejectionReasons.join(" "), /Range-bound profile/i);
 
   const noTrade = suite.evaluateApprovedSetupProfile(
     baseSignal({ decision: "no_trade", side: "flat", setup: "no_trade", confidence: 0.2, noTradeReasons: ["Fixture no-trade."] }),
@@ -337,6 +427,8 @@ async function main() {
   process.stdout.write("GoTrader ICT Approved Setup Profile smoke test passed.\n");
   process.stdout.write(`Strict approval status: ${approved.status}\n`);
   process.stdout.write(`Strict watchlist status: ${watchlist.status}\n`);
+  process.stdout.write(`Calibrated AME status: ${calibratedAme.status}\n`);
+  process.stdout.write(`Calibrated CMD status: ${calibratedCmd.status}\n`);
   process.stdout.write(`Replay approved count: ${summaries[0].totalApproved}\n`);
 }
 
