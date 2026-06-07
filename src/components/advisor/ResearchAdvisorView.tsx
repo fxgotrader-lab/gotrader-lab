@@ -11,6 +11,11 @@ import {
   createActivateMarketInitialSteps,
   runIctActivateMarketPipeline
 } from "@/lib/ict-strategy-suite/ictActivateMarketPipeline";
+import { buildResearchAdvisorDecisionExplanation } from "@/lib/ict-strategy-suite/ictResearchAdvisorDecisionExplanation";
+import type {
+  IctResearchAdvisorDecisionExplanation,
+  IctResearchAdvisorDecisionStatus
+} from "@/lib/ict-strategy-suite/ictResearchAdvisorDecisionExplanationTypes";
 import type {
   IctActivateMarketResult,
   IctActivateMarketStatus,
@@ -199,6 +204,14 @@ const approvalLabel = (status?: IctAdvisorPacket["approvedProfileDecision"]["sta
   if (status === "no_trade") return "No Trade";
   return "Pending";
 };
+const decisionStatusVariant = (status: IctResearchAdvisorDecisionStatus) =>
+  status === "ready" || status === "eligible" || status === "saved" || status === "tracking"
+    ? "success" as const
+    : status === "warning" || status === "insufficient" || status === "weak" || status === "missing"
+      ? "warning" as const
+      : status === "disabled"
+        ? "danger" as const
+        : "secondary" as const;
 const riskStatusFromPacket = (packet?: IctAdvisorPacket) => {
   const action = packet?.compactSummary.riskGovernorAction;
   if (!packet) return undefined;
@@ -997,7 +1010,13 @@ export function ResearchAdvisorView() {
         disabled={activateMarketStatus === "running" || deepResearchActionRunning}
       />
 
-      <CurrentReadPanel currentRead={currentRead} packetError={activeAdvisorPacketError} />
+      <CurrentReadPanel
+        cmdPaperTracking={cmdPaperTracking}
+        currentRead={currentRead}
+        latestResearchState={latestResearchState}
+        packetError={activeAdvisorPacketError}
+        researchSignal={researchSignal}
+      />
       <MarketOpportunityCard currentRead={currentRead} />
       <ResearchHypothesisValidationPanel
         currentRead={currentRead}
@@ -1716,7 +1735,19 @@ function CmdPaperTrackingCard({
   );
 }
 
-function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurrentRead; packetError?: string }) {
+function CurrentReadPanel({
+  cmdPaperTracking,
+  currentRead,
+  latestResearchState,
+  packetError,
+  researchSignal
+}: {
+  cmdPaperTracking?: IctCmdPaperTrackingRecord;
+  currentRead: IctCurrentRead;
+  latestResearchState?: IctLatestResearchState;
+  packetError?: string;
+  researchSignal: IctResearchSignal;
+}) {
   const dataVariant =
     currentRead.dataStatus === "ready"
       ? "success"
@@ -1748,6 +1779,12 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
     typeof currentRead.invalidation === "number" ? undefined : "invalidation",
     typeof currentRead.rrEstimate === "number" ? undefined : "RR"
   ].filter((field): field is string => Boolean(field));
+  const decisionExplanation = buildResearchAdvisorDecisionExplanation({
+    cmdPaperTracking,
+    currentRead,
+    latestResearchState,
+    researchSignal
+  });
 
   return (
     <section data-testid="ict-current-read-panel" className="rounded-[24px] border border-cyan-300/15 bg-[radial-gradient(circle_at_16%_0%,rgba(34,211,238,0.13),transparent_36%),linear-gradient(135deg,rgba(15,23,42,0.92),rgba(2,6,23,0.94))] p-5 shadow-[0_0_55px_rgba(8,145,178,0.08)]">
@@ -1857,6 +1894,7 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
         <AdvisorList label="Why this state" values={packetError ? [packetError, ...currentRead.topReasons] : currentRead.topReasons} empty="No blockers reported." />
         <AdvisorReadout label="Next action" value={currentRead.nextAction} detail="Research-only; does not promote readiness." />
       </div>
+      <ResearchAdvisorDecisionExplanationPanel explanation={decisionExplanation} />
       <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.035] p-3">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Session story</p>
         <p className="mt-1 text-sm leading-6 text-slate-300">
@@ -1864,6 +1902,52 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
         </p>
       </div>
     </section>
+  );
+}
+
+function ResearchAdvisorDecisionExplanationPanel({
+  explanation
+}: {
+  explanation: IctResearchAdvisorDecisionExplanation;
+}) {
+  return (
+    <div
+      data-testid="research-advisor-decision-explanation"
+      className="mt-4 rounded-2xl border border-cyan-300/15 bg-[radial-gradient(circle_at_18%_0%,rgba(34,211,238,0.12),transparent_34%),linear-gradient(135deg,rgba(2,6,23,0.78),rgba(15,23,42,0.62))] p-4"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">Decision Explanation</p>
+          <p className="mt-1 max-w-4xl text-xs leading-5 text-slate-400">
+            Deterministic audit for {explanation.brokerSymbol} -&gt; {explanation.requestedSymbol}. Source {formatToken(explanation.packetSource)}, analysis {explanation.analysisTimeframesUsed.join(" / ") || "pending"}, depth {formatToken(explanation.analysisDepthStatus)}, weekly bias {formatToken(explanation.weeklyBiasDirection)} / {formatToken(explanation.weeklyBiasStatus)}.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="secondary">hydration {formatToken(explanation.candleHydrationStatus)}</Badge>
+          <Badge variant="danger">authority none</Badge>
+          <Badge variant="secondary">compact only</Badge>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        {explanation.sections.map((section) => (
+          <article key={section.id} className="rounded-xl border border-white/10 bg-white/[0.035] p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">{section.label}</p>
+              <Badge variant={decisionStatusVariant(section.status)}>{formatToken(section.status)}</Badge>
+            </div>
+            <p className="mt-2 text-sm leading-5 text-slate-100">{section.reason}</p>
+            <p className="mt-2 text-xs leading-5 text-cyan-100">Next: {section.nextAction}</p>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {section.facts.slice(0, 5).map((fact) => (
+                <span key={fact} className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-[11px] text-slate-400">
+                  {fact}
+                </span>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
   );
 }
 

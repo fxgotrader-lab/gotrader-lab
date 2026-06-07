@@ -466,6 +466,16 @@ async function main() {
     advisorPacket.signals.every((signal) => signal.approvedProfileDecision?.status),
     "every advisor signal should be evaluated by the approved setup profile layer"
   );
+  assert.doesNotMatch(
+    advisorPacket.approvedProfileDecision.rejectionReasons.join(" "),
+    /forbidden unsafe field/i,
+    "recommended advisor signal should reuse its compact approval decision instead of re-evaluating nested approval metadata"
+  );
+  assert.deepEqual(
+    advisorPacket.approvedProfileDecision,
+    advisorPacket.recommendedSignal.approvedProfileDecision,
+    "packet-level approved profile decision should match the recommended signal's precomputed compact decision"
+  );
   assert.equal(advisorPacket.authority.executionAuthority, "none", "advisor packet execution authority must be none");
   assert.equal(advisorPacket.authority.brokerAuthority, "none", "advisor packet broker authority must be none");
   assert.equal(advisorPacket.authority.readinessOverrideAuthority, "none", "advisor packet readiness authority must be none");

@@ -722,6 +722,11 @@ const bestSignal = (signals: IctAdvisorSignal[]) =>
       return rightDecision - leftDecision || right.confidence - left.confidence || (right.rrEstimate ?? 0) - (left.rrEstimate ?? 0);
     })[0] ?? signals[0];
 
+const signalWithoutPriorApproval = (signal: IctAdvisorSignal): IctAdvisorSignal => {
+  const { approvedProfileDecision: _approvedProfileDecision, ...candidate } = signal;
+  return candidate;
+};
+
 const resolveAnalysisCandles = async ({
   activeSource,
   sourceSummary,
@@ -912,14 +917,12 @@ export async function buildIctAdvisorPacketFromRuntime(
       );
   const recommendedSignal = bestSignal(signals);
   const approvedProfile = getDefaultApprovedSetupProfiles()[0];
-  const approvedProfileDecision = applySmtToApprovedDecision(
-    evaluateApprovedSetupProfile(recommendedSignal, approvedProfile),
-    recommendedSignal.smt
-  );
-  const finalApprovedProfileDecision = applyNewsSessionRiskToApprovedDecision(
-    approvedProfileDecision,
-    recommendedSignal.newsSessionRisk
-  );
+  const finalApprovedProfileDecision =
+    recommendedSignal.approvedProfileDecision ??
+    applyNewsSessionRiskToApprovedDecision(
+      applySmtToApprovedDecision(evaluateApprovedSetupProfile(signalWithoutPriorApproval(recommendedSignal), approvedProfile), recommendedSignal.smt),
+      recommendedSignal.newsSessionRisk
+    );
   const journalEvents = signals.map((signal) => buildIctAdvisorJournalEvent(signal));
   const indexSmtJournalEvents = signals.filter((signal) => signal.smt).map((signal) => buildIctIndexSmtJournalEvent(signal.smt!));
   const newsSessionRiskJournalEvents = signals

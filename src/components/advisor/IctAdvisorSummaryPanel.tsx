@@ -20,6 +20,11 @@ import {
   type IctLatestResearchState,
   type IctResearchSignal
 } from "@/lib/ict-strategy-suite";
+import { buildResearchAdvisorDecisionExplanation } from "@/lib/ict-strategy-suite/ictResearchAdvisorDecisionExplanation";
+import type {
+  IctResearchAdvisorDecisionExplanation,
+  IctResearchAdvisorDecisionStatus
+} from "@/lib/ict-strategy-suite/ictResearchAdvisorDecisionExplanationTypes";
 import type { ResearchRuntimeSnapshot } from "@/lib/runtime";
 
 const formatToken = (value?: string) => (value?.trim() ? value : "unknown").replace(/_/g, " ");
@@ -89,6 +94,14 @@ const modelLaneVariant = (lane?: string) =>
     : lane === "paper_watchlist" || lane === "watchlist"
       ? "warning" as const
       : lane === "rejected"
+        ? "danger" as const
+      : "secondary" as const;
+const decisionStatusVariant = (status: IctResearchAdvisorDecisionStatus) =>
+  status === "ready" || status === "eligible" || status === "saved" || status === "tracking"
+    ? "success" as const
+    : status === "warning" || status === "insufficient" || status === "weak" || status === "missing"
+      ? "warning" as const
+      : status === "disabled"
         ? "danger" as const
         : "secondary" as const;
 
@@ -167,6 +180,12 @@ export function IctAdvisorSummaryPanel({
     () => buildIctResearchSignalFromCurrentRead(currentRead, latestResearchState),
     [currentRead, latestResearchState]
   );
+  const decisionExplanation = useMemo(
+    () => buildResearchAdvisorDecisionExplanation({ currentRead, researchSignal, latestResearchState, cmdPaperTracking }),
+    [currentRead, researchSignal, latestResearchState, cmdPaperTracking]
+  );
+  const decisionSection = (id: IctResearchAdvisorDecisionExplanation["sections"][number]["id"]) =>
+    decisionExplanation.sections.find((section) => section.id === id);
   const paperSimEligibility = useMemo(
     () => isResearchSignalEligibleForPaperSim(researchSignal),
     [researchSignal]
@@ -306,15 +325,15 @@ export function IctAdvisorSummaryPanel({
               <AdvisorMini
                 label="Paper Sim"
                 value={formatToken(currentRead.paperSimEligibilityStatus)}
-                detail={currentRead.paperSimEligibilityReason ?? paperSimEligibility.reasons[0] ?? "Waiting for approved signal"}
+                detail={decisionSection("paper_sim")?.reason ?? currentRead.paperSimEligibilityReason ?? paperSimEligibility.reasons[0] ?? "Waiting for approved signal"}
               />
               <AdvisorMini label="Research readiness" value={formatToken(currentRead.readinessSummary.researchReadiness)} detail={currentRead.readinessSummary.reasons[0]} />
-              <AdvisorMini label="Paper readiness" value={formatToken(currentRead.readinessSummary.paperReadiness)} detail="paper/demo remains gated" />
+              <AdvisorMini label="Paper readiness" value={formatToken(currentRead.readinessSummary.paperReadiness)} detail={decisionSection("readiness_split")?.reason ?? "paper/demo remains gated"} />
               <AdvisorMini label="Execution readiness" value={formatToken(currentRead.readinessSummary.executionReadiness)} detail="always disabled" />
               <AdvisorMini
                 label="CMD Paper"
                 value={cmdPaperLabel}
-                detail={cmdPaperTracking ? `${cmdPaperTracking.side} / ${formatToken(cmdPaperTracking.outcome)}` : "inactive"}
+                detail={cmdPaperTracking ? `${cmdPaperTracking.side} / ${formatToken(cmdPaperTracking.outcome)}` : decisionSection("cmd_paper")?.reason ?? "inactive"}
               />
               <AdvisorMini
                 label="Execution"
@@ -336,7 +355,7 @@ export function IctAdvisorSummaryPanel({
                 detail={
                   typeof currentRead.latestMonteCarloRiskOfRuinPct === "number"
                     ? `Risk of ruin ${currentRead.latestMonteCarloRiskOfRuinPct.toFixed(1)}%`
-                    : currentRead.latestMonteCarloReason
+                    : decisionSection("monte_carlo")?.reason ?? currentRead.latestMonteCarloReason
                 }
               />
               <AdvisorMini
@@ -358,6 +377,7 @@ export function IctAdvisorSummaryPanel({
               <AdvisorMini label="Invalidation" value={compactPrice(currentRead.invalidation)} detail={currentRead.invalidationConstructionReason} />
               <AdvisorMini label="RR estimate" value={typeof currentRead.rrEstimate === "number" ? `${currentRead.rrEstimate.toFixed(2)}R` : "n/a"} detail={currentRead.rrConstructionReason} />
             </div>
+            <DecisionExplanationPanel explanation={decisionExplanation} compact />
             <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3">
               <p className="line-clamp-2 text-xs leading-5 text-slate-300">
                 Session: {formatToken(currentRead.sessionNarrativeStatus ?? currentRead.sessionNarrativeProfile)}. Model: {currentRead.modelDetected ? `${formatToken(currentRead.modelName)} / ${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : "not detected"}. Lane: {modelLane}. Paper Sim: {currentRead.paperSimAllowed ? "Eligible" : "Not Eligible"} ({currentRead.paperSimEligibilityReason ?? "reason pending"}). Readiness: Research {formatToken(currentRead.readinessSummary.researchReadiness)}, Paper {formatToken(currentRead.readinessSummary.paperReadiness)}, Execution Disabled. Trade fields: target {formatToken(currentRead.targetConstructionStatus)}, invalidation {formatToken(currentRead.invalidationConstructionStatus)}, RR {formatToken(currentRead.rrConstructionStatus)}. {currentRead.topReasons[0] ?? currentRead.paperWatchlistReason ?? recommended?.summary ?? "ICT advisor summary unavailable."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
@@ -464,9 +484,9 @@ export function IctAdvisorSummaryPanel({
             />
             <AdvisorMini label="Candidate lane" value={modelLane} detail={currentRead.paperWatchlistReason ?? "research-only lane"} />
             <AdvisorMini label="Paper-watchlist eligibility" value={paperWatchlistEligible ? "eligible" : "not eligible"} detail={currentRead.paperWatchlistEvidenceSummary ?? "compact evidence only"} />
-            <AdvisorMini label="Paper Sim" value={formatToken(currentRead.paperSimEligibilityStatus)} detail={currentRead.paperSimEligibilityReason ?? paperSimEligibility.reasons[0] ?? "approval or structure pending"} />
+            <AdvisorMini label="Paper Sim" value={formatToken(currentRead.paperSimEligibilityStatus)} detail={decisionSection("paper_sim")?.reason ?? currentRead.paperSimEligibilityReason ?? paperSimEligibility.reasons[0] ?? "approval or structure pending"} />
             <AdvisorMini label="Research readiness" value={formatToken(currentRead.readinessSummary.researchReadiness)} detail={currentRead.readinessSummary.reasons[0]} />
-            <AdvisorMini label="Paper readiness" value={formatToken(currentRead.readinessSummary.paperReadiness)} detail="paper/demo remains gated" />
+            <AdvisorMini label="Paper readiness" value={formatToken(currentRead.readinessSummary.paperReadiness)} detail={decisionSection("readiness_split")?.reason ?? "paper/demo remains gated"} />
             <AdvisorMini label="Execution readiness" value={formatToken(currentRead.readinessSummary.executionReadiness)} detail="always disabled" />
             <AdvisorMini label="Execution" value="Disabled" detail="authority none / no broker mutation" />
             <AdvisorMini label="Active setup" value={formatToken(packet.compactSummary.setup)} />
@@ -479,8 +499,8 @@ export function IctAdvisorSummaryPanel({
               value={missingTradeFieldsLabel === "none" ? "complete" : missingTradeFieldsLabel}
               detail={`T ${formatToken(currentRead.targetConstructionStatus)} / I ${formatToken(currentRead.invalidationConstructionStatus)} / RR ${formatToken(currentRead.rrConstructionStatus)}`}
             />
-            <AdvisorMini label="Paper watchlist" value={paperWatchlistEligible ? "eligible" : "not eligible"} detail={paperWatchlistEligible ? "paper simulation only" : currentRead.paperSimEligibilityReason ?? paperSimEligibility.reasons[0] ?? "approval or structure pending"} />
-            <AdvisorMini label="CMD Paper" value={cmdPaperLabel} detail={cmdPaperTracking ? `${cmdPaperTracking.side} / ${formatToken(cmdPaperTracking.outcome)}` : "inactive"} />
+            <AdvisorMini label="Paper watchlist" value={paperWatchlistEligible ? "eligible" : "not eligible"} detail={paperWatchlistEligible ? "paper simulation only" : decisionSection("paper_sim")?.reason ?? currentRead.paperSimEligibilityReason ?? paperSimEligibility.reasons[0] ?? "approval or structure pending"} />
+            <AdvisorMini label="CMD Paper" value={cmdPaperLabel} detail={cmdPaperTracking ? `${cmdPaperTracking.side} / ${formatToken(cmdPaperTracking.outcome)}` : decisionSection("cmd_paper")?.reason ?? "inactive"} />
             <AdvisorMini label="Approval score" value={`${packet.approvedProfileDecision.approvalScore}/100`} />
             <AdvisorMini label="Signal next action" value={researchSignal.nextAction} detail="research-only contract" />
             <AdvisorMini label="Confidence" value={pct(packet.compactSummary.confidence)} />
@@ -512,7 +532,7 @@ export function IctAdvisorSummaryPanel({
               detail={
                 typeof currentRead.latestMonteCarloRecommendedRiskPct === "number"
                   ? `max risk idea ${currentRead.latestMonteCarloRecommendedRiskPct.toFixed(1)}%`
-                  : currentRead.latestMonteCarloReason
+                  : decisionSection("monte_carlo")?.reason ?? currentRead.latestMonteCarloReason
               }
             />
             <AdvisorMini
@@ -522,6 +542,7 @@ export function IctAdvisorSummaryPanel({
             />
             <AdvisorMini label="Latest scorecard" value={currentRead.latestScorecardBestSymbol ?? "none saved"} detail="manual result" />
           </div>
+          <DecisionExplanationPanel explanation={decisionExplanation} />
           <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3">
             <div data-testid="ict-model-quality-lane-summary" className="mb-4 rounded-lg border border-cyan-300/15 bg-cyan-300/10 p-3">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">Model Quality Lane</p>
@@ -710,6 +731,60 @@ export function IctAdvisorSummaryPanel({
     </section>
   );
 }
+
+function DecisionExplanationPanel({
+  compact = false,
+  explanation
+}: {
+  compact?: boolean;
+  explanation: IctResearchAdvisorDecisionExplanation;
+}) {
+  const visibleSections = compact
+    ? explanation.sections.filter((section) => section.id !== "source_context")
+    : explanation.sections;
+  return (
+    <div
+      data-testid="research-advisor-decision-explanation"
+      className="mt-4 rounded-2xl border border-cyan-300/15 bg-[radial-gradient(circle_at_16%_0%,rgba(34,211,238,0.12),transparent_34%),linear-gradient(135deg,rgba(2,6,23,0.72),rgba(15,23,42,0.58))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">Decision Explanation</p>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">
+            Deterministic current-read audit for {explanation.brokerSymbol} -&gt; {explanation.requestedSymbol}. Source {formatToken(explanation.packetSource)}, depth {formatToken(explanation.analysisDepthStatus)}, weekly bias {formatToken(explanation.weeklyBiasDirection)} / {formatToken(explanation.weeklyBiasStatus)}.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="secondary">hydration {formatToken(explanation.candleHydrationStatus)}</Badge>
+          <Badge variant="danger">authority none</Badge>
+          <Badge variant="secondary">compact only</Badge>
+        </div>
+      </div>
+      <div className={`mt-4 grid gap-3 ${compact ? "md:grid-cols-2" : "lg:grid-cols-3"}`}>
+        {visibleSections.map((section) => (
+          <article key={section.id} className="rounded-xl border border-white/10 bg-white/[0.035] p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">{section.label}</p>
+              <Badge variant={decisionStatusVariant(section.status)}>{formatToken(section.status)}</Badge>
+            </div>
+            <p className="mt-2 text-sm leading-5 text-slate-100">{section.reason}</p>
+            <p className="mt-2 text-xs leading-5 text-cyan-100">Next: {section.nextAction}</p>
+            {compact ? null : (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {section.facts.slice(0, 5).map((fact) => (
+                  <span key={fact} className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-[11px] text-slate-400">
+                    {fact}
+                  </span>
+                ))}
+              </div>
+            )}
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AdvisorMini({ detail, label, value }: { detail?: string; label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-xl border border-white/10 bg-white/[0.04] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">

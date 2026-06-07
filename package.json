@@ -61,6 +61,7 @@
     "test:ict-hypothesis-validation": "node scripts/test-ict-hypothesis-validation.mjs",
     "test:research-advisor-stability": "node scripts/test-research-advisor-stability.mjs",
     "test:research-advisor-heavy-actions": "node scripts/test-research-advisor-heavy-actions.mjs",
+    "test:research-advisor-decision-audit": "node scripts/test-research-advisor-decision-audit.mjs",
     "test:gotrader-performance-audit": "node scripts/test-gotrader-performance-audit.mjs",
     "test:gotrader-tab-performance": "node scripts/test-gotrader-tab-performance.mjs",
     "test:gotrader-system-coordination": "node scripts/test-gotrader-system-coordination.mjs",

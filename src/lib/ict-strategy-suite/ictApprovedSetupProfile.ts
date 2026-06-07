@@ -52,7 +52,6 @@ const forbiddenFieldNames = new Set([
   "apikey",
   "api_key",
   "candles",
-  "executionauthority",
   "executionintent",
   "mt5credentials",
   "order",
@@ -154,11 +153,18 @@ const isReplayInput = (input: IctApprovedSetupProfileInput): input is IctReplayR
   "outcome" in input && "tradePath" in input && "fvgStatus" in input;
 
 const keyName = (key: string) => key.toLowerCase().replace(/[^a-z0-9_]/g, "");
+const authorityFieldNames = new Set(["executionauthority", "brokerauthority", "readinessoverrideauthority"]);
+const isSafeAuthorityValue = (value: unknown) => typeof value === "string" && value.toLowerCase() === "none";
 
 const hasForbiddenField = (value: unknown, depth = 0): boolean => {
   if (!value || typeof value !== "object" || depth > 5) return false;
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-    if (forbiddenFieldNames.has(keyName(key))) return true;
+    const normalizedKey = keyName(key);
+    if (authorityFieldNames.has(normalizedKey)) {
+      if (!isSafeAuthorityValue(child)) return true;
+      continue;
+    }
+    if (forbiddenFieldNames.has(normalizedKey)) return true;
     if (child && typeof child === "object" && hasForbiddenField(child, depth + 1)) return true;
   }
   return false;

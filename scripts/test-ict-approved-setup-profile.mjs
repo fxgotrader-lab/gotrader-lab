@@ -49,6 +49,10 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictMarketAnalysisContext.ts" },
   { root: sourceRoot, file: "ictOpportunityDetectionTypes.ts" },
   { root: sourceRoot, file: "ictOpportunityDetection.ts" },
+  { root: sourceRoot, file: "ictSelfImprovementTypes.ts" },
+  { root: sourceRoot, file: "ictSelfImprovement.ts" },
+  { root: sourceRoot, file: "ictHypothesisValidationTypes.ts" },
+  { root: sourceRoot, file: "ictHypothesisValidation.ts" },
   { root: sourceRoot, file: "ictAdvisorEngine.ts" },
   { root: sourceRoot, file: "ictCurrentReadTypes.ts" },
   { root: sourceRoot, file: "ictCurrentRead.ts" },
@@ -188,6 +192,21 @@ const baseSignal = (overrides = {}) => ({
   ...overrides
 });
 
+const safeAuthority = {
+  executionAuthority: "none",
+  brokerAuthority: "none",
+  readinessOverrideAuthority: "none"
+};
+
+const safeMetadataFlags = {
+  rawCandlesExcluded: true,
+  rawSnapshotsExcluded: true,
+  accountDataExcluded: true,
+  orderDataExcluded: true,
+  positionDataExcluded: true,
+  secretsExcluded: true
+};
+
 async function main() {
   compileSuiteForNode();
   const suite = await import(pathToFileURL(path.join(outRoot, "index.mjs")));
@@ -210,6 +229,95 @@ async function main() {
   assert.equal(approved.authority.readinessOverrideAuthority, "none");
   assert.equal(approved.safety.rawCandlesExcluded, true);
   assert.equal(suite.assertIctApprovedSetupDecisionIsCompact(approved).ok, true);
+
+  const safeNestedAuthority = suite.evaluateApprovedSetupProfile(
+    baseSignal({
+      smt: {
+        researchOnly: true,
+        group: "us_index_futures",
+        primarySymbol: "USTECH",
+        comparedSymbols: ["US500", "US30"],
+        divergenceType: "no_smt",
+        confirmsCandidate: false,
+        rejectsCandidate: false,
+        confidenceAdjustment: 0,
+        reason: "No SMT rejection in fixture.",
+        notes: ["Safe compact metadata only."],
+        instruments: [],
+        authority: safeAuthority,
+        safety: safeMetadataFlags,
+        provenance: {
+          methodology: "ICT",
+          model: "index_futures_smt_relative_strength",
+          sourceSet: "ICT Mentorship Core Content",
+          researchOnly: true,
+          generatedAt: "2026-06-05T13:00:00.000Z"
+        }
+      },
+      newsSessionRisk: {
+        researchOnly: true,
+        newsRiskLevel: "none",
+        sessionRiskState: "acceptable",
+        riskGovernorAction: "allow",
+        riskGovernorConfidenceAdjustment: 0,
+        blockingEventsCount: 0,
+        cautionEventsCount: 0,
+        blockingEvents: [],
+        cautionEvents: [],
+        session: {
+          timingZone: "America/New_York",
+          sourceTimestampZone: "UTC",
+          timestamp: "2026-06-05T13:00:00.000Z",
+          localDate: "2026-06-05",
+          localTime: "09:00",
+          sessionName: "new_york_am",
+          sessionRiskState: "acceptable",
+          reason: "Fixture session."
+        },
+        newsSessionRiskNotes: ["No blocking news in fixture."],
+        generatedAt: "2026-06-05T13:00:00.000Z",
+        authority: safeAuthority,
+        safety: safeMetadataFlags
+      }
+    }),
+    strict
+  );
+  assert.equal(safeNestedAuthority.status, "approved_research_candidate", "safe nested authority none metadata should not reject a valid research candidate");
+  assert.doesNotMatch(safeNestedAuthority.rejectionReasons.join(" "), /forbidden unsafe field/i);
+
+  const unsafeNestedAuthority = suite.evaluateApprovedSetupProfile(
+    baseSignal({
+      smt: {
+        researchOnly: true,
+        group: "us_index_futures",
+        primarySymbol: "USTECH",
+        comparedSymbols: ["US500"],
+        divergenceType: "no_smt",
+        confirmsCandidate: false,
+        rejectsCandidate: false,
+        confidenceAdjustment: 0,
+        reason: "Unsafe nested authority fixture.",
+        notes: [],
+        instruments: [],
+        authority: {
+          executionAuthority: "execute",
+          brokerAuthority: "none",
+          readinessOverrideAuthority: "none"
+        },
+        safety: safeMetadataFlags,
+        provenance: {
+          methodology: "ICT",
+          model: "index_futures_smt_relative_strength",
+          sourceSet: "ICT Mentorship Core Content",
+          researchOnly: true,
+          generatedAt: "2026-06-05T13:00:00.000Z"
+        }
+      }
+    }),
+    strict
+  );
+  assert.equal(unsafeNestedAuthority.status, "rejected_candidate", "non-none nested authority should remain a hard safety rejection");
+  assert.match(unsafeNestedAuthority.rejectionReasons.join(" "), /forbidden unsafe field/i);
 
   const lowConfidence = suite.evaluateApprovedSetupProfile(baseSignal({ confidence: 0.3 }), strict);
   assert.equal(lowConfidence.status, "rejected_candidate", "strict should reject very low confidence");
