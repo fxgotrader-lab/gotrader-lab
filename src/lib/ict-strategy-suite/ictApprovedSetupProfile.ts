@@ -172,6 +172,7 @@ const directionContradictsSide = (read: IctSessionDirectionalRead | undefined, s
 const isSessionCalibratedProfile = (profile: IctApprovedSetupProfile) => profile.id === "gotrader_ict_90d_session_calibrated";
 const AME_PAPER_WATCHLIST_MIN_RR = 1.25;
 const AME_PAPER_WATCHLIST_MAX_RR = 2.25;
+const CMD_PAPER_WATCHLIST_MIN_RR = 1.5;
 
 const htfAlignedForSignal = (signal: IctAdvisorSignal) => {
   const htfValues = Object.values(signal.bias.htf);
@@ -362,6 +363,34 @@ const getAmePaperWatchlistBlockers = (normalized: ReturnType<typeof normalizeInp
   ].filter((reason): reason is string => Boolean(reason));
 };
 
+const hasCmdTargetContext = (normalized: ReturnType<typeof normalizeInput>) =>
+  normalized.hasExternalLiquidityTarget || normalized.fvgTargetDetected === true;
+
+const getCmdPaperWatchlistBlockers = (normalized: ReturnType<typeof normalizeInput>, rr: number) => {
+  if (normalized.sessionNarrativeProfile !== "consolidation_manipulation_distribution") return [];
+  return [
+    normalized.modelState !== "confirmed"
+      ? `CMD paper watchlist requires confirmed session model; current state ${normalized.modelState ?? "unknown"}.`
+      : undefined,
+    !directionConfirmsSide(normalized.sessionDirectionalRead, normalized.side)
+      ? "CMD paper watchlist requires explicit session direction aligned with candidate side."
+      : undefined,
+    normalized.hasTarget !== true ? "CMD paper watchlist requires a compact target." : undefined,
+    normalized.hasInvalidation !== true ? "CMD paper watchlist requires a compact invalidation." : undefined,
+    typeof normalized.rrEstimate !== "number" ? "CMD paper watchlist requires compact RR." : undefined,
+    rr < CMD_PAPER_WATCHLIST_MIN_RR ? `CMD paper watchlist requires at least ${CMD_PAPER_WATCHLIST_MIN_RR.toFixed(2)}R.` : undefined,
+    !hasCmdTargetContext(normalized) ? "CMD paper watchlist requires a first FVG draw target or external liquidity target." : undefined,
+    normalized.sessionMitigationDetected !== true && !(normalized.hasDisplacement && normalized.hasLiquiditySweep)
+      ? "CMD paper watchlist requires mitigation or sweep/displacement context."
+      : undefined,
+    normalized.smt?.rejectsCandidate ? "CMD paper watchlist excludes SMT/relative-strength rejection." : undefined,
+    (normalized.newsSessionRisk?.riskGovernorAction === "reject_candidate" ||
+      normalized.newsSessionRisk?.riskGovernorAction === "no_trade")
+      ? "CMD paper watchlist excludes blocked news/session risk."
+      : undefined
+  ].filter((reason): reason is string => Boolean(reason));
+};
+
 export const calculateApprovalScore = (input: IctApprovedSetupProfileInput, profile: IctApprovedSetupProfile) => {
   const normalized = normalizeInput(input);
   const rr = normalized.rrEstimate ?? 0;
@@ -424,7 +453,7 @@ export const evaluateApprovedSetupProfile = (
     sessionModel === "ny_session_reversal_from_premium_to_discount";
   const sessionModelSupported =
     (isAmeModel && sessionConfirmsSide) ||
-    (isCmdModel && normalized.side === "short" && normalized.sessionDirectionalRead === "bearish") ||
+    (isCmdModel && sessionConfirmsSide) ||
     (isNyReversalModel && sessionConfirmsSide);
 
   if (normalized.hasForbiddenField) hardRejects.push("Input contains a forbidden unsafe field.");
@@ -561,7 +590,14 @@ export const evaluateApprovedSetupProfile = (
   if (basePaperWatchlistEligible && isAmeModel && amePaperWatchlistBlockers.length) {
     watchlistReasons.push(...amePaperWatchlistBlockers);
   }
-  const paperWatchlistEligible = basePaperWatchlistEligible && (!isAmeModel || amePaperWatchlistBlockers.length === 0);
+  const cmdPaperWatchlistBlockers = basePaperWatchlistEligible && isCmdModel ? getCmdPaperWatchlistBlockers(normalized, rr) : [];
+  if (basePaperWatchlistEligible && isCmdModel && cmdPaperWatchlistBlockers.length) {
+    watchlistReasons.push(...cmdPaperWatchlistBlockers);
+  }
+  const paperWatchlistEligible =
+    basePaperWatchlistEligible &&
+    (!isAmeModel || amePaperWatchlistBlockers.length === 0) &&
+    (!isCmdModel || cmdPaperWatchlistBlockers.length === 0);
   if (paperWatchlistEligible) {
     watchlistReasons.push("Paper watchlist eligible: complete target/invalidation/RR, but approval remains blocked by watchlist evidence.");
   }

@@ -339,6 +339,15 @@ const fvgTargetAlignsSide = (result) =>
   (result.side === "long" && result.fvgTargetDetected === true && result.fvgTargetDirection === "premium") ||
   (result.side === "short" && result.fvgTargetDetected === true && result.fvgTargetDirection === "discount");
 
+const hasCmdTargetContext = (result) => result.fvgTargetDetected === true || Boolean(result.liquidityTargetType);
+
+const hasCmdMitigationOrExpansion = (result) =>
+  result.sessionMitigationDetected === true ||
+  (result.fvgStatus && result.fvgStatus !== "not_applicable") ||
+  Boolean(result.liquidityTargetType) ||
+  result.setup?.includes("displacement") ||
+  result.setup?.includes("sweep");
+
 const amePaperEligibilityReasons = (result, rr) => {
   if (result.sessionNarrativeProfile !== "accumulation_manipulation_expansion") return [];
   return [
@@ -348,6 +357,22 @@ const amePaperEligibilityReasons = (result, rr) => {
     !fvgTargetAlignsSide(result) ? "ame_fvg_target_not_aligned" : undefined,
     result.riskGovernorAction === "downgrade_to_watchlist" ? "ame_news_or_session_risk_downgraded" : undefined,
     typeof rr === "number" && (rr < 1.25 || rr > 2.25) ? "ame_first_target_rr_outside_1_25_to_2_25" : undefined
+  ].filter(Boolean);
+};
+
+const cmdPaperEligibilityReasons = (result, rr) => {
+  if (result.sessionNarrativeProfile !== "consolidation_manipulation_distribution") return [];
+  return [
+    result.modelState !== "confirmed" ? "cmd_model_not_confirmed" : undefined,
+    !sessionConfirmsDirection(result) ? "cmd_session_direction_not_aligned" : undefined,
+    !hasTarget(result) ? "cmd_missing_target" : undefined,
+    !hasInvalidation(result) ? "cmd_missing_invalidation" : undefined,
+    typeof rr !== "number" ? "cmd_missing_rr" : undefined,
+    typeof rr === "number" && rr < 1.5 ? "cmd_rr_below_1_5" : undefined,
+    !hasCmdTargetContext(result) ? "cmd_missing_first_target_or_liquidity_target" : undefined,
+    !hasCmdMitigationOrExpansion(result) ? "cmd_missing_mitigation_or_sweep_displacement_context" : undefined,
+    result.smtRejectsCandidate ? "cmd_smt_rejects_candidate" : undefined,
+    !riskNotBlocked(result) ? "cmd_risk_governor_blocked" : undefined
   ].filter(Boolean);
 };
 
@@ -374,6 +399,9 @@ const reasonTypeFor = (reason = "") => {
   if (/ame paper watchlist excludes news\/session risk downgrades/.test(text)) return { type: "soft", key: "ame_news_or_session_risk_downgraded" };
   if (/ame paper watchlist requires first-target rr/.test(text)) return { type: "soft", key: "ame_first_target_quality" };
   if (/ame paper watchlist requires/.test(text)) return { type: "hard", key: "ame_missing_confirmation_evidence" };
+  if (/cmd paper watchlist excludes/.test(text)) return { type: "hard", key: "cmd_blocked_context" };
+  if (/cmd paper watchlist requires at least/.test(text)) return { type: "soft", key: "cmd_rr_below_strict_floor" };
+  if (/cmd paper watchlist requires/.test(text)) return { type: "hard", key: "cmd_missing_confirmation_evidence" };
   if (/price is at equilibrium/.test(text)) return { type: "hard", key: "equilibrium_context" };
   if (/confidence .*near but below|confidence .*below/.test(text)) return { type: "soft", key: "confidence_below_threshold" };
   if (/smt\/relative strength unavailable|smt\/relative strength confidence drag/.test(text)) return { type: "soft", key: "smt_insufficient_or_missing" };
@@ -456,7 +484,8 @@ const paperEligibilityReasonFor = (result) => {
     !riskNotBlocked(result) ? "news_or_session_risk_blocked" : undefined,
     result.sessionNarrativeProfile === "range_bound" ? "range_bound_excluded" : undefined,
     !isValidExpansionProfile(result) ? "no_valid_expansion_or_reversal_profile" : undefined,
-    ...amePaperEligibilityReasons(result, rr)
+    ...amePaperEligibilityReasons(result, rr),
+    ...cmdPaperEligibilityReasons(result, rr)
   ].filter(Boolean);
   return reasons;
 };
@@ -627,6 +656,8 @@ async function main() {
         "range_bound is excluded unless a valid reversal/expansion model exists",
         "AME requires confirmed model state, aligned FVG draw, and no session/news downgrade",
         "AME first-target RR must stay between 1.25R and 2.25R",
+        "CMD requires confirmed model state, aligned session direction, target/invalidation/RR, and mitigation or sweep/displacement context",
+        "CMD requires a first FVG draw target or external liquidity target and at least 1.5R",
         "executionAllowed remains false"
       ],
       paperEligibleWatchlistCount: paperEligible.length,

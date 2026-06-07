@@ -431,6 +431,207 @@ async function main() {
   assert.equal(ameRiskDowngraded.status, "watchlist_candidate", "AME with session/news risk downgrade must remain ordinary watchlist");
   assert.match(ameRiskDowngraded.watchlistReasons.join(" "), /risk downgrades/i);
 
+  const cmdPaperWatchlist = suite.evaluateApprovedSetupProfile(
+    baseSignal({
+      side: "short",
+      confidence: 0.68,
+      rrEstimate: 2.1,
+      bias: {
+        primary: "bearish",
+        htf: {
+          "15m": "bearish",
+          "1h": "bearish"
+        },
+        composite: "bearish"
+      },
+      dealingRange: {
+        ...baseSignal().dealingRange,
+        currentLocation: "premium"
+      },
+      drawOnLiquidity: {
+        type: "previous_day_low",
+        price: 88,
+        timeframe: "daily",
+        swept: false,
+        distanceFromCurrent: -12
+      },
+      displacement: {
+        direction: "bearish",
+        candleTime: "2026-06-05T13:00:00.000Z",
+        impulseHigh: 105,
+        impulseLow: 98,
+        bodySize: 4,
+        createdFvg: true
+      },
+      fairValueGap: {
+        direction: "bearish",
+        high: 101,
+        low: 99,
+        midpoint: 100,
+        timeframe: "5m",
+        mitigated: false,
+        createdAt: "2026-06-05T13:00:00.000Z"
+      },
+      entryZone: {
+        type: "fair_value_gap",
+        high: 101,
+        low: 99,
+        midpoint: 100
+      },
+      invalidation: 104,
+      target: 88,
+      sessionNarrativeProfile: "consolidation_manipulation_distribution",
+      sessionDirectionalRead: "bearish",
+      sessionNarrativeConfidence: 0.74,
+      modelState: "confirmed",
+      sessionMitigationDetected: true,
+      fvgTargetDetected: true,
+      fvgTargetDirection: "discount"
+    }),
+    strict
+  );
+  assert.equal(cmdPaperWatchlist.status, "paper_watchlist_candidate", "valid confirmed CMD watchlist can become paper watchlist");
+
+  const cmdMissingMitigation = suite.evaluateApprovedSetupProfile(
+    baseSignal({
+      side: "short",
+      confidence: 0.68,
+      rrEstimate: 2.1,
+      bias: {
+        primary: "bearish",
+        htf: {
+          "15m": "bearish",
+          "1h": "bearish"
+        },
+        composite: "bearish"
+      },
+      dealingRange: { ...baseSignal().dealingRange, currentLocation: "premium" },
+      liquiditySwept: undefined,
+      displacement: undefined,
+      invalidation: 104,
+      target: 88,
+      sessionNarrativeProfile: "consolidation_manipulation_distribution",
+      sessionDirectionalRead: "bearish",
+      modelState: "confirmed",
+      sessionMitigationDetected: false,
+      fvgTargetDetected: true,
+      fvgTargetDirection: "discount"
+    }),
+    strict
+  );
+  assert.notEqual(cmdMissingMitigation.status, "paper_watchlist_candidate", "CMD without mitigation or sweep/displacement cannot become paper watchlist");
+
+  const cmdMissingTarget = suite.evaluateApprovedSetupProfile(
+    baseSignal({
+      side: "short",
+      confidence: 0.68,
+      rrEstimate: 2.1,
+      invalidation: 104,
+      target: undefined,
+      sessionNarrativeProfile: "consolidation_manipulation_distribution",
+      sessionDirectionalRead: "bearish",
+      modelState: "confirmed",
+      sessionMitigationDetected: true,
+      fvgTargetDetected: true,
+      fvgTargetDirection: "discount"
+    }),
+    strict
+  );
+  assert.notEqual(cmdMissingTarget.status, "paper_watchlist_candidate", "CMD without target cannot become paper watchlist");
+
+  const cmdContradictory = suite.evaluateApprovedSetupProfile(
+    baseSignal({
+      side: "short",
+      confidence: 0.68,
+      rrEstimate: 2.1,
+      invalidation: 104,
+      target: 88,
+      sessionNarrativeProfile: "consolidation_manipulation_distribution",
+      sessionDirectionalRead: "bullish",
+      modelState: "confirmed",
+      sessionMitigationDetected: true,
+      fvgTargetDetected: true,
+      fvgTargetDirection: "discount"
+    }),
+    strict
+  );
+  assert.notEqual(cmdContradictory.status, "paper_watchlist_candidate", "CMD with contradictory direction cannot become paper watchlist");
+
+  const rangeBoundPaperAttempt = suite.evaluateApprovedSetupProfile(
+    baseSignal({
+      confidence: 0.68,
+      sessionNarrativeProfile: "range_bound",
+      sessionDirectionalRead: "neutral",
+      modelState: "confirmed",
+      sessionMitigationDetected: true,
+      fvgTargetDetected: true,
+      fvgTargetDirection: "premium"
+    }),
+    strict
+  );
+  assert.notEqual(rangeBoundPaperAttempt.status, "paper_watchlist_candidate", "range_bound must not become CMD paper watchlist");
+
+  const cmdPaperSignal = suite.createPaperSignalFromResearchSignal(
+    {
+      signalId: "cmd_paper_watchlist_fixture",
+      generatedAt: "2026-06-05T13:00:00.000Z",
+      researchOnly: true,
+      status: "watchlist_signal",
+      executionReadiness: "research_only",
+      executionAllowed: false,
+      requestedSymbol: "MNQ",
+      brokerSymbol: "USTECH",
+      displayLabel: "USTECH -> MNQ",
+      primaryTimeframe: "5m",
+      htfTimeframes: ["15m", "1h"],
+      strategyId: "ict-fvg-displacement",
+      setup: "fvg_retracement",
+      side: "short",
+      entryZone: { type: "fair_value_gap", low: 99, high: 101, midpoint: 100 },
+      invalidation: 104,
+      target: 88,
+      rrEstimate: 3,
+      confidence: 0.68,
+      approvedProfileStatus: "paper_watchlist_candidate",
+      approvalScore: cmdPaperWatchlist.approvalScore,
+      sessionNarrativeProfile: "consolidation_manipulation_distribution",
+      sessionDirectionalRead: "bearish",
+      modelDetected: true,
+      modelName: "consolidation_manipulation_distribution",
+      modelState: "confirmed",
+      dataDepthStatus: "sufficient",
+      reasons: cmdPaperWatchlist.watchlistReasons,
+      rejectionReasons: [],
+      warnings: ["Paper-watchlist simulation is research-only and cannot promote readiness."],
+      nextAction: "Paper simulate only; no broker action is allowed.",
+      authority: {
+        executionAuthority: "none",
+        brokerAuthority: "none",
+        readinessOverrideAuthority: "none"
+      },
+      safety: {
+        rawCandlesExcluded: true,
+        rawSnapshotsExcluded: true,
+        accountDataExcluded: true,
+        orderDataExcluded: true,
+        positionDataExcluded: true,
+        secretsExcluded: true
+      },
+      provenance: {
+        source: "ict_current_read",
+        methodology: "ICT",
+        researchOnly: true,
+        generatedAt: "2026-06-05T13:00:00.000Z"
+      }
+    },
+    { entryPrice: 100, entryType: "manual_reference", generatedAt: "2026-06-05T13:00:00.000Z" }
+  );
+  assert.equal(cmdPaperSignal.paperOnly, true, "CMD paper-watchlist simulation must be paper-only");
+  assert.equal(cmdPaperSignal.safety.realOrderPlaced, false);
+  assert.equal(cmdPaperSignal.safety.brokerMutation, false);
+  assert.equal(cmdPaperSignal.authority.executionAuthority, "none");
+  assert.equal(cmdPaperSignal.status, "paper_open", "paper simulator should accept CMD paper-watchlist candidate");
+
   const unsafe = suite.evaluateApprovedSetupProfile(
     {
       ...baseSignal(),
