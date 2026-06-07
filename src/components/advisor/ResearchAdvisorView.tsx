@@ -92,7 +92,7 @@ import { resolveResearchRuntimeSnapshot, type ResearchRuntimeSnapshot } from "@/
 import { WALK_FORWARD_UPDATED_EVENT } from "@/lib/walkForward";
 
 const formatDate = (value?: string) => (value ? new Date(value).toLocaleString() : "n/a");
-const formatToken = (value?: string) => (value ?? "pending").replace(/_/g, " ");
+const formatToken = (value?: string) => (value?.trim() ? value : "unknown").replace(/_/g, " ");
 const pct = (value?: number) => (typeof value === "number" ? `${Math.round(value * 100)}%` : "n/a");
 const rr = (value?: number) => (typeof value === "number" ? `${value.toFixed(2)}R` : "n/a");
 const compactPrice = (value?: number) =>
@@ -192,29 +192,47 @@ const approvalLabel = (status?: IctAdvisorPacket["approvedProfileDecision"]["sta
   if (status === "no_trade") return "No Trade";
   return "Pending";
 };
-const riskVariant = (packet?: IctAdvisorPacket) =>
-  packet?.compactSummary.riskGovernorAction === "reject_candidate" ||
-  packet?.compactSummary.riskGovernorAction === "no_trade" ||
-  packet?.compactSummary.sessionRiskState === "avoid"
+const riskStatusFromPacket = (packet?: IctAdvisorPacket) => {
+  const action = packet?.compactSummary.riskGovernorAction;
+  if (!packet) return undefined;
+  if (!action) return "unknown_no_calendar";
+  if (action === "allow") return "clear";
+  if (action === "downgrade_to_watchlist") return "caution";
+  return "blocked";
+};
+const riskVariant = (statusOrPacket?: string | IctAdvisorPacket) => {
+  const status = typeof statusOrPacket === "string" ? statusOrPacket : riskStatusFromPacket(statusOrPacket);
+  return /blocked|reject|avoid|no_trade/i.test(status ?? "")
     ? "danger" as const
-    : packet?.compactSummary.riskGovernorAction === "downgrade_to_watchlist" ||
-        packet?.compactSummary.sessionRiskState === "caution" ||
-        packet?.compactSummary.newsRiskLevel === "medium"
+    : /caution|unknown|unavailable/i.test(status ?? "")
       ? "warning" as const
-      : packet
+      : status
         ? "success" as const
         : "secondary" as const;
-const riskLabel = (packet?: IctAdvisorPacket) => {
-  const action = packet?.compactSummary.riskGovernorAction;
-  if (!action) return "Risk: Pending";
-  if (action === "allow") return "Risk: Clear";
-  if (action === "downgrade_to_watchlist") return "Risk: Caution";
-  return "Risk: Blocked";
 };
-const smtLabel = (packet?: IctAdvisorPacket) => {
-  if (packet?.compactSummary.smtRejectsCandidate) return "SMT: Rejects";
-  if (packet?.compactSummary.smtConfirmsCandidate) return "SMT: Confirms";
-  return packet?.compactSummary.smtDivergenceType ? `SMT: ${formatToken(packet.compactSummary.smtDivergenceType)}` : "SMT: Pending";
+const riskLabel = (statusOrPacket?: string | IctAdvisorPacket) => {
+  const status = typeof statusOrPacket === "string" ? statusOrPacket : riskStatusFromPacket(statusOrPacket);
+  if (status === "clear") return "Risk clear";
+  if (status === "caution") return "Risk caution";
+  if (status === "blocked") return "Risk blocked";
+  if (status === "unknown_no_calendar") return "Risk calendar unknown";
+  if (status === "unavailable") return "Risk unavailable";
+  return `Risk ${formatToken(status)}`;
+};
+const smtStatusFromPacket = (packet?: IctAdvisorPacket) => {
+  if (!packet) return undefined;
+  if (packet.compactSummary.smtRejectsCandidate) return "rejects_candidate";
+  if (packet.compactSummary.smtConfirmsCandidate) return "confirms_candidate";
+  return packet.compactSummary.smtDivergenceType ? "no_smt" : "comparison_sources_missing";
+};
+const smtLabel = (statusOrPacket?: string | IctAdvisorPacket) => {
+  const status = typeof statusOrPacket === "string" ? statusOrPacket : smtStatusFromPacket(statusOrPacket);
+  if (status === "comparison_sources_missing") return "SMT sources missing";
+  if (status === "insufficient_data") return "SMT insufficient";
+  if (status === "confirms_candidate") return "SMT confirms";
+  if (status === "rejects_candidate") return "SMT rejects";
+  if (status === "no_smt") return "No SMT";
+  return `SMT ${formatToken(status)}`;
 };
 const entryZoneLabel = (entryZone?: IctAdvisorPacket["recommendedSignal"]["entryZone"]) =>
   entryZone ? `${compactPrice(entryZone.low)}-${compactPrice(entryZone.high)}` : "n/a";
@@ -255,10 +273,10 @@ function buildLocalAdvisorReply(
   }
   if (lower.includes("risk")) {
     const notes = packet.recommendedSignal.riskNotes.length ? packet.recommendedSignal.riskNotes.slice(0, 3).join("; ") : "No additional risk notes in the compact packet.";
-    return `${riskLabel(packet)}. News/session: ${formatToken(packet.compactSummary.sessionRiskState)}. ${notes}`;
+    return `${riskLabel(currentRead.riskStatus)}. ${currentRead.riskReason ?? `News/session: ${formatToken(packet.compactSummary.sessionRiskState)}.`} ${notes}`;
   }
   if (lower.includes("smt")) {
-    return `${smtLabel(packet)}. Relative strength leader: ${packet.compactSummary.relativeStrengthLeader ?? "n/a"}. Relative weakness: ${packet.compactSummary.relativeWeaknessLeader ?? "n/a"}.`;
+    return `${smtLabel(currentRead.smtStatus)}. ${currentRead.smtReason ?? `Relative strength leader: ${packet.compactSummary.relativeStrengthLeader ?? "n/a"}. Relative weakness: ${packet.compactSummary.relativeWeaknessLeader ?? "n/a"}.`}`;
   }
   if (lower.includes("replay")) {
     return `Replay status: ${formatToken(manualReplayStatus)}. Replay does not auto-run from page load; use the quick action or lower replay panel when you want a real replay review.`;
@@ -944,6 +962,7 @@ export function ResearchAdvisorView() {
 
         <div className="order-3 space-y-4">
           <AdvisorSidePanel
+            currentRead={currentRead}
             packet={advisorPacket}
             manualReplayStatus={manualReplayStatus}
             manualReplayResult={manualReplayResult}
@@ -1455,8 +1474,8 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
         <AdvisorReadout label="Bias" value={formatToken(currentRead.bias)} detail={`HTF ${currentRead.htfTimeframes.length ? currentRead.htfTimeframes.join(", ") : "missing"}`} />
         <AdvisorReadout
           label="Session narrative"
-          value={formatToken(currentRead.sessionNarrativeProfile)}
-          detail={`${formatToken(currentRead.sessionDirectionalRead)} / ${pct(currentRead.sessionNarrativeConfidence)}`}
+          value={formatToken(currentRead.sessionNarrativeStatus ?? currentRead.sessionNarrativeProfile)}
+          detail={`${currentRead.debug.selectedSessionDate ?? "no session date"} / ${formatToken(currentRead.sessionDirectionalRead)} / ${pct(currentRead.sessionNarrativeConfidence)}`}
         />
         <AdvisorReadout
           label="NY mitigation / depth"
@@ -1466,12 +1485,14 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
         <AdvisorReadout
           label="FVG target"
           value={currentRead.fvgTargetDetected ? formatToken(currentRead.fvgTargetDirection) : "missing"}
-          detail="draw target only"
+          detail={currentRead.fvgTargetReason}
         />
-        <AdvisorReadout label="SMT" value={formatToken(currentRead.smtStatus)} />
-        <AdvisorReadout label="Risk" value={formatToken(currentRead.riskStatus)} />
-        <AdvisorReadout label="RR / location" value={rr(currentRead.rrEstimate)} detail={formatToken(currentRead.dealingRangeLocation)} />
-        <AdvisorReadout label="Missing trade fields" value={missingTradeFields.length ? missingTradeFields.join(", ") : "none"} detail="target / invalidation / RR" />
+        <AdvisorReadout label="SMT" value={formatToken(currentRead.smtStatus)} detail={currentRead.smtReason} />
+        <AdvisorReadout label="Risk" value={formatToken(currentRead.riskStatus)} detail={currentRead.riskReason} />
+        <AdvisorReadout label="Target" value={compactPrice(currentRead.target)} detail={currentRead.targetConstructionReason} />
+        <AdvisorReadout label="Invalidation" value={compactPrice(currentRead.invalidation)} detail={currentRead.invalidationConstructionReason} />
+        <AdvisorReadout label="RR / location" value={rr(currentRead.rrEstimate)} detail={`${formatToken(currentRead.rrConstructionStatus)} / ${formatToken(currentRead.dealingRangeLocation)}`} />
+        <AdvisorReadout label="Trade field status" value={missingTradeFields.length ? missingTradeFields.join(", ") : "complete"} detail={`T ${formatToken(currentRead.targetConstructionStatus)} / I ${formatToken(currentRead.invalidationConstructionStatus)} / RR ${formatToken(currentRead.rrConstructionStatus)}`} />
         <AdvisorReadout label="Paper watchlist" value={currentRead.paperWatchlistEligible ? "eligible" : "not eligible"} detail="paper simulation only; no readiness promotion" />
         <AdvisorReadout label="Latest replay" value={currentRead.latestReplayStatus ?? "none saved"} detail="manual result" />
         <AdvisorReadout
@@ -1511,11 +1532,22 @@ function CurrentReadDataFlowPanel({ currentRead }: { currentRead: IctCurrentRead
     ["Candle count", currentRead.debug.candleCount.toLocaleString()],
     ["Primary TF available", currentRead.debug.primaryTimeframeAvailable ? "yes" : "no"],
     ["HTF available", currentRead.debug.htfTimeframesAvailable.join(", ") || "none"],
-    ["Session narrative", currentRead.sessionNarrativeProfile ?? "none"],
+    ["Selected session date", currentRead.debug.selectedSessionDate ?? "none"],
+    ["Selected session mode", currentRead.debug.selectedSessionMode ?? "none"],
+    ["Session candles counted", String(currentRead.debug.sessionCandlesCount ?? 0)],
+    ["Session narrative", currentRead.sessionNarrativeStatus ?? currentRead.sessionNarrativeProfile ?? "none"],
     ["Session read", currentRead.sessionDirectionalRead ?? "none"],
+    ["Model detector", currentRead.debug.modelDetectorUsed ?? "none"],
     ["Session mitigation", currentRead.sessionMitigationDetected ? "detected" : "missing"],
-    ["FVG target", currentRead.fvgTargetDetected ? currentRead.fvgTargetDirection ?? "detected" : "missing"],
+    ["FVG target", currentRead.fvgTargetDetected ? currentRead.fvgTargetDirection ?? "detected" : currentRead.fvgTargetReason ?? "missing"],
+    ["Target construction", `${currentRead.targetConstructionStatus ?? "unknown"} / ${currentRead.targetConstructionReason ?? "none"}`],
+    ["Invalidation construction", `${currentRead.invalidationConstructionStatus ?? "unknown"} / ${currentRead.invalidationConstructionReason ?? "none"}`],
+    ["RR construction", `${currentRead.rrConstructionStatus ?? "unknown"} / ${currentRead.rrConstructionReason ?? "none"}`],
+    ["SMT status", `${currentRead.smtStatus ?? "unknown"} / ${currentRead.smtReason ?? "none"}`],
+    ["Risk status", `${currentRead.riskStatus ?? "unknown"} / ${currentRead.riskReason ?? "none"}`],
     ["Data depth", currentRead.dataDepthStatus ?? "unknown"],
+    ["Hydration source", currentRead.debug.hydrationSource ?? "unknown"],
+    ["Hydration warning", currentRead.debug.hydrationWarning ?? "none"],
     ["Phase 1 signal count", currentRead.debug.phase1SignalCount.toLocaleString()],
     ["Phase 2 signal count", currentRead.debug.phase2SignalCount.toLocaleString()],
     ["Approved status", currentRead.debug.approvedStatus],
@@ -1623,7 +1655,7 @@ function ResearchAdvisorChatCard({
             <Badge key={timeframe} variant="secondary">{timeframe}</Badge>
           ))}
           <Badge variant={approvalVariant(currentRead.approvedStatus)}>{approvalLabel(currentRead.approvedStatus)}</Badge>
-          <Badge variant={riskVariant(packet)}>{riskLabel(packet)}</Badge>
+          <Badge variant={riskVariant(currentRead.riskStatus)}>{riskLabel(currentRead.riskStatus)}</Badge>
         </div>
       </div>
 
@@ -1712,10 +1744,12 @@ function CompactContextCard({ rows, title }: { rows: Array<[string, string]>; ti
 }
 
 function AdvisorSidePanel({
+  currentRead,
   manualReplayResult,
   manualReplayStatus,
   packet
 }: {
+  currentRead: IctCurrentRead;
   manualReplayResult?: IctManualReplayReviewResult;
   manualReplayStatus: IctManualReplayReviewStatus;
   packet?: IctAdvisorPacket;
@@ -1735,12 +1769,13 @@ function AdvisorSidePanel({
       />
       <AdvisorMetricCard
         title="Risk State"
-        badge={riskLabel(packet)}
-        badgeVariant={riskVariant(packet)}
+        badge={riskLabel(currentRead.riskStatus)}
+        badgeVariant={riskVariant(currentRead.riskStatus)}
         rows={[
           ["News/session", formatToken(packet?.compactSummary.sessionRiskState)],
-          ["SMT", smtLabel(packet)],
+          ["SMT", smtLabel(currentRead.smtStatus)],
           ["Risk action", formatToken(packet?.compactSummary.riskGovernorAction)],
+          ["Risk reason", currentRead.riskReason ?? "No risk reason available."],
           ["No-trade reasons", String(packet?.compactSummary.noTradeReasonCount ?? 0)]
         ]}
       />

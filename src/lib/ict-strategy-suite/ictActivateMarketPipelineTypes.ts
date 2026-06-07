@@ -109,6 +109,8 @@ export interface IctActivateMarketResult {
     executionAllowed: false;
   };
 
+  debug?: IctCurrentRead["debug"];
+
   warnings: string[];
   errors: string[];
 

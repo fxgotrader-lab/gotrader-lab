@@ -22,7 +22,7 @@ import {
 } from "@/lib/ict-strategy-suite";
 import type { ResearchRuntimeSnapshot } from "@/lib/runtime";
 
-const formatToken = (value?: string) => (value ?? "pending").replace(/_/g, " ");
+const formatToken = (value?: string) => (value?.trim() ? value : "unknown").replace(/_/g, " ");
 const pct = (value?: number) => (typeof value === "number" ? `${Math.round(value * 100)}%` : "n/a");
 const compactPrice = (value?: number) => (typeof value === "number" && Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "n/a");
 const entryZoneLabel = (entryZone?: IctAdvisorPacket["recommendedSignal"]["entryZone"]) =>
@@ -37,36 +37,35 @@ const statusVariant = (status?: IctAdvisorPacket["approvedProfileDecision"]["sta
       : status === "rejected_candidate"
         ? "danger"
         : "secondary";
-const smtVariant = (packet?: IctAdvisorPacket) =>
-  packet?.compactSummary.smtRejectsCandidate
+const smtVariant = (status?: string) =>
+  /reject/i.test(status ?? "")
     ? "danger"
-    : packet?.compactSummary.smtConfirmsCandidate
+    : /confirm/i.test(status ?? "")
       ? "success"
-      : packet?.compactSummary.smtDivergenceType === "insufficient_data"
+      : /insufficient|missing|unknown/i.test(status ?? "")
         ? "warning"
         : "secondary";
-const smtLabel = (packet?: IctAdvisorPacket) => {
-  if (!packet?.compactSummary.smtDivergenceType) return "SMT pending";
-  if (packet.compactSummary.smtRejectsCandidate) return "SMT rejects";
-  if (packet.compactSummary.smtConfirmsCandidate) return "SMT confirms";
-  return formatToken(packet.compactSummary.smtDivergenceType);
+const smtLabel = (status?: string) => {
+  if (status === "comparison_sources_missing") return "SMT sources missing";
+  if (status === "insufficient_data") return "SMT insufficient";
+  if (status === "confirms_candidate") return "SMT confirms";
+  if (status === "rejects_candidate") return "SMT rejects";
+  if (status === "no_smt") return "No SMT";
+  return `SMT ${formatToken(status)}`;
 };
-const riskVariant = (packet?: IctAdvisorPacket) =>
-  packet?.compactSummary.riskGovernorAction === "reject_candidate" ||
-  packet?.compactSummary.riskGovernorAction === "no_trade" ||
-  packet?.compactSummary.sessionRiskState === "avoid"
+const riskVariant = (status?: string) =>
+  /blocked|reject|avoid|no_trade/i.test(status ?? "")
     ? "danger"
-    : packet?.compactSummary.riskGovernorAction === "downgrade_to_watchlist" ||
-        packet?.compactSummary.sessionRiskState === "caution" ||
-        packet?.compactSummary.newsRiskLevel === "medium"
+    : /caution|unknown|unavailable/i.test(status ?? "")
       ? "warning"
       : "success";
-const riskLabel = (packet?: IctAdvisorPacket) => {
-  const action = packet?.compactSummary.riskGovernorAction;
-  if (!action) return "Risk pending";
-  if (action === "allow") return "Risk clear";
-  if (action === "downgrade_to_watchlist") return "Risk caution";
-  return "Risk blocked";
+const riskLabel = (status?: string) => {
+  if (status === "clear") return "Risk clear";
+  if (status === "caution") return "Risk caution";
+  if (status === "blocked") return "Risk blocked";
+  if (status === "unknown_no_calendar") return "Risk calendar unknown";
+  if (status === "unavailable") return "Risk unavailable";
+  return `Risk ${formatToken(status)}`;
 };
 const signalVariant = (signal?: IctResearchSignal) =>
   signal?.status === "approved_research_signal"
@@ -232,8 +231,8 @@ export function IctAdvisorSummaryPanel({
             <Badge data-testid="dashboard-ict-paper-sim-status" variant={paperSimVariant}>{paperSimLabel}</Badge>
             <Badge data-testid="dashboard-ict-cmd-paper-status" variant={cmdPaperVariant}>CMD Paper: {cmdPaperLabel}</Badge>
             <Badge data-testid="dashboard-ict-execution-status" variant="danger">Execution: Disabled</Badge>
-            <Badge variant={smtVariant(packet)}>{smtLabel(packet)}</Badge>
-            <Badge variant={riskVariant(packet)}>{riskLabel(packet)}</Badge>
+            <Badge variant={smtVariant(currentRead.smtStatus)}>{smtLabel(currentRead.smtStatus)}</Badge>
+            <Badge variant={riskVariant(currentRead.riskStatus)}>{riskLabel(currentRead.riskStatus)}</Badge>
           </div>
         </div>
         {packet ? (
@@ -243,18 +242,18 @@ export function IctAdvisorSummaryPanel({
               <AdvisorMini label="Composite bias" value={formatToken(currentRead.bias)} />
               <AdvisorMini
                 label="Session narrative"
-                value={formatToken(currentRead.sessionNarrativeProfile)}
-                detail={`${formatToken(currentRead.sessionDirectionalRead)} / ${pct(currentRead.sessionNarrativeConfidence)}`}
+                value={formatToken(currentRead.sessionNarrativeStatus ?? currentRead.sessionNarrativeProfile)}
+                detail={`${currentRead.debug.selectedSessionDate ?? "no session date"} / ${formatToken(currentRead.sessionDirectionalRead)} / ${pct(currentRead.sessionNarrativeConfidence)}`}
               />
               <AdvisorMini
                 label="Model detected"
-                value={currentRead.modelDetected ? formatToken(currentRead.modelName) : "no"}
-                detail={currentRead.modelDetected ? `${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : "model context only"}
+                value={currentRead.modelDetected ? formatToken(currentRead.modelName) : "not detected"}
+                detail={currentRead.modelDetected ? `${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : currentRead.modelMissingEvidence?.[0] ?? currentRead.topReasons[0] ?? "Detector ran; no complete model."}
               />
               <AdvisorMini
                 label="FVG target"
                 value={currentRead.fvgTargetDetected ? formatToken(currentRead.fvgTargetDirection) : "missing"}
-                detail="session draw context"
+                detail={currentRead.fvgTargetReason}
               />
               <AdvisorMini
                 label="Model lane"
@@ -283,11 +282,15 @@ export function IctAdvisorSummaryPanel({
                 value="Disabled"
                 detail="authority none / no broker mutation"
               />
-              <AdvisorMini label="Missing trade fields" value={missingTradeFieldsLabel} detail="target / invalidation / RR" />
+              <AdvisorMini
+                label="Trade field status"
+                value={missingTradeFieldsLabel === "none" ? "complete" : missingTradeFieldsLabel}
+                detail={`T ${formatToken(currentRead.targetConstructionStatus)} / I ${formatToken(currentRead.invalidationConstructionStatus)} / RR ${formatToken(currentRead.rrConstructionStatus)}`}
+              />
               <AdvisorMini label="Confidence" value={pct(currentRead.confidence)} />
               <AdvisorMini label="Signal RR" value={typeof researchSignal.rrEstimate === "number" ? `${researchSignal.rrEstimate.toFixed(2)}R` : "n/a"} detail={typeof researchSignal.confidence === "number" ? pct(researchSignal.confidence) : "n/a"} />
               <AdvisorMini label="Phase 1 / Phase 2" value={`${currentRead.debug.phase1SignalCount}/${currentRead.debug.phase2SignalCount}`} detail="signals evaluated" />
-              <AdvisorMini label="SMT / Risk" value={`${formatToken(currentRead.smtStatus)} / ${formatToken(currentRead.riskStatus)}`} />
+              <AdvisorMini label="SMT / Risk" value={`${formatToken(currentRead.smtStatus)} / ${formatToken(currentRead.riskStatus)}`} detail={`${currentRead.smtReason ?? "SMT reason unavailable"} / ${currentRead.riskReason ?? "Risk reason unavailable"}`} />
               <AdvisorMini
                 label="Monte Carlo"
                 value={currentRead.latestMonteCarloRobustness ? formatToken(currentRead.latestMonteCarloRobustness) : "none saved"}
@@ -307,13 +310,13 @@ export function IctAdvisorSummaryPanel({
                 value={currentRead.latestScorecardBestSymbol ?? "none saved"}
                 detail={currentRead.latestScorecardResearchPreferredSymbols?.join(", ") || "latest manual result"}
               />
-              <AdvisorMini label="Target" value={compactPrice(recommended?.target)} />
-              <AdvisorMini label="Invalidation" value={compactPrice(recommended?.invalidation)} />
-              <AdvisorMini label="RR estimate" value={typeof recommended?.rrEstimate === "number" ? `${recommended.rrEstimate.toFixed(2)}R` : "n/a"} />
+              <AdvisorMini label="Target" value={compactPrice(currentRead.target)} detail={currentRead.targetConstructionReason} />
+              <AdvisorMini label="Invalidation" value={compactPrice(currentRead.invalidation)} detail={currentRead.invalidationConstructionReason} />
+              <AdvisorMini label="RR estimate" value={typeof currentRead.rrEstimate === "number" ? `${currentRead.rrEstimate.toFixed(2)}R` : "n/a"} detail={currentRead.rrConstructionReason} />
             </div>
             <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3">
               <p className="line-clamp-2 text-xs leading-5 text-slate-300">
-                Model detected: {currentRead.modelDetected ? `${formatToken(currentRead.modelName)} / ${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : "no"}. Model lane: {modelLane}. Paper Sim: {paperSimEligibility.eligible ? "Eligible" : "Not Eligible"}. Execution: Disabled. Missing: {missingTradeFieldsLabel}. {currentRead.paperWatchlistReason ?? currentRead.topReasons[0] ?? recommended?.summary ?? "ICT advisor summary pending."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
+                Session: {formatToken(currentRead.sessionNarrativeStatus ?? currentRead.sessionNarrativeProfile)}. Model: {currentRead.modelDetected ? `${formatToken(currentRead.modelName)} / ${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : "not detected"}. Lane: {modelLane}. Paper Sim: {paperSimEligibility.eligible ? "Eligible" : "Not Eligible"}. Execution: Disabled. Trade fields: target {formatToken(currentRead.targetConstructionStatus)}, invalidation {formatToken(currentRead.invalidationConstructionStatus)}, RR {formatToken(currentRead.rrConstructionStatus)}. {currentRead.topReasons[0] ?? currentRead.paperWatchlistReason ?? recommended?.summary ?? "ICT advisor summary unavailable."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
                 {" "}CMD Paper: {cmdPaperLabel}.
               </p>
             </div>
@@ -357,8 +360,8 @@ export function IctAdvisorSummaryPanel({
           <Badge data-testid="dashboard-ict-paper-sim-status-full" variant={paperSimVariant}>{paperSimLabel}</Badge>
           <Badge data-testid="ict-cmd-paper-status-full" variant={cmdPaperVariant}>CMD Paper: {cmdPaperLabel}</Badge>
           <Badge variant={paperWatchlistEligible ? "warning" : "secondary"}>{paperWatchlistLabel}</Badge>
-          <Badge variant={smtVariant(packet)}>{smtLabel(packet)}</Badge>
-          <Badge variant={riskVariant(packet)}>{riskLabel(packet)}</Badge>
+          <Badge variant={smtVariant(currentRead.smtStatus)}>{smtLabel(currentRead.smtStatus)}</Badge>
+          <Badge variant={riskVariant(currentRead.riskStatus)}>{riskLabel(currentRead.riskStatus)}</Badge>
           <Badge variant={recommended?.decision === "research_only" ? "success" : "warning"}>{formatToken(recommended?.decision)}</Badge>
           <Badge variant="danger">execution none</Badge>
           <Badge variant="secondary">compact packet</Badge>
@@ -373,16 +376,16 @@ export function IctAdvisorSummaryPanel({
             <AdvisorMini label="Composite bias" value={formatToken(packet.compactSummary.compositeBias)} detail={recommended?.bias.primary ? `primary ${recommended.bias.primary}` : undefined} />
             <AdvisorMini
               label="Session narrative"
-              value={formatToken(packet.compactSummary.sessionNarrativeProfile)}
-              detail={`${formatToken(packet.compactSummary.sessionDirectionalRead)} / ${pct(packet.compactSummary.sessionNarrativeConfidence)}`}
+              value={formatToken(currentRead.sessionNarrativeStatus ?? currentRead.sessionNarrativeProfile)}
+              detail={`${currentRead.debug.selectedSessionDate ?? "no session date"} / ${formatToken(currentRead.sessionDirectionalRead)} / ${pct(currentRead.sessionNarrativeConfidence)}`}
             />
             <AdvisorMini
               label="Model detected"
-              value={packet.compactSummary.primaryModelDetection?.modelDetected ? formatToken(packet.compactSummary.primaryModelDetection.modelName) : "no"}
+              value={currentRead.modelDetected ? formatToken(currentRead.modelName) : "not detected"}
               detail={
-                packet.compactSummary.primaryModelDetection
-                  ? `${formatToken(packet.compactSummary.primaryModelDetection.modelState)} / ${formatToken(packet.compactSummary.primaryModelDetection.modelDirection)} / ${pct(packet.compactSummary.primaryModelDetection.modelConfidence)}`
-                  : "session model not detected"
+                currentRead.modelDetected
+                  ? `${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)} / ${pct(currentRead.modelConfidence)}`
+                  : currentRead.modelMissingEvidence?.[0] ?? currentRead.topReasons[0] ?? "Detector ran; no complete model."
               }
             />
             <AdvisorMini
@@ -392,8 +395,8 @@ export function IctAdvisorSummaryPanel({
             />
             <AdvisorMini
               label="FVG target"
-              value={packet.compactSummary.fvgTargetDetected ? formatToken(packet.compactSummary.fvgTargetDirection) : "missing"}
-              detail="draw target only"
+              value={currentRead.fvgTargetDetected ? formatToken(currentRead.fvgTargetDirection) : "missing"}
+              detail={currentRead.fvgTargetReason}
             />
             <AdvisorMini label="Candidate lane" value={modelLane} detail={currentRead.paperWatchlistReason ?? "research-only lane"} />
             <AdvisorMini label="Paper-watchlist eligibility" value={paperWatchlistEligible ? "eligible" : "not eligible"} detail={currentRead.paperWatchlistEvidenceSummary ?? "compact evidence only"} />
@@ -403,7 +406,11 @@ export function IctAdvisorSummaryPanel({
             <AdvisorMini label="Decision" value={formatToken(packet.compactSummary.decision)} />
             <AdvisorMini label="Approved profile" value={formatToken(packet.approvedProfileDecision.status)} detail={packet.approvedProfileDecision.profileId.replace(/_/g, " ")} />
             <AdvisorMini label="Research signal" value={formatToken(researchSignal.status)} detail={`${formatToken(researchSignal.side)} / execution disabled`} />
-            <AdvisorMini label="Missing trade fields" value={missingTradeFieldsLabel} detail="target / invalidation / RR" />
+            <AdvisorMini
+              label="Trade field status"
+              value={missingTradeFieldsLabel === "none" ? "complete" : missingTradeFieldsLabel}
+              detail={`T ${formatToken(currentRead.targetConstructionStatus)} / I ${formatToken(currentRead.invalidationConstructionStatus)} / RR ${formatToken(currentRead.rrConstructionStatus)}`}
+            />
             <AdvisorMini label="Paper watchlist" value={paperWatchlistEligible ? "eligible" : "not eligible"} detail={paperWatchlistEligible ? "paper simulation only" : paperSimEligibility.reasons[0] ?? "approval or structure pending"} />
             <AdvisorMini label="CMD Paper" value={cmdPaperLabel} detail={cmdPaperTracking ? `${cmdPaperTracking.side} / ${formatToken(cmdPaperTracking.outcome)}` : "inactive"} />
             <AdvisorMini label="Approval score" value={`${packet.approvedProfileDecision.approvalScore}/100`} />
@@ -411,11 +418,11 @@ export function IctAdvisorSummaryPanel({
             <AdvisorMini label="Confidence" value={pct(packet.compactSummary.confidence)} />
             <AdvisorMini
               label="SMT / RS"
-              value={smtLabel(packet)}
-              detail={packet.indexSmt ? `${formatToken(packet.indexSmt.divergenceType)} / ${packet.indexSmt.reason}` : "awaiting index comparison"}
+              value={smtLabel(currentRead.smtStatus)}
+              detail={currentRead.smtReason}
             />
             <AdvisorMini label="RS leader" value={packet.indexSmt?.relativeStrengthLeader ?? "n/a"} detail={`weakness ${packet.indexSmt?.relativeWeaknessLeader ?? "n/a"}`} />
-            <AdvisorMini label="Risk Governor" value={riskLabel(packet)} detail={summarizeNewsSessionRisk(packet.newsSessionRisk)} />
+            <AdvisorMini label="Risk Governor" value={riskLabel(currentRead.riskStatus)} detail={currentRead.riskReason ?? summarizeNewsSessionRisk(packet.newsSessionRisk)} />
             <AdvisorMini label="News risk" value={formatToken(packet.compactSummary.newsRiskLevel)} detail={`${packet.compactSummary.blockingEventsCount ?? 0} block / ${packet.compactSummary.cautionEventsCount ?? 0} caution`} />
             <AdvisorMini label="Session risk" value={formatToken(packet.compactSummary.sessionRiskState)} detail={formatToken(packet.newsSessionRisk?.session.sessionName)} />
             <AdvisorMini label="Confidence adjustment" value={`${Math.round((packet.compactSummary.riskGovernorConfidenceAdjustment ?? 0) * 100)} pts`} />
@@ -426,9 +433,9 @@ export function IctAdvisorSummaryPanel({
             <AdvisorMini label="Order block" value={formatToken(recommended?.orderBlock?.variant)} detail={recommended?.orderBlock ? `${recommended.orderBlock.direction} / ${recommended.orderBlock.reason}` : undefined} />
             <AdvisorMini label="FVG / displacement" value={recommended?.fairValueGap ? `${recommended.fairValueGap.direction} FVG` : recommended?.displacement ? `${recommended.displacement.direction} displacement` : "missing"} />
             <AdvisorMini label="Entry zone" value={entryZoneLabel(recommended?.entryZone)} />
-            <AdvisorMini label="Invalidation" value={compactPrice(recommended?.invalidation)} />
-            <AdvisorMini label="Target" value={compactPrice(recommended?.target)} />
-            <AdvisorMini label="RR estimate" value={typeof recommended?.rrEstimate === "number" ? `${recommended.rrEstimate.toFixed(2)}R` : "n/a"} />
+            <AdvisorMini label="Invalidation" value={compactPrice(currentRead.invalidation)} detail={currentRead.invalidationConstructionReason} />
+            <AdvisorMini label="Target" value={compactPrice(currentRead.target)} detail={currentRead.targetConstructionReason} />
+            <AdvisorMini label="RR estimate" value={typeof currentRead.rrEstimate === "number" ? `${currentRead.rrEstimate.toFixed(2)}R` : "n/a"} detail={currentRead.rrConstructionReason} />
             <AdvisorMini label="Journal" value={packet.journalStatus} detail={`${packet.journalEvents.length} compact events`} />
             <AdvisorMini label="Latest replay" value={currentRead.latestReplayStatus ?? "none saved"} detail="manual result" />
             <AdvisorMini
@@ -459,7 +466,7 @@ export function IctAdvisorSummaryPanel({
                   Confirmation layer only. It can confirm, reject, or adjust confidence on existing ICT candidates, but it cannot create standalone signals.
                 </p>
               </div>
-              <Badge variant={smtVariant(packet)}>{smtLabel(packet)}</Badge>
+              <Badge variant={smtVariant(currentRead.smtStatus)}>{smtLabel(currentRead.smtStatus)}</Badge>
             </div>
             {packet.indexSmt ? (
               <>
@@ -501,7 +508,7 @@ export function IctAdvisorSummaryPanel({
                   Confirms acceptable timing or downgrades/rejects existing ICT candidates. It cannot create standalone signals, change readiness, or create execution intent.
                 </p>
               </div>
-              <Badge variant={riskVariant(packet)}>{riskLabel(packet)}</Badge>
+              <Badge variant={riskVariant(currentRead.riskStatus)}>{riskLabel(currentRead.riskStatus)}</Badge>
             </div>
             {packet.newsSessionRisk ? (
               <>

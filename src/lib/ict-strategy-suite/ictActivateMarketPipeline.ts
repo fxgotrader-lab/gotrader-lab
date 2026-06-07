@@ -193,6 +193,18 @@ const htfTimeframes = (snapshot: ResearchRuntimeSnapshot) =>
     .filter((source) => source.candleCount > 0)
     .map((source) => source.timeframe);
 
+const finalizeBlockedSteps = (steps: IctActivateMarketStep[], reason: string) =>
+  steps.map((step) =>
+    step.status === "pending"
+      ? {
+          ...step,
+          status: "skipped" as const,
+          warning: reason,
+          completedAt: now()
+        }
+      : step
+  );
+
 const criticalUnavailableResult = ({
   brokerSymbol,
   errors,
@@ -215,12 +227,36 @@ const criticalUnavailableResult = ({
   brokerSymbol,
   primaryTimeframe,
   htfTimeframes: [],
-  steps,
+  steps: finalizeBlockedSteps(steps, "Not run because the active source failed the MT5 read-only preflight."),
   summary: {
     dataStatus: "unavailable",
     modelDetected: false,
     nextAction: "Activate MT5 read-only market data, then rerun Activate Market.",
     executionAllowed: false
+  },
+  debug: {
+    candleCount: 0,
+    primaryTimeframeAvailable: false,
+    htfTimeframesAvailable: [],
+    phase1SignalCount: 0,
+    phase2SignalCount: 0,
+    approvedStatus: "no_trade",
+    rejectionReasonsCount: errors.length,
+    noTradeReasonsCount: warnings.length,
+    lastEvaluationAt: now(),
+    packetSource: "unavailable",
+    selectedSessionMode: "source_blocked_before_analysis",
+    sessionCandlesCount: 0,
+    sessionNarrativeStatus: "insufficient_data",
+    modelDetectorUsed: "not_run_source_blocked",
+    fvgTargetStatus: "not_run_source_blocked",
+    targetConstructionStatus: "not_run_source_blocked",
+    invalidationConstructionStatus: "not_run_source_blocked",
+    rrConstructionStatus: "not_run_source_blocked",
+    smtStatus: "not_run_source_blocked",
+    riskStatus: "not_run_source_blocked",
+    hydrationSource: "unavailable",
+    hydrationWarning: errors[0] ?? warnings[0]
   },
   warnings,
   errors,
@@ -302,6 +338,7 @@ export const sanitizeActivateMarketResult = (result: IctActivateMarketResult): I
   operatorWorkflow: result.operatorWorkflow ? { ...result.operatorWorkflow, heavyActionDeferred: true, autoStarted: false, executionAllowed: false } : undefined,
   cmdPaperEligibility: result.cmdPaperEligibility ? { ...result.cmdPaperEligibility } : undefined,
   summary: { ...result.summary, executionAllowed: false },
+  debug: result.debug ? { ...result.debug } : undefined,
   warnings: result.warnings.slice(0, 12),
   errors: result.errors.slice(0, 8),
   authority,
@@ -458,9 +495,12 @@ export async function runIctActivateMarketPipeline(
 
   await run("run_smt", "Checking SMT / relative strength.", async () => {
     const smt = currentRead?.smtStatus ?? "";
+    if (smt === "comparison_sources_missing") {
+      return { skipped: true, warning: currentRead?.smtReason ?? "SMT comparison sources are missing; activation continues with explicit SMT warning." };
+    }
     return smt && !/not available|unavailable|missing|pending/i.test(smt)
       ? `SMT status: ${smt}.`
-      : { skipped: true, warning: "SMT comparison data unavailable; activation continues with a partial warning." };
+      : { skipped: true, warning: currentRead?.smtReason ?? "SMT comparison data unavailable; activation continues with a partial warning." };
   });
 
   await run("run_news_session_risk", "Checking news and session risk.", async () => {
@@ -526,6 +566,7 @@ export async function runIctActivateMarketPipeline(
         nextAction: operatorWorkflow?.recommendedAction ?? currentRead?.nextAction,
         executionAllowed: false
       },
+      debug: currentRead?.debug,
       warnings: resultWarnings,
       errors: resultErrors,
       authority,

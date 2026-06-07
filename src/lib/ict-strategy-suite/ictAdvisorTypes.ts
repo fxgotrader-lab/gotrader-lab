@@ -255,6 +255,8 @@ export interface IctAdvisorPacket {
     dataDepthStatus?: IctDataDepthStatus;
     availableLookbackDays?: number;
     requestedLookbackDays?: number;
+    hydrationSource?: "canonical_source_store" | "active_mt5_readonly_feed" | "metadata_only" | "unavailable";
+    hydrationWarning?: string;
     noTradeReasonCount: number;
   };
   approvedProfileDecision: IctApprovedSetupDecision;

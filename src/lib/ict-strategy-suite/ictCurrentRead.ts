@@ -74,6 +74,7 @@ const entryZoneLabel = (entryZone?: IctAdvisorSignal["entryZone"]) =>
   entryZone ? `${entryZone.low}-${entryZone.high}` : undefined;
 
 const pct = (value?: number) => (typeof value === "number" && Number.isFinite(value) ? `${Math.round(value * 100)}%` : undefined);
+const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 
 const latestResearchSummaryFor = (latestState?: IctLatestResearchState) => {
   const latestReplay = latestState?.latestReplay;
@@ -183,6 +184,82 @@ const nextActionFor = (packet: IctAdvisorPacket, reasons: string[]) => {
   return "Continue observation; current setup is not an approved research candidate.";
 };
 
+const sessionCandlesCountFor = (packet: IctAdvisorPacket) =>
+  packet.sessionNarrative?.ranges?.reduce((sum, range) => sum + range.candleCount, 0) ?? 0;
+
+const modelDetectionStatusFor = (packet: IctAdvisorPacket) => {
+  const model = packet.sessionNarrative?.primaryModelDetection ?? packet.compactSummary.primaryModelDetection;
+  if (!packet.sessionNarrative) return "not_run" as const;
+  return model?.modelDetected ? "detected" as const : "not_detected" as const;
+};
+
+const fvgTargetReasonFor = (packet: IctAdvisorPacket) => {
+  if (packet.sessionNarrative?.fvgTarget?.note) return packet.sessionNarrative.fvgTarget.note;
+  const fvgReason = packet.sessionNarrative?.noTradeReasons.find((reason) => /fvg|draw target/i.test(reason));
+  if (fvgReason) return fvgReason;
+  if (!packet.sessionNarrative) return packet.compactSummary.hydrationWarning ?? "Session narrative did not run because no hydrated candles were available.";
+  return "No premium/discount FVG draw target was detected in the selected session window.";
+};
+
+const targetReasonFor = (signal: IctAdvisorSignal, packet: IctAdvisorPacket) => {
+  if (finite(signal.target)) return "Target constructed from compact liquidity/FVG context.";
+  if (!packet.sessionNarrative) return packet.compactSummary.hydrationWarning ?? "No hydrated session candles were available for target construction.";
+  if (!signal.drawOnLiquidity && !packet.sessionNarrative.fvgTarget?.detected) {
+    return "Missing liquidity or FVG draw target for the selected model.";
+  }
+  return signal.noTradeReasons.find((reason) => /target|liquidity|fvg/i.test(reason)) ?? "No valid compact target was produced for this candidate.";
+};
+
+const invalidationReasonFor = (signal: IctAdvisorSignal, packet: IctAdvisorPacket) => {
+  if (finite(signal.invalidation)) return "Invalidation constructed from compact structure/session range context.";
+  if (!packet.sessionNarrative) return packet.compactSummary.hydrationWarning ?? "No hydrated session candles were available for invalidation construction.";
+  if (!signal.entryZone && !signal.liquiditySwept && !packet.sessionNarrative.activeDealingRange) {
+    return "Missing structural invalidation context: no entry zone, sweep, or active dealing range.";
+  }
+  return signal.noTradeReasons.find((reason) => /invalidation|structure|entry|range/i.test(reason)) ?? "No valid compact structural invalidation was produced.";
+};
+
+const rrReasonFor = (signal: IctAdvisorSignal) => {
+  if (finite(signal.rrEstimate)) return "RR estimate constructed from target and invalidation.";
+  if (!finite(signal.target) || !finite(signal.invalidation)) return "RR unavailable because target or invalidation is missing.";
+  return signal.noTradeReasons.find((reason) => /rr|reward|risk/i.test(reason)) ?? "RR estimate was not available for this candidate.";
+};
+
+const smtStatusFor = (signal: IctAdvisorSignal): string => {
+  if (!signal.smt) return "comparison_sources_missing";
+  if (signal.smt.rejectsCandidate) return "rejects_candidate";
+  if (signal.smt.confirmsCandidate) return "confirms_candidate";
+  if (signal.smt.divergenceType === "insufficient_data") return "insufficient_data";
+  return signal.smt.divergenceType ?? "no_smt";
+};
+
+const smtReasonFor = (signal: IctAdvisorSignal, packet: IctAdvisorPacket) => {
+  if (signal.smt?.reason) return signal.smt.reason;
+  if (packet.activeSource.provider === "mt5_read_only") {
+    return "SMT comparison sources are missing or not hydrated for the active MT5 read-only window.";
+  }
+  return "No SMT comparison source was available for this compact read.";
+};
+
+const riskStatusFor = (signal: IctAdvisorSignal): string => {
+  const risk = signal.newsSessionRisk;
+  if (!risk) return "unknown_no_calendar";
+  if (risk.riskGovernorAction === "allow") return "clear";
+  if (risk.riskGovernorAction === "downgrade_to_watchlist" || risk.sessionRiskState === "caution") return "caution";
+  if (risk.riskGovernorAction === "reject_candidate" || risk.riskGovernorAction === "no_trade" || risk.sessionRiskState === "avoid") {
+    return "blocked";
+  }
+  return risk.riskGovernorAction ?? "unavailable";
+};
+
+const riskReasonFor = (signal: IctAdvisorSignal) => {
+  if (signal.newsSessionRisk?.newsSessionRiskNotes?.length) {
+    return signal.newsSessionRisk.newsSessionRiskNotes.slice(0, 2).join("; ");
+  }
+  if (!signal.newsSessionRisk) return "No news/session calendar context is available; treat risk as unknown/caution.";
+  return "Session/news risk governor reviewed this candidate with compact context only.";
+};
+
 export const buildUnavailableIctCurrentRead = (
   reason = "Active ICT advisor packet is unavailable.",
   latestState?: IctLatestResearchState
@@ -213,7 +290,19 @@ export const buildUnavailableIctCurrentRead = (
     rejectionReasonsCount: 0,
     noTradeReasonsCount: 1,
     lastEvaluationAt: new Date().toISOString(),
-    packetSource: "unavailable"
+    packetSource: "unavailable",
+    selectedSessionMode: "unavailable",
+    sessionCandlesCount: 0,
+    sessionNarrativeStatus: "insufficient_data",
+    modelDetectorUsed: "not_run_no_packet",
+    fvgTargetStatus: "missing",
+    targetConstructionStatus: "missing",
+    invalidationConstructionStatus: "missing",
+    rrConstructionStatus: "missing",
+    smtStatus: "comparison_sources_missing",
+    riskStatus: "unknown_no_calendar",
+    hydrationSource: "unavailable",
+    hydrationWarning: reason
   },
   ...latestResearchSummaryFor(latestState),
   authority,
@@ -227,9 +316,31 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
   const bestPhase1 = bestSignalFrom(phase1Signals);
   const bestPhase2 = bestSignalFrom(phase2Signals);
   const recommended = packet.recommendedSignal;
+  const sessionNarrativeProfile =
+    packet.sessionNarrative?.profile ??
+    packet.compactSummary.sessionNarrativeProfile ??
+    (packet.activeSource.candleCount > 0 ? "unknown" : "insufficient_data");
+  const sessionNarrativeStatus = sessionNarrativeProfile;
+  const modelDetectionStatus = modelDetectionStatusFor(packet);
+  const fvgTargetDetected = packet.sessionNarrative?.fvgTarget?.detected ?? packet.compactSummary.fvgTargetDetected ?? false;
+  const fvgTargetDirection = packet.sessionNarrative?.fvgTarget?.direction ?? packet.compactSummary.fvgTargetDirection ?? "unknown";
+  const fvgTargetStatus = fvgTargetDetected ? "detected" as const : "missing" as const;
+  const fvgTargetReason = fvgTargetReasonFor(packet);
+  const targetConstructionStatus = finite(recommended.target) ? "constructed" as const : "missing" as const;
+  const targetConstructionReason = targetReasonFor(recommended, packet);
+  const invalidationConstructionStatus = finite(recommended.invalidation) ? "constructed" as const : "missing" as const;
+  const invalidationConstructionReason = invalidationReasonFor(recommended, packet);
+  const rrConstructionStatus = finite(recommended.rrEstimate) ? "constructed" as const : "missing" as const;
+  const rrConstructionReason = rrReasonFor(recommended);
+  const smtStatus = smtStatusFor(recommended);
+  const smtReason = smtReasonFor(recommended, packet);
+  const riskStatus = riskStatusFor(recommended);
+  const riskReason = riskReasonFor(recommended);
   const reasons = uniqueReasons([
     packet.activeSource.candleCount <= 0 ? "Missing candle data from active canonical research source." : undefined,
     packet.htfTimeframes.length === 0 ? "Missing higher-timeframe context for the current advisor read." : undefined,
+    packet.compactSummary.hydrationWarning,
+    !packet.sessionNarrative && packet.activeSource.candleCount > 0 ? "Session narrative did not run; compact MT5 candles were not hydrated into the advisor engine." : undefined,
     ...packet.approvedProfileDecision.rejectionReasons,
     ...packet.approvedProfileDecision.watchlistReasons,
     ...recommended.noTradeReasons,
@@ -238,7 +349,12 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     ...(packet.sessionNarrative?.topReasons ?? []),
     ...(packet.sessionNarrative?.primaryModelDetection?.modelReasons ?? []),
     ...(packet.sessionNarrative?.primaryModelDetection?.missingEvidence?.map((reason) => `Model missing evidence: ${reason}.`) ?? []),
-    packet.sessionNarrative?.fvgTarget?.detected ? packet.sessionNarrative.fvgTarget.note : undefined,
+    fvgTargetDetected ? packet.sessionNarrative?.fvgTarget?.note : fvgTargetReason,
+    targetConstructionStatus === "missing" ? targetConstructionReason : undefined,
+    invalidationConstructionStatus === "missing" ? invalidationConstructionReason : undefined,
+    rrConstructionStatus === "missing" ? rrConstructionReason : undefined,
+    smtStatus === "comparison_sources_missing" || smtStatus === "insufficient_data" ? smtReason : undefined,
+    riskStatus === "unknown_no_calendar" || riskStatus === "unavailable" ? riskReason : undefined,
     packet.sessionNarrative?.dataDepth.status !== "sufficient" ? packet.sessionNarrative?.dataDepth.note : undefined
   ]);
   const packetSource = packetSourceFor(packet);
@@ -276,14 +392,8 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     target: recommended.target,
     invalidation: recommended.invalidation,
     bias: recommended.bias.composite,
-    smtStatus: recommended.smt
-      ? recommended.smt.rejectsCandidate
-        ? "rejects_candidate"
-        : recommended.smt.confirmsCandidate
-          ? "confirms_candidate"
-          : recommended.smt.divergenceType
-      : "not_available",
-    riskStatus: recommended.newsSessionRisk?.riskGovernorAction ?? "not_available",
+    smtStatus,
+    riskStatus,
     dealingRangeLocation: recommended.dealingRange?.currentLocation,
     drawOnLiquidity: liquidityLabel(recommended.drawOnLiquidity),
     liquiditySwept: liquidityLabel(recommended.liquiditySwept),
@@ -291,7 +401,7 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     displacementStatus: displacementStatusFor(recommended),
     entryZone: entryZoneLabel(recommended.entryZone),
     ...latestResearchSummaryFor(latestState),
-    sessionNarrativeProfile: packet.sessionNarrative?.profile ?? packet.compactSummary.sessionNarrativeProfile,
+    sessionNarrativeProfile,
     sessionDirectionalRead: packet.sessionNarrative?.directionalRead ?? packet.compactSummary.sessionDirectionalRead,
     sessionNarrativeConfidence: packet.sessionNarrative?.confidence ?? packet.compactSummary.sessionNarrativeConfidence,
     modelDetected: Boolean(packet.sessionNarrative?.primaryModelDetection?.modelDetected ?? packet.compactSummary.primaryModelDetection?.modelDetected),
@@ -302,12 +412,24 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     modelReasons: packet.sessionNarrative?.primaryModelDetection?.modelReasons ?? packet.compactSummary.primaryModelDetection?.modelReasons,
     modelMissingEvidence: packet.sessionNarrative?.primaryModelDetection?.missingEvidence ?? packet.compactSummary.primaryModelDetection?.missingEvidence,
     sessionMitigationDetected: packet.sessionNarrative?.mitigationContext.detected ?? packet.compactSummary.sessionMitigationDetected,
-    fvgTargetDetected: packet.sessionNarrative?.fvgTarget?.detected ?? packet.compactSummary.fvgTargetDetected,
-    fvgTargetDirection: packet.sessionNarrative?.fvgTarget?.direction ?? packet.compactSummary.fvgTargetDirection,
+    fvgTargetDetected,
+    fvgTargetDirection,
     dataDepthStatus: packet.sessionNarrative?.dataDepth.status ?? packet.compactSummary.dataDepthStatus,
     availableLookbackDays: packet.sessionNarrative?.dataDepth.availableLookbackDays ?? packet.compactSummary.availableLookbackDays,
     requestedLookbackDays: packet.sessionNarrative?.dataDepth.requestedLookbackDays ?? packet.compactSummary.requestedLookbackDays,
     sessionTopReasons: packet.sessionNarrative?.topReasons ?? packet.compactSummary.sessionTopReasons,
+    sessionNarrativeStatus,
+    modelDetectionStatus,
+    fvgTargetStatus,
+    fvgTargetReason,
+    targetConstructionStatus,
+    targetConstructionReason,
+    invalidationConstructionStatus,
+    invalidationConstructionReason,
+    rrConstructionStatus,
+    rrConstructionReason,
+    smtReason,
+    riskReason,
     topReasons: reasons.length
       ? reasons
       : recommended.decision === "research_only"
@@ -326,7 +448,22 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
       lastEvaluationAt: packet.generatedAt,
       packetSource,
       sourceFingerprint: packet.activeSource.sourceFingerprint,
-      journalStatus: packet.journalStatus
+      journalStatus: packet.journalStatus,
+      selectedSessionDate: packet.sessionNarrative?.tradingDate,
+      selectedSessionMode: packet.sessionNarrative
+        ? "latest_completed_or_current_session_from_mt5_window"
+        : "unavailable_no_hydrated_candles",
+      sessionCandlesCount: sessionCandlesCountFor(packet),
+      sessionNarrativeStatus,
+      modelDetectorUsed: packet.sessionNarrative ? "ict_session_narrative_model_detector_v1" : "not_run_no_hydrated_candles",
+      fvgTargetStatus,
+      targetConstructionStatus,
+      invalidationConstructionStatus,
+      rrConstructionStatus,
+      smtStatus,
+      riskStatus,
+      hydrationSource: packet.compactSummary.hydrationSource,
+      hydrationWarning: packet.compactSummary.hydrationWarning
     },
     authority,
     safety

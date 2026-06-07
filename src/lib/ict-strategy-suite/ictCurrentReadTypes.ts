@@ -85,6 +85,18 @@ export interface IctCurrentRead {
   availableLookbackDays?: number;
   requestedLookbackDays?: number;
   sessionTopReasons?: string[];
+  sessionNarrativeStatus?: IctSessionNarrativeProfile | "unknown";
+  modelDetectionStatus?: "detected" | "not_detected" | "not_run";
+  fvgTargetStatus?: "detected" | "missing";
+  fvgTargetReason?: string;
+  targetConstructionStatus?: "constructed" | "missing";
+  targetConstructionReason?: string;
+  invalidationConstructionStatus?: "constructed" | "missing";
+  invalidationConstructionReason?: string;
+  rrConstructionStatus?: "constructed" | "missing";
+  rrConstructionReason?: string;
+  smtReason?: string;
+  riskReason?: string;
   topReasons: string[];
   nextAction: string;
   debug: {
@@ -100,6 +112,19 @@ export interface IctCurrentRead {
     packetSource: IctCurrentReadPacketSource;
     sourceFingerprint?: string;
     journalStatus?: string;
+    selectedSessionDate?: string;
+    selectedSessionMode?: string;
+    sessionCandlesCount?: number;
+    sessionNarrativeStatus?: string;
+    modelDetectorUsed?: string;
+    fvgTargetStatus?: string;
+    targetConstructionStatus?: string;
+    invalidationConstructionStatus?: string;
+    rrConstructionStatus?: string;
+    smtStatus?: string;
+    riskStatus?: string;
+    hydrationSource?: string;
+    hydrationWarning?: string;
   };
   authority: {
     executionAuthority: "none";

@@ -4,6 +4,8 @@ import {
   type CanonicalCandleSource,
   type CanonicalCandleSourceSummary
 } from "../candleSources";
+import { hydrateActiveMt5ReadOnlyCandleFeed } from "../integrations/mt5/mt5ReadOnlyClient";
+import { mt5ReadOnlyCandlesToGoTraderCandles } from "../integrations/mt5/mt5ReadOnlyNormalizer";
 import type { ResearchRuntimeSnapshot } from "../runtime";
 import type { Candle } from "../types";
 import {
@@ -718,6 +720,60 @@ const bestSignal = (signals: IctAdvisorSignal[]) =>
       return rightDecision - leftDecision || right.confidence - left.confidence || (right.rrEstimate ?? 0) - (left.rrEstimate ?? 0);
     })[0] ?? signals[0];
 
+const resolveAnalysisCandles = async ({
+  activeSource,
+  sourceSummary,
+  snapshot
+}: {
+  activeSource?: CanonicalCandleSource;
+  sourceSummary: CanonicalCandleSourceSummary;
+  snapshot: ResearchRuntimeSnapshot;
+}) => {
+  if (activeSource?.candles?.length) {
+    return {
+      candles: activeSource.candles,
+      hydrationSource: "canonical_source_store" as const,
+      hydrationWarning: undefined
+    };
+  }
+  if (sourceSummary.provider !== "mt5_read_only") {
+    return {
+      candles: [] as Candle[],
+      hydrationSource: "unavailable" as const,
+      hydrationWarning: `${sourceSummary.provider} source summary is metadata-only; no hydrated candles were available for ICT model detection.`
+    };
+  }
+
+  const mt5Feed = await hydrateActiveMt5ReadOnlyCandleFeed();
+  const requestedSymbol = snapshot.marketData.symbol;
+  const brokerSymbol =
+    snapshot.mt5ReadOnly.brokerSymbol ??
+    sourceSummary.provenance.providerSymbol ??
+    snapshot.marketData.contract;
+  const timeframe = sourceSummary.timeframe ?? snapshot.marketData.timeframe;
+  const matchesFeed =
+    mt5Feed?.activeForResearch &&
+    mt5Feed.candles.length > 0 &&
+    mt5Feed.requestedSymbol === requestedSymbol &&
+    (mt5Feed.brokerSymbol === brokerSymbol || !brokerSymbol) &&
+    mt5Feed.timeframe === timeframe;
+
+  if (!matchesFeed || !mt5Feed) {
+    return {
+      candles: [] as Candle[],
+      hydrationSource: "metadata_only" as const,
+      hydrationWarning:
+        `MT5 source metadata reports ${sourceSummary.candleCount.toLocaleString()} candles, but the advisor could not hydrate read-only candle data for ${brokerSymbol ?? requestedSymbol} ${timeframe}. Rerun Activate MT5 Research Mode or refresh MT5 candles.`
+    };
+  }
+
+  return {
+    candles: mt5ReadOnlyCandlesToGoTraderCandles(mt5Feed),
+    hydrationSource: "active_mt5_readonly_feed" as const,
+    hydrationWarning: undefined
+  };
+};
+
 const resolveIndexSmtSources = async ({
   activeSource,
   primaryTimeframe,
@@ -761,7 +817,8 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
   const symbol = sourceSummary.symbol ?? requestedSymbol;
   const htfSources = await resolveHtfSources(snapshot);
   const htfCandles = Object.fromEntries(htfSources.map(({ source }) => [source.timeframe, source.candles]));
-  const candles = activeSource?.candles ?? [];
+  const analysis = await resolveAnalysisCandles({ activeSource, sourceSummary, snapshot });
+  const candles = analysis.candles;
   const indexComparisonCandles = await resolveIndexSmtSources({ activeSource, primaryTimeframe, snapshot });
   const htfTimeframes = Object.keys(htfCandles);
   const sessionNarrative = candles.length
@@ -836,9 +893,9 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
     htfTimeframes,
     activeSource: {
       provider: sourceSummary.provider,
-      candleCount: activeSource?.candleCount ?? sourceSummary.candleCount,
-      firstTimestamp: activeSource?.firstTimestamp ?? sourceSummary.firstTimestamp,
-      lastTimestamp: activeSource?.lastTimestamp ?? sourceSummary.lastTimestamp,
+      candleCount: candles.length,
+      firstTimestamp: candles[0]?.timestamp ?? activeSource?.firstTimestamp ?? sourceSummary.firstTimestamp,
+      lastTimestamp: candles[candles.length - 1]?.timestamp ?? activeSource?.lastTimestamp ?? sourceSummary.lastTimestamp,
       sourceFingerprint: activeSource?.fingerprint ?? sourceSummary.fingerprint,
       sourceLabel: sourceSummary.provenance.sourceLabel
     },
@@ -882,7 +939,9 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
       dataDepthStatus: sessionNarrative?.dataDepth.status,
       availableLookbackDays: sessionNarrative?.dataDepth.availableLookbackDays,
       requestedLookbackDays: sessionNarrative?.dataDepth.requestedLookbackDays,
-      noTradeReasonCount: recommendedSignal.noTradeReasons.length
+      hydrationSource: analysis.hydrationSource,
+      hydrationWarning: analysis.hydrationWarning,
+      noTradeReasonCount: recommendedSignal.noTradeReasons.length + (analysis.hydrationWarning ? 1 : 0)
     },
     approvedProfileDecision: finalApprovedProfileDecision,
     journalEvents,

@@ -136,6 +136,14 @@ export function ActivateMarketProgress({
           <MiniSummary label="Lane" value={formatToken(result.summary.modelLane ?? "no_trade")} />
           <MiniSummary label="Paper eligible" value={result.cmdPaperEligibility?.eligible ? "yes" : "no"} />
           <MiniSummary label="Execution" value="disabled" />
+          <MiniSummary label="Session" value={formatToken(result.debug?.sessionNarrativeStatus)} />
+          <MiniSummary label="Selected date" value={result.debug?.selectedSessionDate ?? "unknown"} />
+          <MiniSummary label="FVG target" value={formatToken(result.debug?.fvgTargetStatus)} />
+          <MiniSummary label="SMT / Risk" value={`${formatToken(result.debug?.smtStatus)} / ${formatToken(result.debug?.riskStatus)}`} />
+          <MiniSummary label="Target" value={formatToken(result.debug?.targetConstructionStatus)} />
+          <MiniSummary label="Invalidation" value={formatToken(result.debug?.invalidationConstructionStatus)} />
+          <MiniSummary label="RR" value={formatToken(result.debug?.rrConstructionStatus)} />
+          <MiniSummary label="Hydration" value={formatToken(result.debug?.hydrationSource)} />
           <div className="md:col-span-4">
             <div className="flex items-start gap-2 text-xs leading-5 text-slate-300">
               <ShieldCheck className="mt-0.5 h-4 w-4 text-emerald-300" aria-hidden="true" />
@@ -155,7 +163,7 @@ function MiniSummary({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-1 truncate font-medium text-slate-100">{value}</p>
+      <p className="mt-1 whitespace-normal break-words font-medium leading-5 text-slate-100">{value}</p>
     </div>
   );
 }

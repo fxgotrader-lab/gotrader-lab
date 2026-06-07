@@ -15,7 +15,9 @@ export type IctSessionNarrativeProfile =
   | "ny_session_reversal_from_premium_to_discount"
   | "trend_continuation"
   | "range_bound"
-  | "insufficient_data";
+  | "low_probability"
+  | "insufficient_data"
+  | "unknown";
 
 export type IctSessionDirectionalRead = "bullish" | "bearish" | "neutral";
 
