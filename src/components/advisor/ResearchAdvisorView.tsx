@@ -272,7 +272,10 @@ function buildLocalAdvisorReply(
     const opportunity = currentRead.opportunityDetected
       ? `Opportunity detected: ${formatToken(currentRead.opportunityType)} / ${formatToken(currentRead.opportunityStage)} / ${formatToken(currentRead.opportunityQuality)}. It is not approval. ${currentRead.opportunityBlockers[0] ?? currentRead.opportunityMissingEvidence[0] ?? currentRead.opportunityNextAction}`
       : `No confirmed opportunity yet: ${currentRead.opportunityNextAction}`;
-    return `${opportunity} ${approvalLabel(currentRead.approvedStatus)} context: ${reasons} Next action: ${currentRead.nextAction} Authority remains none.`;
+    const hypothesis = currentRead.selfImprovementHypothesisQueued
+      ? "Research hypothesis queued - needs replay validation."
+      : `No research hypothesis queued: ${currentRead.selfImprovementHypothesisReason ?? "not eligible"}.`;
+    return `${opportunity} ${approvalLabel(currentRead.approvedStatus)} context: ${reasons} ${hypothesis} Next action: ${currentRead.nextAction} Authority remains none.`;
   }
   if (lower.includes("risk")) {
     const notes = packet.recommendedSignal.riskNotes.length ? packet.recommendedSignal.riskNotes.slice(0, 3).join("; ") : "No additional risk notes in the compact packet.";
@@ -291,9 +294,9 @@ function buildLocalAdvisorReply(
     return `Profile optimizer status: ${formatToken(profileOptimizationStatus)}. Optimization is research-only and cannot auto-apply thresholds or promote readiness.`;
   }
   if (lower.includes("bias") || lower.includes("setup") || lower.includes("current")) {
-    return `Current read: ${formatToken(currentRead.bias)} bias, ${formatToken(currentRead.bestSetup)} setup, ${formatToken(currentRead.side)} side, ${pct(currentRead.confidence)} confidence, opportunity ${formatToken(currentRead.opportunityType)} / ${formatToken(currentRead.opportunityStage)}, model lane ${formatToken(currentRead.modelQualityLane)}. ${currentRead.paperWatchlistReason ?? packet.recommendedSignal.summary}`;
+    return `Current read: ${formatToken(currentRead.bias)} bias, ${formatToken(currentRead.bestSetup)} setup, ${formatToken(currentRead.side)} side, ${pct(currentRead.confidence)} confidence, opportunity ${formatToken(currentRead.opportunityType)} / ${formatToken(currentRead.opportunityStage)}, model lane ${formatToken(currentRead.modelQualityLane)}. Hypothesis ${currentRead.selfImprovementHypothesisQueued ? "queued - needs replay validation" : "not queued"}. ${currentRead.paperWatchlistReason ?? packet.recommendedSignal.summary}`;
   }
-  return `Current GoTrader read: ${formatToken(currentRead.bias)} / opportunity ${formatToken(currentRead.opportunityType)} / ${approvalLabel(currentRead.approvedStatus)} / model lane ${formatToken(currentRead.modelQualityLane)} / ${formatToken(currentRead.riskStatus)}. Paper Sim ${currentRead.paperWatchlistEligible ? "eligible" : "not eligible"}; execution disabled. Source ${snapshot.marketData.activeResearchSource.provider.replace(/_/g, " ")} remains read-only with authority none.`;
+  return `Current GoTrader read: ${formatToken(currentRead.bias)} / opportunity ${formatToken(currentRead.opportunityType)} / ${approvalLabel(currentRead.approvedStatus)} / model lane ${formatToken(currentRead.modelQualityLane)} / ${formatToken(currentRead.riskStatus)}. Paper Sim ${currentRead.paperWatchlistEligible ? "eligible" : "not eligible"}; hypothesis ${currentRead.selfImprovementHypothesisQueued ? "queued" : "not queued"}; execution disabled. Source ${snapshot.marketData.activeResearchSource.provider.replace(/_/g, " ")} remains read-only with authority none.`;
 }
 
 export function ResearchAdvisorView() {
@@ -1206,6 +1209,16 @@ function MarketOpportunityCard({ currentRead }: { currentRead: IctCurrentRead })
           value={currentRead.opportunityMissingEvidence.length || opportunity?.confirmationNeeded.length ? "yes" : "none"}
           detail={(opportunity?.confirmationNeeded ?? currentRead.opportunityMissingEvidence).slice(0, 2).join("; ")}
         />
+        <AdvisorReadout
+          label="Research hypothesis"
+          value={currentRead.selfImprovementHypothesisQueued ? "queued" : "not queued"}
+          detail={currentRead.selfImprovementHypothesisQueued ? "needs replay validation" : currentRead.selfImprovementHypothesisReason}
+        />
+        <AdvisorReadout
+          label="Next validation"
+          value={currentRead.selfImprovementHypothesisStatus ? formatToken(currentRead.selfImprovementHypothesisStatus) : "n/a"}
+          detail={currentRead.selfImprovementNextValidation}
+        />
       </div>
       <div className="mt-4 grid gap-3 lg:grid-cols-3">
         <AdvisorList label="Missing evidence" values={currentRead.opportunityMissingEvidence} empty="No missing opportunity evidence reported." />
@@ -1213,7 +1226,7 @@ function MarketOpportunityCard({ currentRead }: { currentRead: IctCurrentRead })
         <AdvisorReadout label="Next action" value={currentRead.opportunityNextAction} detail="research-only; no readiness promotion" />
       </div>
       <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">
-        {approvedExplanation}
+        {approvedExplanation} {currentRead.selfImprovementHypothesisQueued ? "Research hypothesis queued - needs replay validation." : `Research hypothesis not queued: ${currentRead.selfImprovementHypothesisReason ?? "not eligible"}.`}
       </p>
     </section>
   );
@@ -1586,6 +1599,11 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
         <AdvisorReadout label="Model lane" value={modelLaneLabel} detail={currentRead.paperWatchlistReason ?? "research-only lane"} />
         <AdvisorReadout label="Paper-watchlist eligibility" value={currentRead.paperWatchlistEligible ? "eligible" : "not eligible"} detail={currentRead.paperWatchlistEvidenceSummary ?? "compact evidence only"} />
         <AdvisorReadout label="Paper Sim" value={formatToken(currentRead.paperSimEligibilityStatus)} detail={currentRead.paperSimEligibilityReason} />
+        <AdvisorReadout
+          label="Research hypothesis"
+          value={currentRead.selfImprovementHypothesisQueued ? "queued" : "not queued"}
+          detail={currentRead.selfImprovementHypothesisQueued ? currentRead.selfImprovementNextValidation : currentRead.selfImprovementHypothesisReason}
+        />
         <AdvisorReadout label="Research readiness" value={formatToken(currentRead.readinessSummary.researchReadiness)} detail={currentRead.readinessSummary.reasons[0]} />
         <AdvisorReadout label="Paper readiness" value={formatToken(currentRead.readinessSummary.paperReadiness)} detail="paper/demo candidate remains gated" />
         <AdvisorReadout label="Execution readiness" value={formatToken(currentRead.readinessSummary.executionReadiness)} detail="authority none / no broker mutation" />

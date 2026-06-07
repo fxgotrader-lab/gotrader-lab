@@ -17,6 +17,7 @@ import type {
   IctOpportunityTradeIdea,
   IctOpportunityType
 } from "./ictOpportunityDetectionTypes";
+import type { IctResearchHypothesis, IctResearchHypothesisStatus } from "./ictSelfImprovementTypes";
 import type {
   IctDataDepthStatus,
   IctSessionDirectionalRead,
@@ -142,6 +143,11 @@ export interface IctCurrentRead {
   opportunityMissingEvidence: string[];
   opportunityBlockers: string[];
   opportunityTradeIdea?: IctOpportunityTradeIdea;
+  selfImprovementHypothesis?: IctResearchHypothesis;
+  selfImprovementHypothesisQueued: boolean;
+  selfImprovementHypothesisStatus?: IctResearchHypothesisStatus;
+  selfImprovementHypothesisReason?: string;
+  selfImprovementNextValidation?: string;
   sessionMitigationDetected?: boolean;
   fvgTargetDetected?: boolean;
   fvgTargetDirection?: "premium" | "discount" | "unknown";
@@ -186,6 +192,8 @@ export interface IctCurrentRead {
     opportunityStage?: IctOpportunityStage;
     opportunityQuality?: IctOpportunityQuality;
     opportunityLaneRecommendation?: IctOpportunityLaneRecommendation;
+    selfImprovementHypothesisStatus?: IctResearchHypothesisStatus;
+    selfImprovementHypothesisReason?: string;
     fvgTargetStatus?: string;
     targetConstructionStatus?: string;
     invalidationConstructionStatus?: string;

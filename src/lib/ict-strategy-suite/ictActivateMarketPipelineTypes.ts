@@ -16,6 +16,7 @@ import type {
   IctOpportunityStage,
   IctOpportunityType
 } from "./ictOpportunityDetectionTypes";
+import type { IctResearchHypothesis, IctResearchHypothesisStatus } from "./ictSelfImprovementTypes";
 import type { IctResearchSignal } from "./ictSignalContractTypes";
 
 export type IctActivateMarketStepId =
@@ -33,6 +34,7 @@ export type IctActivateMarketStepId =
   | "build_current_read"
   | "detect_session_model"
   | "detect_market_opportunity"
+  | "queue_research_hypothesis"
   | "run_phase_one"
   | "run_phase_two"
   | "run_smt"
@@ -95,6 +97,9 @@ export interface IctActivateMarketLatestSummary {
   opportunityStage?: IctOpportunityStage;
   opportunityQuality?: IctOpportunityQuality;
   opportunityLaneRecommendation?: IctOpportunityLaneRecommendation;
+  selfImprovementHypothesisQueued?: boolean;
+  selfImprovementHypothesisStatus?: IctResearchHypothesisStatus;
+  selfImprovementHypothesisReason?: string;
   nextAction?: string;
   executionAllowed: false;
   researchOnly: true;
@@ -127,12 +132,20 @@ export interface IctActivateMarketResult {
   marketAnalysisContext?: IctMarketAnalysisContext;
   currentRead?: IctCurrentRead;
   opportunity?: IctDetectedOpportunity;
+  selfImprovementHypothesis?: IctResearchHypothesis;
   signalContract?: IctResearchSignal;
   operatorWorkflow?: IctActivateMarketOperatorWorkflow;
 
   cmdPaperEligibility?: {
     eligible: boolean;
     reason: string;
+  };
+
+  selfImprovementQueue?: {
+    queued: boolean;
+    reason: string;
+    journalEventId?: string;
+    status?: IctResearchHypothesisStatus;
   };
 
   latestMonteCarlo?: {
@@ -154,6 +167,9 @@ export interface IctActivateMarketResult {
     opportunityQuality?: IctOpportunityQuality;
     opportunityLaneRecommendation?: IctOpportunityLaneRecommendation;
     opportunityNextAction?: string;
+    selfImprovementHypothesisQueued?: boolean;
+    selfImprovementHypothesisStatus?: IctResearchHypothesisStatus;
+    selfImprovementHypothesisReason?: string;
     displayTimeframe?: string;
     analysisTimeframesRequested?: IctAnalysisTimeframe[];
     analysisTimeframesLoaded?: IctAnalysisTimeframe[];

@@ -10,6 +10,8 @@ export * from "./ictMarketAnalysisContextTypes";
 export * from "./ictMarketAnalysisContext";
 export * from "./ictOpportunityDetectionTypes";
 export * from "./ictOpportunityDetection";
+export * from "./ictSelfImprovementTypes";
+export * from "./ictSelfImprovement";
 export * from "./ictCurrentReadTypes";
 export * from "./ictCurrentRead";
 export * from "./ictSessionNarrativeTypes";

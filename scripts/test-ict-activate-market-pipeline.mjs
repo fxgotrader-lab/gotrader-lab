@@ -39,6 +39,21 @@ function compileForNode() {
   fs.writeFileSync(path.join(outRoot, "ictMarketAnalysisContext.mjs"), "export async function buildIctMarketAnalysisContextBundle() { return globalThis.__ACTIVATE_MARKET_TEST_MARKET_CONTEXT; }\n", "utf8");
   fs.writeFileSync(path.join(outRoot, "ictSignalContract.mjs"), "export function buildIctResearchSignalFromCurrentRead() { return globalThis.__ACTIVATE_MARKET_TEST_SIGNAL; }\n", "utf8");
   fs.writeFileSync(path.join(outRoot, "ictCmdPaperTracking.mjs"), "export function evaluateCmdPaperTrackingEligibility() { return globalThis.__ACTIVATE_MARKET_TEST_CMD_ELIGIBILITY; }\n", "utf8");
+  fs.writeFileSync(
+    path.join(outRoot, "ictSelfImprovement.mjs"),
+    `export function queueIctResearchHypothesis(hypothesis) {
+  return globalThis.__ACTIVATE_MARKET_TEST_SELF_IMPROVEMENT_QUEUE ?? {
+    ok: Boolean(hypothesis),
+    storage: "memory",
+    hypothesis,
+    journalEvent: hypothesis ? { journalEventId: "test_hypothesis_journal", eventType: "ict_research_hypothesis_created" } : undefined,
+    totalHypotheses: hypothesis ? 1 : 0,
+    reason: hypothesis ? "Research hypothesis queued - needs replay validation." : "No eligible research hypothesis to queue."
+  };
+}
+`,
+    "utf8"
+  );
 }
 
 const authority = {
@@ -117,6 +132,11 @@ const currentRead = (overrides = {}) => ({
   paperSimEligibilityReason: "Paper-only eligible from explicit paper-watchlist candidate.",
   paperSimAllowed: true,
   paperOnly: true,
+  selfImprovementHypothesis: undefined,
+  selfImprovementHypothesisQueued: false,
+  selfImprovementHypothesisStatus: undefined,
+  selfImprovementHypothesisReason: "Opportunity is already approved or paper-watchlist; no self-improvement hypothesis is created.",
+  selfImprovementNextValidation: "No queued hypothesis.",
   readinessSummary: {
     researchReadiness: "ready",
     paperReadiness: "eligible",
@@ -260,6 +280,7 @@ async function main() {
       "build_current_read",
       "detect_session_model",
       "detect_market_opportunity",
+      "queue_research_hypothesis",
       "run_phase_one",
       "run_phase_two",
       "run_smt",
@@ -342,7 +363,10 @@ async function main() {
   assert.equal(success.summary.analysisDepthStatus, "sufficient");
   assert.equal(success.operatorWorkflow.recommendedAction, "Track CMD Paper Candidate");
   assert.equal(success.cmdPaperEligibility.eligible, true);
+  assert.equal(success.selfImprovementQueue.queued, false);
+  assert.match(success.selfImprovementQueue.reason, /already approved or paper-watchlist|No eligible/i);
   assert.equal(success.summary.modelLane, "paper_watchlist");
+  assert.equal(success.summary.selfImprovementHypothesisQueued, false);
   assert.equal(success.summary.readinessSummary.executionReadiness, "disabled");
   assert.equal(success.summary.paperSimAllowed, true);
   assert.equal(success.latestMonteCarlo.status, "saved");
@@ -351,6 +375,91 @@ async function main() {
   assert.equal(savedSummaries[0].executionAllowed, false);
   assertSafe(success);
   assert.match(suite.summarizeActivateMarketResult(success), /execution disabled/i);
+
+  const queuedHypothesis = {
+    researchOnly: true,
+    hypothesisId: "ict_research_hypothesis_test_queue",
+    generatedAt: "2026-06-07T12:03:00.000Z",
+    status: "queued_for_replay",
+    title: "unknown structured opportunity hypothesis",
+    sourceOpportunity: {
+      opportunityId: "ict_opportunity_test_queue",
+      type: "unknown_structured_opportunity",
+      stage: "forming",
+      quality: "medium",
+      direction: "bearish",
+      modelName: "consolidation_manipulation_distribution",
+      modelFamily: "consolidation_manipulation_distribution",
+      marketCycleStage: "manipulation",
+      laneRecommendation: "watchlist_candidate",
+      nextAction: "Replay validate the missing confirmation."
+    },
+    requestedSymbol: "MNQ",
+    brokerSymbol: "USTECH",
+    primaryTimeframe: "5m",
+    sourceFingerprint: "mt5_ustech_5m_1000_fp",
+    candleCount: 1000,
+    missingConfirmation: ["Displacement confirmation missing."],
+    proposedValidationRules: ["Run manual replay validation on the same compact model family before any paper-watchlist review."],
+    blockers: [],
+    nextAction: "Research hypothesis queued - needs replay validation.",
+    autoPromoteAllowed: false,
+    executionAllowed: false,
+    authority,
+    safety
+  };
+  globalThis.__ACTIVATE_MARKET_TEST_READ = currentRead({
+    approvedStatus: "watchlist_candidate",
+    modelQualityLane: "watchlist",
+    paperWatchlistEligible: false,
+    paperSimEligibilityStatus: "not_eligible",
+    paperSimEligibilityReason: "Watchlist only - not paper eligible.",
+    paperSimAllowed: false,
+    paperOnly: false,
+    opportunityDetected: true,
+    opportunityType: "unknown_structured_opportunity",
+    opportunityStage: "forming",
+    opportunityQuality: "medium",
+    opportunityLaneRecommendation: "watchlist_candidate",
+    opportunityNextAction: "Replay validate the missing confirmation.",
+    opportunityMissingEvidence: ["Displacement confirmation missing."],
+    opportunityBlockers: ["Approval evidence is incomplete."],
+    selfImprovementHypothesis: queuedHypothesis,
+    selfImprovementHypothesisQueued: true,
+    selfImprovementHypothesisStatus: "queued_for_replay",
+    selfImprovementHypothesisReason: "Research hypothesis queued - needs replay validation.",
+    selfImprovementNextValidation: queuedHypothesis.proposedValidationRules[0],
+    nextAction: "Research hypothesis queued - needs replay validation."
+  });
+  globalThis.__ACTIVATE_MARKET_TEST_SIGNAL = signalContract({
+    status: "watchlist_signal",
+    modelQualityLane: "watchlist",
+    paperWatchlistEligible: false,
+    approvedProfileStatus: "watchlist_candidate",
+    nextAction: "Research hypothesis queued - needs replay validation."
+  });
+  globalThis.__ACTIVATE_MARKET_TEST_CMD_ELIGIBILITY = {
+    eligible: false,
+    reasons: ["Not eligible - no CMD paper-watchlist candidate."]
+  };
+  const queued = await suite.runIctActivateMarketPipeline(
+    { snapshot: snapshot(), saveLatestSummary: false },
+    undefined,
+    { saveLatestSummary: () => undefined }
+  );
+  assert.equal(queued.selfImprovementQueue.queued, true);
+  assert.equal(queued.selfImprovementHypothesis.status, "queued_for_replay");
+  assert.equal(queued.summary.selfImprovementHypothesisQueued, true);
+  assert.match(queued.summary.selfImprovementHypothesisReason, /Research hypothesis queued/i);
+  assert.equal(queued.summary.executionAllowed, false);
+  assertSafe(queued);
+
+  globalThis.__ACTIVATE_MARKET_TEST_READ = currentRead();
+  globalThis.__ACTIVATE_MARKET_TEST_SIGNAL = signalContract();
+  globalThis.__ACTIVATE_MARKET_TEST_CMD_ELIGIBILITY = {
+    eligible: true,
+    reasons: ["CMD strict paper-watchlist candidate is eligible for paper-only tracking."]
+  };
 
   const unavailable = await suite.runIctActivateMarketPipeline(
     { snapshot: snapshot({ provider: "mock", candleCount: 48, fingerprint: "mock_fp" }), saveLatestSummary: false },

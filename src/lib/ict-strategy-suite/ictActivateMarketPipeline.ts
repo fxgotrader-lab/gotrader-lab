@@ -7,6 +7,8 @@ import type { IctCurrentRead } from "./ictCurrentReadTypes";
 import type { IctLatestResearchState } from "./ictLatestResearchStateTypes";
 import { buildIctMarketAnalysisContextBundle } from "./ictMarketAnalysisContext";
 import type { IctAnalysisTimeframe, IctMarketAnalysisContextBundle } from "./ictMarketAnalysisContextTypes";
+import { queueIctResearchHypothesis } from "./ictSelfImprovement";
+import type { IctResearchHypothesisQueueResult } from "./ictSelfImprovementTypes";
 import { buildIctResearchSignalFromCurrentRead } from "./ictSignalContract";
 import type { IctResearchSignal } from "./ictSignalContractTypes";
 import type {
@@ -52,6 +54,7 @@ const stepDefinitions: Array<{ id: IctActivateMarketStepId; label: string }> = [
   { id: "build_current_read", label: "Build current read" },
   { id: "detect_session_model", label: "Detect session model" },
   { id: "detect_market_opportunity", label: "Detect market opportunity" },
+  { id: "queue_research_hypothesis", label: "Queue research hypothesis" },
   { id: "run_phase_one", label: "Run ICT Phase 1" },
   { id: "run_phase_two", label: "Run ICT Phase 2" },
   { id: "run_smt", label: "Check SMT / relative strength" },
@@ -77,6 +80,7 @@ export interface IctActivateMarketPipelineDependencies {
   buildCurrentRead?: (packet?: IctAdvisorPacket, latestState?: IctLatestResearchState) => IctCurrentRead;
   buildSignalContract?: (currentRead: IctCurrentRead, latestState?: IctLatestResearchState) => IctResearchSignal;
   evaluateCmdPaperEligibility?: (signal: IctResearchSignal) => { eligible: boolean; reasons: string[] };
+  queueResearchHypothesis?: (hypothesis?: IctCurrentRead["selfImprovementHypothesis"]) => IctResearchHypothesisQueueResult;
   saveLatestSummary?: (summary: IctActivateMarketLatestSummary) => void;
 }
 
@@ -172,6 +176,9 @@ export const readLatestActivateMarketSummary = (): IctActivateMarketLatestSummar
       opportunityStage: typeof parsed.opportunityStage === "string" ? parsed.opportunityStage : undefined,
       opportunityQuality: typeof parsed.opportunityQuality === "string" ? parsed.opportunityQuality : undefined,
       opportunityLaneRecommendation: typeof parsed.opportunityLaneRecommendation === "string" ? parsed.opportunityLaneRecommendation : undefined,
+      selfImprovementHypothesisQueued: parsed.selfImprovementHypothesisQueued === true,
+      selfImprovementHypothesisStatus: typeof parsed.selfImprovementHypothesisStatus === "string" ? parsed.selfImprovementHypothesisStatus : undefined,
+      selfImprovementHypothesisReason: typeof parsed.selfImprovementHypothesisReason === "string" ? parsed.selfImprovementHypothesisReason : undefined,
       nextAction: typeof parsed.nextAction === "string" ? parsed.nextAction : undefined,
       executionAllowed: false,
       researchOnly: true,
@@ -282,6 +289,9 @@ const criticalUnavailableResult = ({
     opportunityQuality: "unknown",
     opportunityLaneRecommendation: "no_trade",
     opportunityNextAction: "Activate MT5 read-only market data, then rerun Activate Market.",
+    selfImprovementHypothesisQueued: false,
+    selfImprovementHypothesisStatus: undefined,
+    selfImprovementHypothesisReason: "No hypothesis queued because the active source failed the MT5 read-only preflight.",
     displayTimeframe: primaryTimeframe,
     analysisTimeframesRequested: ["W1", "D1", "H4", "H1", "M15", "M5"],
     analysisTimeframesLoaded: [],
@@ -410,6 +420,9 @@ const buildLatestSummary = (result: IctActivateMarketResult): IctActivateMarketL
   opportunityStage: result.summary.opportunityStage,
   opportunityQuality: result.summary.opportunityQuality,
   opportunityLaneRecommendation: result.summary.opportunityLaneRecommendation,
+  selfImprovementHypothesisQueued: result.summary.selfImprovementHypothesisQueued,
+  selfImprovementHypothesisStatus: result.summary.selfImprovementHypothesisStatus,
+  selfImprovementHypothesisReason: result.summary.selfImprovementHypothesisReason,
   nextAction: result.operatorWorkflow?.recommendedAction ?? result.summary.nextAction,
   executionAllowed: false,
   researchOnly: true,
@@ -430,9 +443,11 @@ export const sanitizeActivateMarketResult = (result: IctActivateMarketResult): I
   marketAnalysisContext: result.marketAnalysisContext,
   currentRead: result.currentRead,
   opportunity: result.opportunity,
+  selfImprovementHypothesis: result.selfImprovementHypothesis,
   signalContract: result.signalContract,
   operatorWorkflow: result.operatorWorkflow ? { ...result.operatorWorkflow, heavyActionDeferred: true, autoStarted: false, executionAllowed: false } : undefined,
   cmdPaperEligibility: result.cmdPaperEligibility ? { ...result.cmdPaperEligibility } : undefined,
+  selfImprovementQueue: result.selfImprovementQueue ? { ...result.selfImprovementQueue } : undefined,
   latestMonteCarlo: result.latestMonteCarlo ? { ...result.latestMonteCarlo, summary: result.latestMonteCarlo.summary ? { ...result.latestMonteCarlo.summary } : undefined } : undefined,
   summary: { ...result.summary, executionAllowed: false },
   debug: result.debug ? { ...result.debug } : undefined,
@@ -446,11 +461,14 @@ export const summarizeActivateMarketResult = (result: IctActivateMarketResult) =
   const model = result.summary.modelName ?? "no model";
   const opportunity = result.summary.opportunityDetected ? `${result.summary.opportunityType} / ${result.summary.opportunityStage}` : "no opportunity";
   const lane = result.summary.modelLane ?? "no_trade";
+  const hypothesis = result.summary.selfImprovementHypothesisQueued
+    ? `hypothesis ${result.summary.selfImprovementHypothesisStatus ?? "queued"}`
+    : "no hypothesis queued";
   const analysis = result.summary.analysisTimeframesUsed?.length
     ? result.summary.analysisTimeframesUsed.join("/")
     : "no analysis context";
   const action = result.operatorWorkflow?.recommendedAction ?? result.summary.nextAction ?? "Wait / Check MT5 Depth";
-  return `${result.status}: ${result.requestedSymbol}/${result.brokerSymbol} chart ${result.summary.displayTimeframe ?? result.primaryTimeframe}; analysis ${analysis}; ${model}; opportunity ${opportunity}; lane ${lane}; next ${action}; execution disabled.`;
+  return `${result.status}: ${result.requestedSymbol}/${result.brokerSymbol} chart ${result.summary.displayTimeframe ?? result.primaryTimeframe}; analysis ${analysis}; ${model}; opportunity ${opportunity}; lane ${lane}; ${hypothesis}; next ${action}; execution disabled.`;
 };
 
 export async function runIctActivateMarketPipeline(
@@ -471,6 +489,7 @@ export async function runIctActivateMarketPipeline(
   let signalContract: IctResearchSignal | undefined;
   let operatorWorkflow: IctActivateMarketOperatorWorkflow | undefined;
   let cmdPaperEligibility: IctActivateMarketResult["cmdPaperEligibility"];
+  let selfImprovementQueue: IctActivateMarketResult["selfImprovementQueue"];
   let latestMonteCarlo = latestMonteCarloFor(config.latestResearchState);
 
   const buildOrReadMarketContext = async () => {
@@ -663,6 +682,28 @@ export async function runIctActivateMarketPipeline(
     return `${currentRead.opportunityType}; stage ${currentRead.opportunityStage}; quality ${currentRead.opportunityQuality}; lane ${currentRead.opportunityLaneRecommendation}; ${approvalNote}.`;
   });
 
+  await run("queue_research_hypothesis", "Queueing research-only hypothesis when opportunity is not tradable.", async () => {
+    if (!currentRead) return { error: "Current read is missing." };
+    if (!currentRead.selfImprovementHypothesis) {
+      selfImprovementQueue = {
+        queued: false,
+        reason: currentRead.selfImprovementHypothesisReason ?? "No eligible research hypothesis."
+      };
+      return `No research hypothesis queued: ${selfImprovementQueue.reason}`;
+    }
+    const queue = dependencies.queueResearchHypothesis ?? queueIctResearchHypothesis;
+    const result = queue(currentRead.selfImprovementHypothesis);
+    selfImprovementQueue = {
+      queued: result.ok,
+      reason: result.reason,
+      journalEventId: result.journalEvent?.journalEventId,
+      status: currentRead.selfImprovementHypothesis.status
+    };
+    return result.ok
+      ? "Research hypothesis queued - needs replay validation."
+      : { message: result.reason, warning: result.reason };
+  });
+
   await run("run_phase_one", "Checking ICT Phase 1 signals.", async () => {
     const count = currentRead?.debug.phase1SignalCount ?? 0;
     return count > 0 ? `${count} Phase 1 signals summarized.` : { message: "Phase 1 evaluated.", warning: "No Phase 1 signals summarized." };
@@ -750,9 +791,11 @@ export async function runIctActivateMarketPipeline(
       marketAnalysisContext: marketAnalysisContextBundle?.context,
       currentRead,
       opportunity: currentRead?.opportunity,
+      selfImprovementHypothesis: currentRead?.selfImprovementHypothesis,
       signalContract,
       operatorWorkflow,
       cmdPaperEligibility,
+      selfImprovementQueue,
       latestMonteCarlo,
       summary: {
         dataStatus: currentRead?.dataStatus ?? "unavailable",
@@ -766,6 +809,9 @@ export async function runIctActivateMarketPipeline(
         opportunityQuality: currentRead?.opportunityQuality,
         opportunityLaneRecommendation: currentRead?.opportunityLaneRecommendation,
         opportunityNextAction: currentRead?.opportunityNextAction,
+        selfImprovementHypothesisQueued: currentRead?.selfImprovementHypothesisQueued ?? false,
+        selfImprovementHypothesisStatus: currentRead?.selfImprovementHypothesisStatus,
+        selfImprovementHypothesisReason: selfImprovementQueue?.reason ?? currentRead?.selfImprovementHypothesisReason,
         displayTimeframe: currentRead?.displayTimeframe ?? marketAnalysisContextBundle?.context.displayTimeframe ?? primaryTimeframe,
         analysisTimeframesRequested: currentRead?.analysisTimeframesRequested ?? marketAnalysisContextBundle?.context.analysisTimeframesRequested,
         analysisTimeframesLoaded: currentRead?.analysisTimeframesLoaded ?? marketAnalysisContextBundle?.context.analysisTimeframesLoaded,

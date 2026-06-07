@@ -51,6 +51,8 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictMarketAnalysisContext.ts" },
   { root: sourceRoot, file: "ictOpportunityDetectionTypes.ts" },
   { root: sourceRoot, file: "ictOpportunityDetection.ts" },
+  { root: sourceRoot, file: "ictSelfImprovementTypes.ts" },
+  { root: sourceRoot, file: "ictSelfImprovement.ts" },
   { root: sourceRoot, file: "ictAdvisorEngine.ts" },
   { root: sourceRoot, file: "ictCurrentReadTypes.ts" },
   { root: sourceRoot, file: "ictCurrentRead.ts" },

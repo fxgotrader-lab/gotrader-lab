@@ -2,6 +2,7 @@ import type { ResearchRuntimeSnapshot } from "../runtime";
 import { buildIctAdvisorPacketFromRuntime } from "./ictAdvisorEngine";
 import type { IctAdvisorPacket, IctAdvisorSignal } from "./ictAdvisorTypes";
 import { detectIctOpportunities } from "./ictOpportunityDetection";
+import { buildIctResearchHypothesisFromOpportunity } from "./ictSelfImprovement";
 import type { IctLatestResearchState } from "./ictLatestResearchStateTypes";
 import type {
   IctCurrentRead,
@@ -442,6 +443,11 @@ export const buildUnavailableIctCurrentRead = (
   opportunityMissingEvidence: opportunity.missingEvidence,
   opportunityBlockers: [reason, ...opportunity.blockers].slice(0, 8),
   opportunityTradeIdea: opportunity.tradeIdea,
+  selfImprovementHypothesis: undefined,
+  selfImprovementHypothesisQueued: false,
+  selfImprovementHypothesisStatus: undefined,
+  selfImprovementHypothesisReason: "Data is insufficient for a research hypothesis.",
+  selfImprovementNextValidation: "Activate MT5 read-only market data, then rerun Activate Market.",
   paperWatchlistEligible: false,
   paperWatchlistReason: reason,
   paperWatchlistEvidenceSummary: "No compact ICT model-quality evidence is available.",
@@ -478,6 +484,8 @@ export const buildUnavailableIctCurrentRead = (
     opportunityStage: opportunity.stage,
     opportunityQuality: opportunity.quality,
     opportunityLaneRecommendation: opportunity.laneRecommendation,
+    selfImprovementHypothesisStatus: undefined,
+    selfImprovementHypothesisReason: "Data is insufficient for a research hypothesis.",
     fvgTargetStatus: "missing",
     targetConstructionStatus: "missing",
     invalidationConstructionStatus: "missing",
@@ -570,6 +578,23 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
   const opportunityApprovalNote = opportunityDetected && modelQualityLane !== "approved"
     ? `Opportunity detected, but not approved because ${primaryOpportunity.blockers[0] ?? primaryOpportunity.missingEvidence[0] ?? primaryOpportunity.confirmationNeeded[0] ?? "approval evidence is incomplete"}.`
     : undefined;
+  const selfImprovementDecision = buildIctResearchHypothesisFromOpportunity({
+    opportunity: primaryOpportunity,
+    approvedStatus: packet.approvedProfileDecision.status,
+    modelQualityLane,
+    dataStatus,
+    requestedSymbol: packet.requestedSymbol,
+    brokerSymbol: packet.brokerSymbol,
+    primaryTimeframe: packet.primaryTimeframe,
+    sourceFingerprint: packet.activeSource.sourceFingerprint,
+    candleCount: packet.activeSource.candleCount,
+    topReasons: reasons,
+    generatedAt: packet.generatedAt
+  });
+  const selfImprovementHypothesis = selfImprovementDecision.ok ? selfImprovementDecision.hypothesis : undefined;
+  const selfImprovementNote = selfImprovementDecision.ok
+    ? "Research hypothesis queued - needs replay validation."
+    : selfImprovementDecision.reason;
   const paperWatchlistEligible = modelQualityLane === "paper_watchlist";
   const paperWatchlistReason = paperWatchlistReasonFor(packet, modelQualityLane, reasons);
   const paperWatchlistEvidenceSummary = paperWatchlistEvidenceSummaryFor(packet, modelQualityLane);
@@ -662,6 +687,11 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     opportunityMissingEvidence: primaryOpportunity.missingEvidence,
     opportunityBlockers: primaryOpportunity.blockers,
     opportunityTradeIdea: primaryOpportunity.tradeIdea,
+    selfImprovementHypothesis,
+    selfImprovementHypothesisQueued: Boolean(selfImprovementHypothesis),
+    selfImprovementHypothesisStatus: selfImprovementHypothesis?.status,
+    selfImprovementHypothesisReason: selfImprovementNote,
+    selfImprovementNextValidation: selfImprovementHypothesis?.proposedValidationRules[0] ?? selfImprovementNote,
     paperWatchlistEligible,
     paperWatchlistModelName: paperWatchlistEligible ? paperWatchlistModelName : undefined,
     paperWatchlistReason,
@@ -717,12 +747,12 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     smtReason,
     riskReason,
     topReasons: reasons.length
-      ? uniqueReasons([opportunityApprovalNote, ...multiTimeframeReasons, ...reasons])
+      ? uniqueReasons([opportunityApprovalNote, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, ...reasons])
       : recommended.decision === "research_only"
-        ? uniqueReasons([opportunityApprovalNote, ...multiTimeframeReasons, "Research candidate generated; validation is still required before any readiness review."])
-        : uniqueReasons([opportunityApprovalNote, ...multiTimeframeReasons, "No explicit blocker was provided by the compact advisor packet."]),
+        ? uniqueReasons([opportunityApprovalNote, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, "Research candidate generated; validation is still required before any readiness review."])
+        : uniqueReasons([opportunityApprovalNote, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, "No explicit blocker was provided by the compact advisor packet."]),
     nextAction: opportunityDetected && modelQualityLane !== "approved"
-      ? primaryOpportunity.nextAction
+      ? selfImprovementHypothesis?.nextAction ?? primaryOpportunity.nextAction
       : nextActionFor(packet, reasons),
     debug: {
       candleCount: packet.activeSource.candleCount,
@@ -749,6 +779,8 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
       opportunityStage: primaryOpportunity.stage,
       opportunityQuality: primaryOpportunity.quality,
       opportunityLaneRecommendation: primaryOpportunity.laneRecommendation,
+      selfImprovementHypothesisStatus: selfImprovementHypothesis?.status,
+      selfImprovementHypothesisReason: selfImprovementNote,
       fvgTargetStatus,
       targetConstructionStatus,
       invalidationConstructionStatus,

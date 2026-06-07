@@ -282,6 +282,11 @@ export function IctAdvisorSummaryPanel({
                 detail={currentRead.opportunityNextAction}
               />
               <AdvisorMini
+                label="Research hypothesis"
+                value={currentRead.selfImprovementHypothesisQueued ? "queued" : "not queued"}
+                detail={currentRead.selfImprovementHypothesisQueued ? "needs replay validation" : currentRead.selfImprovementHypothesisReason}
+              />
+              <AdvisorMini
                 label="FVG target"
                 value={currentRead.fvgTargetDetected ? formatToken(currentRead.fvgTargetDirection) : "missing"}
                 detail={currentRead.fvgTargetReason}
@@ -356,7 +361,7 @@ export function IctAdvisorSummaryPanel({
             <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3">
               <p className="line-clamp-2 text-xs leading-5 text-slate-300">
                 Session: {formatToken(currentRead.sessionNarrativeStatus ?? currentRead.sessionNarrativeProfile)}. Model: {currentRead.modelDetected ? `${formatToken(currentRead.modelName)} / ${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : "not detected"}. Lane: {modelLane}. Paper Sim: {currentRead.paperSimAllowed ? "Eligible" : "Not Eligible"} ({currentRead.paperSimEligibilityReason ?? "reason pending"}). Readiness: Research {formatToken(currentRead.readinessSummary.researchReadiness)}, Paper {formatToken(currentRead.readinessSummary.paperReadiness)}, Execution Disabled. Trade fields: target {formatToken(currentRead.targetConstructionStatus)}, invalidation {formatToken(currentRead.invalidationConstructionStatus)}, RR {formatToken(currentRead.rrConstructionStatus)}. {currentRead.topReasons[0] ?? currentRead.paperWatchlistReason ?? recommended?.summary ?? "ICT advisor summary unavailable."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
-                {" "}CMD Paper: {cmdPaperLabel}.
+                {" "}Hypothesis: {currentRead.selfImprovementHypothesisQueued ? "queued - needs replay validation" : "not queued"}. CMD Paper: {cmdPaperLabel}.
               </p>
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -436,6 +441,11 @@ export function IctAdvisorSummaryPanel({
               label="Market opportunity"
               value={currentRead.opportunityDetected ? formatToken(currentRead.opportunityType) : "none"}
               detail={`${formatToken(currentRead.opportunityStage)} / ${formatToken(currentRead.opportunityQuality)} / ${formatToken(currentRead.opportunityLaneRecommendation)}`}
+            />
+            <AdvisorMini
+              label="Research hypothesis"
+              value={currentRead.selfImprovementHypothesisQueued ? "queued" : "not queued"}
+              detail={currentRead.selfImprovementHypothesisQueued ? currentRead.selfImprovementNextValidation : currentRead.selfImprovementHypothesisReason}
             />
             <AdvisorMini
               label="Opportunity next"
@@ -519,7 +529,7 @@ export function IctAdvisorSummaryPanel({
                 {currentRead.modelDetected ? formatToken(currentRead.modelName) : "No model detected"} / {modelLane} / {paperWatchlistEligible ? "paper-test only" : "not paper eligible"}
               </p>
               <p className="mt-2 text-xs leading-5 text-cyan-100">
-                {currentRead.paperWatchlistReason ?? "No model-quality reason was supplied."} Evidence: {currentRead.paperWatchlistEvidenceSummary ?? "compact evidence pending."} Next action: {researchSignal.nextAction}
+                {currentRead.paperWatchlistReason ?? "No model-quality reason was supplied."} Evidence: {currentRead.paperWatchlistEvidenceSummary ?? "compact evidence pending."} Hypothesis: {currentRead.selfImprovementHypothesisQueued ? "queued - needs replay validation" : currentRead.selfImprovementHypothesisReason ?? "not queued"}. Next action: {researchSignal.nextAction}
               </p>
             </div>
             <div className="flex flex-wrap items-start justify-between gap-2">
