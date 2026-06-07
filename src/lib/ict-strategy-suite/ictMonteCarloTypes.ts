@@ -20,7 +20,7 @@ export interface IctMonteCarloTradeOutcome {
   side?: "long" | "short" | "flat";
   outcome: IctReplayOutcome;
   rMultiple: number;
-  approvedStatus?: "approved_research_candidate" | "watchlist_candidate" | "rejected_candidate" | "no_trade";
+  approvedStatus?: "approved_research_candidate" | "paper_watchlist_candidate" | "watchlist_candidate" | "rejected_candidate" | "no_trade";
   confidence?: number;
   sourceTime?: string;
   researchOnly: true;

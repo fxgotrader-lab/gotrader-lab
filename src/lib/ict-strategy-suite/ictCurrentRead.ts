@@ -26,13 +26,15 @@ const safety = {
 const statusWeight = (status?: string) =>
   status === "approved_research_candidate"
     ? 4
-    : status === "watchlist_candidate"
+    : status === "paper_watchlist_candidate"
       ? 3
-      : status === "rejected_candidate"
+      : status === "watchlist_candidate"
         ? 2
-        : status === "no_trade"
+        : status === "rejected_candidate"
           ? 1
-          : 0;
+          : status === "no_trade"
+            ? 0.5
+            : 0;
 
 const bestSignalFrom = (signals: IctAdvisorSignal[]) =>
   signals
@@ -128,6 +130,7 @@ const nextActionFor = (packet: IctAdvisorPacket, reasons: string[]) => {
   if (!packet.activeSource.candleCount) return "Check MT5 Read Only or activate a canonical research source.";
   if (!packet.htfTimeframes.length) return "Fetch 15m and 1h MT5 context before trusting the current read.";
   if (status === "approved_research_candidate") return "Run replay and walk-forward before any readiness review.";
+  if (status === "paper_watchlist_candidate") return "Paper-watchlist only: run explicit paper simulation and collect replay evidence; no readiness promotion.";
   if (status === "watchlist_candidate") return "Keep on watchlist and test the blocking evidence with replay.";
   if (reasons.some((reason) => /rr|target/i.test(reason))) return "Wait for a cleaner target and RR profile.";
   if (reasons.some((reason) => /fvg|displacement/i.test(reason))) return "Wait for displacement/FVG evidence before retesting.";

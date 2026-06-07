@@ -36,6 +36,7 @@ const round = (value: number, decimals = 2) => Number(Number.isFinite(value) ? v
 
 const approvedStatusFor = (value?: string): IctMonteCarloTradeOutcome["approvedStatus"] =>
   value === "approved_research_candidate" ||
+  value === "paper_watchlist_candidate" ||
   value === "watchlist_candidate" ||
   value === "rejected_candidate" ||
   value === "no_trade"
@@ -109,9 +110,11 @@ const usableOutcomesForConfig = (outcomes: IctMonteCarloTradeOutcome[], config: 
     if (!Number.isFinite(outcome.rMultiple)) return false;
     if (config.includeApprovedOnly) {
       if (outcome.approvedStatus === "approved_research_candidate") return true;
+      if (config.includeWatchlist && outcome.approvedStatus === "paper_watchlist_candidate") return true;
       if (config.includeWatchlist && outcome.approvedStatus === "watchlist_candidate") return true;
       return false;
     }
+    if (!config.includeWatchlist && outcome.approvedStatus === "paper_watchlist_candidate") return false;
     if (!config.includeWatchlist && outcome.approvedStatus === "watchlist_candidate") return false;
     return outcome.approvedStatus !== "rejected_candidate" && outcome.approvedStatus !== "no_trade";
   });

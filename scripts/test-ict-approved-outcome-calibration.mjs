@@ -24,6 +24,7 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictStrategySuiteTypes.ts" },
   { root: sourceRoot, file: "ictAdvisorTypes.ts" },
   { root: sourceRoot, file: "ictSessionNarrativeTypes.ts" },
+  { root: sourceRoot, file: "ictGrinchModelTypes.ts" },
   { root: sourceRoot, file: "ictPhase2Types.ts" },
   { root: sourceRoot, file: "ictReplayValidationTypes.ts" },
   { root: sourceRoot, file: "ictReplayDiagnosticsTypes.ts" },
@@ -271,7 +272,7 @@ const topCounts = (values, selector, limit = 8) =>
     .slice(0, limit);
 
 const approvalWeight = (status) =>
-  status === "approved_research_candidate" ? 4 : status === "watchlist_candidate" ? 3 : status === "rejected_candidate" ? 2 : status === "no_trade" ? 1 : 0;
+  status === "approved_research_candidate" ? 5 : status === "paper_watchlist_candidate" ? 4 : status === "watchlist_candidate" ? 3 : status === "rejected_candidate" ? 2 : status === "no_trade" ? 1 : 0;
 
 const selectDecision = (decisions) =>
   decisions

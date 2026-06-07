@@ -180,6 +180,19 @@ async function main() {
   assert.equal(watchlist.status, "watchlist_signal");
   assertSafeSignal(watchlist, suite);
 
+  const paperWatchlist = suite.buildIctResearchSignalFromCurrentRead(
+    currentReadFixture({
+      approvedStatus: "paper_watchlist_candidate",
+      approvalScore: 69,
+      topReasons: ["Complete structure is present, but one approval gate remains watchlist-only."]
+    }),
+    latestStateFixture("moderate")
+  );
+  assert.equal(paperWatchlist.status, "watchlist_signal");
+  assert.equal(paperWatchlist.approvedProfileStatus, "paper_watchlist_candidate");
+  assert.ok(paperWatchlist.reasons.some((reason) => /paper-watchlist simulation/i.test(reason)));
+  assertSafeSignal(paperWatchlist, suite);
+
   const rejected = suite.buildIctResearchSignalFromCurrentRead(
     currentReadFixture({
       approvedStatus: "rejected_candidate",

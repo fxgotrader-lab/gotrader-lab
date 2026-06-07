@@ -33,7 +33,17 @@ const createId = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Mat
 const round = (value: number, decimals = 2) => Number(value.toFixed(decimals));
 const isBrowser = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 const approvalStatusWeight = (status?: string) =>
-  status === "approved_research_candidate" ? 4 : status === "watchlist_candidate" ? 3 : status === "rejected_candidate" ? 2 : status === "no_trade" ? 1 : 0;
+  status === "approved_research_candidate"
+    ? 5
+    : status === "paper_watchlist_candidate"
+      ? 4
+      : status === "watchlist_candidate"
+        ? 3
+        : status === "rejected_candidate"
+          ? 2
+          : status === "no_trade"
+            ? 1
+            : 0;
 
 const coerceCandle = (value: unknown, index: number, input: Pick<IctReplayInput, "primaryTimeframe" | "requestedSymbol" | "symbol">): Candle | undefined => {
   if (!value || typeof value !== "object") return undefined;

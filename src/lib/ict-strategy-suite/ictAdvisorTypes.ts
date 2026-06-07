@@ -98,6 +98,7 @@ export interface IctAdvisorSignal {
   brokerSymbol: string;
   primaryTimeframe: string;
   htfTimeframes: string[];
+  researchOnly: true;
   side: IctSide;
   decision: IctDecision;
   confidence: number;

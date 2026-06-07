@@ -14,6 +14,7 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictStrategySuiteTypes.ts" },
   { root: sourceRoot, file: "ictAdvisorTypes.ts" },
   { root: sourceRoot, file: "ictSessionNarrativeTypes.ts" },
+  { root: sourceRoot, file: "ictGrinchModelTypes.ts" },
   { root: sourceRoot, file: "ictPhase2Types.ts" },
   { root: sourceRoot, file: "ictStrategySuiteJournal.ts" },
   { root: sourceRoot, file: "ictBrowserResearchLimits.ts" },
@@ -216,7 +217,7 @@ async function main() {
   assert.ok(read.bestPhase1Setup, "Phase 1 setup should be exposed");
   assert.ok(read.bestPhase2Setup, "Phase 2 setup should be exposed when present");
   assert.ok(read.bestSetup, "Best displayed setup should be exposed");
-  assert.ok(["approved_research_candidate", "watchlist_candidate", "rejected_candidate", "no_trade"].includes(read.approvedStatus), "Approved profile status should be included");
+  assert.ok(["approved_research_candidate", "paper_watchlist_candidate", "watchlist_candidate", "rejected_candidate", "no_trade"].includes(read.approvedStatus), "Approved profile status should be included");
   assert.ok(read.smtStatus, "SMT status should be included");
   assert.ok(read.riskStatus, "news/session risk status should be included");
   assert.ok(read.topReasons.length >= 1, "Rejected/no-trade/current states should explain why");

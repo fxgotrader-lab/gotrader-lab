@@ -32,6 +32,7 @@
     "test:ict-out-of-sample-validation": "node scripts/test-ict-out-of-sample-validation.mjs",
     "test:ict-watchlist-quality-diagnostic": "node scripts/test-ict-watchlist-quality-diagnostic.mjs",
     "test:ict-model-fidelity-audit": "node scripts/test-ict-model-fidelity-audit.mjs",
+    "test:ict-target-invalidation-rr-audit": "node scripts/test-ict-target-invalidation-rr-audit.mjs",
     "test:ict-phase2-models": "node scripts/test-ict-phase2-models.mjs",
     "test:ict-index-smt": "node scripts/test-ict-index-smt.mjs",
     "test:ict-news-session-risk": "node scripts/test-ict-news-session-risk.mjs",

@@ -71,11 +71,14 @@ export const isResearchSignalEligibleForPaperSim = (
   options: IctPaperSignalOptions = {}
 ): IctPaperSignalEligibility => {
   const entry = entryPriceFor(signal, options);
+  const paperWatchlistCandidate =
+    signal.status === "watchlist_signal" && signal.approvedProfileStatus === "paper_watchlist_candidate";
+  const approvedOrPaperWatchlist = signal.status === "approved_research_signal" || paperWatchlistCandidate;
   const reasons = unique([
-    signal.status !== "approved_research_signal" && !(options.allowWatchlist && signal.status === "watchlist_signal")
-      ? "Only approved research signals are eligible by default."
+    !approvedOrPaperWatchlist
+      ? "Only approved research signals or explicit paper-watchlist candidates are eligible."
       : undefined,
-    signal.status === "watchlist_signal" && !options.allowWatchlist ? "Watchlist signals require explicit paper-sim opt-in." : undefined,
+    signal.status === "watchlist_signal" && !paperWatchlistCandidate ? "Watchlist signals require explicit paper-watchlist eligibility." : undefined,
     signal.status === "rejected_signal" ? "Rejected research signals cannot be paper simulated." : undefined,
     signal.status === "no_signal" ? "No active research signal is available." : undefined,
     !isDirectional(signal.side) ? "Signal side must be long or short." : undefined,
@@ -93,8 +96,8 @@ export const isResearchSignalEligibleForPaperSim = (
       : undefined
   ]);
   const warnings = unique([
-    signal.status === "watchlist_signal" && options.allowWatchlist
-      ? "Watchlist paper simulations are explicit research-only experiments."
+    paperWatchlistCandidate
+      ? "Paper-watchlist simulations are explicit research-only experiments and cannot promote readiness."
       : undefined,
     signal.warnings.find((warning) => /CFD\/proxy|Execution is disabled|research-only/i.test(warning)),
     "Paper simulation creates no broker order and cannot promote readiness."

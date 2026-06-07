@@ -137,7 +137,15 @@ async function main() {
 
   const watchlist = signalFixture({ status: "watchlist_signal" });
   assert.equal(suite.isResearchSignalEligibleForPaperSim(watchlist).eligible, false);
-  assert.equal(suite.isResearchSignalEligibleForPaperSim(watchlist, { allowWatchlist: true }).eligible, true);
+  assert.equal(suite.isResearchSignalEligibleForPaperSim(watchlist, { allowWatchlist: true }).eligible, false);
+  const paperWatchlist = signalFixture({
+    signalId: "ict_research_signal_paper_watchlist_fixture",
+    status: "watchlist_signal",
+    approvedProfileStatus: "paper_watchlist_candidate"
+  });
+  const paperWatchlistEligibility = suite.isResearchSignalEligibleForPaperSim(paperWatchlist);
+  assert.equal(paperWatchlistEligibility.eligible, true);
+  assert.match(paperWatchlistEligibility.warnings.join(" "), /Paper-watchlist/i);
 
   assert.equal(suite.isResearchSignalEligibleForPaperSim(signalFixture({ status: "rejected_signal" })).eligible, false);
   assert.equal(suite.isResearchSignalEligibleForPaperSim(signalFixture({ status: "no_signal", side: "flat" })).eligible, false);
@@ -150,6 +158,11 @@ async function main() {
   assert.equal(longPaper.outcome, "open");
   assert.equal(longPaper.simulatedEntry.price, 101);
   assertSafePaperSignal(longPaper, suite);
+  assert.equal(
+    suite.createPaperSignalFromResearchSignal(paperWatchlist, { generatedAt: "2026-06-05T18:10:00.000Z" }).status,
+    "paper_open",
+    "paper-watchlist candidates should be simulation eligible"
+  );
 
   const longTarget = suite.simulatePaperSignalOutcome(longPaper, [{ at: "2026-06-05T18:15:00.000Z", price: 112 }]);
   assert.equal(longTarget.status, "paper_target_hit");

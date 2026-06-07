@@ -123,6 +123,17 @@ export const classifyResearchSignalStatus = (
   ) {
     return "approved_research_signal";
   }
+  if (
+    currentRead.approvedStatus === "paper_watchlist_candidate" &&
+    isDirectionalSide(currentRead.side) &&
+    finite(currentRead.target) &&
+    finite(currentRead.invalidation) &&
+    finite(currentRead.rrEstimate) &&
+    finite(currentRead.confidence) &&
+    !isRiskBlocked(currentRead.riskStatus)
+  ) {
+    return "watchlist_signal";
+  }
   if (currentRead.approvedStatus === "watchlist_candidate" || monteCarloWarnings(latestState).length) return "watchlist_signal";
   return "no_signal";
 };
@@ -186,6 +197,9 @@ export const buildIctResearchSignalFromCurrentRead = (
   const reasons = unique([
     ...currentRead.topReasons,
     status === "approved_research_signal" ? "Current read passed the approved-profile research gate." : undefined,
+    currentRead.approvedStatus === "paper_watchlist_candidate"
+      ? "Current read is complete enough for paper-watchlist simulation only; approval remains blocked."
+      : undefined,
     status === "watchlist_signal" ? "Current read is watchlist or needs more non-execution validation evidence." : undefined
   ]).slice(0, 10);
 

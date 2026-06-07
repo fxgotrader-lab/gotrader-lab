@@ -27,6 +27,8 @@ const entryZoneLabel = (entryZone?: IctAdvisorPacket["recommendedSignal"]["entry
 const statusVariant = (status?: IctAdvisorPacket["approvedProfileDecision"]["status"]) =>
   status === "approved_research_candidate"
     ? "success"
+    : status === "paper_watchlist_candidate"
+      ? "warning"
     : status === "watchlist_candidate"
       ? "warning"
       : status === "rejected_candidate"
@@ -139,6 +141,17 @@ export function IctAdvisorSummaryPanel({
     () => isResearchSignalEligibleForPaperSim(researchSignal),
     [researchSignal]
   );
+  const missingTradeFields = useMemo(
+    () =>
+      [
+        typeof recommended?.target === "number" ? undefined : "target",
+        typeof recommended?.invalidation === "number" ? undefined : "invalidation",
+        typeof recommended?.rrEstimate === "number" ? undefined : "RR"
+      ].filter((field): field is string => Boolean(field)),
+    [recommended?.target, recommended?.invalidation, recommended?.rrEstimate]
+  );
+  const missingTradeFieldsLabel = missingTradeFields.length ? missingTradeFields.join(", ") : "none";
+  const paperWatchlistEligible = researchSignal.approvedProfileStatus === "paper_watchlist_candidate";
   const paperSimLabel = paperSimEligibility.eligible ? "Paper Sim: Eligible" : "Paper Sim: Not Eligible";
   const paperSimVariant = paperSimEligibility.eligible ? "success" as const : "warning" as const;
   const phaseOneSignals = useMemo(() => (packet?.signals ?? []).filter((signal) => signal.phase === "phase_1"), [packet?.signals]);
@@ -147,7 +160,7 @@ export function IctAdvisorSummaryPanel({
     .slice()
     .sort((left, right) => {
       const statusWeight = (status?: string) =>
-        status === "approved_research_candidate" ? 3 : status === "watchlist_candidate" ? 2 : status === "rejected_candidate" ? 1 : 0;
+        status === "approved_research_candidate" ? 4 : status === "paper_watchlist_candidate" ? 3 : status === "watchlist_candidate" ? 2 : status === "rejected_candidate" ? 1 : 0;
       return statusWeight(right.approvedProfileDecision?.status) - statusWeight(left.approvedProfileDecision?.status) || right.confidence - left.confidence;
     })[0];
 
@@ -199,9 +212,10 @@ export function IctAdvisorSummaryPanel({
               />
               <AdvisorMini
                 label="Paper Sim"
-                value={paperSimEligibility.eligible ? "Eligible" : "Not Eligible"}
+                value={paperWatchlistEligible ? "Paper watchlist" : paperSimEligibility.eligible ? "Eligible" : "Not Eligible"}
                 detail={paperSimEligibility.eligible ? "No broker order" : paperSimEligibility.reasons[0] ?? "Waiting for approved signal"}
               />
+              <AdvisorMini label="Missing trade fields" value={missingTradeFieldsLabel} detail="target / invalidation / RR" />
               <AdvisorMini label="Confidence" value={pct(currentRead.confidence)} />
               <AdvisorMini label="Signal RR" value={typeof researchSignal.rrEstimate === "number" ? `${researchSignal.rrEstimate.toFixed(2)}R` : "n/a"} detail={typeof researchSignal.confidence === "number" ? pct(researchSignal.confidence) : "n/a"} />
               <AdvisorMini label="Phase 1 / Phase 2" value={`${currentRead.debug.phase1SignalCount}/${currentRead.debug.phase2SignalCount}`} detail="signals evaluated" />
@@ -231,7 +245,7 @@ export function IctAdvisorSummaryPanel({
             </div>
             <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3">
               <p className="line-clamp-2 text-xs leading-5 text-slate-300">
-                Model detected: {currentRead.modelDetected ? `${formatToken(currentRead.modelName)} / ${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : "no"}. Signal: {formatToken(researchSignal.status)} / {formatToken(researchSignal.side)} / execution disabled. {currentRead.topReasons[0] ?? recommended?.summary ?? "ICT advisor summary pending."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
+                Model detected: {currentRead.modelDetected ? `${formatToken(currentRead.modelName)} / ${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : "no"}. Trade status: {formatToken(researchSignal.approvedProfileStatus ?? researchSignal.status)}. Missing: {missingTradeFieldsLabel}. Signal: {formatToken(researchSignal.status)} / {formatToken(researchSignal.side)} / execution disabled. {currentRead.topReasons[0] ?? recommended?.summary ?? "ICT advisor summary pending."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
               </p>
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -314,6 +328,8 @@ export function IctAdvisorSummaryPanel({
             <AdvisorMini label="Decision" value={formatToken(packet.compactSummary.decision)} />
             <AdvisorMini label="Approved profile" value={formatToken(packet.approvedProfileDecision.status)} detail={packet.approvedProfileDecision.profileId.replace(/_/g, " ")} />
             <AdvisorMini label="Research signal" value={formatToken(researchSignal.status)} detail={`${formatToken(researchSignal.side)} / execution disabled`} />
+            <AdvisorMini label="Missing trade fields" value={missingTradeFieldsLabel} detail="target / invalidation / RR" />
+            <AdvisorMini label="Paper watchlist" value={paperWatchlistEligible ? "eligible" : "not eligible"} detail={paperWatchlistEligible ? "paper simulation only" : paperSimEligibility.reasons[0] ?? "approval or structure pending"} />
             <AdvisorMini label="Approval score" value={`${packet.approvedProfileDecision.approvalScore}/100`} />
             <AdvisorMini label="Signal next action" value={researchSignal.nextAction} detail="research-only contract" />
             <AdvisorMini label="Confidence" value={pct(packet.compactSummary.confidence)} />

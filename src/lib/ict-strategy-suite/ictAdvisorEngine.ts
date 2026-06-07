@@ -164,6 +164,8 @@ const compositeBiasFor = (primary: IctBias, htf: Record<string, IctBias>): IctBi
 
 const sideForBias = (bias: IctBias): IctSide => (bias === "bullish" ? "long" : bias === "bearish" ? "short" : "flat");
 
+type CompactLevelCandidate = { price?: number; reason: string };
+
 const signalBase = ({
   brokerSymbol,
   htfTimeframes,
@@ -176,7 +178,7 @@ const signalBase = ({
   htfTimeframes: string[];
   primaryTimeframe: string;
   requestedSymbol: string;
-  signal: Omit<IctAdvisorSignal, "brokerSymbol" | "htfTimeframes" | "phase" | "primaryTimeframe" | "provenance" | "requestedSymbol" | "symbol"> & {
+  signal: Omit<IctAdvisorSignal, "brokerSymbol" | "htfTimeframes" | "phase" | "primaryTimeframe" | "provenance" | "requestedSymbol" | "researchOnly" | "symbol"> & {
     phase?: IctAdvisorSignal["phase"];
   };
   symbol: string;
@@ -188,6 +190,7 @@ const signalBase = ({
   brokerSymbol,
   primaryTimeframe,
   htfTimeframes,
+  researchOnly: true,
   provenance: {
     methodology: "ICT",
     phase: signal.phase ?? "phase_1",
@@ -206,6 +209,173 @@ const targetTooClose = (currentPrice: number, target?: IctAdvisorLiquidityPool, 
   if (!target || !range) return true;
   const distance = Math.abs(target.price - currentPrice);
   return distance <= Math.abs(range.high - range.low) * 0.05;
+};
+
+const finitePrice = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+const isDirectionalSide = (side: IctSide): side is "long" | "short" => side === "long" || side === "short";
+const logicalTargetForSide = (side: "long" | "short", entry: number, target?: number) =>
+  finitePrice(target) && (side === "long" ? target > entry : target < entry);
+const logicalInvalidationForSide = (side: "long" | "short", entry: number, invalidation?: number) =>
+  finitePrice(invalidation) && (side === "long" ? invalidation < entry : invalidation > entry);
+const entryReferenceForSignal = (signal: IctAdvisorSignal, currentPrice: number) =>
+  finitePrice(signal.entryZone?.midpoint)
+    ? signal.entryZone.midpoint
+    : finitePrice(signal.entryZone?.low) && finitePrice(signal.entryZone?.high)
+      ? round((signal.entryZone.low + signal.entryZone.high) / 2)
+      : currentPrice;
+
+const compactEventPrice = (
+  event: IctSessionNarrative["events"][number],
+  preference: "high" | "low" | "mid" | "price"
+) => {
+  if (preference === "high") return event.high ?? event.price;
+  if (preference === "low") return event.low ?? event.price;
+  if (preference === "mid" && finitePrice(event.high) && finitePrice(event.low)) return round((event.high + event.low) / 2);
+  return event.price ?? event.high ?? event.low;
+};
+
+const eventCandidates = (
+  sessionNarrative: IctSessionNarrative,
+  eventTypes: Array<IctSessionNarrative["events"][number]["eventType"]>,
+  preference: "high" | "low" | "mid" | "price",
+  label: string
+) =>
+  sessionNarrative.events
+    .filter((event) => eventTypes.includes(event.eventType))
+    .map((event) => ({
+      price: compactEventPrice(event, preference),
+      reason: `${label}: ${event.eventType}`
+    }));
+
+const rangeFor = (sessionNarrative: IctSessionNarrative, session: IctSessionNarrative["ranges"][number]["session"]) =>
+  sessionNarrative.ranges.find((range) => range.session === session);
+
+const selectLevel = (
+  candidates: CompactLevelCandidate[],
+  side: "long" | "short",
+  entry: number,
+  purpose: "target" | "invalidation"
+) => {
+  const filtered = candidates.filter((candidate): candidate is { price: number; reason: string } => {
+    if (!finitePrice(candidate.price)) return false;
+    return purpose === "target"
+      ? logicalTargetForSide(side, entry, candidate.price)
+      : logicalInvalidationForSide(side, entry, candidate.price);
+  });
+  return filtered.sort((left, right) => Math.abs(left.price - entry) - Math.abs(right.price - entry))[0];
+};
+
+const targetCandidatesFor = (signal: IctAdvisorSignal, sessionNarrative: IctSessionNarrative, entry: number) => {
+  const asia = rangeFor(sessionNarrative, "asia");
+  const london = rangeFor(sessionNarrative, "london");
+  const candidates = ([
+    signal.drawOnLiquidity ? { price: signal.drawOnLiquidity.price, reason: `external liquidity ${signal.drawOnLiquidity.type}` } : undefined,
+    sessionNarrative.activeDealingRange
+      ? {
+          price: signal.side === "long" ? sessionNarrative.activeDealingRange.high : sessionNarrative.activeDealingRange.low,
+          reason: "active dealing range extreme"
+        }
+      : undefined,
+    asia ? { price: signal.side === "long" ? asia.high : asia.low, reason: "Asia session extreme" } : undefined,
+    london ? { price: signal.side === "long" ? london.high : london.low, reason: "London session extreme" } : undefined,
+    sessionNarrative.fvgTarget?.detected
+      ? {
+          price:
+            signal.side === "long" && sessionNarrative.fvgTarget.direction === "premium"
+              ? sessionNarrative.fvgTarget.midpoint ?? sessionNarrative.fvgTarget.high
+              : signal.side === "short" && sessionNarrative.fvgTarget.direction === "discount"
+                ? sessionNarrative.fvgTarget.midpoint ?? sessionNarrative.fvgTarget.low
+                : undefined,
+          reason: `${sessionNarrative.fvgTarget.direction} FVG target`
+        }
+      : undefined,
+    ...eventCandidates(
+      sessionNarrative,
+      signal.side === "long" ? ["premium_fvg_target", "bullish_expansion"] : ["discount_fvg_target", "bearish_expansion"],
+      signal.side === "long" ? "high" : "low",
+      "session model target"
+    )
+  ] as Array<CompactLevelCandidate | undefined>).filter((candidate): candidate is CompactLevelCandidate => Boolean(candidate));
+  return selectLevel(candidates, signal.side as "long" | "short", entry, "target");
+};
+
+const invalidationCandidatesFor = (signal: IctAdvisorSignal, sessionNarrative: IctSessionNarrative, entry: number) => {
+  const asia = rangeFor(sessionNarrative, "asia");
+  const london = rangeFor(sessionNarrative, "london");
+  const mitigation = sessionNarrative.mitigationContext;
+  const candidates = ([
+    mitigation.detected
+      ? {
+          price: signal.side === "long" ? mitigation.zoneLow : mitigation.zoneHigh,
+          reason: "mitigation block boundary"
+        }
+      : undefined,
+    signal.fairValueGap
+      ? {
+          price: signal.side === "long" ? signal.fairValueGap.low : signal.fairValueGap.high,
+          reason: "FVG origin boundary"
+        }
+      : undefined,
+    asia ? { price: signal.side === "long" ? asia.low : asia.high, reason: "Asia session extreme" } : undefined,
+    london ? { price: signal.side === "long" ? london.low : london.high, reason: "London raid/session extreme" } : undefined,
+    sessionNarrative.activeDealingRange
+      ? {
+          price: signal.side === "long" ? sessionNarrative.activeDealingRange.low : sessionNarrative.activeDealingRange.high,
+          reason: "active dealing range invalidation extreme"
+        }
+      : undefined,
+    ...eventCandidates(
+      sessionNarrative,
+      signal.side === "long"
+        ? ["ny_open_consolidation_low_sweep", "sellside_sweep", "london_swept_asia_low"]
+        : ["ny_open_consolidation_high_sweep", "buyside_sweep", "london_swept_asia_high"],
+      signal.side === "long" ? "low" : "high",
+      "session sweep invalidation"
+    )
+  ] as Array<CompactLevelCandidate | undefined>).filter((candidate): candidate is CompactLevelCandidate => Boolean(candidate));
+  return selectLevel(candidates, signal.side as "long" | "short", entry, "invalidation");
+};
+
+const completeSignalTradeStructure = (
+  signal: IctAdvisorSignal,
+  sessionNarrative: IctSessionNarrative,
+  currentPrice: number
+): IctAdvisorSignal => {
+  if (signal.decision !== "research_only" || !isDirectionalSide(signal.side)) return signal;
+  const entry = entryReferenceForSignal(signal, currentPrice);
+  const target = logicalTargetForSide(signal.side, entry, signal.target)
+    ? { price: signal.target, reason: "existing target" }
+    : targetCandidatesFor(signal, sessionNarrative, entry);
+  const invalidation = logicalInvalidationForSide(signal.side, entry, signal.invalidation)
+    ? { price: signal.invalidation, reason: "existing invalidation" }
+    : invalidationCandidatesFor(signal, sessionNarrative, entry);
+  const rrEstimate = estimateRewardRisk({ entry, target: target?.price, invalidation: invalidation?.price });
+  const completed = finitePrice(target?.price) && finitePrice(invalidation?.price) && finitePrice(rrEstimate);
+  const missingReason = completed
+    ? undefined
+    : "Session structure did not provide a safe target/invalidation/RR fallback.";
+  return {
+    ...signal,
+    target: target?.price ?? signal.target,
+    invalidation: invalidation?.price ?? signal.invalidation,
+    rrEstimate: rrEstimate ?? signal.rrEstimate,
+    noTradeReasons: Array.from(
+      new Set(
+        [
+          ...signal.noTradeReasons.filter((reason) => !/Missing target|Missing invalidation|Missing RR|RR estimate is missing/i.test(reason)),
+          missingReason
+        ].filter((reason): reason is string => Boolean(reason))
+      )
+    ),
+    riskNotes: Array.from(
+      new Set([
+        ...signal.riskNotes,
+        completed
+          ? `Target/invalidation/RR completed from compact session structure (${target.reason}; ${invalidation.reason}).`
+          : undefined
+      ].filter((reason): reason is string => Boolean(reason)))
+    )
+  };
 };
 
 const resolveHtfSources = async (snapshot: ResearchRuntimeSnapshot) => {
@@ -507,9 +677,12 @@ export const buildIctAdvisorSignals = ({
           sessionTopReasons: sessionNarrative.topReasons
         }
       : signal;
+    const signalWithCompletedStructure = sessionNarrative
+      ? completeSignalTradeStructure(signalWithSessionNarrative, sessionNarrative, currentPrice)
+      : signalWithSessionNarrative;
     const smt = shouldEvaluateSmt
       ? evaluateIndexSmt({
-          candidateSide: signalWithSessionNarrative.side,
+          candidateSide: signalWithCompletedStructure.side,
           candlesByBrokerSymbol: comparisonCandles,
           htfTimeframes,
           primarySymbol: brokerSymbol,
@@ -518,11 +691,11 @@ export const buildIctAdvisorSignals = ({
       : undefined;
     const signalWithSmt: IctAdvisorSignal = smt
       ? {
-          ...signalWithSessionNarrative,
+          ...signalWithCompletedStructure,
           smt,
-          confidence: clamp(signalWithSessionNarrative.confidence + smt.confidenceAdjustment)
+          confidence: clamp(signalWithCompletedStructure.confidence + smt.confidenceAdjustment)
         }
-      : signalWithSessionNarrative;
+      : signalWithCompletedStructure;
     const newsSessionRisk = evaluateNewsSessionRisk(signalWithSmt, newsSessionRiskContext);
     const signalWithRisk = applyNewsSessionRiskToSignal(signalWithSmt, newsSessionRisk);
     const approvedProfileDecision = applyNewsSessionRiskToApprovedDecision(

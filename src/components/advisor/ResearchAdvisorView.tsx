@@ -142,6 +142,8 @@ const createAdvisorMessage = (role: AdvisorChatMessage["role"], content: string)
 const approvalVariant = (status?: IctAdvisorPacket["approvedProfileDecision"]["status"]) =>
   status === "approved_research_candidate"
     ? "success" as const
+    : status === "paper_watchlist_candidate"
+      ? "warning" as const
     : status === "watchlist_candidate"
       ? "warning" as const
       : status === "rejected_candidate" || status === "no_trade"
@@ -149,6 +151,7 @@ const approvalVariant = (status?: IctAdvisorPacket["approvedProfileDecision"]["s
         : "secondary" as const;
 const approvalLabel = (status?: IctAdvisorPacket["approvedProfileDecision"]["status"]) => {
   if (status === "approved_research_candidate") return "Approved";
+  if (status === "paper_watchlist_candidate") return "Paper Watchlist";
   if (status === "watchlist_candidate") return "Watchlist";
   if (status === "rejected_candidate") return "Rejected";
   if (status === "no_trade") return "No Trade";
@@ -1118,11 +1121,18 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
   const statusText =
     currentRead.approvedStatus === "approved_research_candidate"
       ? "Approved research candidate"
-      : currentRead.approvedStatus === "watchlist_candidate"
-        ? "Watchlist"
-        : currentRead.approvedStatus === "rejected_candidate"
-          ? "Rejected"
-          : "No Trade";
+      : currentRead.approvedStatus === "paper_watchlist_candidate"
+        ? "Paper-watchlist candidate"
+        : currentRead.approvedStatus === "watchlist_candidate"
+          ? "Watchlist"
+          : currentRead.approvedStatus === "rejected_candidate"
+            ? "Rejected"
+            : "No Trade";
+  const missingTradeFields = [
+    typeof currentRead.target === "number" ? undefined : "target",
+    typeof currentRead.invalidation === "number" ? undefined : "invalidation",
+    typeof currentRead.rrEstimate === "number" ? undefined : "RR"
+  ].filter((field): field is string => Boolean(field));
 
   return (
     <section data-testid="ict-current-read-panel" className="rounded-[24px] border border-cyan-300/15 bg-[radial-gradient(circle_at_16%_0%,rgba(34,211,238,0.13),transparent_36%),linear-gradient(135deg,rgba(15,23,42,0.92),rgba(2,6,23,0.94))] p-5 shadow-[0_0_55px_rgba(8,145,178,0.08)]">
@@ -1164,6 +1174,8 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
         <AdvisorReadout label="SMT" value={formatToken(currentRead.smtStatus)} />
         <AdvisorReadout label="Risk" value={formatToken(currentRead.riskStatus)} />
         <AdvisorReadout label="RR / location" value={rr(currentRead.rrEstimate)} detail={formatToken(currentRead.dealingRangeLocation)} />
+        <AdvisorReadout label="Missing trade fields" value={missingTradeFields.length ? missingTradeFields.join(", ") : "none"} detail="target / invalidation / RR" />
+        <AdvisorReadout label="Paper watchlist" value={currentRead.approvedStatus === "paper_watchlist_candidate" ? "eligible" : "not eligible"} detail="paper simulation only; no readiness promotion" />
         <AdvisorReadout label="Latest replay" value={currentRead.latestReplayStatus ?? "none saved"} detail="manual result" />
         <AdvisorReadout
           label="Latest Monte Carlo"

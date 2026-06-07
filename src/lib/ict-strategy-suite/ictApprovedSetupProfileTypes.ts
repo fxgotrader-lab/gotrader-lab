@@ -13,6 +13,7 @@ import type {
 
 export type IctApprovedCandidateStatus =
   | "approved_research_candidate"
+  | "paper_watchlist_candidate"
   | "watchlist_candidate"
   | "rejected_candidate"
   | "no_trade";
@@ -123,6 +124,7 @@ export interface IctApprovedSetupProfileRunSummary {
   researchOnly: true;
   totalSignalsBefore: number;
   totalApproved: number;
+  totalPaperWatchlist: number;
   totalWatchlist: number;
   totalRejected: number;
   totalNoTrade: number;

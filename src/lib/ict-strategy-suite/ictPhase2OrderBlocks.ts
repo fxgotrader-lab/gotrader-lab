@@ -341,6 +341,7 @@ export const buildPhase2BaseSignal = ({
     brokerSymbol: context.brokerSymbol,
     primaryTimeframe: context.primaryTimeframe,
     htfTimeframes: Object.keys(context.bias.htf),
+    researchOnly: true,
     side,
     decision,
     confidence,
@@ -388,4 +389,3 @@ export const buildPhase2BaseSignal = ({
     )
   };
 };
-

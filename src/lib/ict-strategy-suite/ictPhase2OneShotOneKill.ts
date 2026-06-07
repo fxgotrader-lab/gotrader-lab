@@ -71,7 +71,12 @@ export const evaluateIctPhase2OneShotOneKill = (context: IctPhase2SignalContext)
     ]
   });
   const profileStatus = signal.approvedProfileDecision?.status;
-  if (valid && profileStatus !== "approved_research_candidate" && profileStatus !== "watchlist_candidate") {
+  if (
+    valid &&
+    profileStatus !== "approved_research_candidate" &&
+    profileStatus !== "paper_watchlist_candidate" &&
+    profileStatus !== "watchlist_candidate"
+  ) {
     return {
       ...signal,
       decision: "no_trade",
@@ -87,4 +92,3 @@ export const evaluateIctPhase2OneShotOneKill = (context: IctPhase2SignalContext)
   }
   return signal;
 };
-

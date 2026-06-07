@@ -14,6 +14,7 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictStrategySuiteTypes.ts" },
   { root: sourceRoot, file: "ictAdvisorTypes.ts" },
   { root: sourceRoot, file: "ictSessionNarrativeTypes.ts" },
+  { root: sourceRoot, file: "ictGrinchModelTypes.ts" },
   { root: sourceRoot, file: "ictPhase2Types.ts" },
   { root: sourceRoot, file: "ictReplayValidationTypes.ts" },
   { root: sourceRoot, file: "ictReplayDiagnosticsTypes.ts" },
@@ -109,6 +110,7 @@ const baseSignal = (overrides = {}) => ({
   brokerSymbol: "USTECH",
   primaryTimeframe: "5m",
   htfTimeframes: ["15m", "1h"],
+  researchOnly: true,
   side: "long",
   decision: "research_only",
   confidence: 0.75,
@@ -329,10 +331,15 @@ async function main() {
     strict
   );
   assert.equal(noTrade.status, "no_trade", "no-trade input should stay no_trade");
+  assert.doesNotMatch(noTrade.rejectionReasons.join(" "), /Original signal is not research-only/i);
 
   const watchlist = suite.evaluateApprovedSetupProfile(baseSignal({ confidence: 0.68 }), strict);
-  assert.equal(watchlist.status, "watchlist_candidate", "near confidence miss should produce watchlist");
+  assert.equal(watchlist.status, "paper_watchlist_candidate", "near confidence miss with complete structure should produce paper watchlist");
   assert.match(watchlist.watchlistReasons.join(" "), /Confidence/i);
+  assert.match(watchlist.watchlistReasons.join(" "), /Paper watchlist eligible/i);
+
+  const plainWatchlist = suite.evaluateApprovedSetupProfile(baseSignal({ confidence: 0.68, target: undefined }), strict);
+  assert.equal(plainWatchlist.status, "watchlist_candidate", "near miss without full structure should remain ordinary watchlist");
 
   const unsafe = suite.evaluateApprovedSetupProfile(
     {
@@ -415,6 +422,7 @@ async function main() {
   assert.equal(summaries[0].profileId, "gotrader_ict_phase1_strict");
   assert.equal(summaries[0].totalSignalsBefore, 2);
   assert.equal(summaries[0].totalApproved, 1);
+  assert.equal(summaries[0].totalPaperWatchlist, 0);
   assert.equal(summaries[0].totalRejected, 1);
   assert.equal(summaries[0].approvedTargetFirstRate, 1);
   const journalEvent = suite.buildIctApprovedSetupProfileJournalEvent({ profileSummary: summaries[0], runId: "test_run" });
@@ -423,6 +431,10 @@ async function main() {
   assert.equal(journalEvent.authority.executionAuthority, "none");
   assert.equal(journalEvent.safety.rawCandlesExcluded, true);
   assert.doesNotMatch(JSON.stringify(journalEvent), /"candles"\s*:/i);
+  const grinchInventory = suite.summarizeIctGrinchModelInventory();
+  assert.equal(grinchInventory.researchOnly, true);
+  assert.equal(grinchInventory.authority.executionAuthority, "none");
+  assert.ok(suite.ICT_GRINCH_MODEL_CONTRACTS.some((model) => model.id === "grinch_reversal" && model.missingDetailRequired));
 
   process.stdout.write("GoTrader ICT Approved Setup Profile smoke test passed.\n");
   process.stdout.write(`Strict approval status: ${approved.status}\n`);

@@ -15,6 +15,7 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictStrategySuiteTypes.ts" },
   { root: sourceRoot, file: "ictAdvisorTypes.ts" },
   { root: sourceRoot, file: "ictSessionNarrativeTypes.ts" },
+  { root: sourceRoot, file: "ictGrinchModelTypes.ts" },
   { root: sourceRoot, file: "ictPhase2Types.ts" },
   { root: sourceRoot, file: "ictStrategySuiteJournal.ts" },
   { root: sourceRoot, file: "ictBrowserResearchLimits.ts" },
@@ -519,7 +520,7 @@ async function main() {
 
   const strictProfile = suite.getDefaultApprovedSetupProfiles()[0];
   const phase1Decision = suite.evaluateApprovedSetupProfile(baseSignal(), strictProfile);
-  assert.ok(["approved_research_candidate", "watchlist_candidate", "rejected_candidate", "no_trade"].includes(phase1Decision.status), "Phase 1 candidate should pass through approved profile evaluation");
+  assert.ok(["approved_research_candidate", "paper_watchlist_candidate", "watchlist_candidate", "rejected_candidate", "no_trade"].includes(phase1Decision.status), "Phase 1 candidate should pass through approved profile evaluation");
   assert.equal(suite.assertIctApprovedSetupDecisionIsCompact(phase1Decision).ok, true);
   assertAuthorityNone(phase1Decision, "approved setup profile");
 

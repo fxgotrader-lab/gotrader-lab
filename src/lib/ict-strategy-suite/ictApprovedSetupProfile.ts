@@ -244,6 +244,7 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
       : "not_applicable";
   const liquidityTargetType = replay ? input.liquidityTargetType : input.drawOnLiquidity?.type;
   const noTradeReasons = input.noTradeReasons ?? [];
+  const researchOnly = input.researchOnly === true || input.provenance?.researchOnly === true;
   const hasDisplacement = replay
     ? input.strategyId === "ict-fvg-displacement" ||
       input.strategyId === "ict-order-block-taxonomy" ||
@@ -306,6 +307,7 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
     mixedBias,
     noTradeReasons,
     primaryTimeframe: input.primaryTimeframe,
+    researchOnly,
     requestedSymbol: input.requestedSymbol,
     rrEstimate: input.rrEstimate ?? (replay ? input.tradePath.rrAchieved : undefined),
     session: replay ? sessionForTimestamp(input.tradePath.signalTime) : "current",
@@ -396,7 +398,7 @@ export const evaluateApprovedSetupProfile = (
 
   if (normalized.hasForbiddenField) hardRejects.push("Input contains a forbidden unsafe field.");
   if (!strategyIds.has(normalized.strategyId)) hardRejects.push("Unknown ICT strategy id.");
-  if (normalized.decision !== "research_only") hardRejects.push("Original signal is not research-only.");
+  if (!normalized.researchOnly) hardRejects.push("Original candidate is not marked research-only.");
   if (normalized.side !== "long" && normalized.side !== "short") hardRejects.push("Signal is not directional.");
   if (sessionCalibrated && !normalized.hasTarget) hardRejects.push("Target is missing.");
   if (sessionCalibrated && !normalized.hasInvalidation) hardRejects.push("Invalidation is missing.");
@@ -501,7 +503,7 @@ export const evaluateApprovedSetupProfile = (
     watchlistReasons.push(`Session narrative depth is ${normalized.dataDepthStatus}.`);
   }
 
-  const status =
+  const baseStatus =
     normalized.decision === "no_trade" || normalized.side === "flat"
       ? "no_trade"
       : hardRejects.length
@@ -509,6 +511,25 @@ export const evaluateApprovedSetupProfile = (
         : watchlistReasons.length
           ? "watchlist_candidate"
           : "approved_research_candidate";
+  const paperWatchlistEligible =
+    baseStatus === "watchlist_candidate" &&
+    normalized.hasTarget &&
+    normalized.hasInvalidation &&
+    typeof normalized.rrEstimate === "number" &&
+    typeof normalized.rawConfidence === "number" &&
+    normalized.researchOnly === true &&
+    normalized.sessionNarrativeProfile !== "range_bound" &&
+    normalized.sessionNarrativeProfile !== "insufficient_data" &&
+    !directionContradictsSide(normalized.sessionDirectionalRead, normalized.side) &&
+    normalized.newsSessionRisk?.riskGovernorAction !== "reject_candidate" &&
+    normalized.newsSessionRisk?.riskGovernorAction !== "no_trade" &&
+    normalized.newsSessionRisk?.newsRiskLevel !== "blocked" &&
+    normalized.newsSessionRisk?.newsRiskLevel !== "high" &&
+    normalized.newsSessionRisk?.sessionRiskState !== "avoid";
+  if (paperWatchlistEligible) {
+    watchlistReasons.push("Paper watchlist eligible: complete target/invalidation/RR, but approval remains blocked by watchlist evidence.");
+  }
+  const status = paperWatchlistEligible ? "paper_watchlist_candidate" : baseStatus;
 
   return sanitizeApprovedSetupDecision({
     profileId: profile.id,
@@ -613,6 +634,7 @@ export const buildApprovedSetupProfileRunSummary = (
     researchOnly: true,
     totalSignalsBefore,
     totalApproved: decisions.filter((decision) => decision.status === "approved_research_candidate").length,
+    totalPaperWatchlist: decisions.filter((decision) => decision.status === "paper_watchlist_candidate").length,
     totalWatchlist: decisions.filter((decision) => decision.status === "watchlist_candidate").length,
     totalRejected: decisions.filter((decision) => decision.status === "rejected_candidate").length,
     totalNoTrade: decisions.filter((decision) => decision.status === "no_trade").length,

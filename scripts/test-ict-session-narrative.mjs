@@ -13,6 +13,7 @@ const sourceFiles = [
   "ictStrategySuiteTypes.ts",
   "ictAdvisorTypes.ts",
   "ictSessionNarrativeTypes.ts",
+  "ictGrinchModelTypes.ts",
   "ictStrategySuiteHelpers.ts",
   "ictSessionNarrative.ts",
   "ictApprovedSetupProfileTypes.ts",

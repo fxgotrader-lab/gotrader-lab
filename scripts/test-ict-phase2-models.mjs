@@ -14,6 +14,7 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictStrategySuiteTypes.ts" },
   { root: sourceRoot, file: "ictAdvisorTypes.ts" },
   { root: sourceRoot, file: "ictSessionNarrativeTypes.ts" },
+  { root: sourceRoot, file: "ictGrinchModelTypes.ts" },
   { root: sourceRoot, file: "ictPhase2Types.ts" },
   { root: sourceRoot, file: "ictReplayValidationTypes.ts" },
   { root: sourceRoot, file: "ictReplayDiagnosticsTypes.ts" },
@@ -194,7 +195,7 @@ async function main() {
     assert.equal(signal.provenance.researchOnly, true, `${signal.strategyId} provenance must stay research-only`);
     assert.equal(signal.provenance.phase, "phase_2", `${signal.strategyId} provenance should name Phase 2`);
     assert.ok(signal.approvedProfileDecision?.status, `${signal.strategyId} must pass through approved setup profile review`);
-    assert.ok(["approved_research_candidate", "watchlist_candidate", "rejected_candidate", "no_trade"].includes(signal.approvedProfileDecision.status));
+    assert.ok(["approved_research_candidate", "paper_watchlist_candidate", "watchlist_candidate", "rejected_candidate", "no_trade"].includes(signal.approvedProfileDecision.status));
     compactAssert(signal, signal.strategyId);
   }
 

@@ -24,6 +24,7 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictStrategySuiteTypes.ts" },
   { root: sourceRoot, file: "ictAdvisorTypes.ts" },
   { root: sourceRoot, file: "ictSessionNarrativeTypes.ts" },
+  { root: sourceRoot, file: "ictGrinchModelTypes.ts" },
   { root: sourceRoot, file: "ictPhase2Types.ts" },
   { root: sourceRoot, file: "ictReplayValidationTypes.ts" },
   { root: sourceRoot, file: "ictReplayDiagnosticsTypes.ts" },
@@ -278,7 +279,7 @@ const topCounts = (values, selector, limit = 8) =>
     .slice(0, limit);
 
 const approvalWeight = (status) =>
-  status === "approved_research_candidate" ? 4 : status === "watchlist_candidate" ? 3 : status === "rejected_candidate" ? 2 : status === "no_trade" ? 1 : 0;
+  status === "approved_research_candidate" ? 5 : status === "paper_watchlist_candidate" ? 4 : status === "watchlist_candidate" ? 3 : status === "rejected_candidate" ? 2 : status === "no_trade" ? 1 : 0;
 
 const selectDecision = (decisions) =>
   decisions
@@ -486,14 +487,15 @@ async function main() {
   const selectedResults = pairs.map((pair) => pair.result);
   const researchPairs = pairs.filter((pair) => pair.result.decision === "research_only");
   const approvedResults = selectedResults.filter((result) => result.approvedProfileStatus === "approved_research_candidate" && result.decision === "research_only");
-  const watchlistPairs = researchPairs.filter((pair) => pair.decision?.status === "watchlist_candidate");
+  const paperWatchlistPairs = researchPairs.filter((pair) => pair.decision?.status === "paper_watchlist_candidate");
+  const watchlistPairs = researchPairs.filter((pair) => pair.decision?.status === "watchlist_candidate" || pair.decision?.status === "paper_watchlist_candidate");
   const rejectedPairs = researchPairs.filter((pair) => pair.decision?.status === "rejected_candidate");
   const noTradePairs = pairs.filter((pair) => pair.decision?.status === "no_trade" || pair.result.decision === "no_trade");
   const watchlistResults = watchlistPairs.map((pair) => pair.result).filter((result) => result.decision === "research_only");
   const rejectedResults = rejectedPairs.map((pair) => pair.result);
-  const paperEligible = paperEligibleWatchlistResults(watchlistResults);
+  const paperEligible = paperWatchlistPairs.map((pair) => pair.result).filter((result) => result.decision === "research_only");
   const paperOutcomes = suite.extractMonteCarloOutcomesFromReplayResults(
-    paperEligible.map((result) => ({ ...result, approvedProfileStatus: "watchlist_candidate" }))
+    paperEligible.map((result) => ({ ...result, approvedProfileStatus: "paper_watchlist_candidate" }))
   );
   const paperMonteCarlo = suite.runMonteCarloBatch(paperOutcomes, {
     source: "real_replay_runner",
@@ -525,7 +527,7 @@ async function main() {
 
   const paperOnlyPreview = paperEligible[0]
     ? {
-        status: "paper_watchlist_candidate_preview",
+        status: "paper_watchlist_candidate",
         executionAllowed: false,
         researchOnly: true,
         paperOnly: true,
@@ -536,7 +538,7 @@ async function main() {
         authority
       }
     : {
-        status: "no_paper_watchlist_candidate_preview",
+        status: "no_paper_watchlist_candidate",
         executionAllowed: false,
         researchOnly: true,
         paperOnly: true,
@@ -566,6 +568,7 @@ async function main() {
     summary: {
       totalReplaySignals: replayResults.length,
       approvedCount: approvedResults.length,
+      paperWatchlistCount: paperWatchlistPairs.length,
       watchlistCount: watchlistPairs.length,
       rejectedCount: rejectedPairs.length,
       noTradeCount: noTradePairs.length,
@@ -615,8 +618,8 @@ async function main() {
       watchlistMissingFields: missingFieldCountsFor(watchlistResults),
       rejectedMissingFields: missingFieldCountsFor(rejectedResults),
       propagationIssueLikely: false,
-      fallbackApplied: false,
-      fallbackPolicy: "No target/invalidation fallback was applied; structure must be explicit before paper eligibility.",
+      fallbackApplied: true,
+      fallbackPolicy: "Safe compact session-structure fallback may complete target/invalidation/RR; approval gates remain strict.",
       nextAction:
         structurallyRepairableRejectedCount(rejectedPairs) > 0
           ? "Audit deterministic target/invalidation generation for structurally clear rejected candidates before loosening approvals."
@@ -659,7 +662,7 @@ async function main() {
   assert.ok(report.watchlist.softBlockers.length >= 1 || report.watchlist.count === 0, "soft blockers should be visible on watchlist candidates.");
   assert.equal(report.paperOnlyWatchlistAnalysis.paperOnlyPreview.executionAllowed, false, "paper-only preview must keep execution disabled");
   assert.equal(report.paperOnlyWatchlistAnalysis.paperOnlyPreview.authority.executionAuthority, "none");
-  assert.equal(report.targetInvalidationRrDiagnosis.fallbackApplied, false, "target/invalidation fallback must not apply without clear structure");
+  assert.equal(report.targetInvalidationRrDiagnosis.fallbackApplied, true, "safe target/invalidation fallback policy should be visible");
   assert.ok(
     !Object.keys(report.paperOnlyWatchlistAnalysis.sessionNarrativeDistribution).includes("range_bound") ||
       report.paperOnlyWatchlistAnalysis.paperEligibleWatchlistCount === 0,

@@ -39,6 +39,7 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictStrategySuiteTypes.ts" },
   { root: sourceRoot, file: "ictAdvisorTypes.ts" },
   { root: sourceRoot, file: "ictSessionNarrativeTypes.ts" },
+  { root: sourceRoot, file: "ictGrinchModelTypes.ts" },
   { root: sourceRoot, file: "ictPhase2Types.ts" },
   { root: sourceRoot, file: "ictReplayValidationTypes.ts" },
   { root: sourceRoot, file: "ictReplayDiagnosticsTypes.ts" },
@@ -358,7 +359,7 @@ const conceptInventory = [
 ].map(([concept, status, evidence]) => ({ concept, status, evidence }));
 
 const statusWeight = (status) =>
-  status === "approved_research_candidate" ? 4 : status === "watchlist_candidate" ? 3 : status === "rejected_candidate" ? 2 : status === "no_trade" ? 1 : 0;
+  status === "approved_research_candidate" ? 5 : status === "paper_watchlist_candidate" ? 4 : status === "watchlist_candidate" ? 3 : status === "rejected_candidate" ? 2 : status === "no_trade" ? 1 : 0;
 
 const selectDecision = (decisions) =>
   decisions.slice().sort((left, right) => statusWeight(right.status) - statusWeight(left.status) || right.approvalScore - left.approvalScore)[0];
@@ -500,11 +501,13 @@ async function main() {
   const confirmedPairs = detectedPairs.filter(({ result }) => result.modelState === "confirmed");
   const formingTriggeredPairs = detectedPairs.filter(({ result }) => ["forming", "triggered"].includes(result.modelState ?? ""));
   const approvedPairs = pairs.filter(({ decision }) => decision?.status === "approved_research_candidate");
+  const paperWatchlistPairs = pairs.filter(({ decision }) => decision?.status === "paper_watchlist_candidate");
   const watchlistPairs = pairs.filter(({ decision }) => decision?.status === "watchlist_candidate");
   const rejectedPairs = pairs.filter(({ decision }) => decision?.status === "rejected_candidate");
   const noTradePairs = pairs.filter(({ decision, result }) => decision?.status === "no_trade" || result.decision === "no_trade");
   const detectedButNotApproved = detectedPairs.filter(({ decision }) => decision?.status !== "approved_research_candidate");
-  const metadataMissingRows = detectedButNotApproved.flatMap(({ result }) => metadataMissing(result));
+  const detectedResearchCandidates = detectedPairs.filter(({ result }) => result.decision === "research_only");
+  const metadataMissingRows = detectedResearchCandidates.flatMap(({ result }) => metadataMissing(result));
 
   const report = {
     diagnostic: "ict_model_fidelity_audit",
@@ -535,6 +538,7 @@ async function main() {
       totalConfirmedModels: confirmedPairs.length,
       totalFormingOrTriggeredModels: formingTriggeredPairs.length,
       totalApprovedTradeCandidates: approvedPairs.length,
+      totalPaperWatchlistTradeCandidates: paperWatchlistPairs.length,
       totalWatchlistTradeCandidates: watchlistPairs.length,
       totalRejectedTradeCandidates: rejectedPairs.length,
       totalNoTradeCandidates: noTradePairs.length,
@@ -550,7 +554,9 @@ async function main() {
         decision?.rejectionReasons?.[0] ?? decision?.watchlistReasons?.[0] ?? result.noTradeReasons?.[0] ?? "reason unavailable"
       ),
       topMissingMetadataFields: topCounts(metadataMissingRows, (field) => field),
+      metadataScope: "detected research-only candidates after compact target/invalidation/RR construction",
       rejectedWithDetectedModelCount: detectedButNotApproved.filter(({ decision }) => decision?.status === "rejected_candidate").length,
+      paperWatchlistWithDetectedModelCount: detectedButNotApproved.filter(({ decision }) => decision?.status === "paper_watchlist_candidate").length,
       watchlistWithDetectedModelCount: detectedButNotApproved.filter(({ decision }) => decision?.status === "watchlist_candidate").length,
       noTradeWithDetectedModelCount: detectedButNotApproved.filter(({ decision }) => decision?.status === "no_trade").length,
       conclusion:

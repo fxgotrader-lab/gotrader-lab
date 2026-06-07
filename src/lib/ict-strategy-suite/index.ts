@@ -10,6 +10,7 @@ export * from "./ictCurrentReadTypes";
 export * from "./ictCurrentRead";
 export * from "./ictSessionNarrativeTypes";
 export * from "./ictSessionNarrative";
+export * from "./ictGrinchModelTypes";
 export * from "./ictPhase2Types";
 export * from "./ictPhase2OrderBlocks";
 export * from "./ictPhase2BreadAndButter";
