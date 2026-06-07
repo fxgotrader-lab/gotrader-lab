@@ -130,6 +130,16 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.locator("main")).toContainText(/Loop progress/i);
   });
 
+  test("dashboard Results tab and /performance share the upgraded results page", async ({ page }) => {
+    await gotoRoute(page, "/performance");
+    await expectUpgradedResultsPage(page);
+
+    await gotoRoute(page, "/dashboard");
+    await page.getByRole("button", { name: "Results", exact: true }).click();
+    await expectUpgradedResultsPage(page);
+    await expectNoVisibleExecutionControls(page);
+  });
+
   test("ICT Strategy Suite advisor panels render in advisor workspace and dashboard", async ({ page }) => {
     await gotoRoute(page, "/advisor");
     await expect(page.locator("main")).toContainText(/Research Advisor/i);
@@ -273,6 +283,20 @@ async function expectNoVisibleExecutionControls(page: Page) {
     const locator = page.getByRole("button", { name: label }).or(page.getByRole("link", { name: label }));
     await expect(locator).toHaveCount(0);
   }
+}
+
+async function expectUpgradedResultsPage(page: Page) {
+  const main = page.locator("main");
+  await expect(page.getByTestId("performance-results-page")).toBeVisible();
+  await expect(page.getByTestId("results-calendar")).toBeVisible();
+  await expect(page.getByTestId("results-calendar")).toContainText(/Monthly P\/L/i);
+  await expect(main).toContainText(/Performance Results/i);
+  await expect(main).toContainText(/Performance Curve/i);
+  await expect(main).toContainText(/Outcome Log/i);
+  await expect(main).toContainText(/Execution authority none/i);
+  await expect(main).not.toContainText(/Simulation results cockpit/i);
+  await expect(main).not.toContainText(/Monte Carlo Robustness|Run Real Replay Review|Run Market Scorecard/i);
+  await expect(main).not.toContainText(/"candles"\s*:|accountNumber|orderId|positionId/i);
 }
 
 function isExpectedOptionalLocalBridgeError(message: string) {

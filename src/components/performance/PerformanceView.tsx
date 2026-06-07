@@ -112,7 +112,7 @@ export function PerformanceView({ state }: { state: LabState }) {
   }, [state]);
 
   return (
-    <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-5 px-3 py-4 text-slate-100 sm:px-5 lg:px-6">
+    <div data-testid="performance-results-page" className="mx-auto flex w-full max-w-[1800px] flex-col gap-5 px-3 py-4 text-slate-100 sm:px-5 lg:px-6">
       <header className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-300">Research Results</p>
