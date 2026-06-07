@@ -259,6 +259,7 @@ async function main() {
       "build_multi_timeframe_context",
       "build_current_read",
       "detect_session_model",
+      "detect_market_opportunity",
       "run_phase_one",
       "run_phase_two",
       "run_smt",

@@ -272,6 +272,16 @@ export function IctAdvisorSummaryPanel({
                 detail={currentRead.modelDetected ? `${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : currentRead.modelMissingEvidence?.[0] ?? currentRead.topReasons[0] ?? "Detector ran; no complete model."}
               />
               <AdvisorMini
+                label="Market opportunity"
+                value={currentRead.opportunityDetected ? formatToken(currentRead.opportunityType) : "none"}
+                detail={`${formatToken(currentRead.opportunityStage)} / ${formatToken(currentRead.opportunityQuality)}`}
+              />
+              <AdvisorMini
+                label="Opportunity lane"
+                value={formatToken(currentRead.opportunityLaneRecommendation)}
+                detail={currentRead.opportunityNextAction}
+              />
+              <AdvisorMini
                 label="FVG target"
                 value={currentRead.fvgTargetDetected ? formatToken(currentRead.fvgTargetDirection) : "missing"}
                 detail={currentRead.fvgTargetReason}
@@ -421,6 +431,16 @@ export function IctAdvisorSummaryPanel({
                   ? `${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)} / ${pct(currentRead.modelConfidence)}`
                   : currentRead.modelMissingEvidence?.[0] ?? currentRead.topReasons[0] ?? "Detector ran; no complete model."
               }
+            />
+            <AdvisorMini
+              label="Market opportunity"
+              value={currentRead.opportunityDetected ? formatToken(currentRead.opportunityType) : "none"}
+              detail={`${formatToken(currentRead.opportunityStage)} / ${formatToken(currentRead.opportunityQuality)} / ${formatToken(currentRead.opportunityLaneRecommendation)}`}
+            />
+            <AdvisorMini
+              label="Opportunity next"
+              value={currentRead.opportunityNextAction}
+              detail={currentRead.opportunityBlockers[0] ?? currentRead.opportunityMissingEvidence[0] ?? "compact opportunity read"}
             />
             <AdvisorMini
               label="NY mitigation"

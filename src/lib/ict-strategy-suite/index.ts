@@ -8,6 +8,8 @@ export * from "./ictAdvisorJournal";
 export * from "./ictAdvisorEngine";
 export * from "./ictMarketAnalysisContextTypes";
 export * from "./ictMarketAnalysisContext";
+export * from "./ictOpportunityDetectionTypes";
+export * from "./ictOpportunityDetection";
 export * from "./ictCurrentReadTypes";
 export * from "./ictCurrentRead";
 export * from "./ictSessionNarrativeTypes";

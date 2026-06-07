@@ -9,6 +9,15 @@ import type {
 } from "./ictMarketAnalysisContextTypes";
 import type { IctMonteCarloRobustnessRating } from "./ictMonteCarloTypes";
 import type {
+  IctDetectedOpportunity,
+  IctOpportunityDirection,
+  IctOpportunityLaneRecommendation,
+  IctOpportunityQuality,
+  IctOpportunityStage,
+  IctOpportunityTradeIdea,
+  IctOpportunityType
+} from "./ictOpportunityDetectionTypes";
+import type {
   IctDataDepthStatus,
   IctSessionDirectionalRead,
   IctSessionModelName,
@@ -121,6 +130,18 @@ export interface IctCurrentRead {
   modelConfidence?: number;
   modelReasons?: string[];
   modelMissingEvidence?: string[];
+  opportunity?: IctDetectedOpportunity;
+  opportunityDetected: boolean;
+  opportunityType: IctOpportunityType;
+  opportunityStage: IctOpportunityStage;
+  opportunityQuality: IctOpportunityQuality;
+  opportunityDirection: IctOpportunityDirection;
+  opportunityModelName?: string;
+  opportunityLaneRecommendation: IctOpportunityLaneRecommendation;
+  opportunityNextAction: string;
+  opportunityMissingEvidence: string[];
+  opportunityBlockers: string[];
+  opportunityTradeIdea?: IctOpportunityTradeIdea;
   sessionMitigationDetected?: boolean;
   fvgTargetDetected?: boolean;
   fvgTargetDirection?: "premium" | "discount" | "unknown";
@@ -160,6 +181,11 @@ export interface IctCurrentRead {
     sessionCandlesCount?: number;
     sessionNarrativeStatus?: string;
     modelDetectorUsed?: string;
+    opportunityDetectorUsed?: string;
+    opportunityType?: IctOpportunityType;
+    opportunityStage?: IctOpportunityStage;
+    opportunityQuality?: IctOpportunityQuality;
+    opportunityLaneRecommendation?: IctOpportunityLaneRecommendation;
     fvgTargetStatus?: string;
     targetConstructionStatus?: string;
     invalidationConstructionStatus?: string;

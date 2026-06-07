@@ -9,6 +9,13 @@ import type {
   IctWeeklyBiasStatus
 } from "./ictMarketAnalysisContextTypes";
 import type { IctLatestMonteCarloSnapshot } from "./ictLatestResearchStateTypes";
+import type {
+  IctDetectedOpportunity,
+  IctOpportunityLaneRecommendation,
+  IctOpportunityQuality,
+  IctOpportunityStage,
+  IctOpportunityType
+} from "./ictOpportunityDetectionTypes";
 import type { IctResearchSignal } from "./ictSignalContractTypes";
 
 export type IctActivateMarketStepId =
@@ -25,6 +32,7 @@ export type IctActivateMarketStepId =
   | "build_multi_timeframe_context"
   | "build_current_read"
   | "detect_session_model"
+  | "detect_market_opportunity"
   | "run_phase_one"
   | "run_phase_two"
   | "run_smt"
@@ -83,6 +91,10 @@ export interface IctActivateMarketLatestSummary {
   missingTimeframes?: IctAnalysisTimeframe[];
   modelName?: string;
   modelLane?: string;
+  opportunityType?: IctOpportunityType;
+  opportunityStage?: IctOpportunityStage;
+  opportunityQuality?: IctOpportunityQuality;
+  opportunityLaneRecommendation?: IctOpportunityLaneRecommendation;
   nextAction?: string;
   executionAllowed: false;
   researchOnly: true;
@@ -114,6 +126,7 @@ export interface IctActivateMarketResult {
   advisorPacket?: IctAdvisorPacket;
   marketAnalysisContext?: IctMarketAnalysisContext;
   currentRead?: IctCurrentRead;
+  opportunity?: IctDetectedOpportunity;
   signalContract?: IctResearchSignal;
   operatorWorkflow?: IctActivateMarketOperatorWorkflow;
 
@@ -135,6 +148,12 @@ export interface IctActivateMarketResult {
     modelName?: string;
     modelState?: string;
     modelLane?: string;
+    opportunityDetected?: boolean;
+    opportunityType?: IctOpportunityType;
+    opportunityStage?: IctOpportunityStage;
+    opportunityQuality?: IctOpportunityQuality;
+    opportunityLaneRecommendation?: IctOpportunityLaneRecommendation;
+    opportunityNextAction?: string;
     displayTimeframe?: string;
     analysisTimeframesRequested?: IctAnalysisTimeframe[];
     analysisTimeframesLoaded?: IctAnalysisTimeframe[];

@@ -1,6 +1,7 @@
 import type { ResearchRuntimeSnapshot } from "../runtime";
 import { buildIctAdvisorPacketFromRuntime } from "./ictAdvisorEngine";
 import type { IctAdvisorPacket, IctAdvisorSignal } from "./ictAdvisorTypes";
+import { detectIctOpportunities } from "./ictOpportunityDetection";
 import type { IctLatestResearchState } from "./ictLatestResearchStateTypes";
 import type {
   IctCurrentRead,
@@ -395,10 +396,15 @@ const riskReasonFor = (signal: IctAdvisorSignal) => {
   return "Session/news risk governor reviewed this candidate with compact context only.";
 };
 
+const noOpportunity = (generatedAt = new Date().toISOString()) =>
+  detectIctOpportunities({ generatedAt })[0]!;
+
 export const buildUnavailableIctCurrentRead = (
   reason = "Active ICT advisor packet is unavailable.",
   latestState?: IctLatestResearchState
-): IctCurrentRead => ({
+): IctCurrentRead => {
+  const opportunity = noOpportunity();
+  return ({
   researchOnly: true,
   packetSource: "unavailable",
   requestedSymbol: "MNQ",
@@ -424,6 +430,18 @@ export const buildUnavailableIctCurrentRead = (
   side: "flat",
   approvedStatus: "no_trade",
   modelQualityLane: "no_trade",
+  opportunity,
+  opportunityDetected: false,
+  opportunityType: opportunity.type,
+  opportunityStage: opportunity.stage,
+  opportunityQuality: opportunity.quality,
+  opportunityDirection: opportunity.direction,
+  opportunityModelName: opportunity.modelName,
+  opportunityLaneRecommendation: opportunity.laneRecommendation,
+  opportunityNextAction: opportunity.nextAction,
+  opportunityMissingEvidence: opportunity.missingEvidence,
+  opportunityBlockers: [reason, ...opportunity.blockers].slice(0, 8),
+  opportunityTradeIdea: opportunity.tradeIdea,
   paperWatchlistEligible: false,
   paperWatchlistReason: reason,
   paperWatchlistEvidenceSummary: "No compact ICT model-quality evidence is available.",
@@ -455,6 +473,11 @@ export const buildUnavailableIctCurrentRead = (
     sessionCandlesCount: 0,
     sessionNarrativeStatus: "insufficient_data",
     modelDetectorUsed: "not_run_no_packet",
+    opportunityDetectorUsed: "ict_opportunity_detector_v1_no_data",
+    opportunityType: opportunity.type,
+    opportunityStage: opportunity.stage,
+    opportunityQuality: opportunity.quality,
+    opportunityLaneRecommendation: opportunity.laneRecommendation,
     fvgTargetStatus: "missing",
     targetConstructionStatus: "missing",
     invalidationConstructionStatus: "missing",
@@ -482,6 +505,7 @@ export const buildUnavailableIctCurrentRead = (
   authority,
   safety
 });
+};
 
 export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestState?: IctLatestResearchState): IctCurrentRead => {
   if (!packet) return buildUnavailableIctCurrentRead(undefined, latestState);
@@ -534,6 +558,18 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
   const packetSource = packetSourceFor(packet);
   const dataStatus = dataStatusFor(packet);
   const modelQualityLane = modelQualityLaneFor(packet.approvedProfileDecision.status);
+  const primaryOpportunity = detectIctOpportunities({
+    packet,
+    sessionNarrative: packet.sessionNarrative,
+    recommendedSignal: recommended,
+    approvedStatus: packet.approvedProfileDecision.status,
+    generatedAt: packet.generatedAt,
+    sourceFingerprint: packet.activeSource.sourceFingerprint
+  })[0] ?? noOpportunity(packet.generatedAt);
+  const opportunityDetected = primaryOpportunity.type !== "none" && primaryOpportunity.stage !== "insufficient_data";
+  const opportunityApprovalNote = opportunityDetected && modelQualityLane !== "approved"
+    ? `Opportunity detected, but not approved because ${primaryOpportunity.blockers[0] ?? primaryOpportunity.missingEvidence[0] ?? primaryOpportunity.confirmationNeeded[0] ?? "approval evidence is incomplete"}.`
+    : undefined;
   const paperWatchlistEligible = modelQualityLane === "paper_watchlist";
   const paperWatchlistReason = paperWatchlistReasonFor(packet, modelQualityLane, reasons);
   const paperWatchlistEvidenceSummary = paperWatchlistEvidenceSummaryFor(packet, modelQualityLane);
@@ -614,6 +650,18 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     side: recommended.side,
     approvedStatus: packet.approvedProfileDecision.status,
     modelQualityLane,
+    opportunity: primaryOpportunity,
+    opportunityDetected,
+    opportunityType: primaryOpportunity.type,
+    opportunityStage: primaryOpportunity.stage,
+    opportunityQuality: primaryOpportunity.quality,
+    opportunityDirection: primaryOpportunity.direction,
+    opportunityModelName: primaryOpportunity.modelName,
+    opportunityLaneRecommendation: primaryOpportunity.laneRecommendation,
+    opportunityNextAction: primaryOpportunity.nextAction,
+    opportunityMissingEvidence: primaryOpportunity.missingEvidence,
+    opportunityBlockers: primaryOpportunity.blockers,
+    opportunityTradeIdea: primaryOpportunity.tradeIdea,
     paperWatchlistEligible,
     paperWatchlistModelName: paperWatchlistEligible ? paperWatchlistModelName : undefined,
     paperWatchlistReason,
@@ -669,11 +717,13 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     smtReason,
     riskReason,
     topReasons: reasons.length
-      ? uniqueReasons([...multiTimeframeReasons, ...reasons])
+      ? uniqueReasons([opportunityApprovalNote, ...multiTimeframeReasons, ...reasons])
       : recommended.decision === "research_only"
-        ? uniqueReasons([...multiTimeframeReasons, "Research candidate generated; validation is still required before any readiness review."])
-        : uniqueReasons([...multiTimeframeReasons, "No explicit blocker was provided by the compact advisor packet."]),
-    nextAction: nextActionFor(packet, reasons),
+        ? uniqueReasons([opportunityApprovalNote, ...multiTimeframeReasons, "Research candidate generated; validation is still required before any readiness review."])
+        : uniqueReasons([opportunityApprovalNote, ...multiTimeframeReasons, "No explicit blocker was provided by the compact advisor packet."]),
+    nextAction: opportunityDetected && modelQualityLane !== "approved"
+      ? primaryOpportunity.nextAction
+      : nextActionFor(packet, reasons),
     debug: {
       candleCount: packet.activeSource.candleCount,
       primaryTimeframeAvailable: packet.activeSource.candleCount > 0,
@@ -694,6 +744,11 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
       sessionCandlesCount: sessionCandlesCountFor(packet),
       sessionNarrativeStatus,
       modelDetectorUsed: packet.sessionNarrative ? "ict_session_narrative_model_detector_v1" : "not_run_no_hydrated_candles",
+      opportunityDetectorUsed: "ict_opportunity_detector_v1",
+      opportunityType: primaryOpportunity.type,
+      opportunityStage: primaryOpportunity.stage,
+      opportunityQuality: primaryOpportunity.quality,
+      opportunityLaneRecommendation: primaryOpportunity.laneRecommendation,
       fvgTargetStatus,
       targetConstructionStatus,
       invalidationConstructionStatus,

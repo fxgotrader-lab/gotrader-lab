@@ -51,6 +51,7 @@ const stepDefinitions: Array<{ id: IctActivateMarketStepId; label: string }> = [
   { id: "build_multi_timeframe_context", label: "Build multi-timeframe context" },
   { id: "build_current_read", label: "Build current read" },
   { id: "detect_session_model", label: "Detect session model" },
+  { id: "detect_market_opportunity", label: "Detect market opportunity" },
   { id: "run_phase_one", label: "Run ICT Phase 1" },
   { id: "run_phase_two", label: "Run ICT Phase 2" },
   { id: "run_smt", label: "Check SMT / relative strength" },
@@ -167,6 +168,10 @@ export const readLatestActivateMarketSummary = (): IctActivateMarketLatestSummar
       missingTimeframes: asList(parsed.missingTimeframes) as IctAnalysisTimeframe[],
       modelName: typeof parsed.modelName === "string" ? parsed.modelName : undefined,
       modelLane: typeof parsed.modelLane === "string" ? parsed.modelLane : undefined,
+      opportunityType: typeof parsed.opportunityType === "string" ? parsed.opportunityType : undefined,
+      opportunityStage: typeof parsed.opportunityStage === "string" ? parsed.opportunityStage : undefined,
+      opportunityQuality: typeof parsed.opportunityQuality === "string" ? parsed.opportunityQuality : undefined,
+      opportunityLaneRecommendation: typeof parsed.opportunityLaneRecommendation === "string" ? parsed.opportunityLaneRecommendation : undefined,
       nextAction: typeof parsed.nextAction === "string" ? parsed.nextAction : undefined,
       executionAllowed: false,
       researchOnly: true,
@@ -271,6 +276,12 @@ const criticalUnavailableResult = ({
   summary: {
     dataStatus: "unavailable",
     modelDetected: false,
+    opportunityDetected: false,
+    opportunityType: "none",
+    opportunityStage: "insufficient_data",
+    opportunityQuality: "unknown",
+    opportunityLaneRecommendation: "no_trade",
+    opportunityNextAction: "Activate MT5 read-only market data, then rerun Activate Market.",
     displayTimeframe: primaryTimeframe,
     analysisTimeframesRequested: ["W1", "D1", "H4", "H1", "M15", "M5"],
     analysisTimeframesLoaded: [],
@@ -395,6 +406,10 @@ const buildLatestSummary = (result: IctActivateMarketResult): IctActivateMarketL
   missingTimeframes: result.summary.missingTimeframes,
   modelName: result.summary.modelName,
   modelLane: result.summary.modelLane,
+  opportunityType: result.summary.opportunityType,
+  opportunityStage: result.summary.opportunityStage,
+  opportunityQuality: result.summary.opportunityQuality,
+  opportunityLaneRecommendation: result.summary.opportunityLaneRecommendation,
   nextAction: result.operatorWorkflow?.recommendedAction ?? result.summary.nextAction,
   executionAllowed: false,
   researchOnly: true,
@@ -414,6 +429,7 @@ export const sanitizeActivateMarketResult = (result: IctActivateMarketResult): I
   advisorPacket: result.advisorPacket,
   marketAnalysisContext: result.marketAnalysisContext,
   currentRead: result.currentRead,
+  opportunity: result.opportunity,
   signalContract: result.signalContract,
   operatorWorkflow: result.operatorWorkflow ? { ...result.operatorWorkflow, heavyActionDeferred: true, autoStarted: false, executionAllowed: false } : undefined,
   cmdPaperEligibility: result.cmdPaperEligibility ? { ...result.cmdPaperEligibility } : undefined,
@@ -428,12 +444,13 @@ export const sanitizeActivateMarketResult = (result: IctActivateMarketResult): I
 
 export const summarizeActivateMarketResult = (result: IctActivateMarketResult) => {
   const model = result.summary.modelName ?? "no model";
+  const opportunity = result.summary.opportunityDetected ? `${result.summary.opportunityType} / ${result.summary.opportunityStage}` : "no opportunity";
   const lane = result.summary.modelLane ?? "no_trade";
   const analysis = result.summary.analysisTimeframesUsed?.length
     ? result.summary.analysisTimeframesUsed.join("/")
     : "no analysis context";
   const action = result.operatorWorkflow?.recommendedAction ?? result.summary.nextAction ?? "Wait / Check MT5 Depth";
-  return `${result.status}: ${result.requestedSymbol}/${result.brokerSymbol} chart ${result.summary.displayTimeframe ?? result.primaryTimeframe}; analysis ${analysis}; ${model}; lane ${lane}; next ${action}; execution disabled.`;
+  return `${result.status}: ${result.requestedSymbol}/${result.brokerSymbol} chart ${result.summary.displayTimeframe ?? result.primaryTimeframe}; analysis ${analysis}; ${model}; opportunity ${opportunity}; lane ${lane}; next ${action}; execution disabled.`;
 };
 
 export async function runIctActivateMarketPipeline(
@@ -632,6 +649,20 @@ export async function runIctActivateMarketPipeline(
     return `${currentRead.modelName ?? "model"} detected; state ${currentRead.modelState ?? "unknown"}.`;
   });
 
+  await run("detect_market_opportunity", "Detecting structured ICT market opportunity before approval.", async () => {
+    if (!currentRead) return { error: "Current read is missing." };
+    if (!currentRead.opportunityDetected) {
+      return {
+        message: "Opportunity detector ran; no structured tradable opportunity was confirmed.",
+        warning: currentRead.opportunityNextAction
+      };
+    }
+    const approvalNote = currentRead.modelQualityLane === "approved"
+      ? "already in approved research lane"
+      : `not approved because ${currentRead.opportunityBlockers[0] ?? currentRead.opportunityMissingEvidence[0] ?? "approval evidence is incomplete"}`;
+    return `${currentRead.opportunityType}; stage ${currentRead.opportunityStage}; quality ${currentRead.opportunityQuality}; lane ${currentRead.opportunityLaneRecommendation}; ${approvalNote}.`;
+  });
+
   await run("run_phase_one", "Checking ICT Phase 1 signals.", async () => {
     const count = currentRead?.debug.phase1SignalCount ?? 0;
     return count > 0 ? `${count} Phase 1 signals summarized.` : { message: "Phase 1 evaluated.", warning: "No Phase 1 signals summarized." };
@@ -718,6 +749,7 @@ export async function runIctActivateMarketPipeline(
       advisorPacket,
       marketAnalysisContext: marketAnalysisContextBundle?.context,
       currentRead,
+      opportunity: currentRead?.opportunity,
       signalContract,
       operatorWorkflow,
       cmdPaperEligibility,
@@ -728,6 +760,12 @@ export async function runIctActivateMarketPipeline(
         modelName: currentRead?.modelName,
         modelState: currentRead?.modelState,
         modelLane: currentRead?.modelQualityLane,
+        opportunityDetected: currentRead?.opportunityDetected ?? false,
+        opportunityType: currentRead?.opportunityType,
+        opportunityStage: currentRead?.opportunityStage,
+        opportunityQuality: currentRead?.opportunityQuality,
+        opportunityLaneRecommendation: currentRead?.opportunityLaneRecommendation,
+        opportunityNextAction: currentRead?.opportunityNextAction,
         displayTimeframe: currentRead?.displayTimeframe ?? marketAnalysisContextBundle?.context.displayTimeframe ?? primaryTimeframe,
         analysisTimeframesRequested: currentRead?.analysisTimeframesRequested ?? marketAnalysisContextBundle?.context.analysisTimeframesRequested,
         analysisTimeframesLoaded: currentRead?.analysisTimeframesLoaded ?? marketAnalysisContextBundle?.context.analysisTimeframesLoaded,

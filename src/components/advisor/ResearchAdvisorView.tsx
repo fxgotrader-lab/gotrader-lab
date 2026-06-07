@@ -269,7 +269,10 @@ function buildLocalAdvisorReply(
     const reasons = currentRead.topReasons.length
       ? currentRead.topReasons.slice(0, 3).join("; ")
       : "No explicit no-trade reason is available in the compact packet.";
-    return `${approvalLabel(currentRead.approvedStatus)} context: ${reasons} Next action: ${currentRead.nextAction} Authority remains none.`;
+    const opportunity = currentRead.opportunityDetected
+      ? `Opportunity detected: ${formatToken(currentRead.opportunityType)} / ${formatToken(currentRead.opportunityStage)} / ${formatToken(currentRead.opportunityQuality)}. It is not approval. ${currentRead.opportunityBlockers[0] ?? currentRead.opportunityMissingEvidence[0] ?? currentRead.opportunityNextAction}`
+      : `No confirmed opportunity yet: ${currentRead.opportunityNextAction}`;
+    return `${opportunity} ${approvalLabel(currentRead.approvedStatus)} context: ${reasons} Next action: ${currentRead.nextAction} Authority remains none.`;
   }
   if (lower.includes("risk")) {
     const notes = packet.recommendedSignal.riskNotes.length ? packet.recommendedSignal.riskNotes.slice(0, 3).join("; ") : "No additional risk notes in the compact packet.";
@@ -288,9 +291,9 @@ function buildLocalAdvisorReply(
     return `Profile optimizer status: ${formatToken(profileOptimizationStatus)}. Optimization is research-only and cannot auto-apply thresholds or promote readiness.`;
   }
   if (lower.includes("bias") || lower.includes("setup") || lower.includes("current")) {
-    return `Current read: ${formatToken(currentRead.bias)} bias, ${formatToken(currentRead.bestSetup)} setup, ${formatToken(currentRead.side)} side, ${pct(currentRead.confidence)} confidence, model lane ${formatToken(currentRead.modelQualityLane)}. ${currentRead.paperWatchlistReason ?? packet.recommendedSignal.summary}`;
+    return `Current read: ${formatToken(currentRead.bias)} bias, ${formatToken(currentRead.bestSetup)} setup, ${formatToken(currentRead.side)} side, ${pct(currentRead.confidence)} confidence, opportunity ${formatToken(currentRead.opportunityType)} / ${formatToken(currentRead.opportunityStage)}, model lane ${formatToken(currentRead.modelQualityLane)}. ${currentRead.paperWatchlistReason ?? packet.recommendedSignal.summary}`;
   }
-  return `Current GoTrader read: ${formatToken(currentRead.bias)} / ${approvalLabel(currentRead.approvedStatus)} / model lane ${formatToken(currentRead.modelQualityLane)} / ${formatToken(currentRead.riskStatus)}. Paper Sim ${currentRead.paperWatchlistEligible ? "eligible" : "not eligible"}; execution disabled. Source ${snapshot.marketData.activeResearchSource.provider.replace(/_/g, " ")} remains read-only with authority none.`;
+  return `Current GoTrader read: ${formatToken(currentRead.bias)} / opportunity ${formatToken(currentRead.opportunityType)} / ${approvalLabel(currentRead.approvedStatus)} / model lane ${formatToken(currentRead.modelQualityLane)} / ${formatToken(currentRead.riskStatus)}. Paper Sim ${currentRead.paperWatchlistEligible ? "eligible" : "not eligible"}; execution disabled. Source ${snapshot.marketData.activeResearchSource.provider.replace(/_/g, " ")} remains read-only with authority none.`;
 }
 
 export function ResearchAdvisorView() {
@@ -915,6 +918,7 @@ export function ResearchAdvisorView() {
       />
 
       <CurrentReadPanel currentRead={currentRead} packetError={activeAdvisorPacketError} />
+      <MarketOpportunityCard currentRead={currentRead} />
       <ResearchSignalCard signal={researchSignal} />
       <PaperSimulationCard
         eligibility={paperSimEligibility}
@@ -1147,6 +1151,74 @@ function DeferredResearchDetails({
   );
 }
 
+function MarketOpportunityCard({ currentRead }: { currentRead: IctCurrentRead }) {
+  const opportunity = currentRead.opportunity;
+  const tradeIdea = currentRead.opportunityTradeIdea;
+  const liquidity = opportunity?.liquidityObjective;
+  const pdFocus = opportunity?.pdArrayContext?.[0];
+  const approvedExplanation = currentRead.opportunityDetected && currentRead.modelQualityLane !== "approved"
+    ? `Opportunity detected, but not approved because ${currentRead.opportunityBlockers[0] ?? currentRead.opportunityMissingEvidence[0] ?? "confirmation is incomplete"}.`
+    : currentRead.opportunityDetected
+      ? "Opportunity is mapped before approval; replay, evidence, maturity, and readiness gates remain authoritative."
+      : "No structured opportunity is confirmed from the compact current read yet.";
+
+  return (
+    <section data-testid="ict-market-opportunity-card" className="rounded-[24px] border border-fuchsia-300/15 bg-[radial-gradient(circle_at_14%_0%,rgba(217,70,239,0.12),transparent_36%),linear-gradient(135deg,rgba(15,23,42,0.92),rgba(2,6,23,0.94))] p-5 shadow-[0_0_55px_rgba(217,70,239,0.07)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-fuchsia-300">Market Opportunity</p>
+          <h2 className="mt-1 text-xl font-semibold text-slate-50">
+            {currentRead.opportunityDetected ? formatToken(currentRead.opportunityType) : "No confirmed opportunity"}
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+            Opportunity detection maps structure before approval. It can explain a setup, but it cannot approve readiness, paper tracking, or execution.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant={currentRead.opportunityDetected ? "warning" : "secondary"}>{formatToken(currentRead.opportunityStage)}</Badge>
+          <Badge variant={currentRead.opportunityQuality === "high" ? "success" : currentRead.opportunityQuality === "untradable" ? "danger" : "warning"}>{formatToken(currentRead.opportunityQuality)}</Badge>
+          <Badge variant="danger">Execution Disabled</Badge>
+          <Badge variant="secondary">Research Only</Badge>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <AdvisorReadout label="Opportunity type" value={formatToken(currentRead.opportunityType)} detail={`model ${currentRead.opportunityModelName ? formatToken(currentRead.opportunityModelName) : "pending"}`} />
+        <AdvisorReadout label="Model family" value={formatToken(opportunity?.modelFamily)} detail={currentRead.opportunityDetected ? "compact market map" : "no active family"} />
+        <AdvisorReadout label="Market cycle stage" value={formatToken(opportunity?.marketCycleStage)} detail={formatToken(currentRead.opportunityDirection)} />
+        <AdvisorReadout label="Lane recommendation" value={formatToken(currentRead.opportunityLaneRecommendation)} detail="not an approval override" />
+        <AdvisorReadout
+          label="Liquidity objective"
+          value={liquidity ? `${formatToken(liquidity.side)} ${compactPrice(liquidity.target)}` : "pending"}
+          detail={liquidity?.reason}
+        />
+        <AdvisorReadout
+          label="PD array focus"
+          value={pdFocus ? `${formatToken(pdFocus.type)} / ${formatToken(pdFocus.role)}` : "pending"}
+          detail={pdFocus?.reason}
+        />
+        <AdvisorReadout
+          label="Trade idea"
+          value={tradeIdea ? `${formatToken(tradeIdea.side)} / ${rr(tradeIdea.rrEstimate)}` : "pending"}
+          detail={`Target ${compactPrice(tradeIdea?.target)} / invalidation ${compactPrice(tradeIdea?.invalidation)}`}
+        />
+        <AdvisorReadout
+          label="Confirmation needed"
+          value={currentRead.opportunityMissingEvidence.length || opportunity?.confirmationNeeded.length ? "yes" : "none"}
+          detail={(opportunity?.confirmationNeeded ?? currentRead.opportunityMissingEvidence).slice(0, 2).join("; ")}
+        />
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        <AdvisorList label="Missing evidence" values={currentRead.opportunityMissingEvidence} empty="No missing opportunity evidence reported." />
+        <AdvisorList label="Blockers" values={currentRead.opportunityBlockers} empty="No opportunity blocker reported." />
+        <AdvisorReadout label="Next action" value={currentRead.opportunityNextAction} detail="research-only; no readiness promotion" />
+      </div>
+      <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">
+        {approvedExplanation}
+      </p>
+    </section>
+  );
+}
+
 function ResearchSignalCard({ signal }: { signal: IctResearchSignal }) {
   const statusVariant =
     signal.status === "approved_research_signal"
@@ -1193,6 +1265,16 @@ function ResearchSignalCard({ signal }: { signal: IctResearchSignal }) {
         <AdvisorReadout label="Side" value={formatToken(signal.side)} detail={formatToken(signal.phase)} />
         <AdvisorReadout label="Setup" value={formatToken(signal.setup)} detail={formatToken(signal.approvedProfileStatus)} />
         <AdvisorReadout label="Model lane" value={formatToken(signal.modelQualityLane)} detail={signal.paperWatchlistReason ?? "research-only lane"} />
+        <AdvisorReadout
+          label="Opportunity"
+          value={signal.opportunityDetected ? formatToken(signal.opportunityType) : "none"}
+          detail={`${formatToken(signal.opportunityStage)} / ${formatToken(signal.opportunityQuality)} / ${formatToken(signal.opportunityLaneRecommendation)}`}
+        />
+        <AdvisorReadout
+          label="Opportunity next"
+          value={signal.opportunityNextAction ?? "pending"}
+          detail={signal.opportunityBlockers?.[0] ?? signal.opportunityMissingEvidence?.[0] ?? "opportunity is not approval"}
+        />
         <AdvisorReadout label="Paper Sim" value={formatToken(signal.paperSimEligibilityStatus)} detail={signal.paperSimEligibilityReason ?? signal.paperWatchlistEvidenceSummary ?? "compact evidence only"} />
         <AdvisorReadout label="Research readiness" value={formatToken(signal.readinessSummary.researchReadiness)} detail={signal.readinessSummary.reasons[0] ?? "compact readiness summary"} />
         <AdvisorReadout label="Paper readiness" value={formatToken(signal.readinessSummary.paperReadiness)} detail="paper-only review; no readiness promotion" />
@@ -1610,6 +1692,12 @@ function CurrentReadDataFlowPanel({ currentRead }: { currentRead: IctCurrentRead
     ["Phase 2 signal count", currentRead.debug.phase2SignalCount.toLocaleString()],
     ["Approved status", currentRead.debug.approvedStatus],
     ["Model quality lane", currentRead.modelQualityLane],
+    ["Opportunity detected", currentRead.opportunityDetected ? "yes" : "no"],
+    ["Opportunity type", currentRead.opportunityType],
+    ["Opportunity stage", currentRead.opportunityStage],
+    ["Opportunity quality", currentRead.opportunityQuality],
+    ["Opportunity lane", currentRead.opportunityLaneRecommendation],
+    ["Opportunity next", currentRead.opportunityNextAction],
     ["Paper-watchlist eligible", currentRead.paperWatchlistEligible ? "yes" : "no"],
     ["Paper Sim eligibility", `${currentRead.paperSimEligibilityStatus ?? "unknown"} / ${currentRead.paperSimEligibilityReason ?? "none"}`],
     ["Paper allowed", currentRead.paperSimAllowed ? "yes" : "no"],

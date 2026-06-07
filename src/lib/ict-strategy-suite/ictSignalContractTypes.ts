@@ -5,6 +5,15 @@ import type { IctPaperSimEligibilityStatus, IctReadinessSummary } from "./ictCur
 import type { IctAnalysisDepthStatus, IctAnalysisTimeframe } from "./ictMarketAnalysisContextTypes";
 import type { IctMonteCarloRobustnessRating } from "./ictMonteCarloTypes";
 import type {
+  IctDetectedOpportunity,
+  IctOpportunityDirection,
+  IctOpportunityLaneRecommendation,
+  IctOpportunityQuality,
+  IctOpportunityStage,
+  IctOpportunityTradeIdea,
+  IctOpportunityType
+} from "./ictOpportunityDetectionTypes";
+import type {
   IctDataDepthStatus,
   IctSessionDirectionalRead,
   IctSessionModelName,
@@ -98,6 +107,18 @@ export interface IctResearchSignal {
   modelConfidence?: number;
   modelReasons?: string[];
   modelMissingEvidence?: string[];
+  opportunity?: IctDetectedOpportunity;
+  opportunityDetected?: boolean;
+  opportunityType?: IctOpportunityType;
+  opportunityStage?: IctOpportunityStage;
+  opportunityQuality?: IctOpportunityQuality;
+  opportunityDirection?: IctOpportunityDirection;
+  opportunityModelName?: string;
+  opportunityLaneRecommendation?: IctOpportunityLaneRecommendation;
+  opportunityNextAction?: string;
+  opportunityMissingEvidence?: string[];
+  opportunityBlockers?: string[];
+  opportunityTradeIdea?: IctOpportunityTradeIdea;
   fvgTargetDirection?: "premium" | "discount" | "unknown";
   sessionNarrativeReasons?: string[];
   dataDepthStatus?: IctDataDepthStatus;
