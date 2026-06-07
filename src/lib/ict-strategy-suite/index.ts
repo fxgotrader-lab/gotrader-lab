@@ -12,6 +12,8 @@ export * from "./ictOpportunityDetectionTypes";
 export * from "./ictOpportunityDetection";
 export * from "./ictSelfImprovementTypes";
 export * from "./ictSelfImprovement";
+export * from "./ictHypothesisValidationTypes";
+export * from "./ictHypothesisValidation";
 export * from "./ictCurrentReadTypes";
 export * from "./ictCurrentRead";
 export * from "./ictSessionNarrativeTypes";

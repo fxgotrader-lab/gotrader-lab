@@ -20,7 +20,10 @@ import {
   appendIctMonteCarloJournalEvent,
   appendIctPaperSignalJournalEvent,
   appendIctResearchSignalJournalEvent,
+  appendIctResearchHypothesisValidationJournalEvent,
+  applyIctHypothesisValidationToQueue,
   buildIctPaperSignalJournalEvent,
+  buildIctResearchHypothesisValidationJournalEvent,
   buildLatestMonteCarloSnapshot,
   buildLatestReplaySnapshot,
   buildLatestScorecardSnapshot,
@@ -30,6 +33,7 @@ import {
   buildIctMonteCarloJournalEvent,
   buildIctResearchSignalFromCurrentRead,
   buildIctResearchSignalJournalEvent,
+  validateIctResearchHypothesis,
   appendIctCmdPaperTrackingJournalEvent,
   createCmdPaperTrackingFromResearchSignal,
   buildMarketScorecardResearchReport,
@@ -62,6 +66,7 @@ import {
   type IctApprovedProfileOptimizationResult,
   type IctAdvisorPacket,
   type IctCurrentRead,
+  type IctHypothesisValidationResult,
   type IctLatestResearchState,
   type IctMarketScorecard,
   type IctMarketScorecardConfig,
@@ -122,6 +127,7 @@ const markActivateMarketUiFailure = (steps: IctActivateMarketStep[], message: st
 type MarketScorecardRunStatus = "idle" | "running" | "partial" | "completed" | "unavailable" | "failed" | "timed_out";
 type ProfileOptimizationRunStatus = "idle" | "running" | "partial" | "completed" | "unavailable" | "failed" | "timed_out";
 type MonteCarloRunStatus = "idle" | "running" | "completed" | "unavailable" | "failed";
+type HypothesisValidationRunStatus = "idle" | "running" | "completed" | "unavailable" | "failed";
 type AdvisorChatMessage = {
   id: string;
   role: "assistant" | "user";
@@ -313,6 +319,9 @@ export function ResearchAdvisorView() {
   const [monteCarloStatus, setMonteCarloStatus] = useState<MonteCarloRunStatus>("idle");
   const [monteCarloSummary, setMonteCarloSummary] = useState<IctMonteCarloSummary>();
   const [monteCarloError, setMonteCarloError] = useState<string>();
+  const [hypothesisValidationStatus, setHypothesisValidationStatus] = useState<HypothesisValidationRunStatus>("idle");
+  const [hypothesisValidationResult, setHypothesisValidationResult] = useState<IctHypothesisValidationResult>();
+  const [hypothesisValidationError, setHypothesisValidationError] = useState<string>();
   const [profileOptimizationStatus, setProfileOptimizationStatus] = useState<ProfileOptimizationRunStatus>("idle");
   const [profileOptimization, setProfileOptimization] = useState<IctApprovedProfileOptimizationResult>();
   const [profileOptimizationError, setProfileOptimizationError] = useState<string>();
@@ -443,6 +452,9 @@ export function ResearchAdvisorView() {
     setMonteCarloStatus("idle");
     setMonteCarloSummary(undefined);
     setMonteCarloError(undefined);
+    setHypothesisValidationStatus("idle");
+    setHypothesisValidationResult(undefined);
+    setHypothesisValidationError(undefined);
     setProfileOptimizationStatus("idle");
     setProfileOptimization(undefined);
     setProfileOptimizationError(undefined);
@@ -569,6 +581,7 @@ export function ResearchAdvisorView() {
     manualReplayStatus === "running" ||
     marketScorecardStatus === "running" ||
     monteCarloStatus === "running" ||
+    hypothesisValidationStatus === "running" ||
     profileOptimizationStatus === "running";
   const beginDeepResearchAction = () => {
     deepActionAbortRef.current?.abort();
@@ -721,6 +734,65 @@ export function ResearchAdvisorView() {
       setMonteCarloSummary(undefined);
       setMonteCarloStatus("failed");
       setMonteCarloError(errorMessage(error));
+    }
+  };
+  const runHypothesisValidation = async () => {
+    if (deepResearchActionRunning) return;
+    const hypothesis = currentRead.selfImprovementHypothesis;
+    if (!hypothesis) {
+      setHypothesisValidationResult(undefined);
+      setHypothesisValidationStatus("unavailable");
+      setHypothesisValidationError(currentRead.selfImprovementHypothesisReason ?? "No queued research hypothesis is available for validation.");
+      return;
+    }
+    const { controller, runId } = beginDeepResearchAction();
+    setHypothesisValidationStatus("running");
+    setHypothesisValidationError(undefined);
+    try {
+      let replayReview = manualReplayResult?.status === "completed" ? manualReplayResult : undefined;
+      if (!replayReview) {
+        replayReview = await runManualIctReplayReview(manualReplayRequest, {
+          appendJournal: false,
+          includeDiagnostics: true,
+          includeReplayResults: true,
+          maxReplayWindows: DEFAULT_ICT_BROWSER_RESEARCH_LIMITS.maxReplayWindows
+        });
+        if (!isCurrentDeepResearchRun(runId)) return;
+        setManualReplayResult(replayReview);
+        setManualReplayStatus(replayReview.status);
+        if (replayReview.status !== "completed") {
+          setManualReplayError(replayReview.unavailableReason ?? replayReview.errors[0] ?? "Replay did not produce a completed compact review.");
+        }
+      }
+      const result = validateIctResearchHypothesis({
+        hypothesis,
+        source: "manual_review",
+        replayOutcomes: replayReview.monteCarloOutcomes ?? [],
+        testedWindows: replayReview.totalWindows,
+        runMonteCarlo: true
+      });
+      const journalEvent = buildIctResearchHypothesisValidationJournalEvent(result);
+      appendIctResearchHypothesisValidationJournalEvent(journalEvent);
+      applyIctHypothesisValidationToQueue(result);
+      setHypothesisValidationResult(result);
+      setHypothesisValidationStatus("completed");
+      setHypothesisValidationError(undefined);
+    } catch (error) {
+      if (isAbortError(error)) {
+        if (isCurrentDeepResearchRun(runId)) {
+          setHypothesisValidationStatus("failed");
+          setHypothesisValidationError("Hypothesis validation cancelled before completion.");
+        }
+        return;
+      }
+      if (!isCurrentDeepResearchRun(runId)) return;
+      setHypothesisValidationResult(undefined);
+      setHypothesisValidationStatus("failed");
+      setHypothesisValidationError(errorMessage(error));
+    } finally {
+      if (isCurrentDeepResearchRun(runId) && deepActionAbortRef.current === controller) {
+        deepActionAbortRef.current = undefined;
+      }
     }
   };
   const runProfileOptimization = async () => {
@@ -922,6 +994,14 @@ export function ResearchAdvisorView() {
 
       <CurrentReadPanel currentRead={currentRead} packetError={activeAdvisorPacketError} />
       <MarketOpportunityCard currentRead={currentRead} />
+      <ResearchHypothesisValidationPanel
+        currentRead={currentRead}
+        disabled={deepResearchActionRunning && hypothesisValidationStatus !== "running"}
+        error={hypothesisValidationError}
+        onValidate={runHypothesisValidation}
+        result={hypothesisValidationResult}
+        status={hypothesisValidationStatus}
+      />
       <ResearchSignalCard signal={researchSignal} />
       <PaperSimulationCard
         eligibility={paperSimEligibility}
@@ -1228,6 +1308,118 @@ function MarketOpportunityCard({ currentRead }: { currentRead: IctCurrentRead })
       <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">
         {approvedExplanation} {currentRead.selfImprovementHypothesisQueued ? "Research hypothesis queued - needs replay validation." : `Research hypothesis not queued: ${currentRead.selfImprovementHypothesisReason ?? "not eligible"}.`}
       </p>
+    </section>
+  );
+}
+
+function ResearchHypothesisValidationPanel({
+  currentRead,
+  disabled,
+  error,
+  onValidate,
+  result,
+  status
+}: {
+  currentRead: IctCurrentRead;
+  disabled?: boolean;
+  error?: string;
+  onValidate: () => Promise<void>;
+  result?: IctHypothesisValidationResult;
+  status: HypothesisValidationRunStatus;
+}) {
+  const hypothesis = currentRead.selfImprovementHypothesis;
+  const statusVariant =
+    result?.status === "paper_watchlist_recommended" || result?.status === "promising"
+      ? "success"
+      : result?.status === "discarded" || status === "failed"
+        ? "danger"
+        : result?.status === "weak" || result?.status === "needs_more_data" || status === "running"
+          ? "warning"
+          : "secondary";
+  const buttonLabel = status === "running" ? "Validating..." : "Validate Hypothesis";
+  const statusLabel = result?.status ?? (status === "idle" ? "not_tested" : status);
+  const noHypothesisReason = currentRead.selfImprovementHypothesisReason ?? "No structured queued hypothesis is available.";
+
+  return (
+    <section data-testid="ict-hypothesis-validation-panel" className="rounded-xl border border-violet-300/15 bg-slate-950/85 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-violet-300">Research Hypothesis Validation</p>
+          <h2 className="mt-1 text-xl font-semibold text-slate-50">
+            {hypothesis ? hypothesis.title : "No queued hypothesis"}
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+            Manual replay validation for queued opportunities. Results can recommend continued research or paper-watchlist review, but cannot approve a model or create execution authority.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant={statusVariant}>{formatToken(statusLabel)}</Badge>
+          <Badge variant="danger">authority none</Badge>
+          <Badge variant="secondary">raw data excluded</Badge>
+          <Button type="button" size="sm" onClick={() => void onValidate()} disabled={disabled || status === "running" || !hypothesis}>
+            <PlayCircle className="h-4 w-4" aria-hidden="true" />
+            {buttonLabel}
+          </Button>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <AdvisorReadout
+          label="Latest hypothesis"
+          value={hypothesis ? formatToken(hypothesis.status) : "not queued"}
+          detail={hypothesis?.hypothesisId ?? noHypothesisReason}
+        />
+        <AdvisorReadout
+          label="Source opportunity"
+          value={hypothesis ? formatToken(hypothesis.sourceOpportunity.type) : formatToken(currentRead.opportunityType)}
+          detail={hypothesis?.sourceOpportunity.modelName ? formatToken(hypothesis.sourceOpportunity.modelName) : currentRead.opportunityNextAction}
+        />
+        <AdvisorReadout
+          label="Occurrences"
+          value={result ? result.totalOccurrences.toLocaleString() : "not tested"}
+          detail={result ? `${result.usableOutcomes.toLocaleString()} usable outcomes` : "button starts browser-safe validation"}
+        />
+        <AdvisorReadout
+          label="Target-first"
+          value={result?.targetFirstRate !== undefined ? pct(result.targetFirstRate) : "n/a"}
+          detail={result?.invalidationFirstRate !== undefined ? `Invalidation-first ${pct(result.invalidationFirstRate)}` : "needs replay outcomes"}
+        />
+        <AdvisorReadout
+          label="Average RR"
+          value={result?.averageRr !== undefined ? rr(result.averageRr) : "n/a"}
+          detail={result?.medianRr !== undefined ? `median ${rr(result.medianRr)}` : "compact outcomes only"}
+        />
+        <AdvisorReadout
+          label="Monte Carlo"
+          value={result?.monteCarlo?.attempted ? formatToken(result.monteCarlo.robustnessRating) : "not run"}
+          detail={result?.monteCarlo?.reason}
+        />
+        <AdvisorReadout
+          label="Recommendation"
+          value={result ? formatToken(result.status) : "pending"}
+          detail={result?.recommendation ?? "No validation has run yet."}
+        />
+        <AdvisorReadout
+          label="Next action"
+          value={result?.nextResearchAction ?? currentRead.selfImprovementNextValidation ?? "Replay validate first."}
+          detail="research-only; no auto-promotion"
+        />
+      </div>
+      {error ? (
+        <p className="mt-3 rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm leading-5 text-amber-100">{error}</p>
+      ) : null}
+      {result ? (
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          <AdvisorList label="Validation evidence" values={result.evidence} empty="No validation evidence yet." />
+          <AdvisorList label="Validation blockers" values={result.blockers} empty="No validation blocker reported." />
+          <AdvisorReadout label="Classification reason" value={result.classificationReason} detail="does not mutate approved profile" />
+        </div>
+      ) : (
+        <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">
+          {hypothesis
+            ? "Validation has not run. Click Validate Hypothesis to run a browser-safe replay-backed review."
+            : `Research hypothesis not queued: ${noHypothesisReason}`}
+        </p>
+      )}
     </section>
   );
 }
