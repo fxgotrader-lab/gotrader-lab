@@ -109,12 +109,12 @@ export function ActivateMarketProgress({
         <div className={`mt-4 grid gap-2 ${compact ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
           {steps.map((step) => (
             <div key={step.id} className="min-w-0 rounded-lg border border-white/10 bg-white/[0.035] p-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  {stepIcon(step)}
-                  <span className="truncate text-sm font-medium text-slate-100">{step.label}</span>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 flex-1 items-start gap-2">
+                  <span className="mt-0.5 shrink-0">{stepIcon(step)}</span>
+                  <span className="block whitespace-normal break-words text-sm font-medium leading-5 text-slate-100">{step.label}</span>
                 </div>
-                <Badge variant={statusVariant(step.status)}>{formatToken(step.status)}</Badge>
+                <Badge className="shrink-0" variant={statusVariant(step.status)}>{formatToken(step.status)}</Badge>
               </div>
               <p className="mt-2 line-clamp-2 min-h-[2rem] text-xs leading-4 text-slate-400">
                 {step.error ?? step.warning ?? step.message ?? "Waiting."}
