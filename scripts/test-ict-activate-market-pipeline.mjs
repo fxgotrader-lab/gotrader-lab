@@ -91,6 +91,18 @@ const currentRead = (overrides = {}) => ({
   requestedSymbol: "MNQ",
   brokerSymbol: "USTECH",
   primaryTimeframe: "5m",
+  displayTimeframe: "5m",
+  displayTimeframeRole: "chart_display_reference_only",
+  analysisTimeframesRequested: ["W1", "D1", "H4", "H1", "M15", "M5"],
+  analysisTimeframesLoaded: ["W1", "D1", "H4", "H1", "M15", "M5"],
+  requiredTimeframesLoaded: true,
+  analysisTimeframesUsed: ["W1", "D1", "H4", "H1", "M15", "M5"],
+  analysisDepthStatus: "sufficient",
+  multiTimeframeContextStatus: "built",
+  missingTimeframes: [],
+  weeklyBiasStatus: "loaded",
+  weeklyBiasDirection: "bearish",
+  weeklyBiasReason: "W1 compact bias loaded from test candles.",
   htfTimeframes: ["15m", "1h"],
   dataStatus: "ready",
   candleCount: 1000,
@@ -101,6 +113,16 @@ const currentRead = (overrides = {}) => ({
   paperWatchlistModelName: "consolidation_manipulation_distribution",
   paperWatchlistReason: "CMD paper-watchlist - paper-test only.",
   paperWatchlistEvidenceSummary: "CMD strict evidence passed paper-only profile.",
+  paperSimEligibilityStatus: "eligible",
+  paperSimEligibilityReason: "Paper-only eligible from explicit paper-watchlist candidate.",
+  paperSimAllowed: true,
+  paperOnly: true,
+  readinessSummary: {
+    researchReadiness: "ready",
+    paperReadiness: "eligible",
+    executionReadiness: "disabled",
+    reasons: ["Execution readiness is disabled by design."]
+  },
   executionAllowed: false,
   smtStatus: "confirmed",
   riskStatus: "normal session caution",
@@ -137,10 +159,32 @@ const signalContract = (overrides = {}) => ({
   requestedSymbol: "MNQ",
   brokerSymbol: "USTECH",
   primaryTimeframe: "5m",
+  displayTimeframe: "5m",
+  displayTimeframeRole: "chart_display_reference_only",
+  analysisTimeframesRequested: ["W1", "D1", "H4", "H1", "M15", "M5"],
+  analysisTimeframesLoaded: ["W1", "D1", "H4", "H1", "M15", "M5"],
+  requiredTimeframesLoaded: true,
+  analysisTimeframesUsed: ["W1", "D1", "H4", "H1", "M15", "M5"],
+  analysisDepthStatus: "sufficient",
+  multiTimeframeContextStatus: "built",
+  missingTimeframes: [],
+  weeklyBiasStatus: "loaded",
+  weeklyBiasDirection: "bearish",
+  weeklyBiasReason: "W1 compact bias loaded from test candles.",
   htfTimeframes: ["15m", "1h"],
   side: "short",
   modelQualityLane: "paper_watchlist",
   paperWatchlistEligible: true,
+  paperSimEligibilityStatus: "eligible",
+  paperSimEligibilityReason: "Paper-only eligible from explicit paper-watchlist candidate.",
+  paperSimAllowed: true,
+  paperOnly: true,
+  readinessSummary: {
+    researchReadiness: "ready",
+    paperReadiness: "eligible",
+    executionReadiness: "disabled",
+    reasons: ["Execution readiness is disabled by design."]
+  },
   approvedProfileStatus: "paper_watchlist_candidate",
   modelName: "consolidation_manipulation_distribution",
   reasons: ["CMD paper-watchlist - paper-test only."],
@@ -157,6 +201,27 @@ const signalContract = (overrides = {}) => ({
   },
   ...overrides
 });
+
+const latestResearchState = {
+  updatedAt: "2026-06-07T12:01:00.000Z",
+  researchOnly: true,
+  latestMonteCarlo: {
+    generatedAt: "2026-06-07T12:00:30.000Z",
+    source: "manual_replay_review",
+    usableOutcomes: 27,
+    robustnessRating: "moderate",
+    medianEndingR: 12.4,
+    fifthPercentileEndingR: 1.2,
+    medianMaxDrawdownPct: 4.1,
+    worstMaxDrawdownPct: 8.8,
+    riskOfRuinPct: 2.5,
+    recommendedMaxRiskPerTradePct: 0.5,
+    warnings: ["test compact Monte Carlo"],
+    researchOnly: true
+  },
+  authority,
+  safety
+};
 
 const assertSafe = (result) => {
   const serialized = JSON.stringify(result);
@@ -190,6 +255,7 @@ async function main() {
       "load_analysis_h4",
       "load_analysis_daily",
       "load_analysis_weekly",
+      "load_weekly_bias",
       "build_multi_timeframe_context",
       "build_current_read",
       "detect_session_model",
@@ -201,6 +267,7 @@ async function main() {
       "build_signal_contract",
       "build_operator_workflow",
       "check_cmd_paper_eligibility",
+      "load_latest_monte_carlo_summary",
       "save_latest_state",
       "complete"
     ],
@@ -217,6 +284,7 @@ async function main() {
       brokerSymbol: "USTECH",
       displayTimeframe: "5m",
       displayTimeframeRole: "chart_display_reference_only",
+      analysisTimeframesRequested: ["W1", "D1", "H4", "H1", "M15", "M5"],
       analysisTimeframes: ["W1", "D1", "H4", "H1", "M15", "M5"].map((timeframe) => ({
         timeframe,
         requestedLookbackDays: 90,
@@ -230,12 +298,18 @@ async function main() {
         chunkCount: 9
       })),
       chartDisplayCandleCount: 1000,
+      analysisTimeframesLoaded: ["W1", "D1", "H4", "H1", "M15", "M5"],
+      requiredTimeframesLoaded: true,
       analysisDepthStatus: "sufficient",
+      multiTimeframeContextStatus: "built",
       analysisTimeframesUsed: ["W1", "D1", "H4", "H1", "M15", "M5"],
       missingTimeframes: [],
       htfBiasSource: ["W1", "D1", "H4", "H1"],
       sessionModelSourceTimeframe: "M15",
       confirmationSourceTimeframe: "M5",
+      weeklyBiasStatus: "loaded",
+      weeklyBiasDirection: "bearish",
+      weeklyBiasReason: "W1 compact bias loaded from test candles.",
       warnings: ["test compact context"],
       generatedAt: "2026-06-07T12:00:00.000Z",
       authority,
@@ -252,7 +326,7 @@ async function main() {
   const updates = [];
   const savedSummaries = [];
   const success = await suite.runIctActivateMarketPipeline(
-    { snapshot: snapshot(), saveLatestSummary: true },
+    { snapshot: snapshot(), latestResearchState, saveLatestSummary: true },
     { onStepUpdate: (step, allSteps) => updates.push({ step, allSteps }) },
     { saveLatestSummary: (summary) => savedSummaries.push(summary) }
   );
@@ -268,6 +342,10 @@ async function main() {
   assert.equal(success.operatorWorkflow.recommendedAction, "Track CMD Paper Candidate");
   assert.equal(success.cmdPaperEligibility.eligible, true);
   assert.equal(success.summary.modelLane, "paper_watchlist");
+  assert.equal(success.summary.readinessSummary.executionReadiness, "disabled");
+  assert.equal(success.summary.paperSimAllowed, true);
+  assert.equal(success.latestMonteCarlo.status, "saved");
+  assert.equal(success.summary.recommendedMaxRiskPerTradePct, 0.5);
   assert.equal(savedSummaries.length, 1, "compact activation summary should be saved once");
   assert.equal(savedSummaries[0].executionAllowed, false);
   assertSafe(success);
@@ -292,6 +370,9 @@ async function main() {
         context.timeframe === "H1" ? { ...context, candleCount: 0, dataDepthStatus: "unavailable" } : context
       ),
       analysisDepthStatus: "limited",
+      multiTimeframeContextStatus: "partial",
+      analysisTimeframesLoaded: ["W1", "D1", "H4", "M15", "M5"],
+      requiredTimeframesLoaded: true,
       analysisTimeframesUsed: ["W1", "D1", "H4", "M15", "M5"],
       missingTimeframes: ["H1"],
       htfBiasSource: ["W1", "D1", "H4"]
@@ -314,7 +395,8 @@ async function main() {
     { saveLatestSummary: () => undefined }
   );
   assert.equal(missingSmt.status, "partial");
-  assert.equal(missingSmt.steps.find((step) => step.id === "run_smt").status, "skipped");
+  assert.equal(missingSmt.steps.find((step) => step.id === "run_smt").status, "completed");
+  assert.match(missingSmt.steps.find((step) => step.id === "run_smt").warning, /SMT comparison data unavailable/i);
   assert.match(missingSmt.warnings.join(" "), /SMT comparison data unavailable/i);
   assertSafe(missingSmt);
 
@@ -324,6 +406,16 @@ async function main() {
     modelQualityLane: "no_trade",
     approvedStatus: "no_trade",
     paperWatchlistEligible: false,
+    paperSimEligibilityStatus: "not_eligible",
+    paperSimEligibilityReason: "Only approved research signals or explicit paper-watchlist candidates are eligible.",
+    paperSimAllowed: false,
+    paperOnly: false,
+    readinessSummary: {
+      researchReadiness: "partial",
+      paperReadiness: "not_eligible",
+      executionReadiness: "disabled",
+      reasons: ["No complete session model detected.", "Execution readiness is disabled by design."]
+    },
     topReasons: ["No current session model detected."],
     nextAction: "Wait / Check MT5 Depth"
   });
@@ -346,6 +438,8 @@ async function main() {
   );
   assert.equal(noTrade.operatorWorkflow.recommendedAction, "Wait / Check MT5 Depth");
   assert.equal(noTrade.cmdPaperEligibility.eligible, false);
+  assert.equal(noTrade.steps.find((step) => step.id === "check_cmd_paper_eligibility").status, "completed");
+  assert.match(noTrade.cmdPaperEligibility.reason, /Only CMD paper-watchlist/i);
   assertSafe(noTrade);
 
   console.log(JSON.stringify({

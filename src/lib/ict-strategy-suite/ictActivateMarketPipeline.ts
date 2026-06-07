@@ -46,7 +46,8 @@ const stepDefinitions: Array<{ id: IctActivateMarketStepId; label: string }> = [
   { id: "load_analysis_h1", label: "Load H1 dealing range" },
   { id: "load_analysis_h4", label: "Load H4 HTF bias" },
   { id: "load_analysis_daily", label: "Load daily bias" },
-  { id: "load_analysis_weekly", label: "Load weekly bias" },
+  { id: "load_analysis_weekly", label: "Load weekly context" },
+  { id: "load_weekly_bias", label: "Load weekly bias" },
   { id: "build_multi_timeframe_context", label: "Build multi-timeframe context" },
   { id: "build_current_read", label: "Build current read" },
   { id: "detect_session_model", label: "Detect session model" },
@@ -58,6 +59,7 @@ const stepDefinitions: Array<{ id: IctActivateMarketStepId; label: string }> = [
   { id: "build_signal_contract", label: "Build research signal contract" },
   { id: "build_operator_workflow", label: "Build operator workflow" },
   { id: "check_cmd_paper_eligibility", label: "Check CMD paper eligibility" },
+  { id: "load_latest_monte_carlo_summary", label: "Load latest Monte Carlo summary" },
   { id: "save_latest_state", label: "Save latest research state" },
   { id: "complete", label: "Complete" }
 ];
@@ -115,12 +117,12 @@ export const markActivationStepRunning = (steps: IctActivateMarketStep[], id: Ic
     error: undefined
   });
 
-export const markActivationStepCompleted = (steps: IctActivateMarketStep[], id: IctActivateMarketStepId, message?: string) =>
+export const markActivationStepCompleted = (steps: IctActivateMarketStep[], id: IctActivateMarketStepId, message?: string, warning?: string) =>
   updateStep(steps, id, {
     status: "completed",
     message,
     completedAt: now(),
-    warning: undefined,
+    warning,
     error: undefined
   });
 
@@ -205,6 +207,32 @@ const htfTimeframes = (snapshot: ResearchRuntimeSnapshot) =>
     .filter((source) => source.candleCount > 0)
     .map((source) => source.timeframe);
 
+const unavailableReadinessSummary = (reason: string) => ({
+  researchReadiness: "not_ready" as const,
+  paperReadiness: "not_eligible" as const,
+  executionReadiness: "disabled" as const,
+  reasons: [reason, "Execution readiness is disabled by design."]
+});
+
+const latestMonteCarloFor = (latestState?: IctLatestResearchState): NonNullable<IctActivateMarketResult["latestMonteCarlo"]> => {
+  const summary = latestState?.latestMonteCarlo;
+  if (!summary) {
+    return {
+      status: "missing",
+      reason: "No saved Monte Carlo - run replay then Monte Carlo.",
+      recommendedMaxRiskReason: "Recommended max risk unavailable - no saved Monte Carlo."
+    };
+  }
+  return {
+    status: "saved",
+    summary,
+    reason: `Saved Monte Carlo ${summary.robustnessRating}; ${summary.usableOutcomes} usable outcomes.`,
+    recommendedMaxRiskReason: typeof summary.recommendedMaxRiskPerTradePct === "number"
+      ? "Recommended max risk comes from the latest saved Monte Carlo summary."
+      : "Recommended max risk unavailable - saved Monte Carlo did not include a max-risk recommendation."
+  };
+};
+
 const finalizeBlockedSteps = (steps: IctActivateMarketStep[], reason: string) =>
   steps.map((step) =>
     step.status === "pending"
@@ -244,9 +272,25 @@ const criticalUnavailableResult = ({
     dataStatus: "unavailable",
     modelDetected: false,
     displayTimeframe: primaryTimeframe,
+    analysisTimeframesRequested: ["W1", "D1", "H4", "H1", "M15", "M5"],
+    analysisTimeframesLoaded: [],
+    requiredTimeframesLoaded: false,
     analysisDepthStatus: "unavailable",
+    multiTimeframeContextStatus: "unavailable",
     analysisTimeframesUsed: [],
     missingTimeframes: ["W1", "D1", "H4", "H1", "M15", "M5"],
+    weeklyBiasStatus: "unavailable",
+    weeklyBiasDirection: "unknown",
+    weeklyBiasReason: "W1 context unavailable from MT5 range endpoint.",
+    paperSimEligibilityStatus: "not_eligible",
+    paperSimEligibilityReason: "No compact research signal was built.",
+    paperSimAllowed: false,
+    paperOnly: false,
+    readinessSummary: unavailableReadinessSummary("Active research source failed the MT5 read-only preflight."),
+    latestMonteCarloStatus: "missing",
+    latestMonteCarloReason: "No saved Monte Carlo - run replay then Monte Carlo.",
+    recommendedMaxRiskStatus: "unavailable",
+    recommendedMaxRiskReason: "Recommended max risk unavailable - no saved Monte Carlo.",
     nextAction: "Activate MT5 read-only market data, then rerun Activate Market.",
     executionAllowed: false
   },
@@ -274,12 +318,19 @@ const criticalUnavailableResult = ({
     hydrationSource: "unavailable",
     hydrationWarning: errors[0] ?? warnings[0],
     displayTimeframe: primaryTimeframe,
+    analysisTimeframesRequested: ["W1", "D1", "H4", "H1", "M15", "M5"],
+    analysisTimeframesLoaded: [],
+    requiredTimeframesLoaded: false,
     analysisTimeframesUsed: [],
     analysisDepthStatus: "unavailable",
+    multiTimeframeContextStatus: "unavailable",
     missingTimeframes: ["W1", "D1", "H4", "H1", "M15", "M5"],
     htfBiasSource: [],
     sessionModelSourceTimeframe: undefined,
-    confirmationSourceTimeframe: undefined
+    confirmationSourceTimeframe: undefined,
+    weeklyBiasStatus: "unavailable",
+    weeklyBiasDirection: "unknown",
+    weeklyBiasReason: "W1 context unavailable from MT5 range endpoint."
   },
   warnings,
   errors,
@@ -366,6 +417,7 @@ export const sanitizeActivateMarketResult = (result: IctActivateMarketResult): I
   signalContract: result.signalContract,
   operatorWorkflow: result.operatorWorkflow ? { ...result.operatorWorkflow, heavyActionDeferred: true, autoStarted: false, executionAllowed: false } : undefined,
   cmdPaperEligibility: result.cmdPaperEligibility ? { ...result.cmdPaperEligibility } : undefined,
+  latestMonteCarlo: result.latestMonteCarlo ? { ...result.latestMonteCarlo, summary: result.latestMonteCarlo.summary ? { ...result.latestMonteCarlo.summary } : undefined } : undefined,
   summary: { ...result.summary, executionAllowed: false },
   debug: result.debug ? { ...result.debug } : undefined,
   warnings: result.warnings.slice(0, 12),
@@ -402,6 +454,7 @@ export async function runIctActivateMarketPipeline(
   let signalContract: IctResearchSignal | undefined;
   let operatorWorkflow: IctActivateMarketOperatorWorkflow | undefined;
   let cmdPaperEligibility: IctActivateMarketResult["cmdPaperEligibility"];
+  let latestMonteCarlo = latestMonteCarloFor(config.latestResearchState);
 
   const buildOrReadMarketContext = async () => {
     if (!marketAnalysisContextBundle) {
@@ -435,9 +488,7 @@ export async function runIctActivateMarketPipeline(
         steps = markActivationStepFailed(steps, id, output.error);
       } else {
         if (output.warning) warnings.push(output.warning);
-        steps = output.warning
-          ? markActivationStepSkipped(steps, id, output.warning)
-          : markActivationStepCompleted(steps, id, output.message);
+        steps = markActivationStepCompleted(steps, id, output.message ?? output.warning, output.warning);
       }
     } catch (error) {
       const message = errorMessage(error);
@@ -535,8 +586,17 @@ export async function runIctActivateMarketPipeline(
   await run("load_analysis_weekly", "Loading explicit weekly 90-day bias context.", async () => {
     await buildOrReadMarketContext();
     const context = analysisContextFor("W1");
-    if (!context?.candleCount) return { skipped: true, warning: "Weekly analysis context is missing; weekly bias will be partial." };
+    if (!context?.candleCount) return { skipped: true, warning: "W1 context unavailable from MT5 range endpoint." };
     return `W1 ${context.dataDepthStatus}; ${context.candleCount.toLocaleString()} candles over ${context.availableLookbackDays.toFixed(1)} days.`;
+  });
+
+  await run("load_weekly_bias", "Computing compact weekly bias from W1 context.", async () => {
+    const bundle = await buildOrReadMarketContext();
+    const { weeklyBiasStatus, weeklyBiasDirection, weeklyBiasReason } = bundle.context;
+    if (weeklyBiasStatus === "loaded") {
+      return `Weekly bias ${weeklyBiasDirection}; ${weeklyBiasReason}`;
+    }
+    return { skipped: true, warning: weeklyBiasReason || "W1 context unavailable from MT5 range endpoint." };
   });
 
   await run("build_multi_timeframe_context", "Building compact multi-timeframe analysis summary.", async () => {
@@ -544,10 +604,11 @@ export async function runIctActivateMarketPipeline(
     const fingerprint = sourceFingerprint(snapshot);
     if (!fingerprint) return { error: "Canonical MT5 source fingerprint is missing." };
     const missing = bundle.context.missingTimeframes;
+    const loaded = bundle.context.analysisTimeframesLoaded.join(", ") || "none";
     if (missing.length) {
       return {
-        skipped: true,
-        warning: `Multi-timeframe context ${bundle.context.analysisDepthStatus}; missing ${missing.join(", ")}. Fingerprint ${fingerprint}.`
+        message: `Multi-timeframe context ${bundle.context.multiTimeframeContextStatus}; loaded ${loaded}. Fingerprint ${fingerprint}.`,
+        warning: `Missing analysis timeframes: ${missing.join(", ")}.`
       };
     }
     return `Analysis ${bundle.context.analysisDepthStatus}; ${bundle.context.analysisTimeframesUsed.join(", ")} loaded. Fingerprint ${fingerprint}.`;
@@ -561,34 +622,34 @@ export async function runIctActivateMarketPipeline(
     currentRead = buildRead(advisorPacket, config.latestResearchState);
     return currentRead.dataStatus === "ready"
       ? "Current read ready."
-      : { skipped: true, warning: `Current read data status is ${currentRead.dataStatus}.` };
+      : { message: `Current read built with data status ${currentRead.dataStatus}.`, warning: `Current read data status is ${currentRead.dataStatus}.` };
   });
 
   await run("detect_session_model", "Detecting current session model.", async () => {
     if (!currentRead?.modelDetected) {
-      return { skipped: true, warning: currentRead?.topReasons[0] ?? "No session model detected." };
+      return { message: "Session model detector ran; no complete model detected.", warning: currentRead?.topReasons[0] ?? "No session model detected." };
     }
     return `${currentRead.modelName ?? "model"} detected; state ${currentRead.modelState ?? "unknown"}.`;
   });
 
   await run("run_phase_one", "Checking ICT Phase 1 signals.", async () => {
     const count = currentRead?.debug.phase1SignalCount ?? 0;
-    return count > 0 ? `${count} Phase 1 signals summarized.` : { skipped: true, warning: "No Phase 1 signals summarized." };
+    return count > 0 ? `${count} Phase 1 signals summarized.` : { message: "Phase 1 evaluated.", warning: "No Phase 1 signals summarized." };
   });
 
   await run("run_phase_two", "Checking ICT Phase 2 signals.", async () => {
     const count = currentRead?.debug.phase2SignalCount ?? 0;
-    return count > 0 ? `${count} Phase 2 signals summarized.` : { skipped: true, warning: "No Phase 2 signals summarized." };
+    return count > 0 ? `${count} Phase 2 signals summarized.` : { message: "Phase 2 evaluated.", warning: "No Phase 2 signals summarized." };
   });
 
   await run("run_smt", "Checking SMT / relative strength.", async () => {
     const smt = currentRead?.smtStatus ?? "";
     if (smt === "comparison_sources_missing") {
-      return { skipped: true, warning: currentRead?.smtReason ?? "SMT comparison sources are missing; activation continues with explicit SMT warning." };
+      return { message: "SMT check completed with missing comparison context.", warning: currentRead?.smtReason ?? "SMT comparison sources are missing; activation continues with explicit SMT warning." };
     }
     return smt && !/not available|unavailable|missing|pending/i.test(smt)
       ? `SMT status: ${smt}.`
-      : { skipped: true, warning: currentRead?.smtReason ?? "SMT comparison data unavailable; activation continues with a partial warning." };
+      : { message: "SMT check completed with partial context.", warning: currentRead?.smtReason ?? "SMT comparison data unavailable; activation continues with a partial warning." };
   });
 
   await run("run_news_session_risk", "Checking news and session risk.", async () => {
@@ -621,9 +682,22 @@ export async function runIctActivateMarketPipeline(
     const eligibility = evaluate(signalContract);
     cmdPaperEligibility = {
       eligible: eligibility.eligible,
-      reason: eligibility.reasons[0] ?? (eligibility.eligible ? "CMD paper candidate eligible." : "CMD paper candidate not eligible.")
+      reason: eligibility.reasons[0] ?? (eligibility.eligible ? "CMD paper candidate eligible." : "Not eligible - no CMD paper-watchlist candidate.")
     };
-    return cmdPaperEligibility.eligible ? "CMD paper tracking eligible." : { skipped: true, warning: cmdPaperEligibility.reason };
+    return cmdPaperEligibility.eligible
+      ? "CMD paper tracking eligible."
+      : { message: `CMD paper eligibility checked: ${cmdPaperEligibility.reason}`, warning: cmdPaperEligibility.reason };
+  });
+
+  await run("load_latest_monte_carlo_summary", "Loading latest saved Monte Carlo summary.", async () => {
+    latestMonteCarlo = latestMonteCarloFor(config.latestResearchState);
+    if (latestMonteCarlo.status === "saved") {
+      return `${latestMonteCarlo.reason}; ${latestMonteCarlo.recommendedMaxRiskReason}`;
+    }
+    return {
+      message: latestMonteCarlo.reason,
+      warning: "No saved Monte Carlo - run Replay Review, then Monte Carlo."
+    };
   });
 
   const draftResult = (): IctActivateMarketResult => {
@@ -647,6 +721,7 @@ export async function runIctActivateMarketPipeline(
       signalContract,
       operatorWorkflow,
       cmdPaperEligibility,
+      latestMonteCarlo,
       summary: {
         dataStatus: currentRead?.dataStatus ?? "unavailable",
         modelDetected: currentRead?.modelDetected ?? false,
@@ -654,9 +729,26 @@ export async function runIctActivateMarketPipeline(
         modelState: currentRead?.modelState,
         modelLane: currentRead?.modelQualityLane,
         displayTimeframe: currentRead?.displayTimeframe ?? marketAnalysisContextBundle?.context.displayTimeframe ?? primaryTimeframe,
+        analysisTimeframesRequested: currentRead?.analysisTimeframesRequested ?? marketAnalysisContextBundle?.context.analysisTimeframesRequested,
+        analysisTimeframesLoaded: currentRead?.analysisTimeframesLoaded ?? marketAnalysisContextBundle?.context.analysisTimeframesLoaded,
+        requiredTimeframesLoaded: currentRead?.requiredTimeframesLoaded ?? marketAnalysisContextBundle?.context.requiredTimeframesLoaded,
         analysisDepthStatus: currentRead?.analysisDepthStatus ?? marketAnalysisContextBundle?.context.analysisDepthStatus,
+        multiTimeframeContextStatus: currentRead?.multiTimeframeContextStatus ?? marketAnalysisContextBundle?.context.multiTimeframeContextStatus,
         analysisTimeframesUsed: currentRead?.analysisTimeframesUsed ?? marketAnalysisContextBundle?.context.analysisTimeframesUsed,
         missingTimeframes: currentRead?.missingTimeframes ?? marketAnalysisContextBundle?.context.missingTimeframes,
+        weeklyBiasStatus: currentRead?.weeklyBiasStatus ?? marketAnalysisContextBundle?.context.weeklyBiasStatus,
+        weeklyBiasDirection: currentRead?.weeklyBiasDirection ?? marketAnalysisContextBundle?.context.weeklyBiasDirection,
+        weeklyBiasReason: currentRead?.weeklyBiasReason ?? marketAnalysisContextBundle?.context.weeklyBiasReason,
+        paperSimEligibilityStatus: currentRead?.paperSimEligibilityStatus,
+        paperSimEligibilityReason: currentRead?.paperSimEligibilityReason,
+        paperSimAllowed: currentRead?.paperSimAllowed ?? false,
+        paperOnly: currentRead?.paperOnly ?? false,
+        readinessSummary: currentRead?.readinessSummary ?? unavailableReadinessSummary("Current read was not built."),
+        latestMonteCarloStatus: latestMonteCarlo.status,
+        latestMonteCarloReason: latestMonteCarlo.reason,
+        recommendedMaxRiskPerTradePct: latestMonteCarlo.summary?.recommendedMaxRiskPerTradePct,
+        recommendedMaxRiskStatus: typeof latestMonteCarlo.summary?.recommendedMaxRiskPerTradePct === "number" ? "available" : "unavailable",
+        recommendedMaxRiskReason: latestMonteCarlo.recommendedMaxRiskReason,
         nextAction: operatorWorkflow?.recommendedAction ?? currentRead?.nextAction,
         executionAllowed: false
       },

@@ -1,6 +1,14 @@
-import type { IctCurrentRead } from "./ictCurrentReadTypes";
+import type { IctCurrentRead, IctReadinessSummary } from "./ictCurrentReadTypes";
 import type { IctAdvisorPacket } from "./ictAdvisorTypes";
-import type { IctAnalysisDepthStatus, IctAnalysisTimeframe, IctMarketAnalysisContext } from "./ictMarketAnalysisContextTypes";
+import type {
+  IctAnalysisDepthStatus,
+  IctAnalysisTimeframe,
+  IctMarketAnalysisContext,
+  IctMultiTimeframeContextStatus,
+  IctWeeklyBiasDirection,
+  IctWeeklyBiasStatus
+} from "./ictMarketAnalysisContextTypes";
+import type { IctLatestMonteCarloSnapshot } from "./ictLatestResearchStateTypes";
 import type { IctResearchSignal } from "./ictSignalContractTypes";
 
 export type IctActivateMarketStepId =
@@ -13,6 +21,7 @@ export type IctActivateMarketStepId =
   | "load_analysis_h4"
   | "load_analysis_daily"
   | "load_analysis_weekly"
+  | "load_weekly_bias"
   | "build_multi_timeframe_context"
   | "build_current_read"
   | "detect_session_model"
@@ -24,6 +33,7 @@ export type IctActivateMarketStepId =
   | "build_signal_contract"
   | "build_operator_workflow"
   | "check_cmd_paper_eligibility"
+  | "load_latest_monte_carlo_summary"
   | "save_latest_state"
   | "complete";
 
@@ -112,6 +122,13 @@ export interface IctActivateMarketResult {
     reason: string;
   };
 
+  latestMonteCarlo?: {
+    status: "saved" | "missing";
+    summary?: IctLatestMonteCarloSnapshot;
+    reason: string;
+    recommendedMaxRiskReason: string;
+  };
+
   summary: {
     dataStatus: string;
     modelDetected: boolean;
@@ -119,9 +136,26 @@ export interface IctActivateMarketResult {
     modelState?: string;
     modelLane?: string;
     displayTimeframe?: string;
+    analysisTimeframesRequested?: IctAnalysisTimeframe[];
+    analysisTimeframesLoaded?: IctAnalysisTimeframe[];
+    requiredTimeframesLoaded?: boolean;
     analysisDepthStatus?: IctAnalysisDepthStatus;
+    multiTimeframeContextStatus?: IctMultiTimeframeContextStatus;
     analysisTimeframesUsed?: IctAnalysisTimeframe[];
     missingTimeframes?: IctAnalysisTimeframe[];
+    weeklyBiasStatus?: IctWeeklyBiasStatus;
+    weeklyBiasDirection?: IctWeeklyBiasDirection;
+    weeklyBiasReason?: string;
+    paperSimEligibilityStatus?: IctCurrentRead["paperSimEligibilityStatus"];
+    paperSimEligibilityReason?: string;
+    paperSimAllowed?: boolean;
+    paperOnly?: boolean;
+    readinessSummary: IctReadinessSummary;
+    latestMonteCarloStatus?: "saved" | "missing";
+    latestMonteCarloReason?: string;
+    recommendedMaxRiskPerTradePct?: number;
+    recommendedMaxRiskStatus?: "available" | "unavailable";
+    recommendedMaxRiskReason?: string;
     nextAction?: string;
     executionAllowed: false;
   };

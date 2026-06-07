@@ -1,6 +1,12 @@
 import type { IctBias, IctLocation, IctSide } from "./ictAdvisorTypes";
 import type { IctApprovedCandidateStatus } from "./ictApprovedSetupProfileTypes";
-import type { IctAnalysisDepthStatus, IctAnalysisTimeframe } from "./ictMarketAnalysisContextTypes";
+import type {
+  IctAnalysisDepthStatus,
+  IctAnalysisTimeframe,
+  IctMultiTimeframeContextStatus,
+  IctWeeklyBiasDirection,
+  IctWeeklyBiasStatus
+} from "./ictMarketAnalysisContextTypes";
 import type { IctMonteCarloRobustnessRating } from "./ictMonteCarloTypes";
 import type {
   IctDataDepthStatus,
@@ -26,6 +32,16 @@ export type IctModelQualityLane =
   | "rejected"
   | "no_trade";
 
+export interface IctReadinessSummary {
+  researchReadiness: "ready" | "partial" | "not_ready";
+  paperReadiness: "eligible" | "not_eligible" | "partial";
+  executionReadiness: "disabled";
+  reasons: string[];
+}
+
+export type IctPaperSimEligibilityStatus = "eligible" | "not_eligible" | "partial";
+export type IctLatestMonteCarloStatus = "saved" | "missing";
+
 export interface IctCurrentRead {
   researchOnly: true;
   packetSource: IctCurrentReadPacketSource;
@@ -34,12 +50,19 @@ export interface IctCurrentRead {
   primaryTimeframe: string;
   displayTimeframe?: string;
   displayTimeframeRole?: "chart_display_reference_only";
+  analysisTimeframesRequested?: IctAnalysisTimeframe[];
+  analysisTimeframesLoaded?: IctAnalysisTimeframe[];
+  requiredTimeframesLoaded?: boolean;
   analysisTimeframesUsed?: IctAnalysisTimeframe[];
   analysisDepthStatus?: IctAnalysisDepthStatus;
+  multiTimeframeContextStatus?: IctMultiTimeframeContextStatus;
   missingTimeframes?: IctAnalysisTimeframe[];
   htfBiasSource?: IctAnalysisTimeframe[];
   sessionModelSourceTimeframe?: IctAnalysisTimeframe;
   confirmationSourceTimeframe?: IctAnalysisTimeframe;
+  weeklyBiasStatus?: IctWeeklyBiasStatus;
+  weeklyBiasDirection?: IctWeeklyBiasDirection;
+  weeklyBiasReason?: string;
   htfTimeframes: string[];
   dataStatus: IctCurrentReadDataStatus;
   candleCount?: number;
@@ -54,6 +77,11 @@ export interface IctCurrentRead {
   paperWatchlistModelName?: IctSessionModelName;
   paperWatchlistReason?: string;
   paperWatchlistEvidenceSummary?: string;
+  paperSimEligibilityStatus?: IctPaperSimEligibilityStatus;
+  paperSimEligibilityReason?: string;
+  paperSimAllowed: boolean;
+  paperOnly: boolean;
+  readinessSummary: IctReadinessSummary;
   executionAllowed: false;
   approvalScore?: number;
   confidence?: number;
@@ -73,6 +101,12 @@ export interface IctCurrentRead {
   latestMonteCarloRobustness?: IctMonteCarloRobustnessRating;
   latestMonteCarloRiskOfRuinPct?: number;
   latestMonteCarloRecommendedRiskPct?: number;
+  latestMonteCarloGeneratedAt?: string;
+  latestMonteCarloUsableOutcomes?: number;
+  latestMonteCarloStatus: IctLatestMonteCarloStatus;
+  latestMonteCarloReason: string;
+  recommendedMaxRiskStatus: "available" | "unavailable";
+  recommendedMaxRiskReason: string;
   latestScorecardBestSymbol?: string;
   latestScorecardResearchPreferredSymbols?: string[];
   latestResearchStateUpdatedAt?: string;
@@ -135,12 +169,19 @@ export interface IctCurrentRead {
     hydrationSource?: string;
     hydrationWarning?: string;
     displayTimeframe?: string;
+    analysisTimeframesRequested?: IctAnalysisTimeframe[];
+    analysisTimeframesLoaded?: IctAnalysisTimeframe[];
+    requiredTimeframesLoaded?: boolean;
     analysisTimeframesUsed?: IctAnalysisTimeframe[];
     analysisDepthStatus?: IctAnalysisDepthStatus;
+    multiTimeframeContextStatus?: IctMultiTimeframeContextStatus;
     missingTimeframes?: IctAnalysisTimeframe[];
     htfBiasSource?: IctAnalysisTimeframe[];
     sessionModelSourceTimeframe?: IctAnalysisTimeframe;
     confirmationSourceTimeframe?: IctAnalysisTimeframe;
+    weeklyBiasStatus?: IctWeeklyBiasStatus;
+    weeklyBiasDirection?: IctWeeklyBiasDirection;
+    weeklyBiasReason?: string;
   };
   authority: {
     executionAuthority: "none";

@@ -116,7 +116,7 @@ export function ActivateMarketProgress({
                 </div>
                 <Badge className="shrink-0" variant={statusVariant(step.status)}>{formatToken(step.status)}</Badge>
               </div>
-              <p className="mt-2 line-clamp-2 min-h-[2rem] text-xs leading-4 text-slate-400">
+              <p className="mt-2 min-h-[2rem] whitespace-normal break-words text-xs leading-4 text-slate-400">
                 {step.error ?? step.warning ?? step.message ?? "Waiting."}
               </p>
               {durationLabel(step.durationMs) ? (
@@ -136,9 +136,33 @@ export function ActivateMarketProgress({
           <MiniSummary label="Lane" value={formatToken(result.summary.modelLane ?? "no_trade")} />
           <MiniSummary label="Chart timeframe" value={result.summary.displayTimeframe ?? result.primaryTimeframe} />
           <MiniSummary label="Analysis TFs" value={result.summary.analysisTimeframesUsed?.join(" / ") || "pending"} />
+          <MiniSummary label="MTF status" value={formatToken(result.summary.multiTimeframeContextStatus)} />
           <MiniSummary label="Analysis depth" value={formatToken(result.summary.analysisDepthStatus)} />
           <MiniSummary label="Missing TFs" value={result.summary.missingTimeframes?.length ? result.summary.missingTimeframes.join(" / ") : "none"} />
-          <MiniSummary label="Paper eligible" value={result.cmdPaperEligibility?.eligible ? "yes" : "no"} />
+          <MiniSummary
+            label="Weekly bias"
+            value={`${formatToken(result.summary.weeklyBiasDirection)} / ${formatToken(result.summary.weeklyBiasStatus)}`}
+            detail={result.summary.weeklyBiasReason}
+          />
+          <MiniSummary label="Paper Sim" value={formatToken(result.summary.paperSimEligibilityStatus)} />
+          <MiniSummary label="Paper reason" value={result.summary.paperSimEligibilityReason ?? "pending"} />
+          <MiniSummary label="Research readiness" value={formatToken(result.summary.readinessSummary.researchReadiness)} />
+          <MiniSummary label="Paper readiness" value={formatToken(result.summary.readinessSummary.paperReadiness)} />
+          <MiniSummary
+            label="Monte Carlo"
+            value={result.latestMonteCarlo?.status === "saved" ? formatToken(result.latestMonteCarlo.summary?.robustnessRating) : "none saved"}
+            detail={result.latestMonteCarlo?.reason}
+          />
+          <MiniSummary
+            label="Max risk"
+            value={typeof result.latestMonteCarlo?.summary?.recommendedMaxRiskPerTradePct === "number" ? `${result.latestMonteCarlo.summary.recommendedMaxRiskPerTradePct.toFixed(2)}%` : "unavailable"}
+            detail={result.latestMonteCarlo?.recommendedMaxRiskReason ?? result.summary.recommendedMaxRiskReason}
+          />
+          <MiniSummary
+            label="CMD paper"
+            value={result.cmdPaperEligibility?.eligible ? "eligible" : "not eligible"}
+            detail={result.cmdPaperEligibility?.reason}
+          />
           <MiniSummary label="Execution" value="disabled" />
           <MiniSummary label="Session" value={formatToken(result.debug?.sessionNarrativeStatus)} />
           <MiniSummary label="Selected date" value={result.debug?.selectedSessionDate ?? "unknown"} />
@@ -163,11 +187,12 @@ export function ActivateMarketProgress({
   );
 }
 
-function MiniSummary({ label, value }: { label: string; value: string }) {
+function MiniSummary({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
     <div className="min-w-0">
       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
       <p className="mt-1 whitespace-normal break-words font-medium leading-5 text-slate-100">{value}</p>
+      {detail ? <p className="mt-1 whitespace-normal break-words text-xs leading-4 text-slate-500">{detail}</p> : null}
     </div>
   );
 }

@@ -1193,7 +1193,10 @@ function ResearchSignalCard({ signal }: { signal: IctResearchSignal }) {
         <AdvisorReadout label="Side" value={formatToken(signal.side)} detail={formatToken(signal.phase)} />
         <AdvisorReadout label="Setup" value={formatToken(signal.setup)} detail={formatToken(signal.approvedProfileStatus)} />
         <AdvisorReadout label="Model lane" value={formatToken(signal.modelQualityLane)} detail={signal.paperWatchlistReason ?? "research-only lane"} />
-        <AdvisorReadout label="Paper Sim" value={signal.paperWatchlistEligible ? "eligible" : "not eligible"} detail={signal.paperWatchlistEvidenceSummary ?? "compact evidence only"} />
+        <AdvisorReadout label="Paper Sim" value={formatToken(signal.paperSimEligibilityStatus)} detail={signal.paperSimEligibilityReason ?? signal.paperWatchlistEvidenceSummary ?? "compact evidence only"} />
+        <AdvisorReadout label="Research readiness" value={formatToken(signal.readinessSummary.researchReadiness)} detail={signal.readinessSummary.reasons[0] ?? "compact readiness summary"} />
+        <AdvisorReadout label="Paper readiness" value={formatToken(signal.readinessSummary.paperReadiness)} detail="paper-only review; no readiness promotion" />
+        <AdvisorReadout label="Execution readiness" value={formatToken(signal.readinessSummary.executionReadiness)} detail="always disabled" />
         <AdvisorReadout label="Approval score" value={typeof signal.approvalScore === "number" ? `${signal.approvalScore}/100` : "n/a"} />
         <AdvisorReadout label="Entry zone" value={entryZone} detail={signal.entryZone?.type} />
         <AdvisorReadout label="Target" value={compactPrice(signal.target)} />
@@ -1468,8 +1471,8 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
           <Badge variant={dataVariant}>{formatToken(currentRead.packetSource)}</Badge>
           <Badge variant={approvalVariant(currentRead.approvedStatus)}>{formatToken(currentRead.approvedStatus)}</Badge>
           <Badge variant={currentRead.modelQualityLane === "approved" ? "success" : currentRead.modelQualityLane === "rejected" ? "danger" : "warning"}>Model lane: {modelLaneLabel}</Badge>
-          <Badge variant={currentRead.paperWatchlistEligible ? "warning" : "secondary"}>
-            Paper Sim: {currentRead.paperWatchlistEligible ? "Eligible" : "Not Eligible"}
+          <Badge variant={currentRead.paperSimAllowed ? "warning" : "secondary"}>
+            Paper Sim: {currentRead.paperSimAllowed ? "Eligible" : "Not Eligible"}
           </Badge>
           <Badge variant="danger">Execution Disabled</Badge>
           <Badge variant="danger">authority none</Badge>
@@ -1485,7 +1488,7 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
         <AdvisorReadout
           label="Analysis timeframes"
           value={currentRead.analysisTimeframesUsed?.join(" / ") || "pending"}
-          detail={`${formatToken(currentRead.analysisDepthStatus)} depth`}
+          detail={`${formatToken(currentRead.analysisDepthStatus)} depth / ${formatToken(currentRead.multiTimeframeContextStatus)} context`}
         />
         <AdvisorReadout
           label="Missing timeframes"
@@ -1497,8 +1500,13 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
           value={currentRead.htfBiasSource?.length ? currentRead.htfBiasSource.join(" / ") : "pending"}
           detail={`Session ${currentRead.sessionModelSourceTimeframe ?? "pending"} / confirm ${currentRead.confirmationSourceTimeframe ?? "pending"}`}
         />
+        <AdvisorReadout label="Weekly bias" value={`${formatToken(currentRead.weeklyBiasDirection)} / ${formatToken(currentRead.weeklyBiasStatus)}`} detail={currentRead.weeklyBiasReason} />
         <AdvisorReadout label="Model lane" value={modelLaneLabel} detail={currentRead.paperWatchlistReason ?? "research-only lane"} />
         <AdvisorReadout label="Paper-watchlist eligibility" value={currentRead.paperWatchlistEligible ? "eligible" : "not eligible"} detail={currentRead.paperWatchlistEvidenceSummary ?? "compact evidence only"} />
+        <AdvisorReadout label="Paper Sim" value={formatToken(currentRead.paperSimEligibilityStatus)} detail={currentRead.paperSimEligibilityReason} />
+        <AdvisorReadout label="Research readiness" value={formatToken(currentRead.readinessSummary.researchReadiness)} detail={currentRead.readinessSummary.reasons[0]} />
+        <AdvisorReadout label="Paper readiness" value={formatToken(currentRead.readinessSummary.paperReadiness)} detail="paper/demo candidate remains gated" />
+        <AdvisorReadout label="Execution readiness" value={formatToken(currentRead.readinessSummary.executionReadiness)} detail="authority none / no broker mutation" />
         <AdvisorReadout label="Execution" value="Disabled" detail="authority none / no broker mutation" />
         <AdvisorReadout label="Phase 1" value={formatToken(currentRead.bestPhase1Setup)} detail={`${currentRead.debug.phase1SignalCount} signals evaluated`} />
         <AdvisorReadout label="Phase 2" value={formatToken(currentRead.bestPhase2Setup)} detail={`${currentRead.debug.phase2SignalCount} signals evaluated`} />
@@ -1529,12 +1537,17 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
         <AdvisorReadout label="Latest replay" value={currentRead.latestReplayStatus ?? "none saved"} detail="manual result" />
         <AdvisorReadout
           label="Latest Monte Carlo"
-          value={formatToken(currentRead.latestMonteCarloRobustness)}
+          value={currentRead.latestMonteCarloStatus === "saved" ? formatToken(currentRead.latestMonteCarloRobustness) : "none saved"}
           detail={
             typeof currentRead.latestMonteCarloRiskOfRuinPct === "number"
               ? `risk of ruin ${currentRead.latestMonteCarloRiskOfRuinPct.toFixed(1)}%`
-              : "manual result"
+              : currentRead.latestMonteCarloReason
           }
+        />
+        <AdvisorReadout
+          label="Recommended max risk"
+          value={typeof currentRead.latestMonteCarloRecommendedRiskPct === "number" ? `${currentRead.latestMonteCarloRecommendedRiskPct.toFixed(2)}%` : "unavailable"}
+          detail={currentRead.recommendedMaxRiskReason}
         />
         <AdvisorReadout
           label="Latest scorecard"
@@ -1564,12 +1577,17 @@ function CurrentReadDataFlowPanel({ currentRead }: { currentRead: IctCurrentRead
     ["Candle count", currentRead.debug.candleCount.toLocaleString()],
     ["Chart/display timeframe", currentRead.displayTimeframe ?? currentRead.primaryTimeframe],
     ["Display role", currentRead.displayTimeframeRole ?? "unknown"],
+    ["Analysis requested", currentRead.analysisTimeframesRequested?.join(", ") || "none"],
+    ["Analysis loaded", currentRead.analysisTimeframesLoaded?.join(", ") || "none"],
+    ["Required M5/M15 loaded", currentRead.requiredTimeframesLoaded ? "yes" : "no"],
     ["Analysis timeframes", currentRead.analysisTimeframesUsed?.join(", ") || "none"],
     ["Analysis depth", currentRead.analysisDepthStatus ?? "unknown"],
+    ["MTF context status", currentRead.multiTimeframeContextStatus ?? "unknown"],
     ["Missing analysis timeframes", currentRead.missingTimeframes?.join(", ") || "none"],
     ["HTF bias source", currentRead.htfBiasSource?.join(", ") || "none"],
     ["Session model source", currentRead.sessionModelSourceTimeframe ?? "none"],
     ["Confirmation source", currentRead.confirmationSourceTimeframe ?? "none"],
+    ["Weekly bias", `${currentRead.weeklyBiasDirection ?? "unknown"} / ${currentRead.weeklyBiasStatus ?? "unknown"} / ${currentRead.weeklyBiasReason ?? "none"}`],
     ["Primary TF available", currentRead.debug.primaryTimeframeAvailable ? "yes" : "no"],
     ["HTF available", currentRead.debug.htfTimeframesAvailable.join(", ") || "none"],
     ["Selected session date", currentRead.debug.selectedSessionDate ?? "none"],
@@ -1593,12 +1611,18 @@ function CurrentReadDataFlowPanel({ currentRead }: { currentRead: IctCurrentRead
     ["Approved status", currentRead.debug.approvedStatus],
     ["Model quality lane", currentRead.modelQualityLane],
     ["Paper-watchlist eligible", currentRead.paperWatchlistEligible ? "yes" : "no"],
+    ["Paper Sim eligibility", `${currentRead.paperSimEligibilityStatus ?? "unknown"} / ${currentRead.paperSimEligibilityReason ?? "none"}`],
+    ["Paper allowed", currentRead.paperSimAllowed ? "yes" : "no"],
+    ["Research readiness", `${currentRead.readinessSummary.researchReadiness} / ${currentRead.readinessSummary.reasons[0] ?? "no reason"}`],
+    ["Paper readiness", currentRead.readinessSummary.paperReadiness],
+    ["Execution readiness", currentRead.readinessSummary.executionReadiness],
     ["Execution allowed", currentRead.executionAllowed ? "true" : "false"],
     ["Rejection reasons", currentRead.debug.rejectionReasonsCount.toLocaleString()],
     ["No-trade reasons", currentRead.debug.noTradeReasonsCount.toLocaleString()],
     ["Journal", currentRead.debug.journalStatus ?? "pending"],
     ["Latest replay", currentRead.latestReplayStatus ?? "none"],
-    ["Latest Monte Carlo", currentRead.latestMonteCarloRobustness ?? "none"],
+    ["Latest Monte Carlo", `${currentRead.latestMonteCarloStatus} / ${currentRead.latestMonteCarloRobustness ?? currentRead.latestMonteCarloReason}`],
+    ["Recommended max risk", typeof currentRead.latestMonteCarloRecommendedRiskPct === "number" ? `${currentRead.latestMonteCarloRecommendedRiskPct.toFixed(2)}%` : currentRead.recommendedMaxRiskReason],
     ["Latest scorecard best", currentRead.latestScorecardBestSymbol ?? "none"],
     ["Latest state updated", currentRead.latestResearchStateUpdatedAt ?? "none"],
     ["Last evaluation", formatDate(currentRead.debug.lastEvaluationAt)]

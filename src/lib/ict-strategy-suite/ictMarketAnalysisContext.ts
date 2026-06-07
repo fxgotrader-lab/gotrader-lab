@@ -18,7 +18,9 @@ import type {
   IctAnalysisTimeframeContext,
   IctAnalysisTimeframeRole,
   IctMarketAnalysisContext,
-  IctMarketAnalysisContextBundle
+  IctMarketAnalysisContextBundle,
+  IctWeeklyBiasDirection,
+  IctWeeklyBiasStatus
 } from "./ictMarketAnalysisContextTypes";
 
 const authority = {
@@ -151,6 +153,51 @@ const sourceFirstLast = (source?: Pick<CanonicalCandleSourceSummary | CanonicalC
   lastTimestamp: source?.lastTimestamp
 });
 
+const weeklyBiasFromCandles = (candles: Candle[] = []): {
+  weeklyBiasStatus: IctWeeklyBiasStatus;
+  weeklyBiasDirection: IctWeeklyBiasDirection;
+  weeklyBiasReason: string;
+} => {
+  const ordered = candles
+    .filter((candle) => Number.isFinite(candle.open) && Number.isFinite(candle.close))
+    .slice()
+    .sort((left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime());
+  if (!ordered.length) {
+    return {
+      weeklyBiasStatus: "unavailable",
+      weeklyBiasDirection: "unknown",
+      weeklyBiasReason: "W1 context unavailable from MT5 range endpoint."
+    };
+  }
+  if (ordered.length < 2) {
+    return {
+      weeklyBiasStatus: "insufficient_data",
+      weeklyBiasDirection: "unknown",
+      weeklyBiasReason: `Only ${ordered.length} W1 candle available; weekly bias needs at least two compact weekly candles.`
+    };
+  }
+  const previous = ordered.at(-2);
+  const latest = ordered.at(-1);
+  if (!previous || !latest) {
+    return {
+      weeklyBiasStatus: "insufficient_data",
+      weeklyBiasDirection: "unknown",
+      weeklyBiasReason: "W1 context did not contain enough ordered candles for compact weekly bias."
+    };
+  }
+  const bodyDirection =
+    latest.close > latest.open ? "bullish" : latest.close < latest.open ? "bearish" : "neutral";
+  const closeDirection =
+    latest.close > previous.close ? "bullish" : latest.close < previous.close ? "bearish" : "neutral";
+  const weeklyBiasDirection =
+    bodyDirection === closeDirection ? bodyDirection : closeDirection === "neutral" ? bodyDirection : "neutral";
+  return {
+    weeklyBiasStatus: "loaded",
+    weeklyBiasDirection,
+    weeklyBiasReason: `W1 compact bias loaded from ${ordered.length} candles; latest close ${latest.close} versus prior close ${previous.close}.`
+  };
+};
+
 const summaryFromSource = ({
   brokerSymbol,
   requestedLookbackDays,
@@ -257,6 +304,7 @@ const buildContext = ({
   chartDisplayCandleCount,
   displayTimeframe,
   requestedSymbol,
+  weeklyBias,
   warnings
 }: {
   analysisContexts: IctAnalysisTimeframeContext[];
@@ -264,20 +312,44 @@ const buildContext = ({
   chartDisplayCandleCount: number;
   displayTimeframe: string;
   requestedSymbol: string;
+  weeklyBias?: {
+    weeklyBiasStatus: IctWeeklyBiasStatus;
+    weeklyBiasDirection: IctWeeklyBiasDirection;
+    weeklyBiasReason: string;
+  };
   warnings: string[];
 }): IctMarketAnalysisContext => {
   const used = ICT_REQUIRED_MARKET_ANALYSIS_TIMEFRAMES.filter((timeframe) =>
     analysisContexts.some((context) => context.timeframe === timeframe && context.candleCount > 0)
   );
   const missing = ICT_REQUIRED_MARKET_ANALYSIS_TIMEFRAMES.filter((timeframe) => !used.includes(timeframe));
+  const requiredTimeframesLoaded = used.includes("M5") && used.includes("M15");
+  const multiTimeframeContextStatus = requiredTimeframesLoaded
+    ? missing.length ? "partial" : "built"
+    : used.length ? "partial" : "unavailable";
   const htfBiasSource = used.filter((timeframe) => ["W1", "D1", "H4", "H1"].includes(timeframe));
   const sessionModelSourceTimeframe = used.includes("M15") ? "M15" : used.includes("M5") ? "M5" : undefined;
+  const weeklyContext = analysisContexts.find((context) => context.timeframe === "W1");
+  const weeklyFallback = weeklyBias ?? (
+    weeklyContext?.candleCount
+      ? {
+          weeklyBiasStatus: "loaded" as const,
+          weeklyBiasDirection: "unknown" as const,
+          weeklyBiasReason: "W1 context is registered; compact weekly direction requires explicit Activate Market context."
+        }
+      : {
+          weeklyBiasStatus: "unavailable" as const,
+          weeklyBiasDirection: "unknown" as const,
+          weeklyBiasReason: weeklyContext?.warning ?? "W1 context unavailable from MT5 range endpoint."
+        }
+  );
   return {
     researchOnly: true,
     requestedSymbol,
     brokerSymbol,
     displayTimeframe,
     displayTimeframeRole: "chart_display_reference_only",
+    analysisTimeframesRequested: [...ICT_REQUIRED_MARKET_ANALYSIS_TIMEFRAMES],
     analysisTimeframes: ICT_REQUIRED_MARKET_ANALYSIS_TIMEFRAMES.map((timeframe) =>
       analysisContexts.find((context) => context.timeframe === timeframe) ?? {
         timeframe,
@@ -290,16 +362,23 @@ const buildContext = ({
         warning: "Timeframe context is missing."
       }
     ),
+    analysisTimeframesLoaded: used,
+    requiredTimeframesLoaded,
     chartDisplayCandleCount,
     analysisDepthStatus: aggregateDepthStatus(analysisContexts, missing),
+    multiTimeframeContextStatus,
     analysisTimeframesUsed: used,
     missingTimeframes: missing,
     htfBiasSource,
     sessionModelSourceTimeframe,
     confirmationSourceTimeframe: used.includes("M5") ? "M5" : undefined,
+    weeklyBiasStatus: weeklyFallback.weeklyBiasStatus,
+    weeklyBiasDirection: weeklyFallback.weeklyBiasDirection,
+    weeklyBiasReason: weeklyFallback.weeklyBiasReason,
     warnings: Array.from(new Set([
       ...warnings,
       missing.length ? `Missing analysis timeframes: ${missing.join(", ")}.` : undefined,
+      multiTimeframeContextStatus === "partial" ? "Multi-timeframe context is partial but built from available compact analysis frames." : undefined,
       "Selected chart timeframe is display/reference only; it is not the sole analysis timeframe.",
       "MT5 USTECH is read-only CFD/proxy data for MNQ/NQ research, not CME futures broker truth."
     ].filter((value): value is string => Boolean(value)))),
@@ -357,6 +436,7 @@ export const buildIctMarketAnalysisContextFromSnapshot = ({
     chartDisplayCandleCount: snapshot.marketData.chartDisplayCandleCount ?? snapshot.marketData.activeResearchSource.candleCount ?? 0,
     displayTimeframe,
     requestedSymbol,
+    weeklyBias: undefined,
     warnings: ["Page-load Advisor context is lightweight; deep 90-day fetch runs only when Activate Market is clicked."]
   });
 };
@@ -449,6 +529,7 @@ export async function buildIctMarketAnalysisContextBundle(
       analysisContexts.push(contextFromDepthSummary(timeframe, summary, "mt5_chunked_range_unavailable"));
     }
   }
+  const weeklyBias = weeklyBiasFromCandles(analysisCandlesByTimeframe.W1 ?? []);
 
   return {
     context: buildContext({
@@ -457,6 +538,7 @@ export async function buildIctMarketAnalysisContextBundle(
       chartDisplayCandleCount: displayCandles.length,
       displayTimeframe,
       requestedSymbol,
+      weeklyBias,
       warnings
     }),
     displayCandles,

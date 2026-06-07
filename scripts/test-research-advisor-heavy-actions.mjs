@@ -30,6 +30,8 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictMonteCarloTypes.ts" },
   { root: sourceRoot, file: "ictLatestResearchStateTypes.ts" },
   { root: sourceRoot, file: "ictLatestResearchState.ts" },
+  { root: sourceRoot, file: "ictMarketAnalysisContextTypes.ts" },
+  { root: sourceRoot, file: "ictMarketAnalysisContext.ts" },
   { root: sourceRoot, file: "ictSignalContractTypes.ts" },
   { root: sourceRoot, file: "ictSignalContract.ts" },
   { root: sourceRoot, file: "ictPaperSignalSimulatorTypes.ts" },

@@ -1,6 +1,7 @@
 import type { IctBias, IctLocation, IctSide } from "./ictAdvisorTypes";
 import type { IctApprovedCandidateStatus } from "./ictApprovedSetupProfileTypes";
 import type { IctModelQualityLane } from "./ictCurrentReadTypes";
+import type { IctPaperSimEligibilityStatus, IctReadinessSummary } from "./ictCurrentReadTypes";
 import type { IctAnalysisDepthStatus, IctAnalysisTimeframe } from "./ictMarketAnalysisContextTypes";
 import type { IctMonteCarloRobustnessRating } from "./ictMonteCarloTypes";
 import type {
@@ -49,12 +50,19 @@ export interface IctResearchSignal {
   primaryTimeframe: string;
   displayTimeframe?: string;
   displayTimeframeRole?: "chart_display_reference_only";
+  analysisTimeframesRequested?: IctAnalysisTimeframe[];
+  analysisTimeframesLoaded?: IctAnalysisTimeframe[];
+  requiredTimeframesLoaded?: boolean;
   analysisTimeframesUsed?: IctAnalysisTimeframe[];
   analysisDepthStatus?: IctAnalysisDepthStatus;
+  multiTimeframeContextStatus?: "built" | "partial" | "unavailable";
   missingTimeframes?: IctAnalysisTimeframe[];
   htfBiasSource?: IctAnalysisTimeframe[];
   sessionModelSourceTimeframe?: IctAnalysisTimeframe;
   confirmationSourceTimeframe?: IctAnalysisTimeframe;
+  weeklyBiasStatus?: "loaded" | "unavailable" | "insufficient_data" | "skipped";
+  weeklyBiasDirection?: "bullish" | "bearish" | "neutral" | "unknown";
+  weeklyBiasReason?: string;
   htfTimeframes: string[];
   strategyId?: string;
   setup?: string;
@@ -70,6 +78,11 @@ export interface IctResearchSignal {
   paperWatchlistEligible: boolean;
   paperWatchlistReason?: string;
   paperWatchlistEvidenceSummary?: string;
+  paperSimEligibilityStatus?: IctPaperSimEligibilityStatus;
+  paperSimEligibilityReason?: string;
+  paperSimAllowed: boolean;
+  paperOnly: boolean;
+  readinessSummary: IctReadinessSummary;
   approvalScore?: number;
   bias?: IctBias;
   smtStatus?: string;

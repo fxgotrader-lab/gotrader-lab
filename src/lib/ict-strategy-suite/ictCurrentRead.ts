@@ -6,7 +6,9 @@ import type {
   IctCurrentRead,
   IctCurrentReadDataStatus,
   IctModelQualityLane,
-  IctCurrentReadPacketSource
+  IctCurrentReadPacketSource,
+  IctPaperSimEligibilityStatus,
+  IctReadinessSummary
 } from "./ictCurrentReadTypes";
 import type { IctAnalysisTimeframe } from "./ictMarketAnalysisContextTypes";
 
@@ -92,6 +94,18 @@ const latestResearchSummaryFor = (latestState?: IctLatestResearchState) => {
     latestMonteCarloRobustness: latestMonteCarlo?.robustnessRating,
     latestMonteCarloRiskOfRuinPct: latestMonteCarlo?.riskOfRuinPct,
     latestMonteCarloRecommendedRiskPct: latestMonteCarlo?.recommendedMaxRiskPerTradePct,
+    latestMonteCarloGeneratedAt: latestMonteCarlo?.generatedAt,
+    latestMonteCarloUsableOutcomes: latestMonteCarlo?.usableOutcomes,
+    latestMonteCarloStatus: latestMonteCarlo ? "saved" as const : "missing" as const,
+    latestMonteCarloReason: latestMonteCarlo
+      ? `Saved Monte Carlo ${latestMonteCarlo.robustnessRating}; ${latestMonteCarlo.usableOutcomes} usable outcomes.`
+      : "No saved Monte Carlo - run replay then Monte Carlo.",
+    recommendedMaxRiskStatus: typeof latestMonteCarlo?.recommendedMaxRiskPerTradePct === "number"
+      ? "available" as const
+      : "unavailable" as const,
+    recommendedMaxRiskReason: typeof latestMonteCarlo?.recommendedMaxRiskPerTradePct === "number"
+      ? "Recommended max risk comes from the latest saved Monte Carlo summary."
+      : "Recommended max risk unavailable - no saved Monte Carlo.",
     latestScorecardBestSymbol: bestScorecardSymbol,
     latestScorecardResearchPreferredSymbols: latestScorecard?.researchPreferredSymbols,
     latestResearchStateUpdatedAt: latestState?.updatedAt,
@@ -201,6 +215,96 @@ const confidenceWithAnalysisPenalty = (confidence: number | undefined, missingTi
   return Math.max(0, Number((confidence - missingPenalty - singleFramePenalty).toFixed(4)));
 };
 
+const isDirectionalSide = (side?: string) => side === "long" || side === "short";
+
+const paperSimEligibilityFor = (input: {
+  approvedStatus?: string;
+  modelQualityLane?: IctModelQualityLane;
+  side?: string;
+  target?: number;
+  invalidation?: number;
+  rrEstimate?: number;
+  confidence?: number;
+  riskStatus?: string;
+}): {
+  paperOnly: boolean;
+  paperSimAllowed: boolean;
+  paperSimEligibilityReason: string;
+  paperSimEligibilityStatus: IctPaperSimEligibilityStatus;
+} => {
+  const isApproved = input.approvedStatus === "approved_research_candidate" || input.modelQualityLane === "approved";
+  const isPaperWatchlist = input.approvedStatus === "paper_watchlist_candidate" || input.modelQualityLane === "paper_watchlist";
+  const blockers = [
+    !isApproved && !isPaperWatchlist ? "Only approved research signals or explicit paper-watchlist candidates are eligible." : undefined,
+    !isDirectionalSide(input.side) ? "Signal side must be long or short." : undefined,
+    !finite(input.target) ? "Missing target." : undefined,
+    !finite(input.invalidation) ? "Missing invalidation." : undefined,
+    !finite(input.rrEstimate) ? "Missing RR estimate." : undefined,
+    !finite(input.confidence) ? "Missing confidence." : undefined,
+    /reject|blocked|avoid/i.test(input.riskStatus ?? "") ? `Risk governor blocks candidate: ${input.riskStatus}.` : undefined
+  ].filter((value): value is string => Boolean(value));
+  const paperOnly = isPaperWatchlist;
+  if (!blockers.length) {
+    return {
+      paperOnly,
+      paperSimAllowed: true,
+      paperSimEligibilityStatus: "eligible",
+      paperSimEligibilityReason: paperOnly
+        ? "Paper-only eligible from explicit paper-watchlist candidate."
+        : "Eligible for paper simulation from approved research signal."
+    };
+  }
+  return {
+    paperOnly,
+    paperSimAllowed: false,
+    paperSimEligibilityStatus: isApproved || isPaperWatchlist ? "partial" : "not_eligible",
+    paperSimEligibilityReason: blockers[0]
+  };
+};
+
+const readinessSummaryFor = (input: {
+  analysisDepthStatus?: string;
+  dataStatus?: IctCurrentReadDataStatus;
+  missingTimeframes?: string[];
+  modelDetectionStatus?: "detected" | "not_detected" | "not_run";
+  paperSimAllowed: boolean;
+  paperSimEligibilityStatus: IctPaperSimEligibilityStatus;
+  paperSimEligibilityReason: string;
+  requiredTimeframesLoaded?: boolean;
+  riskStatus?: string;
+  smtStatus?: string;
+}): IctReadinessSummary => {
+  const reasons = uniqueReasons([
+    input.dataStatus !== "ready" ? `Current read data is ${input.dataStatus ?? "unknown"}.` : undefined,
+    input.requiredTimeframesLoaded === false ? "M5/M15 required analysis context is incomplete." : undefined,
+    input.missingTimeframes?.length ? `Missing analysis timeframes: ${input.missingTimeframes.join(", ")}.` : undefined,
+    input.analysisDepthStatus && input.analysisDepthStatus !== "sufficient" ? `Analysis depth is ${input.analysisDepthStatus}.` : undefined,
+    input.modelDetectionStatus !== "detected" ? "No complete session model detected." : undefined,
+    /comparison_sources_missing|insufficient|missing|unavailable/i.test(input.smtStatus ?? "") ? "SMT/relative-strength context is incomplete." : undefined,
+    /unknown|unavailable/i.test(input.riskStatus ?? "") ? "News/session risk context is incomplete." : undefined,
+    input.paperSimAllowed ? undefined : input.paperSimEligibilityReason,
+    "Execution readiness is disabled by design."
+  ]);
+  const usableResearch = input.dataStatus === "ready" && input.modelDetectionStatus !== "not_run";
+  const researchReadiness =
+    !usableResearch
+      ? "not_ready"
+      : reasons.some((reason) => /M5\/M15|Missing analysis|depth|No complete|SMT|risk context/i.test(reason))
+        ? "partial"
+        : "ready";
+  const paperReadiness = input.paperSimAllowed
+    ? "eligible"
+    : input.paperSimEligibilityStatus === "partial"
+      ? "partial"
+      : "not_eligible";
+  return {
+    researchReadiness,
+    paperReadiness,
+    executionReadiness: "disabled",
+    reasons
+  };
+};
+
 const nextActionFor = (packet: IctAdvisorPacket, reasons: string[]) => {
   const status = packet.approvedProfileDecision.status;
   if (!packet.activeSource.candleCount) return "Check MT5 Read Only or activate a canonical research source.";
@@ -303,11 +407,18 @@ export const buildUnavailableIctCurrentRead = (
   displayTimeframe: "5m",
   displayTimeframeRole: "chart_display_reference_only",
   analysisTimeframesUsed: [],
+  analysisTimeframesRequested: ["W1", "D1", "H4", "H1", "M15", "M5"],
+  analysisTimeframesLoaded: [],
+  requiredTimeframesLoaded: false,
   analysisDepthStatus: "unavailable",
+  multiTimeframeContextStatus: "unavailable",
   missingTimeframes: ["W1", "D1", "H4", "H1", "M15", "M5"],
   htfBiasSource: [],
   sessionModelSourceTimeframe: undefined,
   confirmationSourceTimeframe: undefined,
+  weeklyBiasStatus: "unavailable",
+  weeklyBiasDirection: "unknown",
+  weeklyBiasReason: "W1 context unavailable from MT5 range endpoint.",
   htfTimeframes: [],
   dataStatus: "unavailable",
   side: "flat",
@@ -316,6 +427,16 @@ export const buildUnavailableIctCurrentRead = (
   paperWatchlistEligible: false,
   paperWatchlistReason: reason,
   paperWatchlistEvidenceSummary: "No compact ICT model-quality evidence is available.",
+  paperSimEligibilityStatus: "not_eligible",
+  paperSimEligibilityReason: reason,
+  paperSimAllowed: false,
+  paperOnly: false,
+  readinessSummary: {
+    researchReadiness: "not_ready",
+    paperReadiness: "not_eligible",
+    executionReadiness: "disabled",
+    reasons: [reason, "Execution readiness is disabled by design."]
+  },
   executionAllowed: false,
   topReasons: [reason],
   nextAction: "Activate Market or check the canonical research source.",
@@ -343,12 +464,19 @@ export const buildUnavailableIctCurrentRead = (
     hydrationSource: "unavailable",
     hydrationWarning: reason,
     displayTimeframe: "5m",
+    analysisTimeframesRequested: ["W1", "D1", "H4", "H1", "M15", "M5"],
+    analysisTimeframesLoaded: [],
+    requiredTimeframesLoaded: false,
     analysisTimeframesUsed: [],
     analysisDepthStatus: "unavailable",
+    multiTimeframeContextStatus: "unavailable",
     missingTimeframes: ["W1", "D1", "H4", "H1", "M15", "M5"],
     htfBiasSource: [],
     sessionModelSourceTimeframe: undefined,
-    confirmationSourceTimeframe: undefined
+    confirmationSourceTimeframe: undefined,
+    weeklyBiasStatus: "unavailable",
+    weeklyBiasDirection: "unknown",
+    weeklyBiasReason: "W1 context unavailable from MT5 range endpoint."
   },
   ...latestResearchSummaryFor(latestState),
   authority,
@@ -412,14 +540,43 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
   const paperWatchlistModelName = primaryModelNameFor(packet);
   const analysisTimeframesUsed = analysisTimeframesFor(packet);
   const missingTimeframes = missingTimeframesFor(packet);
+  const analysisTimeframesRequested = packet.marketAnalysisContext?.analysisTimeframesRequested ?? ["W1", "D1", "H4", "H1", "M15", "M5"];
+  const analysisTimeframesLoaded = packet.marketAnalysisContext?.analysisTimeframesLoaded ?? analysisTimeframesUsed;
+  const requiredTimeframesLoaded = packet.marketAnalysisContext?.requiredTimeframesLoaded ?? (analysisTimeframesUsed.includes("M5") && analysisTimeframesUsed.includes("M15"));
   const analysisDepthStatus = analysisDepthStatusFor(packet) ?? packet.sessionNarrative?.dataDepth.status ?? packet.compactSummary.dataDepthStatus;
+  const multiTimeframeContextStatus = packet.marketAnalysisContext?.multiTimeframeContextStatus;
   const displayTimeframe = packet.marketAnalysisContext?.displayTimeframe ?? packet.compactSummary.displayTimeframe ?? packet.primaryTimeframe;
   const htfBiasSource = packet.marketAnalysisContext?.htfBiasSource ?? packet.compactSummary.htfBiasSource ?? [];
   const sessionModelSourceTimeframe =
     packet.marketAnalysisContext?.sessionModelSourceTimeframe ?? packet.compactSummary.sessionModelSourceTimeframe;
   const confirmationSourceTimeframe =
     packet.marketAnalysisContext?.confirmationSourceTimeframe ?? packet.compactSummary.confirmationSourceTimeframe;
+  const weeklyBiasStatus = packet.marketAnalysisContext?.weeklyBiasStatus;
+  const weeklyBiasDirection = packet.marketAnalysisContext?.weeklyBiasDirection;
+  const weeklyBiasReason = packet.marketAnalysisContext?.weeklyBiasReason;
   const adjustedConfidence = confidenceWithAnalysisPenalty(recommended.confidence, missingTimeframes, analysisTimeframesUsed);
+  const paperSim = paperSimEligibilityFor({
+    approvedStatus: packet.approvedProfileDecision.status,
+    confidence: recommended.confidence,
+    invalidation: recommended.invalidation,
+    modelQualityLane,
+    riskStatus,
+    rrEstimate: recommended.rrEstimate,
+    side: recommended.side,
+    target: recommended.target
+  });
+  const readinessSummary = readinessSummaryFor({
+    analysisDepthStatus,
+    dataStatus,
+    missingTimeframes,
+    modelDetectionStatus,
+    paperSimAllowed: paperSim.paperSimAllowed,
+    paperSimEligibilityReason: paperSim.paperSimEligibilityReason,
+    paperSimEligibilityStatus: paperSim.paperSimEligibilityStatus,
+    requiredTimeframesLoaded,
+    riskStatus,
+    smtStatus
+  });
   const multiTimeframeReasons = uniqueReasons([
     analysisTimeframesUsed.length <= 1 ? "Multi-timeframe context incomplete." : undefined,
     missingTimeframes.length ? `Missing analysis timeframes: ${missingTimeframes.join(", ")}.` : undefined,
@@ -434,12 +591,19 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     primaryTimeframe: packet.primaryTimeframe,
     displayTimeframe,
     displayTimeframeRole: "chart_display_reference_only",
+    analysisTimeframesRequested,
+    analysisTimeframesLoaded,
+    requiredTimeframesLoaded,
     analysisTimeframesUsed,
     analysisDepthStatus,
+    multiTimeframeContextStatus,
     missingTimeframes,
     htfBiasSource,
     sessionModelSourceTimeframe,
     confirmationSourceTimeframe,
+    weeklyBiasStatus,
+    weeklyBiasDirection,
+    weeklyBiasReason,
     htfTimeframes: packet.htfTimeframes,
     dataStatus,
     candleCount: packet.activeSource.candleCount,
@@ -454,6 +618,11 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     paperWatchlistModelName: paperWatchlistEligible ? paperWatchlistModelName : undefined,
     paperWatchlistReason,
     paperWatchlistEvidenceSummary,
+    paperSimEligibilityStatus: paperSim.paperSimEligibilityStatus,
+    paperSimEligibilityReason: paperSim.paperSimEligibilityReason,
+    paperSimAllowed: paperSim.paperSimAllowed,
+    paperOnly: paperSim.paperOnly,
+    readinessSummary,
     executionAllowed: false,
     approvalScore: packet.approvedProfileDecision.approvalScore,
     confidence: adjustedConfidence,
@@ -534,12 +703,19 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
       hydrationSource: packet.compactSummary.hydrationSource,
       hydrationWarning: packet.compactSummary.hydrationWarning,
       displayTimeframe,
+      analysisTimeframesRequested,
+      analysisTimeframesLoaded,
+      requiredTimeframesLoaded,
       analysisTimeframesUsed,
       analysisDepthStatus,
+      multiTimeframeContextStatus,
       missingTimeframes,
       htfBiasSource,
       sessionModelSourceTimeframe,
-      confirmationSourceTimeframe
+      confirmationSourceTimeframe,
+      weeklyBiasStatus,
+      weeklyBiasDirection,
+      weeklyBiasReason
     },
     authority,
     safety

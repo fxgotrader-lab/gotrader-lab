@@ -182,8 +182,9 @@ export function IctAdvisorSummaryPanel({
   );
   const missingTradeFieldsLabel = missingTradeFields.length ? missingTradeFields.join(", ") : "none";
   const paperWatchlistEligible = currentRead.paperWatchlistEligible;
-  const paperSimLabel = paperSimEligibility.eligible ? "Paper Sim: Eligible" : "Paper Sim: Not Eligible";
-  const paperSimVariant = paperSimEligibility.eligible ? "success" as const : "warning" as const;
+  const paperSimAllowed = currentRead.paperSimAllowed || paperSimEligibility.eligible;
+  const paperSimLabel = paperSimAllowed ? "Paper Sim: Eligible" : "Paper Sim: Not Eligible";
+  const paperSimVariant = paperSimAllowed ? "success" as const : "warning" as const;
   const modelLane = modelLaneLabel(currentRead.modelQualityLane);
   const cmdPaperState = cmdPaperTracking?.state ?? "inactive";
   const cmdPaperLabel =
@@ -247,12 +248,17 @@ export function IctAdvisorSummaryPanel({
               <AdvisorMini
                 label="Analysis TFs"
                 value={currentRead.analysisTimeframesUsed?.join(" / ") || "pending"}
-                detail={`${formatToken(currentRead.analysisDepthStatus)} depth`}
+                detail={`${formatToken(currentRead.analysisDepthStatus)} depth / ${formatToken(currentRead.multiTimeframeContextStatus)} context`}
               />
               <AdvisorMini
                 label="Missing TFs"
                 value={currentRead.missingTimeframes?.length ? currentRead.missingTimeframes.join(" / ") : "none"}
                 detail={`Session ${currentRead.sessionModelSourceTimeframe ?? "pending"} / confirm ${currentRead.confirmationSourceTimeframe ?? "pending"}`}
+              />
+              <AdvisorMini
+                label="Weekly bias"
+                value={`${formatToken(currentRead.weeklyBiasDirection)} / ${formatToken(currentRead.weeklyBiasStatus)}`}
+                detail={currentRead.weeklyBiasReason}
               />
               <AdvisorMini label="Composite bias" value={formatToken(currentRead.bias)} />
               <AdvisorMini
@@ -284,9 +290,12 @@ export function IctAdvisorSummaryPanel({
               />
               <AdvisorMini
                 label="Paper Sim"
-                value={paperWatchlistEligible ? "Paper Watchlist" : paperSimEligibility.eligible ? "Eligible" : "Not Eligible"}
-                detail={paperSimEligibility.eligible ? "paper-only review" : paperSimEligibility.reasons[0] ?? "Waiting for approved signal"}
+                value={formatToken(currentRead.paperSimEligibilityStatus)}
+                detail={currentRead.paperSimEligibilityReason ?? paperSimEligibility.reasons[0] ?? "Waiting for approved signal"}
               />
+              <AdvisorMini label="Research readiness" value={formatToken(currentRead.readinessSummary.researchReadiness)} detail={currentRead.readinessSummary.reasons[0]} />
+              <AdvisorMini label="Paper readiness" value={formatToken(currentRead.readinessSummary.paperReadiness)} detail="paper/demo remains gated" />
+              <AdvisorMini label="Execution readiness" value={formatToken(currentRead.readinessSummary.executionReadiness)} detail="always disabled" />
               <AdvisorMini
                 label="CMD Paper"
                 value={cmdPaperLabel}
@@ -308,12 +317,17 @@ export function IctAdvisorSummaryPanel({
               <AdvisorMini label="SMT / Risk" value={`${formatToken(currentRead.smtStatus)} / ${formatToken(currentRead.riskStatus)}`} detail={`${currentRead.smtReason ?? "SMT reason unavailable"} / ${currentRead.riskReason ?? "Risk reason unavailable"}`} />
               <AdvisorMini
                 label="Monte Carlo"
-                value={currentRead.latestMonteCarloRobustness ? formatToken(currentRead.latestMonteCarloRobustness) : "none saved"}
+                value={currentRead.latestMonteCarloStatus === "saved" ? formatToken(currentRead.latestMonteCarloRobustness) : "none saved"}
                 detail={
                   typeof currentRead.latestMonteCarloRiskOfRuinPct === "number"
                     ? `Risk of ruin ${currentRead.latestMonteCarloRiskOfRuinPct.toFixed(1)}%`
-                    : "latest manual result"
+                    : currentRead.latestMonteCarloReason
                 }
+              />
+              <AdvisorMini
+                label="Recommended max risk"
+                value={typeof currentRead.latestMonteCarloRecommendedRiskPct === "number" ? `${currentRead.latestMonteCarloRecommendedRiskPct.toFixed(2)}%` : "unavailable"}
+                detail={currentRead.recommendedMaxRiskReason}
               />
               <AdvisorMini
                 label="Replay"
@@ -331,7 +345,7 @@ export function IctAdvisorSummaryPanel({
             </div>
             <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3">
               <p className="line-clamp-2 text-xs leading-5 text-slate-300">
-                Session: {formatToken(currentRead.sessionNarrativeStatus ?? currentRead.sessionNarrativeProfile)}. Model: {currentRead.modelDetected ? `${formatToken(currentRead.modelName)} / ${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : "not detected"}. Lane: {modelLane}. Paper Sim: {paperSimEligibility.eligible ? "Eligible" : "Not Eligible"}. Execution: Disabled. Trade fields: target {formatToken(currentRead.targetConstructionStatus)}, invalidation {formatToken(currentRead.invalidationConstructionStatus)}, RR {formatToken(currentRead.rrConstructionStatus)}. {currentRead.topReasons[0] ?? currentRead.paperWatchlistReason ?? recommended?.summary ?? "ICT advisor summary unavailable."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
+                Session: {formatToken(currentRead.sessionNarrativeStatus ?? currentRead.sessionNarrativeProfile)}. Model: {currentRead.modelDetected ? `${formatToken(currentRead.modelName)} / ${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : "not detected"}. Lane: {modelLane}. Paper Sim: {currentRead.paperSimAllowed ? "Eligible" : "Not Eligible"} ({currentRead.paperSimEligibilityReason ?? "reason pending"}). Readiness: Research {formatToken(currentRead.readinessSummary.researchReadiness)}, Paper {formatToken(currentRead.readinessSummary.paperReadiness)}, Execution Disabled. Trade fields: target {formatToken(currentRead.targetConstructionStatus)}, invalidation {formatToken(currentRead.invalidationConstructionStatus)}, RR {formatToken(currentRead.rrConstructionStatus)}. {currentRead.topReasons[0] ?? currentRead.paperWatchlistReason ?? recommended?.summary ?? "ICT advisor summary unavailable."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
                 {" "}CMD Paper: {cmdPaperLabel}.
               </p>
             </div>
@@ -387,9 +401,10 @@ export function IctAdvisorSummaryPanel({
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <AdvisorMini label="Symbol mapping" value={`${packet.brokerSymbol} -> ${packet.requestedSymbol}`} detail={packet.activeSource.provider.replace(/_/g, " ")} />
             <AdvisorMini label="Chart timeframe" value={currentRead.displayTimeframe ?? packet.primaryTimeframe} detail="display/reference only" />
-            <AdvisorMini label="Analysis TFs" value={currentRead.analysisTimeframesUsed?.join(" / ") || "pending"} detail={`${formatToken(currentRead.analysisDepthStatus)} depth`} />
+            <AdvisorMini label="Analysis TFs" value={currentRead.analysisTimeframesUsed?.join(" / ") || "pending"} detail={`${formatToken(currentRead.analysisDepthStatus)} depth / ${formatToken(currentRead.multiTimeframeContextStatus)} context`} />
             <AdvisorMini label="Missing TFs" value={currentRead.missingTimeframes?.length ? currentRead.missingTimeframes.join(" / ") : "none"} detail="required W1/D1/H4/H1/M15/M5" />
             <AdvisorMini label="HTF / session source" value={currentRead.htfBiasSource?.length ? currentRead.htfBiasSource.join(" / ") : "pending"} detail={`Session ${currentRead.sessionModelSourceTimeframe ?? "pending"} / confirm ${currentRead.confirmationSourceTimeframe ?? "pending"}`} />
+            <AdvisorMini label="Weekly bias" value={`${formatToken(currentRead.weeklyBiasDirection)} / ${formatToken(currentRead.weeklyBiasStatus)}`} detail={currentRead.weeklyBiasReason} />
             <AdvisorMini label="Packet candles" value={packet.activeSource.candleCount.toLocaleString()} detail="compact count only" />
             <AdvisorMini label="HTF context" value={packet.htfTimeframes.length ? packet.htfTimeframes.join(", ") : "missing"} detail="analysis bias inputs" />
             <AdvisorMini label="Composite bias" value={formatToken(packet.compactSummary.compositeBias)} detail={recommended?.bias.primary ? `primary ${recommended.bias.primary}` : undefined} />
@@ -419,6 +434,10 @@ export function IctAdvisorSummaryPanel({
             />
             <AdvisorMini label="Candidate lane" value={modelLane} detail={currentRead.paperWatchlistReason ?? "research-only lane"} />
             <AdvisorMini label="Paper-watchlist eligibility" value={paperWatchlistEligible ? "eligible" : "not eligible"} detail={currentRead.paperWatchlistEvidenceSummary ?? "compact evidence only"} />
+            <AdvisorMini label="Paper Sim" value={formatToken(currentRead.paperSimEligibilityStatus)} detail={currentRead.paperSimEligibilityReason ?? paperSimEligibility.reasons[0] ?? "approval or structure pending"} />
+            <AdvisorMini label="Research readiness" value={formatToken(currentRead.readinessSummary.researchReadiness)} detail={currentRead.readinessSummary.reasons[0]} />
+            <AdvisorMini label="Paper readiness" value={formatToken(currentRead.readinessSummary.paperReadiness)} detail="paper/demo remains gated" />
+            <AdvisorMini label="Execution readiness" value={formatToken(currentRead.readinessSummary.executionReadiness)} detail="always disabled" />
             <AdvisorMini label="Execution" value="Disabled" detail="authority none / no broker mutation" />
             <AdvisorMini label="Active setup" value={formatToken(packet.compactSummary.setup)} />
             <AdvisorMini label="Research side" value={formatToken(packet.compactSummary.side)} />
@@ -430,7 +449,7 @@ export function IctAdvisorSummaryPanel({
               value={missingTradeFieldsLabel === "none" ? "complete" : missingTradeFieldsLabel}
               detail={`T ${formatToken(currentRead.targetConstructionStatus)} / I ${formatToken(currentRead.invalidationConstructionStatus)} / RR ${formatToken(currentRead.rrConstructionStatus)}`}
             />
-            <AdvisorMini label="Paper watchlist" value={paperWatchlistEligible ? "eligible" : "not eligible"} detail={paperWatchlistEligible ? "paper simulation only" : paperSimEligibility.reasons[0] ?? "approval or structure pending"} />
+            <AdvisorMini label="Paper watchlist" value={paperWatchlistEligible ? "eligible" : "not eligible"} detail={paperWatchlistEligible ? "paper simulation only" : currentRead.paperSimEligibilityReason ?? paperSimEligibility.reasons[0] ?? "approval or structure pending"} />
             <AdvisorMini label="CMD Paper" value={cmdPaperLabel} detail={cmdPaperTracking ? `${cmdPaperTracking.side} / ${formatToken(cmdPaperTracking.outcome)}` : "inactive"} />
             <AdvisorMini label="Approval score" value={`${packet.approvedProfileDecision.approvalScore}/100`} />
             <AdvisorMini label="Signal next action" value={researchSignal.nextAction} detail="research-only contract" />
@@ -459,12 +478,17 @@ export function IctAdvisorSummaryPanel({
             <AdvisorMini label="Latest replay" value={currentRead.latestReplayStatus ?? "none saved"} detail="manual result" />
             <AdvisorMini
               label="Latest Monte Carlo"
-              value={currentRead.latestMonteCarloRobustness ? formatToken(currentRead.latestMonteCarloRobustness) : "none saved"}
+              value={currentRead.latestMonteCarloStatus === "saved" ? formatToken(currentRead.latestMonteCarloRobustness) : "none saved"}
               detail={
                 typeof currentRead.latestMonteCarloRecommendedRiskPct === "number"
                   ? `max risk idea ${currentRead.latestMonteCarloRecommendedRiskPct.toFixed(1)}%`
-                  : "manual result"
+                  : currentRead.latestMonteCarloReason
               }
+            />
+            <AdvisorMini
+              label="Recommended max risk"
+              value={typeof currentRead.latestMonteCarloRecommendedRiskPct === "number" ? `${currentRead.latestMonteCarloRecommendedRiskPct.toFixed(2)}%` : "unavailable"}
+              detail={currentRead.recommendedMaxRiskReason}
             />
             <AdvisorMini label="Latest scorecard" value={currentRead.latestScorecardBestSymbol ?? "none saved"} detail="manual result" />
           </div>
