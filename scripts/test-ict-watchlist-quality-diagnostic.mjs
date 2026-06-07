@@ -335,6 +335,22 @@ const isValidExpansionProfile = (result) =>
     "ny_session_reversal_from_premium_to_discount"
   ].includes(result.sessionNarrativeProfile ?? "");
 
+const fvgTargetAlignsSide = (result) =>
+  (result.side === "long" && result.fvgTargetDetected === true && result.fvgTargetDirection === "premium") ||
+  (result.side === "short" && result.fvgTargetDetected === true && result.fvgTargetDirection === "discount");
+
+const amePaperEligibilityReasons = (result, rr) => {
+  if (result.sessionNarrativeProfile !== "accumulation_manipulation_expansion") return [];
+  return [
+    result.modelState !== "confirmed" ? "ame_model_not_confirmed" : undefined,
+    result.sessionMitigationDetected !== true ? "ame_ny_mitigation_missing" : undefined,
+    result.fvgTargetDetected !== true ? "ame_fvg_target_missing" : undefined,
+    !fvgTargetAlignsSide(result) ? "ame_fvg_target_not_aligned" : undefined,
+    result.riskGovernorAction === "downgrade_to_watchlist" ? "ame_news_or_session_risk_downgraded" : undefined,
+    typeof rr === "number" && (rr < 1.25 || rr > 2.25) ? "ame_first_target_rr_outside_1_25_to_2_25" : undefined
+  ].filter(Boolean);
+};
+
 const reasonTypeFor = (reason = "") => {
   const text = reason.toLowerCase();
   if (/downgrades candidate|medium news risk|session risk state is caution/.test(text)) return { type: "soft", key: "medium_news_or_session_caution" };
@@ -355,6 +371,9 @@ const reasonTypeFor = (reason = "") => {
     return { type: "hard", key: "invalid_or_missing_primary_signal" };
   }
   if (/target is too close/.test(text)) return { type: "hard", key: "target_quality" };
+  if (/ame paper watchlist excludes news\/session risk downgrades/.test(text)) return { type: "soft", key: "ame_news_or_session_risk_downgraded" };
+  if (/ame paper watchlist requires first-target rr/.test(text)) return { type: "soft", key: "ame_first_target_quality" };
+  if (/ame paper watchlist requires/.test(text)) return { type: "hard", key: "ame_missing_confirmation_evidence" };
   if (/price is at equilibrium/.test(text)) return { type: "hard", key: "equilibrium_context" };
   if (/confidence .*near but below|confidence .*below/.test(text)) return { type: "soft", key: "confidence_below_threshold" };
   if (/smt\/relative strength unavailable|smt\/relative strength confidence drag/.test(text)) return { type: "soft", key: "smt_insufficient_or_missing" };
@@ -436,7 +455,8 @@ const paperEligibilityReasonFor = (result) => {
     !sessionConfirmsDirection(result) ? "session_narrative_does_not_confirm_direction" : undefined,
     !riskNotBlocked(result) ? "news_or_session_risk_blocked" : undefined,
     result.sessionNarrativeProfile === "range_bound" ? "range_bound_excluded" : undefined,
-    !isValidExpansionProfile(result) ? "no_valid_expansion_or_reversal_profile" : undefined
+    !isValidExpansionProfile(result) ? "no_valid_expansion_or_reversal_profile" : undefined,
+    ...amePaperEligibilityReasons(result, rr)
   ].filter(Boolean);
   return reasons;
 };
@@ -605,6 +625,8 @@ async function main() {
         "session narrative confirms direction",
         "news/session risk is not blocked",
         "range_bound is excluded unless a valid reversal/expansion model exists",
+        "AME requires confirmed model state, aligned FVG draw, and no session/news downgrade",
+        "AME first-target RR must stay between 1.25R and 2.25R",
         "executionAllowed remains false"
       ],
       paperEligibleWatchlistCount: paperEligible.length,

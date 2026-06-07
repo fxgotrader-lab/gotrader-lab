@@ -341,6 +341,96 @@ async function main() {
   const plainWatchlist = suite.evaluateApprovedSetupProfile(baseSignal({ confidence: 0.68, target: undefined }), strict);
   assert.equal(plainWatchlist.status, "watchlist_candidate", "near miss without full structure should remain ordinary watchlist");
 
+  const ameTargetTooFar = suite.evaluateApprovedSetupProfile(
+    baseSignal({
+      confidence: 0.68,
+      rrEstimate: 4.5,
+      sessionNarrativeProfile: "accumulation_manipulation_expansion",
+      sessionDirectionalRead: "bullish",
+      sessionNarrativeConfidence: 0.7,
+      modelState: "confirmed",
+      sessionMitigationDetected: true,
+      fvgTargetDetected: true,
+      fvgTargetDirection: "premium"
+    }),
+    strict
+  );
+  assert.equal(ameTargetTooFar.status, "watchlist_candidate", "AME target that is too far must not become paper watchlist");
+  assert.match(ameTargetTooFar.watchlistReasons.join(" "), /first-target RR/i);
+
+  const ameUnconfirmedModel = suite.evaluateApprovedSetupProfile(
+    baseSignal({
+      confidence: 0.68,
+      rrEstimate: 1.8,
+      sessionNarrativeProfile: "accumulation_manipulation_expansion",
+      sessionDirectionalRead: "bullish",
+      sessionNarrativeConfidence: 0.7,
+      modelState: "triggered",
+      sessionMitigationDetected: true,
+      fvgTargetDetected: true,
+      fvgTargetDirection: "premium"
+    }),
+    strict
+  );
+  assert.equal(ameUnconfirmedModel.status, "watchlist_candidate", "AME without confirmed model state must not become paper watchlist");
+  assert.match(ameUnconfirmedModel.watchlistReasons.join(" "), /confirmed session model/i);
+
+  const ameReasonableFirstTarget = suite.evaluateApprovedSetupProfile(
+    baseSignal({
+      confidence: 0.68,
+      rrEstimate: 1.8,
+      sessionNarrativeProfile: "accumulation_manipulation_expansion",
+      sessionDirectionalRead: "bullish",
+      sessionNarrativeConfidence: 0.7,
+      modelState: "confirmed",
+      sessionMitigationDetected: true,
+      fvgTargetDetected: true,
+      fvgTargetDirection: "premium"
+    }),
+    strict
+  );
+  assert.equal(ameReasonableFirstTarget.status, "paper_watchlist_candidate", "AME with confirmed first-target evidence can remain paper watchlist");
+
+  const ameRiskDowngraded = suite.evaluateApprovedSetupProfile(
+    baseSignal({
+      confidence: 0.68,
+      rrEstimate: 1.8,
+      sessionNarrativeProfile: "accumulation_manipulation_expansion",
+      sessionDirectionalRead: "bullish",
+      sessionNarrativeConfidence: 0.7,
+      modelState: "confirmed",
+      sessionMitigationDetected: true,
+      fvgTargetDetected: true,
+      fvgTargetDirection: "premium",
+      newsSessionRisk: {
+        researchOnly: true,
+        newsRiskLevel: "low",
+        sessionRiskState: "caution",
+        riskGovernorAction: "downgrade_to_watchlist",
+        riskGovernorConfidenceAdjustment: -0.05,
+        blockingEventsCount: 0,
+        cautionEventsCount: 1,
+        blockingEvents: [],
+        cautionEvents: [],
+        session: {
+          timingZone: "America/New_York",
+          sourceTimestampZone: "UTC",
+          timestamp: "2026-06-05T16:00:00.000Z",
+          localDate: "2026-06-05",
+          localTime: "12:00",
+          sessionName: "new_york_lunch",
+          sessionRiskState: "caution",
+          reason: "Lunch chop fixture."
+        },
+        newsSessionRiskNotes: ["Session risk state is caution."],
+        generatedAt: "2026-06-05T16:00:00.000Z"
+      }
+    }),
+    strict
+  );
+  assert.equal(ameRiskDowngraded.status, "watchlist_candidate", "AME with session/news risk downgrade must remain ordinary watchlist");
+  assert.match(ameRiskDowngraded.watchlistReasons.join(" "), /risk downgrades/i);
+
   const unsafe = suite.evaluateApprovedSetupProfile(
     {
       ...baseSignal(),

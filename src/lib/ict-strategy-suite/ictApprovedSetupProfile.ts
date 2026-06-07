@@ -170,6 +170,8 @@ const directionConfirmsSide = (read: IctSessionDirectionalRead | undefined, side
 const directionContradictsSide = (read: IctSessionDirectionalRead | undefined, side: "long" | "short" | "flat") =>
   (read === "bullish" && side === "short") || (read === "bearish" && side === "long");
 const isSessionCalibratedProfile = (profile: IctApprovedSetupProfile) => profile.id === "gotrader_ict_90d_session_calibrated";
+const AME_PAPER_WATCHLIST_MIN_RR = 1.25;
+const AME_PAPER_WATCHLIST_MAX_RR = 2.25;
 
 const htfAlignedForSignal = (signal: IctAdvisorSignal) => {
   const htfValues = Object.values(signal.bias.htf);
@@ -268,6 +270,7 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
   const sessionNarrativeProfile = input.sessionNarrativeProfile;
   const sessionDirectionalRead = input.sessionDirectionalRead;
   const sessionNarrativeConfidence = input.sessionNarrativeConfidence;
+  const modelState = "modelState" in input ? input.modelState : undefined;
   const sessionMitigationDetected =
     "sessionMitigationDetected" in input
       ? input.sessionMitigationDetected
@@ -318,6 +321,7 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
     sessionNarrativeProfile,
     sessionDirectionalRead,
     sessionNarrativeConfidence,
+    modelState,
     sessionMitigationDetected,
     fvgTargetDetected,
     fvgTargetDirection,
@@ -329,6 +333,33 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
     symbol: input.symbol,
     targetTooClose
   };
+};
+
+const fvgDrawAlignsSide = (normalized: ReturnType<typeof normalizeInput>) =>
+  (normalized.side === "long" && normalized.fvgTargetDetected === true && normalized.fvgTargetDirection === "premium") ||
+  (normalized.side === "short" && normalized.fvgTargetDetected === true && normalized.fvgTargetDirection === "discount");
+
+const getAmePaperWatchlistBlockers = (normalized: ReturnType<typeof normalizeInput>, rr: number) => {
+  if (normalized.sessionNarrativeProfile !== "accumulation_manipulation_expansion") return [];
+  return [
+    normalized.modelState !== "confirmed"
+      ? `AME paper watchlist requires confirmed session model; current state ${normalized.modelState ?? "unknown"}.`
+      : undefined,
+    !directionConfirmsSide(normalized.sessionDirectionalRead, normalized.side)
+      ? "AME paper watchlist requires session direction to confirm the candidate side."
+      : undefined,
+    !normalized.hasDisplacement ? "AME paper watchlist requires displacement evidence." : undefined,
+    !normalized.hasLiquiditySweep ? "AME paper watchlist requires liquidity sweep evidence." : undefined,
+    normalized.sessionMitigationDetected !== true ? "AME paper watchlist requires confirmed NY mitigation context." : undefined,
+    normalized.fvgTargetDetected !== true ? "AME paper watchlist requires a detected first FVG draw target." : undefined,
+    !fvgDrawAlignsSide(normalized) ? "AME paper watchlist requires the FVG draw target to align with candidate side." : undefined,
+    normalized.newsSessionRisk?.riskGovernorAction === "downgrade_to_watchlist"
+      ? "AME paper watchlist excludes news/session risk downgrades; keep ordinary watchlist."
+      : undefined,
+    rr < AME_PAPER_WATCHLIST_MIN_RR || rr > AME_PAPER_WATCHLIST_MAX_RR
+      ? `AME paper watchlist requires first-target RR between ${AME_PAPER_WATCHLIST_MIN_RR.toFixed(2)}R and ${AME_PAPER_WATCHLIST_MAX_RR.toFixed(2)}R; current ${rr.toFixed(2)}R.`
+      : undefined
+  ].filter((reason): reason is string => Boolean(reason));
 };
 
 export const calculateApprovalScore = (input: IctApprovedSetupProfileInput, profile: IctApprovedSetupProfile) => {
@@ -511,7 +542,7 @@ export const evaluateApprovedSetupProfile = (
         : watchlistReasons.length
           ? "watchlist_candidate"
           : "approved_research_candidate";
-  const paperWatchlistEligible =
+  const basePaperWatchlistEligible =
     baseStatus === "watchlist_candidate" &&
     normalized.hasTarget &&
     normalized.hasInvalidation &&
@@ -526,6 +557,11 @@ export const evaluateApprovedSetupProfile = (
     normalized.newsSessionRisk?.newsRiskLevel !== "blocked" &&
     normalized.newsSessionRisk?.newsRiskLevel !== "high" &&
     normalized.newsSessionRisk?.sessionRiskState !== "avoid";
+  const amePaperWatchlistBlockers = basePaperWatchlistEligible && isAmeModel ? getAmePaperWatchlistBlockers(normalized, rr) : [];
+  if (basePaperWatchlistEligible && isAmeModel && amePaperWatchlistBlockers.length) {
+    watchlistReasons.push(...amePaperWatchlistBlockers);
+  }
+  const paperWatchlistEligible = basePaperWatchlistEligible && (!isAmeModel || amePaperWatchlistBlockers.length === 0);
   if (paperWatchlistEligible) {
     watchlistReasons.push("Paper watchlist eligible: complete target/invalidation/RR, but approval remains blocked by watchlist evidence.");
   }
