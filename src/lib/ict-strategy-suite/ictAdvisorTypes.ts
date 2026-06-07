@@ -1,5 +1,5 @@
 import type { CanonicalCandleProvider } from "../candleSources";
-import type { IctApprovedSetupDecision } from "./ictApprovedSetupProfileTypes";
+import type { IctApprovedSetupDecision, IctHtfAlignmentBreakdown } from "./ictApprovedSetupProfileTypes";
 import type {
   IctOrderBlockClassification,
   IctOrderBlockVariant,
@@ -108,6 +108,7 @@ export interface IctAdvisorSignal {
     htf: Record<string, IctBias>;
     composite: IctBias;
   };
+  htfAlignment?: IctHtfAlignmentBreakdown;
   dealingRange?: IctAdvisorDealingRange;
   liquiditySwept?: IctAdvisorLiquidityPool;
   drawOnLiquidity?: IctAdvisorLiquidityPool;
@@ -272,6 +273,7 @@ export interface IctAdvisorPacket {
     weeklyBiasStatus?: IctMarketAnalysisContext["weeklyBiasStatus"];
     weeklyBiasDirection?: IctMarketAnalysisContext["weeklyBiasDirection"];
     weeklyBiasReason?: string;
+    htfAlignment?: IctHtfAlignmentBreakdown;
     hydrationSource?: "canonical_source_store" | "active_mt5_readonly_feed" | "metadata_only" | "unavailable";
     hydrationWarning?: string;
     noTradeReasonCount: number;

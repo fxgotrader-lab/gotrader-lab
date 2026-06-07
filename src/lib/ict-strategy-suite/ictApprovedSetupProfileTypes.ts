@@ -24,6 +24,33 @@ export type IctApprovedProfileId =
   | "gotrader_ict_phase1_experimental"
   | "gotrader_ict_90d_session_calibrated";
 
+export type IctHtfAlignmentStatus =
+  | "aligned"
+  | "partially_aligned"
+  | "mixed"
+  | "conflicted"
+  | "missing"
+  | "not_required_for_model";
+
+export type IctHtfAlignmentTimeframe = "W1" | "D1" | "H4" | "H1" | "M15" | "M5";
+export type IctHtfAlignmentDirection = IctAdvisorSignal["bias"]["primary"] | "mixed" | "missing" | "unknown";
+export type IctHtfAlignmentModelAllowance = "hard_blocker" | "soft_warning" | "acceptable" | "not_required";
+
+export interface IctHtfAlignmentBreakdown {
+  W1: IctHtfAlignmentDirection;
+  D1: IctHtfAlignmentDirection;
+  H4: IctHtfAlignmentDirection;
+  H1: IctHtfAlignmentDirection;
+  M15: IctHtfAlignmentDirection;
+  M5: IctHtfAlignmentDirection;
+  setupDirection: "long" | "short" | "flat";
+  expectedDirection: IctAdvisorSignal["bias"]["primary"];
+  alignmentStatus: IctHtfAlignmentStatus;
+  conflictReason: string;
+  modelAllowance: IctHtfAlignmentModelAllowance;
+  modelAllowanceReason: string;
+}
+
 export interface IctApprovedSetupProfile {
   id: IctApprovedProfileId;
   label: string;
@@ -65,6 +92,7 @@ export interface IctApprovedSetupDecision {
   rrEstimate?: number;
   compositeBias?: string;
   htfAligned?: boolean;
+  htfAlignment?: IctHtfAlignmentBreakdown;
   dealingRangeLocation?: string;
   liquidityTargetType?: string;
   fvgStatus?: string;

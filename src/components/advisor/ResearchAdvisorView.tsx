@@ -1829,6 +1829,11 @@ function CurrentReadPanel({
           value={currentRead.htfBiasSource?.length ? currentRead.htfBiasSource.join(" / ") : "pending"}
           detail={`Session ${currentRead.sessionModelSourceTimeframe ?? "pending"} / confirm ${currentRead.confirmationSourceTimeframe ?? "pending"}`}
         />
+        <AdvisorReadout
+          label="HTF alignment"
+          value={formatToken(currentRead.htfAlignment?.alignmentStatus)}
+          detail={currentRead.htfAlignment?.conflictReason ?? "W1/D1/H4/H1/M15/M5 direction context pending"}
+        />
         <AdvisorReadout label="Weekly bias" value={`${formatToken(currentRead.weeklyBiasDirection)} / ${formatToken(currentRead.weeklyBiasStatus)}`} detail={currentRead.weeklyBiasReason} />
         <AdvisorReadout label="Model lane" value={modelLaneLabel} detail={currentRead.paperWatchlistReason ?? "research-only lane"} />
         <AdvisorReadout label="Paper-watchlist eligibility" value={currentRead.paperWatchlistEligible ? "eligible" : "not eligible"} detail={currentRead.paperWatchlistEvidenceSummary ?? "compact evidence only"} />

@@ -232,6 +232,7 @@ export const buildIctResearchSignalFromCurrentRead = (
     multiTimeframeContextStatus: currentRead.multiTimeframeContextStatus,
     missingTimeframes: currentRead.missingTimeframes,
     htfBiasSource: currentRead.htfBiasSource,
+    htfAlignment: currentRead.htfAlignment,
     sessionModelSourceTimeframe: currentRead.sessionModelSourceTimeframe,
     confirmationSourceTimeframe: currentRead.confirmationSourceTimeframe,
     weeklyBiasStatus: currentRead.weeklyBiasStatus,

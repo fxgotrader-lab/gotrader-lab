@@ -74,6 +74,20 @@ function baseCurrentRead(overrides = {}) {
     weeklyBiasDirection: "bullish",
     weeklyBiasReason: "Derived from D1 90-day read-only history.",
     htfTimeframes: ["15m", "1h"],
+    htfAlignment: {
+      W1: "bearish",
+      D1: "bearish",
+      H4: "mixed",
+      H1: "bullish",
+      M15: "bullish",
+      M5: "bullish",
+      setupDirection: "long",
+      expectedDirection: "bullish",
+      alignmentStatus: "mixed",
+      conflictReason: "W1 bearish, D1 bearish, H4 mixed, H1 bullish, M15 bullish, M5 bullish; setup long expects bullish; long idea is counter-trend.",
+      modelAllowance: "hard_blocker",
+      modelAllowanceReason: "Trend-continuation and unsupported models require stronger higher-timeframe agreement."
+    },
     dataStatus: "ready",
     candleCount: 1000,
     side: "flat",
@@ -149,7 +163,21 @@ function baseCurrentRead(overrides = {}) {
       analysisTimeframesUsed: ["W1", "D1", "H4", "H1", "M15", "M5"],
       analysisDepthStatus: "sufficient",
       weeklyBiasStatus: "loaded",
-      weeklyBiasDirection: "bullish"
+      weeklyBiasDirection: "bullish",
+      htfAlignment: {
+        W1: "bearish",
+        D1: "bearish",
+        H4: "mixed",
+        H1: "bullish",
+        M15: "bullish",
+        M5: "bullish",
+        setupDirection: "long",
+        expectedDirection: "bullish",
+        alignmentStatus: "mixed",
+        conflictReason: "W1 bearish, D1 bearish, H4 mixed, H1 bullish, M15 bullish, M5 bullish; setup long expects bullish; long idea is counter-trend.",
+        modelAllowance: "hard_blocker",
+        modelAllowanceReason: "Trend-continuation and unsupported models require stronger higher-timeframe agreement."
+      }
     },
     authority,
     safety,
@@ -169,6 +197,7 @@ function baseResearchSignal(currentRead, overrides = {}) {
     brokerSymbol: currentRead.brokerSymbol,
     primaryTimeframe: currentRead.primaryTimeframe,
     htfTimeframes: currentRead.htfTimeframes,
+    htfAlignment: currentRead.htfAlignment,
     side: currentRead.side,
     approvedProfileStatus: currentRead.approvedStatus,
     modelQualityLane: currentRead.modelQualityLane,
@@ -228,6 +257,8 @@ const researchSignal = baseResearchSignal(currentRead);
 const explanation = buildResearchAdvisorDecisionExplanation({ currentRead, researchSignal });
 
 assert.match(getSection(explanation, "source_context").reason, /live mt5|live_mt5/i);
+assert.match(getSection(explanation, "htf_alignment").reason, /W1 bearish.*D1 bearish.*counter-trend/i);
+assert.match(getSection(explanation, "htf_alignment").facts.join(" "), /H4 mixed/i);
 assert.match(getSection(explanation, "lane_decision").reason, /Lane rejected because/i);
 assert.match(getSection(explanation, "paper_sim").reason, /Paper Sim not eligible because/i);
 assert.match(getSection(explanation, "cmd_paper").reason, /CMD Paper not eligible - current model is accumulation manipulation expansion/i);

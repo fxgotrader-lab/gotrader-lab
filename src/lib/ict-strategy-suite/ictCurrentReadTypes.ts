@@ -1,5 +1,5 @@
 import type { IctBias, IctLocation, IctSide } from "./ictAdvisorTypes";
-import type { IctApprovedCandidateStatus } from "./ictApprovedSetupProfileTypes";
+import type { IctApprovedCandidateStatus, IctHtfAlignmentBreakdown } from "./ictApprovedSetupProfileTypes";
 import type {
   IctAnalysisDepthStatus,
   IctAnalysisTimeframe,
@@ -74,6 +74,7 @@ export interface IctCurrentRead {
   weeklyBiasDirection?: IctWeeklyBiasDirection;
   weeklyBiasReason?: string;
   htfTimeframes: string[];
+  htfAlignment?: IctHtfAlignmentBreakdown;
   dataStatus: IctCurrentReadDataStatus;
   candleCount?: number;
   htfStatus?: Record<string, "ready" | "missing" | "unavailable">;
@@ -216,6 +217,7 @@ export interface IctCurrentRead {
     weeklyBiasStatus?: IctWeeklyBiasStatus;
     weeklyBiasDirection?: IctWeeklyBiasDirection;
     weeklyBiasReason?: string;
+    htfAlignment?: IctHtfAlignmentBreakdown;
   };
   authority: {
     executionAuthority: "none";

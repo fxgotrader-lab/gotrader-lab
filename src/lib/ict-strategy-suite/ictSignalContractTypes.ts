@@ -1,5 +1,5 @@
 import type { IctBias, IctLocation, IctSide } from "./ictAdvisorTypes";
-import type { IctApprovedCandidateStatus } from "./ictApprovedSetupProfileTypes";
+import type { IctApprovedCandidateStatus, IctHtfAlignmentBreakdown } from "./ictApprovedSetupProfileTypes";
 import type { IctModelQualityLane } from "./ictCurrentReadTypes";
 import type { IctPaperSimEligibilityStatus, IctReadinessSummary } from "./ictCurrentReadTypes";
 import type { IctAnalysisDepthStatus, IctAnalysisTimeframe } from "./ictMarketAnalysisContextTypes";
@@ -68,6 +68,7 @@ export interface IctResearchSignal {
   multiTimeframeContextStatus?: "built" | "partial" | "unavailable";
   missingTimeframes?: IctAnalysisTimeframe[];
   htfBiasSource?: IctAnalysisTimeframe[];
+  htfAlignment?: IctHtfAlignmentBreakdown;
   sessionModelSourceTimeframe?: IctAnalysisTimeframe;
   confirmationSourceTimeframe?: IctAnalysisTimeframe;
   weeklyBiasStatus?: "loaded" | "unavailable" | "insufficient_data" | "skipped";

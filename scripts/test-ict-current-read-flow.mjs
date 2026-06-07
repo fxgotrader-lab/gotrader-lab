@@ -227,6 +227,8 @@ async function main() {
   assert.ok(read.missingTimeframes.includes("W1"), "lightweight read should explain missing weekly context until Activate Market runs");
   assert.ok(read.topReasons.some((reason) => /Multi-timeframe|Missing analysis timeframes|Analysis depth/i.test(reason)), "current read should surface incomplete multi-timeframe context");
   assert.deepEqual(read.htfTimeframes.sort(), ["15m", "1h"].sort(), "HTF timeframes should be preserved");
+  assert.ok(read.htfAlignment, "Current read should expose compact HTF alignment diagnostics");
+  assert.ok(["aligned", "partially_aligned", "mixed", "conflicted", "missing", "not_required_for_model"].includes(read.htfAlignment.alignmentStatus), "HTF alignment status should be classified");
   assert.ok(read.debug.phase1SignalCount >= 4, "Phase 1 signals should be counted");
   assert.ok(read.debug.phase2SignalCount >= 4, "Phase 2 signals should be counted");
   assert.ok(read.bestPhase1Setup, "Phase 1 setup should be exposed");

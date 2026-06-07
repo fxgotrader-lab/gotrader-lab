@@ -5,6 +5,7 @@ import type { IctResearchSignal } from "./ictSignalContractTypes";
 
 export type IctResearchAdvisorDecisionSectionId =
   | "source_context"
+  | "htf_alignment"
   | "lane_decision"
   | "paper_sim"
   | "cmd_paper"

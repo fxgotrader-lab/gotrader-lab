@@ -33,6 +33,7 @@ const first = (...values: Array<string | undefined | null | false>) => values.fi
 const firstList = (values?: string[]) => values?.find((value) => value.trim().length > 0);
 const unique = (values: Array<string | undefined | null | false>) => Array.from(new Set(values.filter((value): value is string => typeof value === "string" && value.trim().length > 0)));
 const isCmd = (modelName?: string) => modelName === "consolidation_manipulation_distribution";
+const htfFrames = ["W1", "D1", "H4", "H1", "M15", "M5"] as const;
 
 const section = (
   id: IctResearchAdvisorDecisionSection["id"],
@@ -95,6 +96,40 @@ const cmdPaperReasonFor = ({ currentRead, researchSignal, cmdPaperTracking }: Ic
     )}`;
   }
   return `CMD Paper eligible because CMD is a paper-watchlist candidate. ${currentRead.paperWatchlistReason ?? "Paper-only tracking can be created manually."}`;
+};
+
+const htfAlignmentStatusFor = ({ currentRead }: IctResearchAdvisorDecisionExplanationInput): IctResearchAdvisorDecisionStatus => {
+  const status = currentRead.htfAlignment?.alignmentStatus;
+  if (status === "aligned" || status === "not_required_for_model") return "ready";
+  if (status === "partially_aligned" || status === "mixed") return "warning";
+  if (status === "conflicted") return currentRead.htfAlignment?.modelAllowance === "soft_warning" ? "warning" : "rejected";
+  return "missing";
+};
+
+const htfAlignmentReasonFor = ({ currentRead }: IctResearchAdvisorDecisionExplanationInput) => {
+  const alignment = currentRead.htfAlignment;
+  if (!alignment) {
+    return "HTF alignment unavailable because the current read did not include compact W1/D1/H4/H1/M15/M5 direction context.";
+  }
+  if (alignment.alignmentStatus === "aligned") {
+    return `HTF alignment is aligned. ${alignment.conflictReason}`;
+  }
+  if (alignment.modelAllowance === "soft_warning") {
+    return `HTF alignment is a research-only warning: ${alignment.conflictReason} ${alignment.modelAllowanceReason}`;
+  }
+  if (alignment.modelAllowance === "not_required") {
+    return `HTF alignment is not required for this model state. ${alignment.modelAllowanceReason}`;
+  }
+  return `HTF alignment blocks this setup: ${alignment.conflictReason} ${alignment.modelAllowanceReason}`;
+};
+
+const htfAlignmentNextActionFor = ({ currentRead }: IctResearchAdvisorDecisionExplanationInput) => {
+  const alignment = currentRead.htfAlignment;
+  if (!alignment) return "Rerun Activate Market so the compact multi-timeframe context reaches the current read.";
+  if (alignment.alignmentStatus === "aligned") return "Keep HTF filter intact; continue normal deterministic validation.";
+  if (alignment.modelAllowance === "soft_warning") return "Treat as watchlist/paper-only research evidence; do not promote until replay confirms the model.";
+  if (alignment.alignmentStatus === "missing") return "Reload missing HTF context before evaluating this setup.";
+  return "Wait for higher-timeframe agreement or a model-specific reversal/CMD confirmation that permits paper-only testing.";
 };
 
 const monteCarloReasonFor = ({ currentRead, latestResearchState }: IctResearchAdvisorDecisionExplanationInput) => {
@@ -195,6 +230,23 @@ export const buildResearchAdvisorDecisionExplanation = (
       `Current read uses ${token(currentRead.packetSource)} with ${currentRead.candleCount?.toLocaleString() ?? 0} compact candles; analysis depth is ${token(currentRead.analysisDepthStatus)} and weekly bias is ${token(currentRead.weeklyBiasStatus)}.`,
       currentRead.packetSource === "live_mt5" ? "Keep MT5 active and rerun Activate Market when the market window changes." : "Activate MT5 Research Mode before evaluating the advisor.",
       sourceFacts
+    ),
+    section(
+      "htf_alignment",
+      "HTF alignment",
+      htfAlignmentStatusFor(input),
+      htfAlignmentReasonFor(input),
+      htfAlignmentNextActionFor(input),
+      [
+        currentRead.htfAlignment ? `Setup direction ${token(currentRead.htfAlignment.setupDirection)}` : undefined,
+        currentRead.htfAlignment ? `Expected ${token(currentRead.htfAlignment.expectedDirection)}` : undefined,
+        currentRead.htfAlignment ? `Status ${token(currentRead.htfAlignment.alignmentStatus)}` : undefined,
+        currentRead.htfAlignment ? `Model allowance ${token(currentRead.htfAlignment.modelAllowance)}` : undefined,
+        ...(currentRead.htfAlignment
+          ? htfFrames.map((frame) => `${frame} ${token(currentRead.htfAlignment?.[frame])}`)
+          : []),
+        currentRead.htfAlignment?.modelAllowanceReason
+      ]
     ),
     section(
       "lane_decision",

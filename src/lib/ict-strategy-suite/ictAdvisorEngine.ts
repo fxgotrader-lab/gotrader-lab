@@ -31,6 +31,7 @@ import {
 } from "./ictPhase2BreadAndButter";
 import { evaluateIctPhase2OneShotOneKill } from "./ictPhase2OneShotOneKill";
 import {
+  classifyHtfAlignment,
   evaluateApprovedSetupProfile,
   getDefaultApprovedSetupProfiles
 } from "./ictApprovedSetupProfile";
@@ -61,6 +62,7 @@ import type {
   IctLiquidityType,
   IctSide
 } from "./ictAdvisorTypes";
+import type { IctHtfAlignmentBreakdown, IctHtfAlignmentDirection, IctHtfAlignmentTimeframe } from "./ictApprovedSetupProfileTypes";
 import type { IctIndexComparisonCandles } from "./ictIndexSmtTypes";
 import type { IctNewsSessionRiskContextInput } from "./ictNewsSessionRiskTypes";
 import { buildIctSessionNarrative } from "./ictSessionNarrative";
@@ -154,6 +156,56 @@ const candleBias = (candles: Candle[] = []): IctBias => {
   if (change > 0.001) return "bullish";
   if (change < -0.001) return "bearish";
   return "neutral";
+};
+
+const htfAlignmentFrames = ["W1", "D1", "H4", "H1", "M15", "M5"] as const;
+
+const normalizeHtfAlignmentKey = (timeframe: string): IctHtfAlignmentTimeframe | undefined => {
+  const normalized = timeframe.toLowerCase().replace(/\s+/g, "");
+  if (normalized === "w1" || normalized === "1w" || normalized === "weekly") return "W1";
+  if (normalized === "d1" || normalized === "1d" || normalized === "daily") return "D1";
+  if (normalized === "h4" || normalized === "4h") return "H4";
+  if (normalized === "h1" || normalized === "1h") return "H1";
+  if (normalized === "m15" || normalized === "15m") return "M15";
+  if (normalized === "m5" || normalized === "5m") return "M5";
+  return undefined;
+};
+
+const expectedBiasForSide = (side: IctSide): IctBias =>
+  side === "long" ? "bullish" : side === "short" ? "bearish" : "neutral";
+
+const candleAlignmentDirection = (candles?: Candle[]): IctHtfAlignmentDirection =>
+  candles?.length ? candleBias(candles) : "missing";
+
+const buildHtfAlignmentForSignal = ({
+  htfCandles,
+  primaryCandles,
+  signal
+}: {
+  htfCandles: Record<string, Candle[]>;
+  primaryCandles: Candle[];
+  signal: IctAdvisorSignal;
+}): IctHtfAlignmentBreakdown => {
+  const directions: Record<IctHtfAlignmentTimeframe, IctHtfAlignmentDirection> = {
+    W1: "missing",
+    D1: "missing",
+    H4: "missing",
+    H1: "missing",
+    M15: "missing",
+    M5: candleAlignmentDirection(primaryCandles)
+  };
+  for (const [timeframe, values] of Object.entries(htfCandles)) {
+    const normalized = normalizeHtfAlignmentKey(timeframe);
+    if (normalized) directions[normalized] = candleAlignmentDirection(values);
+  }
+  return classifyHtfAlignment(
+    {
+      ...directions,
+      setupDirection: signal.side,
+      expectedDirection: expectedBiasForSide(signal.side)
+    },
+    signal
+  );
 };
 
 const compositeBiasFor = (primary: IctBias, htf: Record<string, IctBias>): IctBias => {
@@ -702,12 +754,20 @@ export const buildIctAdvisorSignals = ({
       : signalWithCompletedStructure;
     const newsSessionRisk = evaluateNewsSessionRisk(signalWithSmt, newsSessionRiskContext);
     const signalWithRisk = applyNewsSessionRiskToSignal(signalWithSmt, newsSessionRisk);
+    const signalWithHtfAlignment: IctAdvisorSignal = {
+      ...signalWithRisk,
+      htfAlignment: buildHtfAlignmentForSignal({
+        htfCandles,
+        primaryCandles: normalized,
+        signal: signalWithRisk
+      })
+    };
     const approvedProfileDecision = applyNewsSessionRiskToApprovedDecision(
-      applySmtToApprovedDecision(evaluateApprovedSetupProfile(signalWithRisk, approvedProfile), smt),
+      applySmtToApprovedDecision(evaluateApprovedSetupProfile(signalWithHtfAlignment, approvedProfile), smt),
       newsSessionRisk
     );
     return {
-      ...signalWithRisk,
+      ...signalWithHtfAlignment,
       approvedProfileDecision
     };
   });
@@ -1004,6 +1064,7 @@ export async function buildIctAdvisorPacketFromRuntime(
       weeklyBiasStatus: marketAnalysisContext.weeklyBiasStatus,
       weeklyBiasDirection: marketAnalysisContext.weeklyBiasDirection,
       weeklyBiasReason: marketAnalysisContext.weeklyBiasReason,
+      htfAlignment: finalApprovedProfileDecision.htfAlignment ?? recommendedSignal.htfAlignment,
       hydrationSource: analysis.hydrationSource,
       hydrationWarning: analysis.hydrationWarning,
       noTradeReasonCount: recommendedSignal.noTradeReasons.length + (analysis.hydrationWarning ? 1 : 0)

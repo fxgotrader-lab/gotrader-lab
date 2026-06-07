@@ -542,9 +542,16 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
   const smtReason = smtReasonFor(recommended, packet);
   const riskStatus = riskStatusFor(recommended);
   const riskReason = riskReasonFor(recommended);
+  const htfAlignment =
+    packet.approvedProfileDecision.htfAlignment ??
+    recommended.htfAlignment ??
+    packet.compactSummary.htfAlignment;
   const reasons = uniqueReasons([
     packet.activeSource.candleCount <= 0 ? "Missing candle data from active canonical research source." : undefined,
     packet.htfTimeframes.length === 0 ? "Missing higher-timeframe context for the current advisor read." : undefined,
+    htfAlignment && htfAlignment.alignmentStatus !== "aligned" && htfAlignment.alignmentStatus !== "not_required_for_model"
+      ? `HTF alignment ${htfAlignment.alignmentStatus}: ${htfAlignment.conflictReason} ${htfAlignment.modelAllowanceReason}`
+      : undefined,
     packet.compactSummary.hydrationWarning,
     !packet.sessionNarrative && packet.activeSource.candleCount > 0 ? "Session narrative did not run; compact MT5 candles were not hydrated into the advisor engine." : undefined,
     ...packet.approvedProfileDecision.rejectionReasons,
@@ -666,6 +673,7 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     weeklyBiasDirection,
     weeklyBiasReason,
     htfTimeframes: packet.htfTimeframes,
+    htfAlignment,
     dataStatus,
     candleCount: packet.activeSource.candleCount,
     htfStatus: htfStatusFor(packet),
@@ -802,7 +810,8 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
       confirmationSourceTimeframe,
       weeklyBiasStatus,
       weeklyBiasDirection,
-      weeklyBiasReason
+      weeklyBiasReason,
+      htfAlignment
     },
     authority,
     safety

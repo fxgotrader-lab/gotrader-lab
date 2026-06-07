@@ -439,6 +439,7 @@ export function IctAdvisorSummaryPanel({
             <AdvisorMini label="Analysis TFs" value={currentRead.analysisTimeframesUsed?.join(" / ") || "pending"} detail={`${formatToken(currentRead.analysisDepthStatus)} depth / ${formatToken(currentRead.multiTimeframeContextStatus)} context`} />
             <AdvisorMini label="Missing TFs" value={currentRead.missingTimeframes?.length ? currentRead.missingTimeframes.join(" / ") : "none"} detail="required W1/D1/H4/H1/M15/M5" />
             <AdvisorMini label="HTF / session source" value={currentRead.htfBiasSource?.length ? currentRead.htfBiasSource.join(" / ") : "pending"} detail={`Session ${currentRead.sessionModelSourceTimeframe ?? "pending"} / confirm ${currentRead.confirmationSourceTimeframe ?? "pending"}`} />
+            <AdvisorMini label="HTF alignment" value={formatToken(currentRead.htfAlignment?.alignmentStatus)} detail={currentRead.htfAlignment?.conflictReason ?? "W1/D1/H4/H1/M15/M5 pending"} />
             <AdvisorMini label="Weekly bias" value={`${formatToken(currentRead.weeklyBiasDirection)} / ${formatToken(currentRead.weeklyBiasStatus)}`} detail={currentRead.weeklyBiasReason} />
             <AdvisorMini label="Packet candles" value={packet.activeSource.candleCount.toLocaleString()} detail="compact count only" />
             <AdvisorMini label="HTF context" value={packet.htfTimeframes.length ? packet.htfTimeframes.join(", ") : "missing"} detail="analysis bias inputs" />

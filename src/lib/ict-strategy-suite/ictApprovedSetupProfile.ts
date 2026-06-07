@@ -5,7 +5,10 @@ import type {
   IctApprovedSetupProfileInput,
   IctApprovedSetupProfileJournalEvent,
   IctApprovedSetupProfileRunSummary,
-  IctApprovedProfileId
+  IctApprovedProfileId,
+  IctHtfAlignmentBreakdown,
+  IctHtfAlignmentDirection,
+  IctHtfAlignmentTimeframe
 } from "./ictApprovedSetupProfileTypes";
 import type { IctReplayResult } from "./ictReplayValidationTypes";
 import type { IctSmtSignal } from "./ictIndexSmtTypes";
@@ -179,18 +182,162 @@ const isSessionCalibratedProfile = (profile: IctApprovedSetupProfile) => profile
 const AME_PAPER_WATCHLIST_MIN_RR = 1.25;
 const AME_PAPER_WATCHLIST_MAX_RR = 2.25;
 const CMD_PAPER_WATCHLIST_MIN_RR = 1.5;
+const htfAlignmentFrames = ["W1", "D1", "H4", "H1", "M15", "M5"] as const;
+
+const expectedBiasForSide = (side: "long" | "short" | "flat"): IctBias =>
+  side === "long" ? "bullish" : side === "short" ? "bearish" : "neutral";
+
+const oppositeBiasFor = (bias: IctBias): IctBias =>
+  bias === "bullish" ? "bearish" : bias === "bearish" ? "bullish" : "neutral";
+
+const normalizeTimeframeKey = (timeframe: string): IctHtfAlignmentTimeframe | undefined => {
+  const normalized = timeframe.toLowerCase().replace(/\s+/g, "");
+  if (normalized === "w1" || normalized === "1w" || normalized === "weekly") return "W1";
+  if (normalized === "d1" || normalized === "1d" || normalized === "daily") return "D1";
+  if (normalized === "h4" || normalized === "4h") return "H4";
+  if (normalized === "h1" || normalized === "1h") return "H1";
+  if (normalized === "m15" || normalized === "15m") return "M15";
+  if (normalized === "m5" || normalized === "5m") return "M5";
+  return undefined;
+};
+
+const directionText = (direction: IctHtfAlignmentDirection) => direction.replace(/_/g, " ");
+const compactDirectionList = (alignment: Pick<IctHtfAlignmentBreakdown, IctHtfAlignmentTimeframe>) =>
+  htfAlignmentFrames.map((frame) => `${frame} ${directionText(alignment[frame])}`).join(", ");
+
+type HtfAlignmentSignalContext = Pick<
+  IctAdvisorSignal,
+  "sessionNarrativeProfile" | "sessionDirectionalRead" | "modelState" | "side"
+> &
+  Partial<Pick<IctAdvisorSignal, "liquiditySwept" | "displacement" | "orderBlock" | "drawOnLiquidity" | "fvgTargetDetected">> & {
+    hasLiquiditySweep?: boolean;
+    hasDisplacement?: boolean;
+    hasExternalLiquidityTarget?: boolean;
+  };
+
+const buildFallbackHtfAlignment = (signal: IctAdvisorSignal): IctHtfAlignmentBreakdown => {
+  const expectedDirection = expectedBiasForSide(signal.side);
+  const directions: Record<IctHtfAlignmentTimeframe, IctHtfAlignmentDirection> = {
+    W1: "missing",
+    D1: "missing",
+    H4: "missing",
+    H1: "missing",
+    M15: "missing",
+    M5: signal.bias.primary ?? "unknown"
+  };
+  for (const [timeframe, bias] of Object.entries(signal.bias.htf)) {
+    const normalized = normalizeTimeframeKey(timeframe);
+    if (normalized) directions[normalized] = bias;
+  }
+  return classifyHtfAlignment({
+    ...directions,
+    setupDirection: signal.side,
+    expectedDirection,
+    alignmentStatus: "missing",
+    conflictReason: "",
+    modelAllowance: "hard_blocker",
+    modelAllowanceReason: ""
+  }, signal);
+};
+
+export const classifyHtfAlignment = (
+  rawAlignment: Omit<IctHtfAlignmentBreakdown, "alignmentStatus" | "conflictReason" | "modelAllowance" | "modelAllowanceReason"> & Partial<Pick<IctHtfAlignmentBreakdown, "alignmentStatus" | "conflictReason" | "modelAllowance" | "modelAllowanceReason">>,
+  signal: HtfAlignmentSignalContext
+): IctHtfAlignmentBreakdown => {
+  const alignment = {
+    ...rawAlignment,
+    expectedDirection: rawAlignment.expectedDirection ?? expectedBiasForSide(rawAlignment.setupDirection)
+  } as IctHtfAlignmentBreakdown;
+  const expected = alignment.expectedDirection;
+  const opposite = oppositeBiasFor(expected);
+  const directionalFrames = htfAlignmentFrames.filter((frame) => alignment[frame] === "bullish" || alignment[frame] === "bearish");
+  const htfDirectionalFrames = directionalFrames.filter((frame) => frame !== "M5");
+  const alignedFrames = directionalFrames.filter((frame) => alignment[frame] === expected);
+  const opposedFrames = directionalFrames.filter((frame) => alignment[frame] === opposite);
+  const neutralOrMixedFrames = htfAlignmentFrames.filter((frame) => alignment[frame] === "neutral" || alignment[frame] === "mixed");
+  const missingFrames = htfAlignmentFrames.filter((frame) => alignment[frame] === "missing" || alignment[frame] === "unknown");
+  const isRangeBound = signal.sessionNarrativeProfile === "range_bound";
+  const isAmeModel = signal.sessionNarrativeProfile === "accumulation_manipulation_expansion";
+  const isCmdModel = signal.sessionNarrativeProfile === "consolidation_manipulation_distribution";
+  const isReversalModel =
+    signal.sessionNarrativeProfile === "ny_session_reversal_to_premium_fvg" ||
+    signal.sessionNarrativeProfile === "ny_session_reversal_from_premium_to_discount";
+
+  let alignmentStatus: IctHtfAlignmentBreakdown["alignmentStatus"];
+  if (alignment.setupDirection === "flat" || expected === "neutral") {
+    alignmentStatus = "not_required_for_model";
+  } else if (!htfDirectionalFrames.length) {
+    alignmentStatus = "missing";
+  } else if (!opposedFrames.length && alignedFrames.length === directionalFrames.length && !neutralOrMixedFrames.length) {
+    alignmentStatus = "aligned";
+  } else if (!opposedFrames.length && alignedFrames.length > 0) {
+    alignmentStatus = "partially_aligned";
+  } else if (alignedFrames.length > 0 && opposedFrames.length > 0) {
+    alignmentStatus = "mixed";
+  } else {
+    alignmentStatus = "conflicted";
+  }
+
+  const modelEvidence =
+    Boolean(signal.hasLiquiditySweep || signal.liquiditySwept) &&
+    Boolean(signal.hasDisplacement || signal.displacement || signal.orderBlock?.displacementConfirmed) &&
+    Boolean(signal.hasExternalLiquidityTarget || signal.drawOnLiquidity || signal.fvgTargetDetected);
+  let modelAllowance: IctHtfAlignmentBreakdown["modelAllowance"] = "hard_blocker";
+  let modelAllowanceReason = "Trend-continuation and unsupported models require stronger higher-timeframe agreement.";
+
+  if (alignmentStatus === "not_required_for_model") {
+    modelAllowance = "not_required";
+    modelAllowanceReason = "Flat/no-trade state does not require HTF alignment.";
+  } else if (alignmentStatus === "aligned") {
+    modelAllowance = "acceptable";
+    modelAllowanceReason = "Higher timeframes agree with the setup direction.";
+  } else if (isRangeBound) {
+    modelAllowance = "hard_blocker";
+    modelAllowanceReason = "Range-bound profile is not promotable; HTF conflict stays a blocker.";
+  } else if (isAmeModel) {
+    modelAllowance = "hard_blocker";
+    modelAllowanceReason = "AME remains strict after weak paper-watchlist evidence; HTF conflict stays a blocker.";
+  } else if (isCmdModel && alignmentStatus === "partially_aligned" && signal.modelState === "confirmed") {
+    modelAllowance = "soft_warning";
+    modelAllowanceReason = "CMD paper-watchlist may allow partial HTF alignment only when the session narrative is confirmed.";
+  } else if (isReversalModel && modelEvidence && alignmentStatus !== "missing") {
+    modelAllowance = "soft_warning";
+    modelAllowanceReason = "Reversal model is counter-trend eligible only as watchlist/paper-only when sweep, displacement, and PD-array target context confirm.";
+  } else if (alignmentStatus === "missing") {
+    modelAllowance = "hard_blocker";
+    modelAllowanceReason = `HTF data missing: ${missingFrames.join(", ") || "all required frames"} unavailable.`;
+  }
+
+  const counterTrendNote =
+    alignment.setupDirection === "long" && opposedFrames.length
+      ? "long idea is counter-trend"
+      : alignment.setupDirection === "short" && opposedFrames.length
+        ? "short idea is counter-trend"
+        : alignmentStatus === "partially_aligned"
+          ? `${alignment.setupDirection} idea has partial lower/upper-timeframe agreement`
+          : "setup direction is not directional";
+  const conflictReason =
+    alignmentStatus === "missing"
+      ? `HTF data missing: ${missingFrames.join(", ") || "W1, D1, H4, H1, M15, M5"} unavailable.`
+      : `${compactDirectionList(alignment)}; setup ${alignment.setupDirection} expects ${expected}; ${counterTrendNote}.`;
+
+  return {
+    ...alignment,
+    alignmentStatus,
+    conflictReason,
+    modelAllowance,
+    modelAllowanceReason
+  };
+};
 
 const htfAlignedForSignal = (signal: IctAdvisorSignal) => {
-  const htfValues = Object.values(signal.bias.htf);
-  if (!htfValues.length || signal.bias.composite === "neutral") return false;
-  return htfValues.every((bias) => bias === "neutral" || bias === signal.bias.composite);
+  const htfAlignment = signal.htfAlignment ?? buildFallbackHtfAlignment(signal);
+  return htfAlignment.alignmentStatus === "aligned";
 };
 
 const mixedBiasForSignal = (signal: IctAdvisorSignal) => {
-  const htfValues = Object.values(signal.bias.htf).filter((bias) => bias !== "neutral");
-  if (!htfValues.length) return true;
-  const distinct = new Set<IctBias>([signal.bias.primary, ...htfValues].filter((bias) => bias !== "neutral"));
-  return distinct.size > 1 || signal.bias.composite === "neutral";
+  const htfAlignment = signal.htfAlignment ?? buildFallbackHtfAlignment(signal);
+  return htfAlignment.alignmentStatus === "mixed" || htfAlignment.alignmentStatus === "conflicted" || htfAlignment.alignmentStatus === "missing";
 };
 
 const sessionForTimestamp = (timestamp?: string) => {
@@ -212,6 +359,34 @@ const externalLiquidityTypes = new Set([
   "old_swing_high",
   "old_swing_low"
 ]);
+
+const htfAlignmentForReplay = (input: IctReplayResult): IctHtfAlignmentBreakdown => {
+  const expectedDirection = expectedBiasForSide(input.side);
+  const direction: IctHtfAlignmentDirection =
+    input.htfAligned === true ? expectedDirection : input.htfAligned === false ? oppositeBiasFor(expectedDirection) : "missing";
+  return classifyHtfAlignment(
+    {
+      W1: direction,
+      D1: direction,
+      H4: direction,
+      H1: direction,
+      M15: direction,
+      M5: direction,
+      setupDirection: input.side,
+      expectedDirection
+    },
+    {
+      side: input.side,
+      sessionNarrativeProfile: input.sessionNarrativeProfile,
+      sessionDirectionalRead: input.sessionDirectionalRead,
+      modelState: input.modelState,
+      fvgTargetDetected: input.fvgTargetDetected,
+      hasDisplacement: input.fvgStatus !== "not_applicable",
+      hasExternalLiquidityTarget: Boolean(input.liquidityTargetType),
+      hasLiquiditySweep: Boolean(input.liquidityTargetType)
+    }
+  );
+};
 
 const normalizeInput = (input: IctApprovedSetupProfileInput) => {
   const replay = isReplayInput(input);
@@ -243,7 +418,8 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
     : input.newsSessionRisk;
   const confidence = confidencePct(input.confidence);
   const htfTimeframes = replay ? [] : input.htfTimeframes;
-  const htfAligned = replay ? input.htfAligned : htfAlignedForSignal(input);
+  const htfAlignment = replay ? htfAlignmentForReplay(input) : input.htfAlignment ?? buildFallbackHtfAlignment(input);
+  const htfAligned = replay ? input.htfAligned === true : htfAlignment.alignmentStatus === "aligned";
   const fvgStatus = replay
     ? input.fvgStatus
     : input.fairValueGap
@@ -271,8 +447,8 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
       input.strategyId === "ict-bread-and-butter-sell" ||
       input.strategyId === "ict-one-shot-one-kill"
     : Boolean(input.liquiditySwept || input.orderBlock?.liquiditySweepConfirmed);
-  const mixedBias = replay ? input.htfAligned === false : mixedBiasForSignal(input);
-  const missingHtfContext = replay ? input.htfAligned === undefined : htfTimeframes.length === 0;
+  const mixedBias = replay ? input.htfAligned === false : mixedBiasForSignal({ ...input, htfAlignment });
+  const missingHtfContext = replay ? input.htfAligned === undefined : htfAlignment.alignmentStatus === "missing" || htfTimeframes.length === 0;
   const targetTooClose = hasText(noTradeReasons, /target (is )?too close|too close to target/i);
   const sessionNarrativeProfile = input.sessionNarrativeProfile;
   const sessionDirectionalRead = input.sessionDirectionalRead;
@@ -311,6 +487,7 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
     hasLiquiditySweep,
     hasTarget,
     htfAligned,
+    htfAlignment,
     htfTimeframes,
     liquidityTargetType,
     missingHtfContext,
@@ -457,6 +634,14 @@ export const evaluateApprovedSetupProfile = (
   const isNyReversalModel =
     sessionModel === "ny_session_reversal_to_premium_fvg" ||
     sessionModel === "ny_session_reversal_from_premium_to_discount";
+  const htfAlignmentNeedsReview =
+    normalized.htfAlignment.alignmentStatus !== "aligned" &&
+    normalized.htfAlignment.alignmentStatus !== "not_required_for_model";
+  const htfAlignmentHardBlocker =
+    htfAlignmentNeedsReview &&
+    (normalized.htfAlignment.modelAllowance === "hard_blocker" ||
+      (profile.requireHtfAlignment && normalized.htfAlignment.modelAllowance !== "soft_warning"));
+  const htfAlignmentReason = `HTF alignment ${normalized.htfAlignment.alignmentStatus}: ${normalized.htfAlignment.conflictReason} ${normalized.htfAlignment.modelAllowanceReason}`;
   const sessionModelSupported =
     (isAmeModel && sessionConfirmsSide) ||
     (isCmdModel && sessionConfirmsSide) ||
@@ -484,9 +669,21 @@ export const evaluateApprovedSetupProfile = (
   if (profile.allowedSides?.length && !profile.allowedSides.includes(normalized.side as "long" | "short")) hardRejects.push("Side is outside approved profile allowed sides.");
   if (profile.allowedSetups?.length && !profile.allowedSetups.includes(normalized.setup)) hardRejects.push("Setup is outside approved profile allowed setups.");
   if (profile.allowedSessions?.length && !profile.allowedSessions.includes(normalized.session)) hardRejects.push("Session is outside approved profile allowed sessions.");
-  if (profile.riskFilters.rejectMissingHtfContext && normalized.missingHtfContext) hardRejects.push("Missing higher-timeframe context.");
-  if (profile.requireHtfAlignment && normalized.htfAligned !== true) hardRejects.push("Higher-timeframe alignment is missing or conflicted.");
-  if (profile.riskFilters.rejectMixedBias && normalized.mixedBias) hardRejects.push("Mixed ICT bias across primary and higher timeframes.");
+  if (profile.riskFilters.rejectMissingHtfContext && normalized.missingHtfContext) hardRejects.push(normalized.htfAlignment.conflictReason);
+  if (profile.requireHtfAlignment && htfAlignmentNeedsReview) {
+    if (htfAlignmentHardBlocker) {
+      hardRejects.push(htfAlignmentReason);
+    } else {
+      watchlistReasons.push(htfAlignmentReason);
+    }
+  }
+  if (profile.riskFilters.rejectMixedBias && normalized.mixedBias) {
+    if (htfAlignmentHardBlocker) {
+      hardRejects.push(`Mixed ICT bias across primary and higher timeframes: ${normalized.htfAlignment.conflictReason}`);
+    } else {
+      watchlistReasons.push(`Mixed ICT bias warning: ${normalized.htfAlignment.conflictReason}`);
+    }
+  }
   if (profile.riskFilters.rejectNoDisplacement && !normalized.hasDisplacement) hardRejects.push("No displacement evidence.");
   if (profile.riskFilters.rejectNoLiquiditySweep && !normalized.hasLiquiditySweep) hardRejects.push("No liquidity sweep evidence.");
   if (profile.requireExternalLiquidityTarget && !normalized.hasExternalLiquidityTarget) hardRejects.push("External liquidity target missing.");
@@ -529,7 +726,7 @@ export const evaluateApprovedSetupProfile = (
   } else if (normalized.hasFvg) {
     approvedReasons.push(`FVG status ${normalized.fvgStatus}.`);
   }
-  if (normalized.htfAligned) approvedReasons.push("Higher-timeframe context aligned.");
+  if (normalized.htfAligned) approvedReasons.push(`Higher-timeframe context aligned: ${normalized.htfAlignment.conflictReason}`);
   if (normalized.hasExternalLiquidityTarget) approvedReasons.push(`External liquidity target ${normalized.liquidityTargetType}.`);
   if (normalized.hasDisplacement) approvedReasons.push("Displacement evidence present.");
   if (normalized.hasLiquiditySweep) approvedReasons.push("Liquidity sweep evidence present.");
@@ -625,6 +822,7 @@ export const evaluateApprovedSetupProfile = (
     rrEstimate: normalized.rrEstimate,
     compositeBias: normalized.compositeBias,
     htfAligned: normalized.htfAligned,
+    htfAlignment: normalized.htfAlignment,
     dealingRangeLocation: normalized.dealingRangeLocation,
     liquidityTargetType: normalized.liquidityTargetType,
     fvgStatus: normalized.fvgStatus,

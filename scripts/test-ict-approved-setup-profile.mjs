@@ -221,6 +221,21 @@ async function main() {
   assert.ok(experimental, "experimental profile should exist");
   assert.ok(calibrated, "90-day session calibrated profile should exist");
 
+  const alignmentFor = (signal, directions) =>
+    suite.classifyHtfAlignment(
+      {
+        W1: directions.W1 ?? "missing",
+        D1: directions.D1 ?? "missing",
+        H4: directions.H4 ?? "missing",
+        H1: directions.H1 ?? signal.bias.htf["1h"] ?? signal.bias.htf.H1 ?? "missing",
+        M15: directions.M15 ?? signal.bias.htf["15m"] ?? signal.bias.htf.M15 ?? "missing",
+        M5: directions.M5 ?? signal.bias.primary ?? "missing",
+        setupDirection: signal.side,
+        expectedDirection: signal.side === "long" ? "bullish" : signal.side === "short" ? "bearish" : "neutral"
+      },
+      signal
+    );
+
   const approved = suite.evaluateApprovedSetupProfile(baseSignal(), strict);
   assert.equal(approved.status, "approved_research_candidate");
   assert.equal(approved.researchOnly, true);
@@ -228,6 +243,7 @@ async function main() {
   assert.equal(approved.authority.brokerAuthority, "none");
   assert.equal(approved.authority.readinessOverrideAuthority, "none");
   assert.equal(approved.safety.rawCandlesExcluded, true);
+  assert.equal(approved.htfAlignment.alignmentStatus, "aligned", "full alignment passes the profile gate");
   assert.equal(suite.assertIctApprovedSetupDecisionIsCompact(approved).ok, true);
 
   const safeNestedAuthority = suite.evaluateApprovedSetupProfile(
@@ -329,7 +345,112 @@ async function main() {
 
   const missingHtf = suite.evaluateApprovedSetupProfile(baseSignal({ htfTimeframes: [], bias: { primary: "bullish", htf: {}, composite: "bullish" } }), strict);
   assert.equal(missingHtf.status, "rejected_candidate", "strict should reject missing HTF context");
-  assert.match(missingHtf.rejectionReasons.join(" "), /higher-timeframe/i);
+  assert.match(missingHtf.rejectionReasons.join(" "), /HTF data missing|higher-timeframe/i);
+
+  const hardConflictSignal = baseSignal();
+  const hardConflict = suite.evaluateApprovedSetupProfile(
+    {
+      ...hardConflictSignal,
+      htfAlignment: alignmentFor(hardConflictSignal, {
+        W1: "bearish",
+        D1: "bearish",
+        H4: "bearish",
+        H1: "bearish",
+        M15: "bullish",
+        M5: "bullish"
+      })
+    },
+    strict
+  );
+  assert.equal(hardConflict.status, "rejected_candidate", "trend-continuation conflict remains a hard blocker");
+  assert.match(hardConflict.rejectionReasons.join(" "), /W1 bearish.*long idea is counter-trend|counter-trend/i);
+
+  const reversalSignal = baseSignal({
+    sessionNarrativeProfile: "ny_session_reversal_to_premium_fvg",
+    sessionDirectionalRead: "bullish",
+    sessionNarrativeConfidence: 0.7,
+    modelState: "confirmed",
+    fvgTargetDetected: true,
+    fvgTargetDirection: "premium"
+  });
+  const reversalWarning = suite.evaluateApprovedSetupProfile(
+    {
+      ...reversalSignal,
+      htfAlignment: alignmentFor(reversalSignal, {
+        W1: "bearish",
+        D1: "bearish",
+        H4: "bearish",
+        H1: "bearish",
+        M15: "bullish",
+        M5: "bullish"
+      })
+    },
+    strict
+  );
+  assert.notEqual(reversalWarning.status, "rejected_candidate", "reversal conflict can downgrade to watchlist/paper-only when reversal evidence confirms");
+  assert.match(reversalWarning.watchlistReasons.join(" "), /Reversal model is counter-trend eligible/i);
+
+  const partialCmdSignal = baseSignal({
+    side: "short",
+    confidence: 0.68,
+    rrEstimate: 2.1,
+    bias: {
+      primary: "bearish",
+      htf: { "15m": "neutral", "1h": "bearish" },
+      composite: "bearish"
+    },
+    dealingRange: { ...baseSignal().dealingRange, currentLocation: "premium" },
+    drawOnLiquidity: {
+      type: "previous_day_low",
+      price: 88,
+      timeframe: "daily",
+      swept: false,
+      distanceFromCurrent: -12
+    },
+    displacement: {
+      direction: "bearish",
+      candleTime: "2026-06-05T13:00:00.000Z",
+      impulseHigh: 105,
+      impulseLow: 98,
+      bodySize: 4,
+      createdFvg: true
+    },
+    fairValueGap: {
+      direction: "bearish",
+      high: 101,
+      low: 99,
+      midpoint: 100,
+      timeframe: "5m",
+      mitigated: false,
+      createdAt: "2026-06-05T13:00:00.000Z"
+    },
+    invalidation: 104,
+    target: 88,
+    sessionNarrativeProfile: "consolidation_manipulation_distribution",
+    sessionDirectionalRead: "bearish",
+    sessionNarrativeConfidence: 0.74,
+    modelState: "confirmed",
+    sessionMitigationDetected: true,
+    fvgTargetDetected: true,
+    fvgTargetDirection: "discount"
+  });
+  const partialCmd = suite.evaluateApprovedSetupProfile(
+    {
+      ...partialCmdSignal,
+      htfAlignment: alignmentFor(partialCmdSignal, {
+        W1: "bearish",
+        D1: "bearish",
+        H4: "neutral",
+        H1: "bearish",
+        M15: "neutral",
+        M5: "bearish"
+      })
+    },
+    strict
+  );
+  assert.equal(partialCmd.htfAlignment.alignmentStatus, "partially_aligned");
+  assert.equal(partialCmd.status, "paper_watchlist_candidate", "confirmed CMD partial alignment can remain paper-only eligible");
+  assert.match(partialCmd.watchlistReasons.join(" "), /CMD paper-watchlist may allow partial HTF alignment/i);
 
   const equilibrium = suite.evaluateApprovedSetupProfile(
     baseSignal({ dealingRange: { ...baseSignal().dealingRange, currentLocation: "equilibrium" } }),
