@@ -1,5 +1,6 @@
 import type { IctBias, IctLocation, IctSide } from "./ictAdvisorTypes";
 import type { IctApprovedCandidateStatus } from "./ictApprovedSetupProfileTypes";
+import type { IctModelQualityLane } from "./ictCurrentReadTypes";
 import type { IctMonteCarloRobustnessRating } from "./ictMonteCarloTypes";
 import type {
   IctDataDepthStatus,
@@ -56,6 +57,10 @@ export interface IctResearchSignal {
   rrEstimate?: number;
   confidence?: number;
   approvedProfileStatus?: IctApprovedCandidateStatus;
+  modelQualityLane: IctModelQualityLane;
+  paperWatchlistEligible: boolean;
+  paperWatchlistReason?: string;
+  paperWatchlistEvidenceSummary?: string;
   approvalScore?: number;
   bias?: IctBias;
   smtStatus?: string;

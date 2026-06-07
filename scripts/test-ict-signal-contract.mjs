@@ -66,6 +66,11 @@ const currentReadFixture = (overrides = {}) => ({
   bestSetup: "ict-bread-and-butter-buy",
   side: "long",
   approvedStatus: "approved_research_candidate",
+  modelQualityLane: "approved",
+  paperWatchlistEligible: false,
+  paperWatchlistReason: "Approved research lane; replay, evidence, maturity, and readiness gates still apply.",
+  paperWatchlistEvidenceSummary: "CMD / valid / bullish. Lane approved; RR 2.30R; confidence 74%; authority none.",
+  executionAllowed: false,
   approvalScore: 82,
   confidence: 0.74,
   rrEstimate: 2.3,
@@ -133,6 +138,8 @@ function assertSafeSignal(signal, suite) {
   assert.equal(signal.researchOnly, true);
   assert.equal(signal.executionReadiness, "research_only");
   assert.equal(signal.executionAllowed, false);
+  assert.equal(signal.modelQualityLane, signal.approvedProfileStatus === "paper_watchlist_candidate" ? "paper_watchlist" : signal.modelQualityLane);
+  assert.equal(signal.paperWatchlistEligible, signal.approvedProfileStatus === "paper_watchlist_candidate");
   assert.equal(signal.authority.executionAuthority, "none");
   assert.equal(signal.authority.brokerAuthority, "none");
   assert.equal(signal.authority.readinessOverrideAuthority, "none");
@@ -172,17 +179,28 @@ async function main() {
   const watchlist = suite.buildIctResearchSignalFromCurrentRead(
     currentReadFixture({
       approvedStatus: "watchlist_candidate",
+      modelQualityLane: "watchlist",
+      paperWatchlistEligible: false,
+      paperWatchlistReason: "AME watchlist only - not paper-ready.",
       approvalScore: 66,
       topReasons: ["Confidence is near but below the approved profile threshold."]
     }),
     latestStateFixture("moderate")
   );
   assert.equal(watchlist.status, "watchlist_signal");
+  assert.equal(watchlist.modelQualityLane, "watchlist");
+  assert.equal(watchlist.paperWatchlistEligible, false);
+  assert.ok(watchlist.reasons.some((reason) => /watchlist only|not paper/i.test(reason)));
   assertSafeSignal(watchlist, suite);
 
   const paperWatchlist = suite.buildIctResearchSignalFromCurrentRead(
     currentReadFixture({
       approvedStatus: "paper_watchlist_candidate",
+      modelQualityLane: "paper_watchlist",
+      paperWatchlistEligible: true,
+      paperWatchlistModelName: "consolidation_manipulation_distribution",
+      paperWatchlistReason: "CMD paper-watchlist - paper-test only.",
+      paperWatchlistEvidenceSummary: "CMD / detected / bearish. Lane paper watchlist; RR 2.10R; confidence 69%; authority none.",
       approvalScore: 69,
       topReasons: ["Complete structure is present, but one approval gate remains watchlist-only."]
     }),
@@ -190,12 +208,17 @@ async function main() {
   );
   assert.equal(paperWatchlist.status, "watchlist_signal");
   assert.equal(paperWatchlist.approvedProfileStatus, "paper_watchlist_candidate");
-  assert.ok(paperWatchlist.reasons.some((reason) => /paper-watchlist simulation/i.test(reason)));
+  assert.equal(paperWatchlist.modelQualityLane, "paper_watchlist");
+  assert.equal(paperWatchlist.paperWatchlistEligible, true);
+  assert.ok(paperWatchlist.reasons.some((reason) => /paper-watchlist|paper-test/i.test(reason)));
   assertSafeSignal(paperWatchlist, suite);
 
   const rejected = suite.buildIctResearchSignalFromCurrentRead(
     currentReadFixture({
       approvedStatus: "rejected_candidate",
+      modelQualityLane: "rejected",
+      paperWatchlistEligible: false,
+      paperWatchlistReason: "Approved-profile layer rejected the current read.",
       approvalScore: 41,
       riskStatus: "allow",
       topReasons: ["Approved-profile layer rejected the current read."]
@@ -209,6 +232,9 @@ async function main() {
   const noSignal = suite.buildIctResearchSignalFromCurrentRead(
     currentReadFixture({
       approvedStatus: "no_trade",
+      modelQualityLane: "no_trade",
+      paperWatchlistEligible: false,
+      paperWatchlistReason: "No active model-quality lane.",
       side: "flat",
       target: undefined,
       invalidation: undefined,

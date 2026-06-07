@@ -235,9 +235,9 @@ function buildLocalAdvisorReply(
     return `Profile optimizer status: ${formatToken(profileOptimizationStatus)}. Optimization is research-only and cannot auto-apply thresholds or promote readiness.`;
   }
   if (lower.includes("bias") || lower.includes("setup") || lower.includes("current")) {
-    return `Current read: ${formatToken(currentRead.bias)} bias, ${formatToken(currentRead.bestSetup)} setup, ${formatToken(currentRead.side)} side, ${pct(currentRead.confidence)} confidence, ${formatToken(currentRead.approvedStatus)}. ${packet.recommendedSignal.summary}`;
+    return `Current read: ${formatToken(currentRead.bias)} bias, ${formatToken(currentRead.bestSetup)} setup, ${formatToken(currentRead.side)} side, ${pct(currentRead.confidence)} confidence, model lane ${formatToken(currentRead.modelQualityLane)}. ${currentRead.paperWatchlistReason ?? packet.recommendedSignal.summary}`;
   }
-  return `Current GoTrader read: ${formatToken(currentRead.bias)} / ${approvalLabel(currentRead.approvedStatus)} / ${formatToken(currentRead.riskStatus)}. Source ${snapshot.marketData.activeResearchSource.provider.replace(/_/g, " ")} remains read-only with authority none.`;
+  return `Current GoTrader read: ${formatToken(currentRead.bias)} / ${approvalLabel(currentRead.approvedStatus)} / model lane ${formatToken(currentRead.modelQualityLane)} / ${formatToken(currentRead.riskStatus)}. Paper Sim ${currentRead.paperWatchlistEligible ? "eligible" : "not eligible"}; execution disabled. Source ${snapshot.marketData.activeResearchSource.provider.replace(/_/g, " ")} remains read-only with authority none.`;
 }
 
 export function ResearchAdvisorView() {
@@ -952,6 +952,9 @@ function ResearchSignalCard({ signal }: { signal: IctResearchSignal }) {
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge data-testid="ict-research-signal-status" variant={statusVariant}>{formatToken(signal.status)}</Badge>
+          <Badge variant={signal.modelQualityLane === "approved" ? "success" : signal.modelQualityLane === "rejected" ? "danger" : "warning"}>
+            Model lane: {formatToken(signal.modelQualityLane)}
+          </Badge>
           <Badge variant="danger">Execution Disabled</Badge>
           <Badge variant="secondary">Research Only</Badge>
         </div>
@@ -960,6 +963,8 @@ function ResearchSignalCard({ signal }: { signal: IctResearchSignal }) {
         <AdvisorReadout label="Symbol" value={`${signal.brokerSymbol} -> ${signal.requestedSymbol}`} detail={signal.primaryTimeframe} />
         <AdvisorReadout label="Side" value={formatToken(signal.side)} detail={formatToken(signal.phase)} />
         <AdvisorReadout label="Setup" value={formatToken(signal.setup)} detail={formatToken(signal.approvedProfileStatus)} />
+        <AdvisorReadout label="Model lane" value={formatToken(signal.modelQualityLane)} detail={signal.paperWatchlistReason ?? "research-only lane"} />
+        <AdvisorReadout label="Paper Sim" value={signal.paperWatchlistEligible ? "eligible" : "not eligible"} detail={signal.paperWatchlistEvidenceSummary ?? "compact evidence only"} />
         <AdvisorReadout label="Approval score" value={typeof signal.approvalScore === "number" ? `${signal.approvalScore}/100` : "n/a"} />
         <AdvisorReadout label="Entry zone" value={entryZone} detail={signal.entryZone?.type} />
         <AdvisorReadout label="Target" value={compactPrice(signal.target)} />
@@ -1023,7 +1028,7 @@ function PaperSimulationCard({
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-300">Paper Signal Simulator</p>
           <h3 className="mt-1 text-xl font-semibold text-slate-50">Simulated research lifecycle</h3>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-            Uses the compact research signal contract to simulate acceptance, entry, target, invalidation, and journal events. Paper only - no broker order.
+            Uses the compact research signal contract to simulate acceptance, entry, target, invalidation, and journal events. Paper only - no broker mutation.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1119,13 +1124,23 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
         ? "warning"
         : "danger";
   const statusText =
-    currentRead.approvedStatus === "approved_research_candidate"
+    currentRead.modelQualityLane === "approved"
       ? "Approved research candidate"
-      : currentRead.approvedStatus === "paper_watchlist_candidate"
-        ? "Paper-watchlist candidate"
-        : currentRead.approvedStatus === "watchlist_candidate"
+      : currentRead.modelQualityLane === "paper_watchlist"
+        ? "Paper Watchlist - paper-test only"
+        : currentRead.modelQualityLane === "watchlist"
           ? "Watchlist"
-          : currentRead.approvedStatus === "rejected_candidate"
+          : currentRead.modelQualityLane === "rejected"
+            ? "Rejected"
+            : "No Trade";
+  const modelLaneLabel =
+    currentRead.modelQualityLane === "approved"
+      ? "Approved"
+      : currentRead.modelQualityLane === "paper_watchlist"
+        ? "Paper Watchlist"
+        : currentRead.modelQualityLane === "watchlist"
+          ? "Watchlist"
+          : currentRead.modelQualityLane === "rejected"
             ? "Rejected"
             : "No Trade";
   const missingTradeFields = [
@@ -1147,11 +1162,19 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
         <div className="flex flex-wrap gap-2">
           <Badge variant={dataVariant}>{formatToken(currentRead.packetSource)}</Badge>
           <Badge variant={approvalVariant(currentRead.approvedStatus)}>{formatToken(currentRead.approvedStatus)}</Badge>
+          <Badge variant={currentRead.modelQualityLane === "approved" ? "success" : currentRead.modelQualityLane === "rejected" ? "danger" : "warning"}>Model lane: {modelLaneLabel}</Badge>
+          <Badge variant={currentRead.paperWatchlistEligible ? "warning" : "secondary"}>
+            Paper Sim: {currentRead.paperWatchlistEligible ? "Eligible" : "Not Eligible"}
+          </Badge>
+          <Badge variant="danger">Execution Disabled</Badge>
           <Badge variant="danger">authority none</Badge>
         </div>
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <AdvisorReadout label="Source" value={`${currentRead.brokerSymbol} -> ${currentRead.requestedSymbol}`} detail={`${currentRead.primaryTimeframe} / ${currentRead.candleCount?.toLocaleString() ?? 0} candles`} />
+        <AdvisorReadout label="Model lane" value={modelLaneLabel} detail={currentRead.paperWatchlistReason ?? "research-only lane"} />
+        <AdvisorReadout label="Paper-watchlist eligibility" value={currentRead.paperWatchlistEligible ? "eligible" : "not eligible"} detail={currentRead.paperWatchlistEvidenceSummary ?? "compact evidence only"} />
+        <AdvisorReadout label="Execution" value="Disabled" detail="authority none / no broker mutation" />
         <AdvisorReadout label="Phase 1" value={formatToken(currentRead.bestPhase1Setup)} detail={`${currentRead.debug.phase1SignalCount} signals evaluated`} />
         <AdvisorReadout label="Phase 2" value={formatToken(currentRead.bestPhase2Setup)} detail={`${currentRead.debug.phase2SignalCount} signals evaluated`} />
         <AdvisorReadout label="Best setup" value={formatToken(currentRead.bestSetup)} detail={`${formatToken(currentRead.side)} / ${pct(currentRead.confidence)}`} />
@@ -1175,7 +1198,7 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
         <AdvisorReadout label="Risk" value={formatToken(currentRead.riskStatus)} />
         <AdvisorReadout label="RR / location" value={rr(currentRead.rrEstimate)} detail={formatToken(currentRead.dealingRangeLocation)} />
         <AdvisorReadout label="Missing trade fields" value={missingTradeFields.length ? missingTradeFields.join(", ") : "none"} detail="target / invalidation / RR" />
-        <AdvisorReadout label="Paper watchlist" value={currentRead.approvedStatus === "paper_watchlist_candidate" ? "eligible" : "not eligible"} detail="paper simulation only; no readiness promotion" />
+        <AdvisorReadout label="Paper watchlist" value={currentRead.paperWatchlistEligible ? "eligible" : "not eligible"} detail="paper simulation only; no readiness promotion" />
         <AdvisorReadout label="Latest replay" value={currentRead.latestReplayStatus ?? "none saved"} detail="manual result" />
         <AdvisorReadout
           label="Latest Monte Carlo"
@@ -1222,6 +1245,9 @@ function CurrentReadDataFlowPanel({ currentRead }: { currentRead: IctCurrentRead
     ["Phase 1 signal count", currentRead.debug.phase1SignalCount.toLocaleString()],
     ["Phase 2 signal count", currentRead.debug.phase2SignalCount.toLocaleString()],
     ["Approved status", currentRead.debug.approvedStatus],
+    ["Model quality lane", currentRead.modelQualityLane],
+    ["Paper-watchlist eligible", currentRead.paperWatchlistEligible ? "yes" : "no"],
+    ["Execution allowed", currentRead.executionAllowed ? "true" : "false"],
     ["Rejection reasons", currentRead.debug.rejectionReasonsCount.toLocaleString()],
     ["No-trade reasons", currentRead.debug.noTradeReasonsCount.toLocaleString()],
     ["Journal", currentRead.debug.journalStatus ?? "pending"],

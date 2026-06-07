@@ -218,6 +218,9 @@ async function main() {
   assert.ok(read.bestPhase2Setup, "Phase 2 setup should be exposed when present");
   assert.ok(read.bestSetup, "Best displayed setup should be exposed");
   assert.ok(["approved_research_candidate", "paper_watchlist_candidate", "watchlist_candidate", "rejected_candidate", "no_trade"].includes(read.approvedStatus), "Approved profile status should be included");
+  assert.ok(["approved", "paper_watchlist", "watchlist", "rejected", "no_trade"].includes(read.modelQualityLane), "Model quality lane should be included");
+  assert.equal(typeof read.paperWatchlistEligible, "boolean", "Paper-watchlist eligibility should be explicit");
+  assert.equal(read.executionAllowed, false, "Current read must keep execution disabled");
   assert.ok(read.smtStatus, "SMT status should be included");
   assert.ok(read.riskStatus, "news/session risk status should be included");
   assert.ok(read.topReasons.length >= 1, "Rejected/no-trade/current states should explain why");
@@ -234,13 +237,41 @@ async function main() {
   const missingRead = suite.buildIctCurrentReadFromPacket(missingPacket);
   assert.equal(missingRead.dataStatus, "missing", "missing MT5 candles should be visible as missing data");
   assert.equal(missingRead.approvedStatus, "no_trade", "missing candles should not produce an approved candidate");
+  assert.equal(missingRead.modelQualityLane, "no_trade", "missing candles should remain no-trade lane");
+  assert.equal(missingRead.paperWatchlistEligible, false, "missing candles should not be paper-watchlist eligible");
   assert.ok(missingRead.topReasons.some((reason) => /missing candle|canonical research source/i.test(reason)), "missing source should explain the blocker");
   assert.equal(suite.assertIctCurrentReadIsCompact(missingRead).ok, true, "missing read must remain compact and safe");
 
   const unavailableRead = suite.buildUnavailableIctCurrentRead("MT5 data unavailable.");
   assert.equal(unavailableRead.packetSource, "unavailable");
   assert.equal(unavailableRead.dataStatus, "unavailable");
+  assert.equal(unavailableRead.modelQualityLane, "no_trade");
+  assert.equal(unavailableRead.paperWatchlistEligible, false);
   assert.equal(unavailableRead.authority.executionAuthority, "none");
+
+  const paperWatchlistRead = {
+    ...read,
+    approvedStatus: "paper_watchlist_candidate",
+    modelQualityLane: "paper_watchlist",
+    paperWatchlistEligible: true,
+    paperWatchlistModelName: "consolidation_manipulation_distribution",
+    paperWatchlistReason: "CMD paper-watchlist - paper-test only.",
+    paperWatchlistEvidenceSummary: "CMD paper-watchlist evidence; compact only; authority none.",
+    side: "short",
+    target: 99,
+    invalidation: 113,
+    rrEstimate: 2.1,
+    confidence: 0.69,
+    riskStatus: "allow",
+    smtStatus: "confirms_candidate",
+    dataStatus: "ready",
+    topReasons: ["CMD paper-watchlist - paper-test only."]
+  };
+  const paperWatchlistSignal = suite.buildIctResearchSignalFromCurrentRead(paperWatchlistRead);
+  assert.equal(paperWatchlistSignal.status, "watchlist_signal");
+  assert.equal(paperWatchlistSignal.modelQualityLane, "paper_watchlist");
+  assert.equal(paperWatchlistSignal.paperWatchlistEligible, true);
+  assert.match(paperWatchlistSignal.reasons.join(" "), /CMD paper-watchlist|paper-test/i);
 
   process.stdout.write("GoTrader ICT current-read flow test passed.\n");
   process.stdout.write(`Source: ${read.packetSource} / ${read.brokerSymbol}->${read.requestedSymbol} / ${read.debug.candleCount} candles\n`);

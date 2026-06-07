@@ -18,6 +18,13 @@ export type IctCurrentReadPacketSource =
 
 export type IctCurrentReadDataStatus = "ready" | "missing" | "stale" | "unavailable";
 
+export type IctModelQualityLane =
+  | "approved"
+  | "paper_watchlist"
+  | "watchlist"
+  | "rejected"
+  | "no_trade";
+
 export interface IctCurrentRead {
   researchOnly: true;
   packetSource: IctCurrentReadPacketSource;
@@ -33,6 +40,12 @@ export interface IctCurrentRead {
   bestSetup?: string;
   side: IctSide;
   approvedStatus: IctApprovedCandidateStatus;
+  modelQualityLane: IctModelQualityLane;
+  paperWatchlistEligible: boolean;
+  paperWatchlistModelName?: IctSessionModelName;
+  paperWatchlistReason?: string;
+  paperWatchlistEvidenceSummary?: string;
+  executionAllowed: false;
   approvalScore?: number;
   confidence?: number;
   rrEstimate?: number;

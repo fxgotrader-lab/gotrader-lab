@@ -77,6 +77,10 @@ const signalFixture = (overrides = {}) => ({
   rrEstimate: 2.5,
   confidence: 0.72,
   approvedProfileStatus: "approved_research_candidate",
+  modelQualityLane: "approved",
+  paperWatchlistEligible: false,
+  paperWatchlistReason: "Approved research lane; replay, evidence, maturity, and readiness gates still apply.",
+  paperWatchlistEvidenceSummary: "Approved lane; compact evidence only; authority none.",
   approvalScore: 82,
   bias: "bullish",
   smtStatus: "confirms_candidate",
@@ -138,14 +142,19 @@ async function main() {
   const watchlist = signalFixture({ status: "watchlist_signal" });
   assert.equal(suite.isResearchSignalEligibleForPaperSim(watchlist).eligible, false);
   assert.equal(suite.isResearchSignalEligibleForPaperSim(watchlist, { allowWatchlist: true }).eligible, false);
+  assert.match(suite.isResearchSignalEligibleForPaperSim(watchlist).reasons.join(" "), /Watchlist only - not paper eligible/i);
   const paperWatchlist = signalFixture({
     signalId: "ict_research_signal_paper_watchlist_fixture",
     status: "watchlist_signal",
-    approvedProfileStatus: "paper_watchlist_candidate"
+    approvedProfileStatus: "paper_watchlist_candidate",
+    modelQualityLane: "paper_watchlist",
+    paperWatchlistEligible: true,
+    paperWatchlistReason: "CMD paper-watchlist - paper-test only.",
+    paperWatchlistEvidenceSummary: "CMD paper-watchlist evidence; compact only; authority none."
   });
   const paperWatchlistEligibility = suite.isResearchSignalEligibleForPaperSim(paperWatchlist);
   assert.equal(paperWatchlistEligibility.eligible, true);
-  assert.match(paperWatchlistEligibility.warnings.join(" "), /Paper-watchlist/i);
+  assert.match(paperWatchlistEligibility.warnings.join(" "), /Paper-only eligible|Paper-watchlist/i);
 
   assert.equal(suite.isResearchSignalEligibleForPaperSim(signalFixture({ status: "rejected_signal" })).eligible, false);
   assert.equal(suite.isResearchSignalEligibleForPaperSim(signalFixture({ status: "no_signal", side: "flat" })).eligible, false);
@@ -162,6 +171,10 @@ async function main() {
     suite.createPaperSignalFromResearchSignal(paperWatchlist, { generatedAt: "2026-06-05T18:10:00.000Z" }).status,
     "paper_open",
     "paper-watchlist candidates should be simulation eligible"
+  );
+  assert.match(
+    suite.createPaperSignalFromResearchSignal(paperWatchlist, { generatedAt: "2026-06-05T18:10:00.000Z" }).notes.join(" "),
+    /Paper-only eligible/i
   );
 
   const longTarget = suite.simulatePaperSignalOutcome(longPaper, [{ at: "2026-06-05T18:15:00.000Z", price: 112 }]);
@@ -219,7 +232,7 @@ async function main() {
   assert.match(advisorSource, /data-testid="ict-paper-signal-simulator"/, "Research Advisor should render the paper simulator");
   assert.match(advisorSource, /Create Paper Simulation/, "Research Advisor should expose the paper simulator action");
   assert.match(dashboardSource, /dashboard-ict-paper-sim-status/, "Dashboard compact advisor should expose paper sim status");
-  assert.match(`${advisorSource}\n${dashboardSource}`, /Paper only|No broker order/i, "UI should label paper-only simulation");
+  assert.match(`${advisorSource}\n${dashboardSource}`, /Paper only|Paper Sim|broker mutation/i, "UI should label paper-only simulation");
   assert.doesNotMatch(`${advisorSource}\n${dashboardSource}`, /<Button[^>]*>\s*(Buy|Sell|Execute|Place Order|Buy Market|Sell Market|Enable Live Trading|Connect Live Broker)/i);
 
   process.stdout.write("GoTrader ICT Paper Signal Simulator smoke test passed.\n");

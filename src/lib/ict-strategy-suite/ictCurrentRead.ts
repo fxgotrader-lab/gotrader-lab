@@ -5,6 +5,7 @@ import type { IctLatestResearchState } from "./ictLatestResearchStateTypes";
 import type {
   IctCurrentRead,
   IctCurrentReadDataStatus,
+  IctModelQualityLane,
   IctCurrentReadPacketSource
 } from "./ictCurrentReadTypes";
 
@@ -125,6 +126,49 @@ const htfStatusFor = (packet: IctAdvisorPacket) => {
 const uniqueReasons = (values: Array<string | undefined>) =>
   Array.from(new Set(values.filter((value): value is string => Boolean(value?.trim())))).slice(0, 6);
 
+const modelQualityLaneFor = (status?: string): IctModelQualityLane => {
+  if (status === "approved_research_candidate") return "approved";
+  if (status === "paper_watchlist_candidate") return "paper_watchlist";
+  if (status === "watchlist_candidate") return "watchlist";
+  if (status === "rejected_candidate") return "rejected";
+  return "no_trade";
+};
+
+const primaryModelNameFor = (packet: IctAdvisorPacket) =>
+  packet.sessionNarrative?.primaryModelDetection?.modelName ?? packet.compactSummary.primaryModelDetection?.modelName;
+
+const modelLabelFor = (packet: IctAdvisorPacket) =>
+  (primaryModelNameFor(packet) ?? packet.compactSummary.sessionNarrativeProfile ?? packet.sessionNarrative?.profile ?? "current model").replace(/_/g, " ");
+
+const paperWatchlistReasonFor = (packet: IctAdvisorPacket, lane: IctModelQualityLane, reasons: string[]) => {
+  const modelName = primaryModelNameFor(packet);
+  if (lane === "paper_watchlist" && modelName === "consolidation_manipulation_distribution") {
+    return "CMD paper-watchlist - paper-test only.";
+  }
+  if (lane === "paper_watchlist") return `${modelLabelFor(packet)} paper-watchlist - paper-test only.`;
+  if (lane === "watchlist" && modelName === "accumulation_manipulation_expansion") {
+    return "AME watchlist only - not paper-ready.";
+  }
+  if (lane === "watchlist") return reasons[0] ?? "Watchlist only - not paper eligible.";
+  if (lane === "rejected") return reasons[0] ?? "Rejected by the approved-profile gate.";
+  if (lane === "no_trade") return reasons[0] ?? "No active model-quality lane.";
+  return "Approved research lane; replay, evidence, maturity, and readiness gates still apply.";
+};
+
+const paperWatchlistEvidenceSummaryFor = (packet: IctAdvisorPacket, lane: IctModelQualityLane) => {
+  const model = packet.sessionNarrative?.primaryModelDetection ?? packet.compactSummary.primaryModelDetection;
+  const modelPart = model?.modelDetected
+    ? `${(model.modelName ?? "model").replace(/_/g, " ")} / ${(model.modelState ?? "pending").replace(/_/g, " ")} / ${(model.modelDirection ?? "unknown").replace(/_/g, " ")}`
+    : "No model detected.";
+  const rrPart = typeof packet.recommendedSignal.rrEstimate === "number"
+    ? `RR ${packet.recommendedSignal.rrEstimate.toFixed(2)}R`
+    : "RR missing";
+  const confidencePart = typeof packet.recommendedSignal.confidence === "number"
+    ? `confidence ${Math.round(packet.recommendedSignal.confidence * 100)}%`
+    : "confidence n/a";
+  return `${modelPart}. Lane ${lane.replace(/_/g, " ")}; ${rrPart}; ${confidencePart}; authority none.`;
+};
+
 const nextActionFor = (packet: IctAdvisorPacket, reasons: string[]) => {
   const status = packet.approvedProfileDecision.status;
   if (!packet.activeSource.candleCount) return "Check MT5 Read Only or activate a canonical research source.";
@@ -152,6 +196,11 @@ export const buildUnavailableIctCurrentRead = (
   dataStatus: "unavailable",
   side: "flat",
   approvedStatus: "no_trade",
+  modelQualityLane: "no_trade",
+  paperWatchlistEligible: false,
+  paperWatchlistReason: reason,
+  paperWatchlistEvidenceSummary: "No compact ICT model-quality evidence is available.",
+  executionAllowed: false,
   topReasons: [reason],
   nextAction: "Activate MT5 Research Mode or check the canonical research source.",
   debug: {
@@ -194,6 +243,11 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
   ]);
   const packetSource = packetSourceFor(packet);
   const dataStatus = dataStatusFor(packet);
+  const modelQualityLane = modelQualityLaneFor(packet.approvedProfileDecision.status);
+  const paperWatchlistEligible = modelQualityLane === "paper_watchlist";
+  const paperWatchlistReason = paperWatchlistReasonFor(packet, modelQualityLane, reasons);
+  const paperWatchlistEvidenceSummary = paperWatchlistEvidenceSummaryFor(packet, modelQualityLane);
+  const paperWatchlistModelName = primaryModelNameFor(packet);
 
   return {
     researchOnly: true,
@@ -210,6 +264,12 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     bestSetup: recommended.setup,
     side: recommended.side,
     approvedStatus: packet.approvedProfileDecision.status,
+    modelQualityLane,
+    paperWatchlistEligible,
+    paperWatchlistModelName: paperWatchlistEligible ? paperWatchlistModelName : undefined,
+    paperWatchlistReason,
+    paperWatchlistEvidenceSummary,
+    executionAllowed: false,
     approvalScore: packet.approvedProfileDecision.approvalScore,
     confidence: recommended.confidence,
     rrEstimate: recommended.rrEstimate,

@@ -90,6 +90,7 @@ const buildBlockingReasons = (currentRead: IctCurrentRead) =>
     isRiskBlocked(currentRead.riskStatus) ? `Risk governor blocks candidate: ${formatToken(currentRead.riskStatus)}.` : undefined,
     isSmtReject(currentRead.smtStatus) ? `SMT/relative strength rejects candidate: ${formatToken(currentRead.smtStatus)}.` : undefined,
     currentRead.approvedStatus === "rejected_candidate" ? "Approved-profile layer rejected the current read." : undefined,
+    currentRead.modelQualityLane === "watchlist" ? currentRead.paperWatchlistReason ?? "Watchlist only - not paper eligible." : undefined,
     currentRead.dataStatus !== "ready" ? `Current read data is ${formatToken(currentRead.dataStatus)}.` : undefined
   ]);
 
@@ -141,6 +142,12 @@ export const classifyResearchSignalStatus = (
 const nextActionFor = (status: IctResearchSignalStatus, currentRead: IctCurrentRead, warnings: string[]) => {
   if (status === "approved_research_signal") {
     return "Treat as an approved research signal only; run replay, Monte Carlo, evidence, maturity, and paper-demo checklist review before any future readiness work.";
+  }
+  if (currentRead.modelQualityLane === "paper_watchlist") {
+    return "Paper-only eligible: run explicit paper simulation and collect replay evidence; no readiness promotion.";
+  }
+  if (currentRead.modelQualityLane === "watchlist") {
+    return currentRead.paperWatchlistReason ?? "Watchlist only - not paper eligible.";
   }
   if (status === "watchlist_signal") {
     return warnings[0] ?? currentRead.nextAction ?? "Keep on watchlist and collect additional compact validation evidence.";
@@ -198,8 +205,9 @@ export const buildIctResearchSignalFromCurrentRead = (
     ...currentRead.topReasons,
     status === "approved_research_signal" ? "Current read passed the approved-profile research gate." : undefined,
     currentRead.approvedStatus === "paper_watchlist_candidate"
-      ? "Current read is complete enough for paper-watchlist simulation only; approval remains blocked."
+      ? currentRead.paperWatchlistReason ?? "Current read is complete enough for paper-watchlist simulation only; approval remains blocked."
       : undefined,
+    currentRead.modelQualityLane === "watchlist" ? currentRead.paperWatchlistReason ?? "Watchlist only - not paper eligible." : undefined,
     status === "watchlist_signal" ? "Current read is watchlist or needs more non-execution validation evidence." : undefined
   ]).slice(0, 10);
 
@@ -224,6 +232,10 @@ export const buildIctResearchSignalFromCurrentRead = (
     rrEstimate: currentRead.rrEstimate,
     confidence: currentRead.confidence,
     approvedProfileStatus: currentRead.approvedStatus,
+    modelQualityLane: currentRead.modelQualityLane,
+    paperWatchlistEligible: currentRead.paperWatchlistEligible,
+    paperWatchlistReason: currentRead.paperWatchlistReason,
+    paperWatchlistEvidenceSummary: currentRead.paperWatchlistEvidenceSummary,
     approvalScore: currentRead.approvalScore,
     bias: currentRead.bias,
     smtStatus: currentRead.smtStatus,

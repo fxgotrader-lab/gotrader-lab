@@ -73,6 +73,22 @@ const signalVariant = (signal?: IctResearchSignal) =>
       : signal?.status === "rejected_signal"
         ? "danger"
         : "secondary";
+const modelLaneLabel = (lane?: string) => {
+  if (lane === "approved") return "Approved";
+  if (lane === "paper_watchlist") return "Paper Watchlist";
+  if (lane === "watchlist") return "Watchlist";
+  if (lane === "rejected") return "Rejected";
+  if (lane === "no_trade") return "No Trade";
+  return "Pending";
+};
+const modelLaneVariant = (lane?: string) =>
+  lane === "approved"
+    ? "success" as const
+    : lane === "paper_watchlist" || lane === "watchlist"
+      ? "warning" as const
+      : lane === "rejected"
+        ? "danger" as const
+        : "secondary" as const;
 
 export function IctAdvisorSummaryPanel({
   mode = "full",
@@ -151,9 +167,11 @@ export function IctAdvisorSummaryPanel({
     [recommended?.target, recommended?.invalidation, recommended?.rrEstimate]
   );
   const missingTradeFieldsLabel = missingTradeFields.length ? missingTradeFields.join(", ") : "none";
-  const paperWatchlistEligible = researchSignal.approvedProfileStatus === "paper_watchlist_candidate";
+  const paperWatchlistEligible = currentRead.paperWatchlistEligible;
   const paperSimLabel = paperSimEligibility.eligible ? "Paper Sim: Eligible" : "Paper Sim: Not Eligible";
   const paperSimVariant = paperSimEligibility.eligible ? "success" as const : "warning" as const;
+  const modelLane = modelLaneLabel(currentRead.modelQualityLane);
+  const paperWatchlistLabel = paperWatchlistEligible ? "Paper-only eligible" : "Not eligible";
   const phaseOneSignals = useMemo(() => (packet?.signals ?? []).filter((signal) => signal.phase === "phase_1"), [packet?.signals]);
   const phaseTwoSignals = useMemo(() => (packet?.signals ?? []).filter((signal) => signal.phase === "phase_2"), [packet?.signals]);
   const topPhaseTwo = phaseTwoSignals
@@ -177,8 +195,10 @@ export function IctAdvisorSummaryPanel({
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge variant={statusVariant(packet?.approvedProfileDecision.status)}>{formatToken(packet?.approvedProfileDecision.status)}</Badge>
+            <Badge data-testid="dashboard-ict-model-lane" variant={modelLaneVariant(currentRead.modelQualityLane)}>Model lane: {modelLane}</Badge>
             <Badge data-testid="dashboard-ict-research-signal-status" variant={signalVariant(researchSignal)}>{formatToken(researchSignal.status)}</Badge>
             <Badge data-testid="dashboard-ict-paper-sim-status" variant={paperSimVariant}>{paperSimLabel}</Badge>
+            <Badge data-testid="dashboard-ict-execution-status" variant="danger">Execution: Disabled</Badge>
             <Badge variant={smtVariant(packet)}>{smtLabel(packet)}</Badge>
             <Badge variant={riskVariant(packet)}>{riskLabel(packet)}</Badge>
           </div>
@@ -203,8 +223,13 @@ export function IctAdvisorSummaryPanel({
                 value={currentRead.fvgTargetDetected ? formatToken(currentRead.fvgTargetDirection) : "missing"}
                 detail="session draw context"
               />
+              <AdvisorMini
+                label="Model lane"
+                value={modelLane}
+                detail={currentRead.paperWatchlistReason ?? "research-only lane"}
+              />
               <AdvisorMini label="Active setup" value={formatToken(currentRead.bestSetup)} detail={`Phase 2 ${formatToken(topPhaseTwo?.setup ?? currentRead.bestPhase2Setup)}`} />
-              <AdvisorMini label="Decision" value={formatToken(currentRead.approvedStatus)} detail={formatToken(currentRead.dataStatus)} />
+              <AdvisorMini label="Decision" value={formatToken(currentRead.approvedStatus)} detail={`Lane ${modelLane}`} />
               <AdvisorMini
                 label="Research signal"
                 value={formatToken(researchSignal.status)}
@@ -212,8 +237,13 @@ export function IctAdvisorSummaryPanel({
               />
               <AdvisorMini
                 label="Paper Sim"
-                value={paperWatchlistEligible ? "Paper watchlist" : paperSimEligibility.eligible ? "Eligible" : "Not Eligible"}
-                detail={paperSimEligibility.eligible ? "No broker order" : paperSimEligibility.reasons[0] ?? "Waiting for approved signal"}
+                value={paperWatchlistEligible ? "Paper Watchlist" : paperSimEligibility.eligible ? "Eligible" : "Not Eligible"}
+                detail={paperSimEligibility.eligible ? "paper-only review" : paperSimEligibility.reasons[0] ?? "Waiting for approved signal"}
+              />
+              <AdvisorMini
+                label="Execution"
+                value="Disabled"
+                detail="authority none / no broker mutation"
               />
               <AdvisorMini label="Missing trade fields" value={missingTradeFieldsLabel} detail="target / invalidation / RR" />
               <AdvisorMini label="Confidence" value={pct(currentRead.confidence)} />
@@ -245,7 +275,7 @@ export function IctAdvisorSummaryPanel({
             </div>
             <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3">
               <p className="line-clamp-2 text-xs leading-5 text-slate-300">
-                Model detected: {currentRead.modelDetected ? `${formatToken(currentRead.modelName)} / ${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : "no"}. Trade status: {formatToken(researchSignal.approvedProfileStatus ?? researchSignal.status)}. Missing: {missingTradeFieldsLabel}. Signal: {formatToken(researchSignal.status)} / {formatToken(researchSignal.side)} / execution disabled. {currentRead.topReasons[0] ?? recommended?.summary ?? "ICT advisor summary pending."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
+                Model detected: {currentRead.modelDetected ? `${formatToken(currentRead.modelName)} / ${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : "no"}. Model lane: {modelLane}. Paper Sim: {paperSimEligibility.eligible ? "Eligible" : "Not Eligible"}. Execution: Disabled. Missing: {missingTradeFieldsLabel}. {currentRead.paperWatchlistReason ?? currentRead.topReasons[0] ?? recommended?.summary ?? "ICT advisor summary pending."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
               </p>
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -284,7 +314,9 @@ export function IctAdvisorSummaryPanel({
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant={statusVariant(packet?.approvedProfileDecision.status)}>{formatToken(packet?.approvedProfileDecision.status)}</Badge>
+          <Badge data-testid="ict-model-quality-lane" variant={modelLaneVariant(currentRead.modelQualityLane)}>Model lane: {modelLane}</Badge>
           <Badge data-testid="dashboard-ict-paper-sim-status-full" variant={paperSimVariant}>{paperSimLabel}</Badge>
+          <Badge variant={paperWatchlistEligible ? "warning" : "secondary"}>{paperWatchlistLabel}</Badge>
           <Badge variant={smtVariant(packet)}>{smtLabel(packet)}</Badge>
           <Badge variant={riskVariant(packet)}>{riskLabel(packet)}</Badge>
           <Badge variant={recommended?.decision === "research_only" ? "success" : "warning"}>{formatToken(recommended?.decision)}</Badge>
@@ -323,6 +355,9 @@ export function IctAdvisorSummaryPanel({
               value={packet.compactSummary.fvgTargetDetected ? formatToken(packet.compactSummary.fvgTargetDirection) : "missing"}
               detail="draw target only"
             />
+            <AdvisorMini label="Candidate lane" value={modelLane} detail={currentRead.paperWatchlistReason ?? "research-only lane"} />
+            <AdvisorMini label="Paper-watchlist eligibility" value={paperWatchlistEligible ? "eligible" : "not eligible"} detail={currentRead.paperWatchlistEvidenceSummary ?? "compact evidence only"} />
+            <AdvisorMini label="Execution" value="Disabled" detail="authority none / no broker mutation" />
             <AdvisorMini label="Active setup" value={formatToken(packet.compactSummary.setup)} />
             <AdvisorMini label="Research side" value={formatToken(packet.compactSummary.side)} />
             <AdvisorMini label="Decision" value={formatToken(packet.compactSummary.decision)} />
@@ -367,6 +402,15 @@ export function IctAdvisorSummaryPanel({
             <AdvisorMini label="Latest scorecard" value={currentRead.latestScorecardBestSymbol ?? "none saved"} detail="manual result" />
           </div>
           <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3">
+            <div data-testid="ict-model-quality-lane-summary" className="mb-4 rounded-lg border border-cyan-300/15 bg-cyan-300/10 p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">Model Quality Lane</p>
+              <p className="mt-1 text-sm font-semibold text-slate-50">
+                {currentRead.modelDetected ? formatToken(currentRead.modelName) : "No model detected"} / {modelLane} / {paperWatchlistEligible ? "paper-test only" : "not paper eligible"}
+              </p>
+              <p className="mt-2 text-xs leading-5 text-cyan-100">
+                {currentRead.paperWatchlistReason ?? "No model-quality reason was supplied."} Evidence: {currentRead.paperWatchlistEvidenceSummary ?? "compact evidence pending."} Next action: {researchSignal.nextAction}
+              </p>
+            </div>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Index SMT / Relative Strength</p>
