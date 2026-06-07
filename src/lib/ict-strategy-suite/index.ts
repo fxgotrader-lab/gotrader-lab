@@ -6,6 +6,8 @@ export * from "./ictBrowserResearchLimits";
 export * from "./ictAdvisorTypes";
 export * from "./ictAdvisorJournal";
 export * from "./ictAdvisorEngine";
+export * from "./ictMarketAnalysisContextTypes";
+export * from "./ictMarketAnalysisContext";
 export * from "./ictCurrentReadTypes";
 export * from "./ictCurrentRead";
 export * from "./ictSessionNarrativeTypes";

@@ -47,6 +47,8 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictPhase2OrderBlocks.ts" },
   { root: sourceRoot, file: "ictPhase2BreadAndButter.ts" },
   { root: sourceRoot, file: "ictPhase2OneShotOneKill.ts" },
+  { root: sourceRoot, file: "ictMarketAnalysisContextTypes.ts" },
+  { root: sourceRoot, file: "ictMarketAnalysisContext.ts" },
   { root: sourceRoot, file: "ictAdvisorEngine.ts" },
   { root: sourceRoot, file: "ictCurrentReadTypes.ts" },
   { root: sourceRoot, file: "ictCurrentRead.ts" },

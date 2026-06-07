@@ -25,6 +25,7 @@ import type {
   IctSessionModelState,
   IctSessionNarrativeProfile
 } from "./ictSessionNarrativeTypes";
+import type { IctMarketAnalysisContext, IctAnalysisTimeframe } from "./ictMarketAnalysisContextTypes";
 
 export type IctBias = "bullish" | "bearish" | "neutral";
 export type IctSide = "long" | "short" | "flat";
@@ -218,6 +219,7 @@ export interface IctAdvisorPacket {
     sourceFingerprint: string;
     sourceLabel: string;
   };
+  marketAnalysisContext?: IctMarketAnalysisContext;
   signals: IctAdvisorSignal[];
   recommendedSignal: IctAdvisorSignal;
   indexSmt?: IctSmtSignal;
@@ -255,6 +257,14 @@ export interface IctAdvisorPacket {
     dataDepthStatus?: IctDataDepthStatus;
     availableLookbackDays?: number;
     requestedLookbackDays?: number;
+    displayTimeframe?: string;
+    displayTimeframeRole?: IctMarketAnalysisContext["displayTimeframeRole"];
+    analysisDepthStatus?: IctMarketAnalysisContext["analysisDepthStatus"];
+    analysisTimeframesUsed?: IctAnalysisTimeframe[];
+    missingTimeframes?: IctAnalysisTimeframe[];
+    htfBiasSource?: IctAnalysisTimeframe[];
+    sessionModelSourceTimeframe?: IctAnalysisTimeframe;
+    confirmationSourceTimeframe?: IctAnalysisTimeframe;
     hydrationSource?: "canonical_source_store" | "active_mt5_readonly_feed" | "metadata_only" | "unavailable";
     hydrationWarning?: string;
     noTradeReasonCount: number;

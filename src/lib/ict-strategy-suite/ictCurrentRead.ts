@@ -8,6 +8,7 @@ import type {
   IctModelQualityLane,
   IctCurrentReadPacketSource
 } from "./ictCurrentReadTypes";
+import type { IctAnalysisTimeframe } from "./ictMarketAnalysisContextTypes";
 
 const authority = {
   executionAuthority: "none" as const,
@@ -170,6 +171,36 @@ const paperWatchlistEvidenceSummaryFor = (packet: IctAdvisorPacket, lane: IctMod
   return `${modelPart}. Lane ${lane.replace(/_/g, " ")}; ${rrPart}; ${confidencePart}; authority none.`;
 };
 
+const analysisTimeframesFor = (packet: IctAdvisorPacket) =>
+  packet.marketAnalysisContext?.analysisTimeframesUsed ??
+  packet.compactSummary.analysisTimeframesUsed ??
+  packet.htfTimeframes.map((timeframe): IctAnalysisTimeframe | undefined =>
+    timeframe.toLowerCase() === "15m"
+      ? "M15"
+      : timeframe.toLowerCase() === "1h"
+        ? "H1"
+        : timeframe.toLowerCase() === "4h"
+          ? "H4"
+          : timeframe.toLowerCase() === "1d"
+            ? "D1"
+            : timeframe.toLowerCase() === "1w"
+              ? "W1"
+              : undefined
+  ).filter((timeframe): timeframe is IctAnalysisTimeframe => Boolean(timeframe));
+
+const missingTimeframesFor = (packet: IctAdvisorPacket) =>
+  packet.marketAnalysisContext?.missingTimeframes ?? packet.compactSummary.missingTimeframes ?? [];
+
+const analysisDepthStatusFor = (packet: IctAdvisorPacket) =>
+  packet.marketAnalysisContext?.analysisDepthStatus ?? packet.compactSummary.analysisDepthStatus;
+
+const confidenceWithAnalysisPenalty = (confidence: number | undefined, missingTimeframes: string[], analysisTimeframesUsed: string[]) => {
+  if (typeof confidence !== "number" || !Number.isFinite(confidence)) return confidence;
+  const missingPenalty = Math.min(0.18, missingTimeframes.length * 0.025);
+  const singleFramePenalty = analysisTimeframesUsed.length <= 1 ? 0.1 : 0;
+  return Math.max(0, Number((confidence - missingPenalty - singleFramePenalty).toFixed(4)));
+};
+
 const nextActionFor = (packet: IctAdvisorPacket, reasons: string[]) => {
   const status = packet.approvedProfileDecision.status;
   if (!packet.activeSource.candleCount) return "Check MT5 Read Only or activate a canonical research source.";
@@ -269,6 +300,14 @@ export const buildUnavailableIctCurrentRead = (
   requestedSymbol: "MNQ",
   brokerSymbol: "USTECH",
   primaryTimeframe: "5m",
+  displayTimeframe: "5m",
+  displayTimeframeRole: "chart_display_reference_only",
+  analysisTimeframesUsed: [],
+  analysisDepthStatus: "unavailable",
+  missingTimeframes: ["W1", "D1", "H4", "H1", "M15", "M5"],
+  htfBiasSource: [],
+  sessionModelSourceTimeframe: undefined,
+  confirmationSourceTimeframe: undefined,
   htfTimeframes: [],
   dataStatus: "unavailable",
   side: "flat",
@@ -302,7 +341,14 @@ export const buildUnavailableIctCurrentRead = (
     smtStatus: "comparison_sources_missing",
     riskStatus: "unknown_no_calendar",
     hydrationSource: "unavailable",
-    hydrationWarning: reason
+    hydrationWarning: reason,
+    displayTimeframe: "5m",
+    analysisTimeframesUsed: [],
+    analysisDepthStatus: "unavailable",
+    missingTimeframes: ["W1", "D1", "H4", "H1", "M15", "M5"],
+    htfBiasSource: [],
+    sessionModelSourceTimeframe: undefined,
+    confirmationSourceTimeframe: undefined
   },
   ...latestResearchSummaryFor(latestState),
   authority,
@@ -364,6 +410,21 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
   const paperWatchlistReason = paperWatchlistReasonFor(packet, modelQualityLane, reasons);
   const paperWatchlistEvidenceSummary = paperWatchlistEvidenceSummaryFor(packet, modelQualityLane);
   const paperWatchlistModelName = primaryModelNameFor(packet);
+  const analysisTimeframesUsed = analysisTimeframesFor(packet);
+  const missingTimeframes = missingTimeframesFor(packet);
+  const analysisDepthStatus = analysisDepthStatusFor(packet) ?? packet.sessionNarrative?.dataDepth.status ?? packet.compactSummary.dataDepthStatus;
+  const displayTimeframe = packet.marketAnalysisContext?.displayTimeframe ?? packet.compactSummary.displayTimeframe ?? packet.primaryTimeframe;
+  const htfBiasSource = packet.marketAnalysisContext?.htfBiasSource ?? packet.compactSummary.htfBiasSource ?? [];
+  const sessionModelSourceTimeframe =
+    packet.marketAnalysisContext?.sessionModelSourceTimeframe ?? packet.compactSummary.sessionModelSourceTimeframe;
+  const confirmationSourceTimeframe =
+    packet.marketAnalysisContext?.confirmationSourceTimeframe ?? packet.compactSummary.confirmationSourceTimeframe;
+  const adjustedConfidence = confidenceWithAnalysisPenalty(recommended.confidence, missingTimeframes, analysisTimeframesUsed);
+  const multiTimeframeReasons = uniqueReasons([
+    analysisTimeframesUsed.length <= 1 ? "Multi-timeframe context incomplete." : undefined,
+    missingTimeframes.length ? `Missing analysis timeframes: ${missingTimeframes.join(", ")}.` : undefined,
+    analysisDepthStatus && analysisDepthStatus !== "sufficient" ? `Analysis depth is ${analysisDepthStatus}.` : undefined
+  ]);
 
   return {
     researchOnly: true,
@@ -371,6 +432,14 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     requestedSymbol: packet.requestedSymbol,
     brokerSymbol: packet.brokerSymbol,
     primaryTimeframe: packet.primaryTimeframe,
+    displayTimeframe,
+    displayTimeframeRole: "chart_display_reference_only",
+    analysisTimeframesUsed,
+    analysisDepthStatus,
+    missingTimeframes,
+    htfBiasSource,
+    sessionModelSourceTimeframe,
+    confirmationSourceTimeframe,
     htfTimeframes: packet.htfTimeframes,
     dataStatus,
     candleCount: packet.activeSource.candleCount,
@@ -387,7 +456,7 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     paperWatchlistEvidenceSummary,
     executionAllowed: false,
     approvalScore: packet.approvedProfileDecision.approvalScore,
-    confidence: recommended.confidence,
+    confidence: adjustedConfidence,
     rrEstimate: recommended.rrEstimate,
     target: recommended.target,
     invalidation: recommended.invalidation,
@@ -431,10 +500,10 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     smtReason,
     riskReason,
     topReasons: reasons.length
-      ? reasons
+      ? uniqueReasons([...multiTimeframeReasons, ...reasons])
       : recommended.decision === "research_only"
-        ? ["Research candidate generated; validation is still required before any readiness review."]
-        : ["No explicit blocker was provided by the compact advisor packet."],
+        ? uniqueReasons([...multiTimeframeReasons, "Research candidate generated; validation is still required before any readiness review."])
+        : uniqueReasons([...multiTimeframeReasons, "No explicit blocker was provided by the compact advisor packet."]),
     nextAction: nextActionFor(packet, reasons),
     debug: {
       candleCount: packet.activeSource.candleCount,
@@ -463,7 +532,14 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
       smtStatus,
       riskStatus,
       hydrationSource: packet.compactSummary.hydrationSource,
-      hydrationWarning: packet.compactSummary.hydrationWarning
+      hydrationWarning: packet.compactSummary.hydrationWarning,
+      displayTimeframe,
+      analysisTimeframesUsed,
+      analysisDepthStatus,
+      missingTimeframes,
+      htfBiasSource,
+      sessionModelSourceTimeframe,
+      confirmationSourceTimeframe
     },
     authority,
     safety

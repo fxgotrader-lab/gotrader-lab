@@ -36,6 +36,7 @@
     "test:ict-cmd-paper-watchlist-diagnostic": "node scripts/test-ict-cmd-paper-watchlist-diagnostic.mjs",
     "test:ict-cmd-paper-watchlist-oos": "node scripts/test-ict-cmd-paper-watchlist-oos.mjs",
     "test:ict-cmd-paper-tracking": "node scripts/test-ict-cmd-paper-tracking.mjs",
+    "test:ict-multi-timeframe-context": "node scripts/test-ict-multi-timeframe-context.mjs",
     "test:ict-activate-market-pipeline": "node scripts/test-ict-activate-market-pipeline.mjs",
     "test:ict-activate-market-real-read": "node scripts/test-ict-activate-market-real-read.mjs",
     "test:ict-model-fidelity-audit": "node scripts/test-ict-model-fidelity-audit.mjs",

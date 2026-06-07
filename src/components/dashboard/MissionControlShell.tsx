@@ -2056,7 +2056,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
             />
           </div>
         </div>
-        <IctAdvisorSummaryPanel mode="compact" snapshot={runtimeSnapshot} />
+        <IctAdvisorSummaryPanel mode="compact" snapshot={runtimeSnapshot} packetOverride={activateMarketResult?.advisorPacket} />
         <LLMAdvisoryReviewPanel mode="compact" snapshot={runtimeSnapshot} onAdvisoryEvent={addDataConnectionEvent} />
         </div>
 

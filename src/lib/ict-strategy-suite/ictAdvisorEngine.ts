@@ -8,6 +8,8 @@ import { hydrateActiveMt5ReadOnlyCandleFeed } from "../integrations/mt5/mt5ReadO
 import { mt5ReadOnlyCandlesToGoTraderCandles } from "../integrations/mt5/mt5ReadOnlyNormalizer";
 import type { ResearchRuntimeSnapshot } from "../runtime";
 import type { Candle } from "../types";
+import { buildIctMarketAnalysisContextFromSnapshot } from "./ictMarketAnalysisContext";
+import type { IctMarketAnalysisContextBundle } from "./ictMarketAnalysisContextTypes";
 import {
   calculateDealingRange,
   detectDisplacement,
@@ -808,29 +810,73 @@ const resolveIndexSmtSources = async ({
   return loaded;
 };
 
-export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntimeSnapshot): Promise<IctAdvisorPacket> {
+export interface BuildIctAdvisorPacketFromRuntimeOptions {
+  marketAnalysisContextBundle?: IctMarketAnalysisContextBundle;
+}
+
+const timeframeLabelForAnalysis = (timeframe?: string) => {
+  if (timeframe === "W1") return "1w";
+  if (timeframe === "D1") return "1d";
+  if (timeframe === "H4") return "4h";
+  if (timeframe === "H1") return "1h";
+  if (timeframe === "M15") return "15m";
+  if (timeframe === "M5") return "5m";
+  if (timeframe === "M1") return "1m";
+  return undefined;
+};
+
+export async function buildIctAdvisorPacketFromRuntime(
+  snapshot: ResearchRuntimeSnapshot,
+  options: BuildIctAdvisorPacketFromRuntimeOptions = {}
+): Promise<IctAdvisorPacket> {
   const sourceSummary = snapshot.marketData.activeResearchSource;
   const activeSource = await loadCanonicalCandleSource(sourceSummary.sourceId);
   const brokerSymbol = snapshot.mt5ReadOnly.brokerSymbol ?? sourceSummary.provenance.providerSymbol ?? snapshot.marketData.contract ?? "n/a";
   const requestedSymbol = snapshot.marketData.symbol;
   const primaryTimeframe = sourceSummary.timeframe ?? snapshot.marketData.timeframe;
   const symbol = sourceSummary.symbol ?? requestedSymbol;
+  const marketAnalysisContext =
+    options.marketAnalysisContextBundle?.context ??
+    buildIctMarketAnalysisContextFromSnapshot({ activeSource, snapshot });
   const htfSources = await resolveHtfSources(snapshot);
-  const htfCandles = Object.fromEntries(htfSources.map(({ source }) => [source.timeframe, source.candles]));
-  const analysis = await resolveAnalysisCandles({ activeSource, sourceSummary, snapshot });
+  const canonicalHtfCandles = Object.fromEntries(htfSources.map(({ source }) => [source.timeframe, source.candles]));
+  const bundledHtfCandles = Object.fromEntries(
+    (["W1", "D1", "H4", "H1", "M15"] as const)
+      .map((timeframe) => [timeframe, options.marketAnalysisContextBundle?.analysisCandlesByTimeframe[timeframe] ?? []] as const)
+      .filter(([, values]) => values.length > 0)
+  );
+  const htfCandles = {
+    ...canonicalHtfCandles,
+    ...bundledHtfCandles
+  };
+  const bundledM5Candles = options.marketAnalysisContextBundle?.analysisCandlesByTimeframe.M5 ?? [];
+  const analysis = bundledM5Candles.length
+    ? {
+        candles: bundledM5Candles,
+        hydrationSource: "active_mt5_readonly_feed" as const,
+        hydrationWarning: undefined
+      }
+    : await resolveAnalysisCandles({ activeSource, sourceSummary, snapshot });
   const candles = analysis.candles;
   const indexComparisonCandles = await resolveIndexSmtSources({ activeSource, primaryTimeframe, snapshot });
   const htfTimeframes = Object.keys(htfCandles);
-  const sessionNarrative = candles.length
-    ? buildIctSessionNarrative(candles, {
+  const sessionCandles =
+    options.marketAnalysisContextBundle?.analysisCandlesByTimeframe.M15?.length
+      ? options.marketAnalysisContextBundle.analysisCandlesByTimeframe.M15
+      : candles;
+  const sessionModelTimeframe =
+    timeframeLabelForAnalysis(marketAnalysisContext.sessionModelSourceTimeframe) ??
+    (sessionCandles === candles ? primaryTimeframe : "15m");
+  const sessionNarrative = sessionCandles.length
+    ? buildIctSessionNarrative(sessionCandles, {
         requestedSymbol,
         brokerSymbol,
-        primaryTimeframe,
+        primaryTimeframe: sessionModelTimeframe,
         requestedLookbackDays: 90,
-        depthSource: "current_window"
+        depthSource: options.marketAnalysisContextBundle ? "cached_depth" : "current_window"
       })
     : undefined;
-  const signals = activeSource?.candles?.length
+  const signals = candles.length
     ? buildIctAdvisorSignals({
         brokerSymbol,
         candles,
@@ -899,6 +945,7 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
       sourceFingerprint: activeSource?.fingerprint ?? sourceSummary.fingerprint,
       sourceLabel: sourceSummary.provenance.sourceLabel
     },
+    marketAnalysisContext,
     signals,
     recommendedSignal,
     indexSmt: recommendedSignal.smt,
@@ -939,6 +986,14 @@ export async function buildIctAdvisorPacketFromRuntime(snapshot: ResearchRuntime
       dataDepthStatus: sessionNarrative?.dataDepth.status,
       availableLookbackDays: sessionNarrative?.dataDepth.availableLookbackDays,
       requestedLookbackDays: sessionNarrative?.dataDepth.requestedLookbackDays,
+      displayTimeframe: marketAnalysisContext.displayTimeframe,
+      displayTimeframeRole: marketAnalysisContext.displayTimeframeRole,
+      analysisDepthStatus: marketAnalysisContext.analysisDepthStatus,
+      analysisTimeframesUsed: marketAnalysisContext.analysisTimeframesUsed,
+      missingTimeframes: marketAnalysisContext.missingTimeframes,
+      htfBiasSource: marketAnalysisContext.htfBiasSource,
+      sessionModelSourceTimeframe: marketAnalysisContext.sessionModelSourceTimeframe,
+      confirmationSourceTimeframe: marketAnalysisContext.confirmationSourceTimeframe,
       hydrationSource: analysis.hydrationSource,
       hydrationWarning: analysis.hydrationWarning,
       noTradeReasonCount: recommendedSignal.noTradeReasons.length + (analysis.hydrationWarning ? 1 : 0)

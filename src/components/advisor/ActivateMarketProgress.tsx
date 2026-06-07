@@ -134,6 +134,10 @@ export function ActivateMarketProgress({
         <div className="mt-4 grid gap-2 rounded-lg border border-white/10 bg-black/25 p-3 text-sm md:grid-cols-4">
           <MiniSummary label="Model" value={formatToken(result.summary.modelName ?? "none")} />
           <MiniSummary label="Lane" value={formatToken(result.summary.modelLane ?? "no_trade")} />
+          <MiniSummary label="Chart timeframe" value={result.summary.displayTimeframe ?? result.primaryTimeframe} />
+          <MiniSummary label="Analysis TFs" value={result.summary.analysisTimeframesUsed?.join(" / ") || "pending"} />
+          <MiniSummary label="Analysis depth" value={formatToken(result.summary.analysisDepthStatus)} />
+          <MiniSummary label="Missing TFs" value={result.summary.missingTimeframes?.length ? result.summary.missingTimeframes.join(" / ") : "none"} />
           <MiniSummary label="Paper eligible" value={result.cmdPaperEligibility?.eligible ? "yes" : "no"} />
           <MiniSummary label="Execution" value="disabled" />
           <MiniSummary label="Session" value={formatToken(result.debug?.sessionNarrativeStatus)} />

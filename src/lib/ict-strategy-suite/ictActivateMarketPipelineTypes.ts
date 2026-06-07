@@ -1,12 +1,19 @@
 import type { IctCurrentRead } from "./ictCurrentReadTypes";
+import type { IctAdvisorPacket } from "./ictAdvisorTypes";
+import type { IctAnalysisDepthStatus, IctAnalysisTimeframe, IctMarketAnalysisContext } from "./ictMarketAnalysisContextTypes";
 import type { IctResearchSignal } from "./ictSignalContractTypes";
 
 export type IctActivateMarketStepId =
   | "resolve_symbol"
   | "check_mt5_readonly"
-  | "fetch_primary_candles"
-  | "fetch_htf_context"
-  | "normalize_candles"
+  | "load_display_candles"
+  | "load_analysis_m5"
+  | "load_analysis_m15"
+  | "load_analysis_h1"
+  | "load_analysis_h4"
+  | "load_analysis_daily"
+  | "load_analysis_weekly"
+  | "build_multi_timeframe_context"
   | "build_current_read"
   | "detect_session_model"
   | "run_phase_one"
@@ -60,6 +67,10 @@ export interface IctActivateMarketLatestSummary {
   requestedSymbol: string;
   brokerSymbol: string;
   primaryTimeframe: string;
+  displayTimeframe?: string;
+  analysisDepthStatus?: IctAnalysisDepthStatus;
+  analysisTimeframesUsed?: IctAnalysisTimeframe[];
+  missingTimeframes?: IctAnalysisTimeframe[];
   modelName?: string;
   modelLane?: string;
   nextAction?: string;
@@ -90,6 +101,8 @@ export interface IctActivateMarketResult {
   htfTimeframes: string[];
   steps: IctActivateMarketStep[];
 
+  advisorPacket?: IctAdvisorPacket;
+  marketAnalysisContext?: IctMarketAnalysisContext;
   currentRead?: IctCurrentRead;
   signalContract?: IctResearchSignal;
   operatorWorkflow?: IctActivateMarketOperatorWorkflow;
@@ -105,6 +118,10 @@ export interface IctActivateMarketResult {
     modelName?: string;
     modelState?: string;
     modelLane?: string;
+    displayTimeframe?: string;
+    analysisDepthStatus?: IctAnalysisDepthStatus;
+    analysisTimeframesUsed?: IctAnalysisTimeframe[];
+    missingTimeframes?: IctAnalysisTimeframe[];
     nextAction?: string;
     executionAllowed: false;
   };

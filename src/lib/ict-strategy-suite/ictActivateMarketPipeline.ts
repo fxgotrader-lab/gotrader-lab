@@ -5,6 +5,8 @@ import { evaluateCmdPaperTrackingEligibility } from "./ictCmdPaperTracking";
 import { buildIctCurrentReadFromPacket } from "./ictCurrentRead";
 import type { IctCurrentRead } from "./ictCurrentReadTypes";
 import type { IctLatestResearchState } from "./ictLatestResearchStateTypes";
+import { buildIctMarketAnalysisContextBundle } from "./ictMarketAnalysisContext";
+import type { IctAnalysisTimeframe, IctMarketAnalysisContextBundle } from "./ictMarketAnalysisContextTypes";
 import { buildIctResearchSignalFromCurrentRead } from "./ictSignalContract";
 import type { IctResearchSignal } from "./ictSignalContractTypes";
 import type {
@@ -38,9 +40,14 @@ const safety = {
 const stepDefinitions: Array<{ id: IctActivateMarketStepId; label: string }> = [
   { id: "resolve_symbol", label: "Resolve symbol" },
   { id: "check_mt5_readonly", label: "Check MT5 read-only" },
-  { id: "fetch_primary_candles", label: "Fetch primary candles" },
-  { id: "fetch_htf_context", label: "Fetch HTF context" },
-  { id: "normalize_candles", label: "Normalize candles" },
+  { id: "load_display_candles", label: "Load display candles" },
+  { id: "load_analysis_m5", label: "Load M5 analysis" },
+  { id: "load_analysis_m15", label: "Load M15 session model" },
+  { id: "load_analysis_h1", label: "Load H1 dealing range" },
+  { id: "load_analysis_h4", label: "Load H4 HTF bias" },
+  { id: "load_analysis_daily", label: "Load daily bias" },
+  { id: "load_analysis_weekly", label: "Load weekly bias" },
+  { id: "build_multi_timeframe_context", label: "Build multi-timeframe context" },
   { id: "build_current_read", label: "Build current read" },
   { id: "detect_session_model", label: "Detect session model" },
   { id: "run_phase_one", label: "Run ICT Phase 1" },
@@ -62,7 +69,8 @@ export interface IctActivateMarketPipelineConfig {
 }
 
 export interface IctActivateMarketPipelineDependencies {
-  buildAdvisorPacketFromRuntime?: (snapshot: ResearchRuntimeSnapshot) => Promise<IctAdvisorPacket>;
+  buildMarketAnalysisContext?: (snapshot: ResearchRuntimeSnapshot) => Promise<IctMarketAnalysisContextBundle>;
+  buildAdvisorPacketFromRuntime?: (snapshot: ResearchRuntimeSnapshot, options?: { marketAnalysisContextBundle?: IctMarketAnalysisContextBundle }) => Promise<IctAdvisorPacket>;
   buildCurrentRead?: (packet?: IctAdvisorPacket, latestState?: IctLatestResearchState) => IctCurrentRead;
   buildSignalContract?: (currentRead: IctCurrentRead, latestState?: IctLatestResearchState) => IctResearchSignal;
   evaluateCmdPaperEligibility?: (signal: IctResearchSignal) => { eligible: boolean; reasons: string[] };
@@ -151,6 +159,10 @@ export const readLatestActivateMarketSummary = (): IctActivateMarketLatestSummar
       requestedSymbol: String(parsed.requestedSymbol ?? "MNQ"),
       brokerSymbol: String(parsed.brokerSymbol ?? "USTECH"),
       primaryTimeframe: String(parsed.primaryTimeframe ?? "5m"),
+      displayTimeframe: typeof parsed.displayTimeframe === "string" ? parsed.displayTimeframe : undefined,
+      analysisDepthStatus: typeof parsed.analysisDepthStatus === "string" ? parsed.analysisDepthStatus : undefined,
+      analysisTimeframesUsed: asList(parsed.analysisTimeframesUsed) as IctAnalysisTimeframe[],
+      missingTimeframes: asList(parsed.missingTimeframes) as IctAnalysisTimeframe[],
       modelName: typeof parsed.modelName === "string" ? parsed.modelName : undefined,
       modelLane: typeof parsed.modelLane === "string" ? parsed.modelLane : undefined,
       nextAction: typeof parsed.nextAction === "string" ? parsed.nextAction : undefined,
@@ -231,6 +243,10 @@ const criticalUnavailableResult = ({
   summary: {
     dataStatus: "unavailable",
     modelDetected: false,
+    displayTimeframe: primaryTimeframe,
+    analysisDepthStatus: "unavailable",
+    analysisTimeframesUsed: [],
+    missingTimeframes: ["W1", "D1", "H4", "H1", "M15", "M5"],
     nextAction: "Activate MT5 read-only market data, then rerun Activate Market.",
     executionAllowed: false
   },
@@ -256,7 +272,14 @@ const criticalUnavailableResult = ({
     smtStatus: "not_run_source_blocked",
     riskStatus: "not_run_source_blocked",
     hydrationSource: "unavailable",
-    hydrationWarning: errors[0] ?? warnings[0]
+    hydrationWarning: errors[0] ?? warnings[0],
+    displayTimeframe: primaryTimeframe,
+    analysisTimeframesUsed: [],
+    analysisDepthStatus: "unavailable",
+    missingTimeframes: ["W1", "D1", "H4", "H1", "M15", "M5"],
+    htfBiasSource: [],
+    sessionModelSourceTimeframe: undefined,
+    confirmationSourceTimeframe: undefined
   },
   warnings,
   errors,
@@ -315,6 +338,10 @@ const buildLatestSummary = (result: IctActivateMarketResult): IctActivateMarketL
   requestedSymbol: result.requestedSymbol,
   brokerSymbol: result.brokerSymbol,
   primaryTimeframe: result.primaryTimeframe,
+  displayTimeframe: result.summary.displayTimeframe,
+  analysisDepthStatus: result.summary.analysisDepthStatus,
+  analysisTimeframesUsed: result.summary.analysisTimeframesUsed,
+  missingTimeframes: result.summary.missingTimeframes,
   modelName: result.summary.modelName,
   modelLane: result.summary.modelLane,
   nextAction: result.operatorWorkflow?.recommendedAction ?? result.summary.nextAction,
@@ -333,6 +360,8 @@ export const sanitizeActivateMarketResult = (result: IctActivateMarketResult): I
   primaryTimeframe: result.primaryTimeframe,
   htfTimeframes: [...result.htfTimeframes],
   steps: result.steps.map((step) => ({ ...step })),
+  advisorPacket: result.advisorPacket,
+  marketAnalysisContext: result.marketAnalysisContext,
   currentRead: result.currentRead,
   signalContract: result.signalContract,
   operatorWorkflow: result.operatorWorkflow ? { ...result.operatorWorkflow, heavyActionDeferred: true, autoStarted: false, executionAllowed: false } : undefined,
@@ -348,8 +377,11 @@ export const sanitizeActivateMarketResult = (result: IctActivateMarketResult): I
 export const summarizeActivateMarketResult = (result: IctActivateMarketResult) => {
   const model = result.summary.modelName ?? "no model";
   const lane = result.summary.modelLane ?? "no_trade";
+  const analysis = result.summary.analysisTimeframesUsed?.length
+    ? result.summary.analysisTimeframesUsed.join("/")
+    : "no analysis context";
   const action = result.operatorWorkflow?.recommendedAction ?? result.summary.nextAction ?? "Wait / Check MT5 Depth";
-  return `${result.status}: ${result.requestedSymbol}/${result.brokerSymbol} ${result.primaryTimeframe}; ${model}; lane ${lane}; next ${action}; execution disabled.`;
+  return `${result.status}: ${result.requestedSymbol}/${result.brokerSymbol} chart ${result.summary.displayTimeframe ?? result.primaryTimeframe}; analysis ${analysis}; ${model}; lane ${lane}; next ${action}; execution disabled.`;
 };
 
 export async function runIctActivateMarketPipeline(
@@ -364,10 +396,25 @@ export async function runIctActivateMarketPipeline(
   const warnings: string[] = [];
   const errors: string[] = [];
   let steps = createActivateMarketInitialSteps();
+  let advisorPacket: IctAdvisorPacket | undefined;
+  let marketAnalysisContextBundle: IctMarketAnalysisContextBundle | undefined;
   let currentRead: IctCurrentRead | undefined;
   let signalContract: IctResearchSignal | undefined;
   let operatorWorkflow: IctActivateMarketOperatorWorkflow | undefined;
   let cmdPaperEligibility: IctActivateMarketResult["cmdPaperEligibility"];
+
+  const buildOrReadMarketContext = async () => {
+    if (!marketAnalysisContextBundle) {
+      const buildMarketContext =
+        dependencies.buildMarketAnalysisContext ??
+        ((nextSnapshot: ResearchRuntimeSnapshot) => buildIctMarketAnalysisContextBundle({ snapshot: nextSnapshot }));
+      marketAnalysisContextBundle = await buildMarketContext(snapshot);
+    }
+    return marketAnalysisContextBundle;
+  };
+
+  const analysisContextFor = (timeframe: IctAnalysisTimeframe) =>
+    marketAnalysisContextBundle?.context.analysisTimeframes.find((context) => context.timeframe === timeframe);
 
   const run = async (
     id: IctActivateMarketStepId,
@@ -422,7 +469,7 @@ export async function runIctActivateMarketPipeline(
     return "MT5 read-only source selected; authority none/none/none.";
   });
 
-  await run("fetch_primary_candles", "Checking primary compact source depth.", async () => {
+  await run("load_display_candles", "Checking chart display source depth.", async () => {
     const count = sourceCandleCount(snapshot);
     if (count <= 0) {
       criticalUnavailable = true;
@@ -450,27 +497,68 @@ export async function runIctActivateMarketPipeline(
     );
   }
 
-  await run("fetch_htf_context", "Checking higher-timeframe context.", async () => {
-    const available = htfTimeframes(snapshot);
-    if (!available.length) {
-      return { skipped: true, warning: "Higher-timeframe MT5 context is missing; current read will be partial." };
-    }
-    return `${available.join(", ")} context available.`;
+  await run("load_analysis_m5", "Loading explicit M5 90-day confirmation/refinement context.", async () => {
+    const bundle = await buildOrReadMarketContext();
+    const context = bundle.context.analysisTimeframes.find((item) => item.timeframe === "M5");
+    if (!context?.candleCount) return { error: "M5 analysis context is unavailable from MT5 read-only history." };
+    return `M5 ${context.dataDepthStatus}; ${context.candleCount.toLocaleString()} candles over ${context.availableLookbackDays.toFixed(1)} days.`;
   });
 
-  await run("normalize_candles", "Checking compact source fingerprint.", async () => {
+  await run("load_analysis_m15", "Loading explicit M15 90-day session-model context.", async () => {
+    await buildOrReadMarketContext();
+    const context = analysisContextFor("M15");
+    if (!context?.candleCount) return { error: "M15 session-model context is unavailable from MT5 read-only history." };
+    return `M15 ${context.dataDepthStatus}; ${context.candleCount.toLocaleString()} candles over ${context.availableLookbackDays.toFixed(1)} days.`;
+  });
+
+  await run("load_analysis_h1", "Loading explicit H1 90-day dealing-range context.", async () => {
+    await buildOrReadMarketContext();
+    const context = analysisContextFor("H1");
+    if (!context?.candleCount) return { skipped: true, warning: "H1 analysis context is missing; HTF bias will be partial." };
+    return `H1 ${context.dataDepthStatus}; ${context.candleCount.toLocaleString()} candles over ${context.availableLookbackDays.toFixed(1)} days.`;
+  });
+
+  await run("load_analysis_h4", "Loading explicit H4 90-day HTF bias context.", async () => {
+    await buildOrReadMarketContext();
+    const context = analysisContextFor("H4");
+    if (!context?.candleCount) return { skipped: true, warning: "H4 analysis context is missing; HTF bias will be partial." };
+    return `H4 ${context.dataDepthStatus}; ${context.candleCount.toLocaleString()} candles over ${context.availableLookbackDays.toFixed(1)} days.`;
+  });
+
+  await run("load_analysis_daily", "Loading explicit daily 90-day bias context.", async () => {
+    await buildOrReadMarketContext();
+    const context = analysisContextFor("D1");
+    if (!context?.candleCount) return { skipped: true, warning: "Daily analysis context is missing; daily bias will be partial." };
+    return `D1 ${context.dataDepthStatus}; ${context.candleCount.toLocaleString()} candles over ${context.availableLookbackDays.toFixed(1)} days.`;
+  });
+
+  await run("load_analysis_weekly", "Loading explicit weekly 90-day bias context.", async () => {
+    await buildOrReadMarketContext();
+    const context = analysisContextFor("W1");
+    if (!context?.candleCount) return { skipped: true, warning: "Weekly analysis context is missing; weekly bias will be partial." };
+    return `W1 ${context.dataDepthStatus}; ${context.candleCount.toLocaleString()} candles over ${context.availableLookbackDays.toFixed(1)} days.`;
+  });
+
+  await run("build_multi_timeframe_context", "Building compact multi-timeframe analysis summary.", async () => {
+    const bundle = await buildOrReadMarketContext();
     const fingerprint = sourceFingerprint(snapshot);
-    if (!fingerprint) {
-      return { error: "Canonical MT5 source fingerprint is missing." };
+    if (!fingerprint) return { error: "Canonical MT5 source fingerprint is missing." };
+    const missing = bundle.context.missingTimeframes;
+    if (missing.length) {
+      return {
+        skipped: true,
+        warning: `Multi-timeframe context ${bundle.context.analysisDepthStatus}; missing ${missing.join(", ")}. Fingerprint ${fingerprint}.`
+      };
     }
-    return `Canonical fingerprint ${fingerprint}.`;
+    return `Analysis ${bundle.context.analysisDepthStatus}; ${bundle.context.analysisTimeframesUsed.join(", ")} loaded. Fingerprint ${fingerprint}.`;
   });
 
   await run("build_current_read", "Building compact ICT current read.", async () => {
     const buildPacket = dependencies.buildAdvisorPacketFromRuntime ?? buildIctAdvisorPacketFromRuntime;
     const buildRead = dependencies.buildCurrentRead ?? buildIctCurrentReadFromPacket;
-    const packet = await buildPacket(snapshot);
-    currentRead = buildRead(packet, config.latestResearchState);
+    const bundle = await buildOrReadMarketContext();
+    advisorPacket = await buildPacket(snapshot, { marketAnalysisContextBundle: bundle });
+    currentRead = buildRead(advisorPacket, config.latestResearchState);
     return currentRead.dataStatus === "ready"
       ? "Current read ready."
       : { skipped: true, warning: `Current read data status is ${currentRead.dataStatus}.` };
@@ -553,6 +641,8 @@ export async function runIctActivateMarketPipeline(
       primaryTimeframe,
       htfTimeframes: currentRead?.htfTimeframes ?? htfTimeframes(snapshot),
       steps,
+      advisorPacket,
+      marketAnalysisContext: marketAnalysisContextBundle?.context,
       currentRead,
       signalContract,
       operatorWorkflow,
@@ -563,6 +653,10 @@ export async function runIctActivateMarketPipeline(
         modelName: currentRead?.modelName,
         modelState: currentRead?.modelState,
         modelLane: currentRead?.modelQualityLane,
+        displayTimeframe: currentRead?.displayTimeframe ?? marketAnalysisContextBundle?.context.displayTimeframe ?? primaryTimeframe,
+        analysisDepthStatus: currentRead?.analysisDepthStatus ?? marketAnalysisContextBundle?.context.analysisDepthStatus,
+        analysisTimeframesUsed: currentRead?.analysisTimeframesUsed ?? marketAnalysisContextBundle?.context.analysisTimeframesUsed,
+        missingTimeframes: currentRead?.missingTimeframes ?? marketAnalysisContextBundle?.context.missingTimeframes,
         nextAction: operatorWorkflow?.recommendedAction ?? currentRead?.nextAction,
         executionAllowed: false
       },

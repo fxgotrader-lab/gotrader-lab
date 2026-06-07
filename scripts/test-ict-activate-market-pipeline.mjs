@@ -36,6 +36,7 @@ function compileForNode() {
   }
   fs.writeFileSync(path.join(outRoot, "ictAdvisorEngine.mjs"), "export async function buildIctAdvisorPacketFromRuntime() { return {}; }\n", "utf8");
   fs.writeFileSync(path.join(outRoot, "ictCurrentRead.mjs"), "export function buildIctCurrentReadFromPacket() { return globalThis.__ACTIVATE_MARKET_TEST_READ; }\n", "utf8");
+  fs.writeFileSync(path.join(outRoot, "ictMarketAnalysisContext.mjs"), "export async function buildIctMarketAnalysisContextBundle() { return globalThis.__ACTIVATE_MARKET_TEST_MARKET_CONTEXT; }\n", "utf8");
   fs.writeFileSync(path.join(outRoot, "ictSignalContract.mjs"), "export function buildIctResearchSignalFromCurrentRead() { return globalThis.__ACTIVATE_MARKET_TEST_SIGNAL; }\n", "utf8");
   fs.writeFileSync(path.join(outRoot, "ictCmdPaperTracking.mjs"), "export function evaluateCmdPaperTrackingEligibility() { return globalThis.__ACTIVATE_MARKET_TEST_CMD_ELIGIBILITY; }\n", "utf8");
 }
@@ -180,11 +181,16 @@ async function main() {
   assert.deepEqual(
     initialSteps.map((step) => step.id),
     [
-      "resolve_symbol",
-      "check_mt5_readonly",
-      "fetch_primary_candles",
-      "fetch_htf_context",
-      "normalize_candles",
+    "resolve_symbol",
+    "check_mt5_readonly",
+      "load_display_candles",
+      "load_analysis_m5",
+      "load_analysis_m15",
+      "load_analysis_h1",
+      "load_analysis_h4",
+      "load_analysis_daily",
+      "load_analysis_weekly",
+      "build_multi_timeframe_context",
       "build_current_read",
       "detect_session_model",
       "run_phase_one",
@@ -204,6 +210,41 @@ async function main() {
 
   globalThis.__ACTIVATE_MARKET_TEST_READ = currentRead();
   globalThis.__ACTIVATE_MARKET_TEST_SIGNAL = signalContract();
+  globalThis.__ACTIVATE_MARKET_TEST_MARKET_CONTEXT = {
+    context: {
+      researchOnly: true,
+      requestedSymbol: "MNQ",
+      brokerSymbol: "USTECH",
+      displayTimeframe: "5m",
+      displayTimeframeRole: "chart_display_reference_only",
+      analysisTimeframes: ["W1", "D1", "H4", "H1", "M15", "M5"].map((timeframe) => ({
+        timeframe,
+        requestedLookbackDays: 90,
+        availableLookbackDays: 88.95,
+        candleCount: timeframe === "M5" ? 17799 : timeframe === "M15" ? 5960 : 600,
+        dataDepthStatus: "sufficient",
+        sourceMethod: `test_chunked_${timeframe}`,
+        role: "test_role",
+        firstTimestamp: "2026-03-01T00:00:00.000Z",
+        lastTimestamp: "2026-06-07T00:00:00.000Z",
+        chunkCount: 9
+      })),
+      chartDisplayCandleCount: 1000,
+      analysisDepthStatus: "sufficient",
+      analysisTimeframesUsed: ["W1", "D1", "H4", "H1", "M15", "M5"],
+      missingTimeframes: [],
+      htfBiasSource: ["W1", "D1", "H4", "H1"],
+      sessionModelSourceTimeframe: "M15",
+      confirmationSourceTimeframe: "M5",
+      warnings: ["test compact context"],
+      generatedAt: "2026-06-07T12:00:00.000Z",
+      authority,
+      safety
+    },
+    displayCandles: [],
+    analysisCandlesByTimeframe: {},
+    depthSummariesByTimeframe: {}
+  };
   globalThis.__ACTIVATE_MARKET_TEST_CMD_ELIGIBILITY = {
     eligible: true,
     reasons: ["CMD strict paper-watchlist candidate is eligible for paper-only tracking."]
@@ -219,7 +260,11 @@ async function main() {
   assert.ok(success.steps.every((step) => step.status === "completed"), "successful pipeline should mark all steps completed");
   assert.ok(updates.length >= success.steps.length, "progress updates should be emitted");
   assert.ok(success.currentRead, "result should include compact current read");
+  assert.ok(success.marketAnalysisContext, "result should include compact multi-timeframe context");
   assert.ok(success.signalContract, "result should include research signal contract");
+  assert.deepEqual(success.summary.analysisTimeframesUsed, ["W1", "D1", "H4", "H1", "M15", "M5"]);
+  assert.equal(success.summary.displayTimeframe, "5m");
+  assert.equal(success.summary.analysisDepthStatus, "sufficient");
   assert.equal(success.operatorWorkflow.recommendedAction, "Track CMD Paper Candidate");
   assert.equal(success.cmdPaperEligibility.eligible, true);
   assert.equal(success.summary.modelLane, "paper_watchlist");
@@ -239,14 +284,27 @@ async function main() {
   assertSafe(unavailable);
 
   globalThis.__ACTIVATE_MARKET_TEST_READ = currentRead({ htfTimeframes: [], smtStatus: "confirmed" });
+  globalThis.__ACTIVATE_MARKET_TEST_MARKET_CONTEXT = {
+    ...globalThis.__ACTIVATE_MARKET_TEST_MARKET_CONTEXT,
+    context: {
+      ...globalThis.__ACTIVATE_MARKET_TEST_MARKET_CONTEXT.context,
+      analysisTimeframes: globalThis.__ACTIVATE_MARKET_TEST_MARKET_CONTEXT.context.analysisTimeframes.map((context) =>
+        context.timeframe === "H1" ? { ...context, candleCount: 0, dataDepthStatus: "unavailable" } : context
+      ),
+      analysisDepthStatus: "limited",
+      analysisTimeframesUsed: ["W1", "D1", "H4", "M15", "M5"],
+      missingTimeframes: ["H1"],
+      htfBiasSource: ["W1", "D1", "H4"]
+    }
+  };
   const missingHtf = await suite.runIctActivateMarketPipeline(
     { snapshot: snapshot({}, []), saveLatestSummary: false },
     undefined,
     { saveLatestSummary: () => undefined }
   );
   assert.equal(missingHtf.status, "partial");
-  assert.equal(missingHtf.steps.find((step) => step.id === "fetch_htf_context").status, "skipped");
-  assert.match(missingHtf.warnings.join(" "), /Higher-timeframe MT5 context is missing/i);
+  assert.equal(missingHtf.steps.find((step) => step.id === "load_analysis_h1").status, "skipped");
+  assert.match(missingHtf.warnings.join(" "), /H1 analysis context is missing|missing H1/i);
   assertSafe(missingHtf);
 
   globalThis.__ACTIVATE_MARKET_TEST_READ = currentRead({ smtStatus: "not available" });

@@ -25,6 +25,8 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictPhase2OrderBlocks.ts" },
   { root: sourceRoot, file: "ictPhase2BreadAndButter.ts" },
   { root: sourceRoot, file: "ictPhase2OneShotOneKill.ts" },
+  { root: sourceRoot, file: "ictMarketAnalysisContextTypes.ts" },
+  { root: sourceRoot, file: "ictMarketAnalysisContext.ts" },
   { root: sourceRoot, file: "ictAdvisorEngine.ts" },
   { root: sourceRoot, file: "ictCurrentReadTypes.ts" },
   { root: sourceRoot, file: "ictCurrentRead.ts" },
@@ -213,6 +215,11 @@ async function main() {
   assert.equal(read.requestedSymbol, "MNQ");
   assert.equal(read.brokerSymbol, "USTECH");
   assert.equal(read.primaryTimeframe, "5m");
+  assert.equal(read.displayTimeframe, "5m", "selected timeframe should be labeled as display/reference context");
+  assert.equal(read.displayTimeframeRole, "chart_display_reference_only");
+  assert.deepEqual(read.analysisTimeframesUsed.sort(), ["M5", "M15", "H1"].sort(), "lightweight read should expose registered/active analysis timeframes");
+  assert.ok(read.missingTimeframes.includes("W1"), "lightweight read should explain missing weekly context until Activate Market runs");
+  assert.ok(read.topReasons.some((reason) => /Multi-timeframe|Missing analysis timeframes|Analysis depth/i.test(reason)), "current read should surface incomplete multi-timeframe context");
   assert.deepEqual(read.htfTimeframes.sort(), ["15m", "1h"].sort(), "HTF timeframes should be preserved");
   assert.ok(read.debug.phase1SignalCount >= 4, "Phase 1 signals should be counted");
   assert.ok(read.debug.phase2SignalCount >= 4, "Phase 2 signals should be counted");

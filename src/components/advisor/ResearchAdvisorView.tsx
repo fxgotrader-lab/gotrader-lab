@@ -479,7 +479,12 @@ export function ResearchAdvisorView() {
     }),
     [manualReplayRequest.htfTimeframes, snapshot?.marketData.timeframe]
   );
-  const currentRead = useMemo(() => buildIctCurrentReadFromPacket(advisorPacket, latestResearchState), [advisorPacket, latestResearchState]);
+  const activeAdvisorPacket = activateMarketResult?.advisorPacket ?? advisorPacket;
+  const activeAdvisorPacketError = activateMarketResult?.advisorPacket ? undefined : advisorPacketError;
+  const currentRead = useMemo(
+    () => activateMarketResult?.currentRead ?? buildIctCurrentReadFromPacket(activeAdvisorPacket, latestResearchState),
+    [activateMarketResult?.currentRead, activeAdvisorPacket, latestResearchState]
+  );
   const researchSignal = useMemo(
     () => buildIctResearchSignalFromCurrentRead(currentRead, latestResearchState),
     [currentRead, latestResearchState]
@@ -513,6 +518,10 @@ export function ResearchAdvisorView() {
       setActivateMarketResult(result);
       setActivateMarketSteps(result.steps);
       setActivateMarketStatus(result.status);
+      if (result.advisorPacket) {
+        setAdvisorPacket(result.advisorPacket);
+        setAdvisorPacketError(undefined);
+      }
     } catch (error) {
       const failedSteps = markActivateMarketUiFailure(activateMarketSteps, errorMessage(error));
       setActivateMarketSteps(failedSteps);
@@ -522,12 +531,12 @@ export function ResearchAdvisorView() {
   };
 
   useEffect(() => {
-    if (!advisorPacket || !researchSignal.signalId) return;
+    if (!activeAdvisorPacket || !researchSignal.signalId) return;
     const stableJournalKey = researchSignalJournalKey(researchSignal);
     if (lastResearchSignalJournalKeyRef.current === stableJournalKey) return;
     lastResearchSignalJournalKeyRef.current = stableJournalKey;
     appendIctResearchSignalJournalEvent(buildIctResearchSignalJournalEvent(researchSignal));
-  }, [advisorPacket?.packetId, researchSignal]);
+  }, [activeAdvisorPacket?.packetId, researchSignal]);
 
   if (!snapshot) {
     return (
@@ -802,7 +811,7 @@ export function ResearchAdvisorView() {
     setChatMessages((messages) => [
       ...messages,
       createAdvisorMessage("user", normalized),
-      createAdvisorMessage("assistant", buildLocalAdvisorReply(normalized, advisorPacket, currentRead, snapshot, manualReplayStatus, marketScorecardStatus, profileOptimizationStatus))
+      createAdvisorMessage("assistant", buildLocalAdvisorReply(normalized, activeAdvisorPacket, currentRead, snapshot, manualReplayStatus, marketScorecardStatus, profileOptimizationStatus))
     ]);
     setChatInput("");
   };
@@ -905,7 +914,7 @@ export function ResearchAdvisorView() {
         disabled={activateMarketStatus === "running" || deepResearchActionRunning}
       />
 
-      <CurrentReadPanel currentRead={currentRead} packetError={advisorPacketError} />
+      <CurrentReadPanel currentRead={currentRead} packetError={activeAdvisorPacketError} />
       <ResearchSignalCard signal={researchSignal} />
       <PaperSimulationCard
         eligibility={paperSimEligibility}
@@ -925,8 +934,8 @@ export function ResearchAdvisorView() {
       <section data-testid="research-advisor-chat-workspace" className="grid items-start gap-4 xl:grid-cols-[minmax(220px,0.62fr)_minmax(420px,1.35fr)_minmax(240px,0.72fr)]">
         <ResearchAdvisorChatCard
           currentRead={currentRead}
-          packet={advisorPacket}
-          packetError={advisorPacketError}
+          packet={activeAdvisorPacket}
+          packetError={activeAdvisorPacketError}
           snapshot={snapshot}
           messages={chatMessages}
           inputValue={chatInput}
@@ -944,8 +953,11 @@ export function ResearchAdvisorView() {
             rows={[
               ["Requested", snapshot.marketData.symbol],
               ["Broker", brokerSymbol],
-              ["Timeframe", snapshot.marketData.timeframe],
-              ["HTF", htfSummary],
+              ["Chart timeframe", currentRead.displayTimeframe ?? snapshot.marketData.timeframe],
+              ["Analysis TFs", currentRead.analysisTimeframesUsed?.join(" / ") || "Activate Market required"],
+              ["Analysis depth", formatToken(currentRead.analysisDepthStatus)],
+              ["Missing TFs", currentRead.missingTimeframes?.length ? currentRead.missingTimeframes.join(" / ") : "none"],
+              ["HTF registered", htfSummary],
               ["Source", activeSource.provider.replace(/_/g, " ")]
             ]}
           />
@@ -963,7 +975,7 @@ export function ResearchAdvisorView() {
         <div className="order-3 space-y-4">
           <AdvisorSidePanel
             currentRead={currentRead}
-            packet={advisorPacket}
+            packet={activeAdvisorPacket}
             manualReplayStatus={manualReplayStatus}
             manualReplayResult={manualReplayResult}
           />
@@ -972,7 +984,7 @@ export function ResearchAdvisorView() {
 
       <section data-testid="advisor-deep-research-panels" className="space-y-4">
         <DeferredResearchDetails title="ICT Strategy Suite details" description="Compact suite details are ready. Expand to mount the full ICT panel.">
-          <IctAdvisorSummaryPanel snapshot={snapshot} packetOverride={advisorPacket} />
+          <IctAdvisorSummaryPanel snapshot={snapshot} packetOverride={activeAdvisorPacket} />
         </DeferredResearchDetails>
 
         <DeferredResearchDetails
@@ -1465,6 +1477,26 @@ function CurrentReadPanel({ currentRead, packetError }: { currentRead: IctCurren
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <AdvisorReadout label="Source" value={`${currentRead.brokerSymbol} -> ${currentRead.requestedSymbol}`} detail={`${currentRead.primaryTimeframe} / ${currentRead.candleCount?.toLocaleString() ?? 0} candles`} />
+        <AdvisorReadout
+          label="Chart timeframe"
+          value={currentRead.displayTimeframe ?? currentRead.primaryTimeframe}
+          detail={currentRead.displayTimeframeRole === "chart_display_reference_only" ? "display/reference only" : "chart context"}
+        />
+        <AdvisorReadout
+          label="Analysis timeframes"
+          value={currentRead.analysisTimeframesUsed?.join(" / ") || "pending"}
+          detail={`${formatToken(currentRead.analysisDepthStatus)} depth`}
+        />
+        <AdvisorReadout
+          label="Missing timeframes"
+          value={currentRead.missingTimeframes?.length ? currentRead.missingTimeframes.join(" / ") : "none"}
+          detail="Activate Market builds W1/D1/H4/H1/M15/M5 explicitly"
+        />
+        <AdvisorReadout
+          label="HTF / session source"
+          value={currentRead.htfBiasSource?.length ? currentRead.htfBiasSource.join(" / ") : "pending"}
+          detail={`Session ${currentRead.sessionModelSourceTimeframe ?? "pending"} / confirm ${currentRead.confirmationSourceTimeframe ?? "pending"}`}
+        />
         <AdvisorReadout label="Model lane" value={modelLaneLabel} detail={currentRead.paperWatchlistReason ?? "research-only lane"} />
         <AdvisorReadout label="Paper-watchlist eligibility" value={currentRead.paperWatchlistEligible ? "eligible" : "not eligible"} detail={currentRead.paperWatchlistEvidenceSummary ?? "compact evidence only"} />
         <AdvisorReadout label="Execution" value="Disabled" detail="authority none / no broker mutation" />
@@ -1530,6 +1562,14 @@ function CurrentReadDataFlowPanel({ currentRead }: { currentRead: IctCurrentRead
     ["Packet source", currentRead.debug.packetSource],
     ["Data status", currentRead.dataStatus],
     ["Candle count", currentRead.debug.candleCount.toLocaleString()],
+    ["Chart/display timeframe", currentRead.displayTimeframe ?? currentRead.primaryTimeframe],
+    ["Display role", currentRead.displayTimeframeRole ?? "unknown"],
+    ["Analysis timeframes", currentRead.analysisTimeframesUsed?.join(", ") || "none"],
+    ["Analysis depth", currentRead.analysisDepthStatus ?? "unknown"],
+    ["Missing analysis timeframes", currentRead.missingTimeframes?.join(", ") || "none"],
+    ["HTF bias source", currentRead.htfBiasSource?.join(", ") || "none"],
+    ["Session model source", currentRead.sessionModelSourceTimeframe ?? "none"],
+    ["Confirmation source", currentRead.confirmationSourceTimeframe ?? "none"],
     ["Primary TF available", currentRead.debug.primaryTimeframeAvailable ? "yes" : "no"],
     ["HTF available", currentRead.debug.htfTimeframesAvailable.join(", ") || "none"],
     ["Selected session date", currentRead.debug.selectedSessionDate ?? "none"],

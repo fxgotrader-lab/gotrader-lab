@@ -1,6 +1,7 @@
 import type { IctBias, IctLocation, IctSide } from "./ictAdvisorTypes";
 import type { IctApprovedCandidateStatus } from "./ictApprovedSetupProfileTypes";
 import type { IctModelQualityLane } from "./ictCurrentReadTypes";
+import type { IctAnalysisDepthStatus, IctAnalysisTimeframe } from "./ictMarketAnalysisContextTypes";
 import type { IctMonteCarloRobustnessRating } from "./ictMonteCarloTypes";
 import type {
   IctDataDepthStatus,
@@ -46,6 +47,14 @@ export interface IctResearchSignal {
   brokerSymbol: string;
   displayLabel?: string;
   primaryTimeframe: string;
+  displayTimeframe?: string;
+  displayTimeframeRole?: "chart_display_reference_only";
+  analysisTimeframesUsed?: IctAnalysisTimeframe[];
+  analysisDepthStatus?: IctAnalysisDepthStatus;
+  missingTimeframes?: IctAnalysisTimeframe[];
+  htfBiasSource?: IctAnalysisTimeframe[];
+  sessionModelSourceTimeframe?: IctAnalysisTimeframe;
+  confirmationSourceTimeframe?: IctAnalysisTimeframe;
   htfTimeframes: string[];
   strategyId?: string;
   setup?: string;

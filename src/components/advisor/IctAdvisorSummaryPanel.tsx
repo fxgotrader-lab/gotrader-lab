@@ -239,6 +239,21 @@ export function IctAdvisorSummaryPanel({
           <>
             <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               <AdvisorMini label="Packet source" value={formatToken(currentRead.packetSource)} detail={`${currentRead.candleCount?.toLocaleString() ?? 0} candles`} />
+              <AdvisorMini
+                label="Chart timeframe"
+                value={currentRead.displayTimeframe ?? packet.primaryTimeframe}
+                detail="display/reference only"
+              />
+              <AdvisorMini
+                label="Analysis TFs"
+                value={currentRead.analysisTimeframesUsed?.join(" / ") || "pending"}
+                detail={`${formatToken(currentRead.analysisDepthStatus)} depth`}
+              />
+              <AdvisorMini
+                label="Missing TFs"
+                value={currentRead.missingTimeframes?.length ? currentRead.missingTimeframes.join(" / ") : "none"}
+                detail={`Session ${currentRead.sessionModelSourceTimeframe ?? "pending"} / confirm ${currentRead.confirmationSourceTimeframe ?? "pending"}`}
+              />
               <AdvisorMini label="Composite bias" value={formatToken(currentRead.bias)} />
               <AdvisorMini
                 label="Session narrative"
@@ -371,8 +386,12 @@ export function IctAdvisorSummaryPanel({
         <>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <AdvisorMini label="Symbol mapping" value={`${packet.brokerSymbol} -> ${packet.requestedSymbol}`} detail={packet.activeSource.provider.replace(/_/g, " ")} />
-            <AdvisorMini label="Primary timeframe" value={packet.primaryTimeframe} detail={`${packet.activeSource.candleCount.toLocaleString()} candles`} />
-            <AdvisorMini label="HTF context" value={packet.htfTimeframes.length ? packet.htfTimeframes.join(", ") : "missing"} detail="15m / 1h when fetched" />
+            <AdvisorMini label="Chart timeframe" value={currentRead.displayTimeframe ?? packet.primaryTimeframe} detail="display/reference only" />
+            <AdvisorMini label="Analysis TFs" value={currentRead.analysisTimeframesUsed?.join(" / ") || "pending"} detail={`${formatToken(currentRead.analysisDepthStatus)} depth`} />
+            <AdvisorMini label="Missing TFs" value={currentRead.missingTimeframes?.length ? currentRead.missingTimeframes.join(" / ") : "none"} detail="required W1/D1/H4/H1/M15/M5" />
+            <AdvisorMini label="HTF / session source" value={currentRead.htfBiasSource?.length ? currentRead.htfBiasSource.join(" / ") : "pending"} detail={`Session ${currentRead.sessionModelSourceTimeframe ?? "pending"} / confirm ${currentRead.confirmationSourceTimeframe ?? "pending"}`} />
+            <AdvisorMini label="Packet candles" value={packet.activeSource.candleCount.toLocaleString()} detail="compact count only" />
+            <AdvisorMini label="HTF context" value={packet.htfTimeframes.length ? packet.htfTimeframes.join(", ") : "missing"} detail="analysis bias inputs" />
             <AdvisorMini label="Composite bias" value={formatToken(packet.compactSummary.compositeBias)} detail={recommended?.bias.primary ? `primary ${recommended.bias.primary}` : undefined} />
             <AdvisorMini
               label="Session narrative"
