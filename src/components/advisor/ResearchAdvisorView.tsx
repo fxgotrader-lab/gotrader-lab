@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useRef, useState, type ErrorInfo, type FormEvent, type ReactNode } from "react";
+import { Component, useEffect, useMemo, useRef, useState, type ErrorInfo, type FormEvent, type ReactNode, type SyntheticEvent } from "react";
 import { Link } from "react-router-dom";
 import { BarChart3, MessageSquareText, PlayCircle, Send, ShieldCheck, Sparkles } from "lucide-react";
 
@@ -265,6 +265,7 @@ export function ResearchAdvisorView() {
   const [profileOptimization, setProfileOptimization] = useState<IctApprovedProfileOptimizationResult>();
   const [profileOptimizationError, setProfileOptimizationError] = useState<string>();
   const [savedReports, setSavedReports] = useState<IctResearchReport[]>([]);
+  const [savedReportsOpen, setSavedReportsOpen] = useState(false);
   const [latestResearchState, setLatestResearchState] = useState<IctLatestResearchState>();
   const [manualReportSaveResult, setManualReportSaveResult] = useState<IctResearchReportSaveResult>();
   const [scorecardReportSaveResult, setScorecardReportSaveResult] = useState<IctResearchReportSaveResult>();
@@ -329,6 +330,9 @@ export function ResearchAdvisorView() {
   }, []);
 
   useEffect(() => {
+    if (!savedReportsOpen) {
+      return undefined;
+    }
     const refreshReports = () => setSavedReports(listIctResearchReports());
     refreshReports();
     window.addEventListener("gotrader:ict-research-report-saved", refreshReports);
@@ -337,7 +341,7 @@ export function ResearchAdvisorView() {
       window.removeEventListener("gotrader:ict-research-report-saved", refreshReports);
       window.removeEventListener("storage", refreshReports);
     };
-  }, []);
+  }, [savedReportsOpen]);
 
   useEffect(() => {
     const refreshLatestState = () => setLatestResearchState(readLatestResearchState());
@@ -877,35 +881,35 @@ export function ResearchAdvisorView() {
       </section>
 
       <section data-testid="advisor-deep-research-panels" className="space-y-4">
-        <details className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
-          <summary className="cursor-pointer text-sm font-semibold text-slate-100">ICT Strategy Suite details</summary>
-          <div className="mt-4">
-            <IctAdvisorSummaryPanel snapshot={snapshot} packetOverride={advisorPacket} />
-          </div>
-        </details>
+        <DeferredResearchDetails title="ICT Strategy Suite details" description="Compact suite details are ready. Expand to mount the full ICT panel.">
+          <IctAdvisorSummaryPanel snapshot={snapshot} packetOverride={advisorPacket} />
+        </DeferredResearchDetails>
 
-        <details data-testid="ict-current-read-data-flow" className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
-          <summary className="cursor-pointer text-sm font-semibold text-slate-100">Current Read Data Flow</summary>
-          <div className="mt-4">
-            <CurrentReadDataFlowPanel currentRead={currentRead} />
-          </div>
-        </details>
+        <DeferredResearchDetails
+          testId="ict-current-read-data-flow"
+          title="Current Read Data Flow"
+          description="Current-read data flow is deferred until expanded. No replay, scorecard, Monte Carlo, or raw candles are loaded by opening Advisor."
+        >
+          <CurrentReadDataFlowPanel currentRead={currentRead} />
+        </DeferredResearchDetails>
 
-        <details data-testid="advisor-manual-replay-section" open className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
-          <summary className="cursor-pointer text-sm font-semibold text-slate-100">Manual Replay Review</summary>
-          <div className="mt-4">
-            <ResearchPanelErrorBoundary panelName="Manual Replay Review" resetKey={`${activeSource.fingerprint}:${manualReplayStatus}`}>
-              <ManualReplayReviewPanel
-                brokerSymbol={brokerSymbol}
-                disabled={deepResearchActionRunning && manualReplayStatus !== "running"}
-                onRun={runManualReplayReview}
-                onSave={saveManualReplayReport}
-                request={manualReplayRequest}
-                result={manualReplayResult}
-                saveResult={manualReportSaveResult}
-                status={manualReplayStatus}
-                error={manualReplayError}
-              />
+        <DeferredResearchDetails
+          testId="advisor-manual-replay-section"
+          title="Manual Replay Review"
+          description="Ready. Expand to mount manual replay and Monte Carlo controls. Nothing runs until an operator clicks Run."
+        >
+          <ResearchPanelErrorBoundary panelName="Manual Replay Review" resetKey={`${activeSource.fingerprint}:${manualReplayStatus}`}>
+            <ManualReplayReviewPanel
+              brokerSymbol={brokerSymbol}
+              disabled={deepResearchActionRunning && manualReplayStatus !== "running"}
+              onRun={runManualReplayReview}
+              onSave={saveManualReplayReport}
+              request={manualReplayRequest}
+              result={manualReplayResult}
+              saveResult={manualReportSaveResult}
+              status={manualReplayStatus}
+              error={manualReplayError}
+            />
             </ResearchPanelErrorBoundary>
             <div className="mt-4">
               <ResearchPanelErrorBoundary panelName="Monte Carlo Robustness" resetKey={`${activeSource.fingerprint}:${monteCarloStatus}`}>
@@ -920,60 +924,63 @@ export function ResearchAdvisorView() {
                 />
               </ResearchPanelErrorBoundary>
             </div>
-          </div>
-        </details>
+        </DeferredResearchDetails>
 
-        <details open className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
-          <summary className="cursor-pointer text-sm font-semibold text-slate-100">Optimize Profile</summary>
-          <div className="mt-4">
-            <ResearchPanelErrorBoundary panelName="Optimize Profile" resetKey={`${activeSource.fingerprint}:${profileOptimizationStatus}`}>
-              <ApprovedProfileOptimizerPanel
-                disabled={deepResearchActionRunning && profileOptimizationStatus !== "running"}
-                error={profileOptimizationError}
-                onRun={runProfileOptimization}
-                request={manualReplayRequest}
-                result={profileOptimization}
-                status={profileOptimizationStatus}
-              />
-            </ResearchPanelErrorBoundary>
-          </div>
-        </details>
+        <DeferredResearchDetails
+          testId="advisor-profile-optimizer-section"
+          title="Optimize Profile"
+          description="Ready. Expand to mount the profile optimizer. It recommends draft settings only after a manual run."
+        >
+          <ResearchPanelErrorBoundary panelName="Optimize Profile" resetKey={`${activeSource.fingerprint}:${profileOptimizationStatus}`}>
+            <ApprovedProfileOptimizerPanel
+              disabled={deepResearchActionRunning && profileOptimizationStatus !== "running"}
+              error={profileOptimizationError}
+              onRun={runProfileOptimization}
+              request={manualReplayRequest}
+              result={profileOptimization}
+              status={profileOptimizationStatus}
+            />
+          </ResearchPanelErrorBoundary>
+        </DeferredResearchDetails>
 
-        <details data-testid="advisor-market-scorecard-section" open className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
-          <summary className="cursor-pointer text-sm font-semibold text-slate-100">Market Scorecard</summary>
-          <div className="mt-4">
-            <ResearchPanelErrorBoundary panelName="Market Scorecard" resetKey={`${activeSource.fingerprint}:${marketScorecardStatus}`}>
-              <MarketScorecardPanel
-                config={marketScorecardConfig}
-                disabled={deepResearchActionRunning && marketScorecardStatus !== "running"}
-                error={marketScorecardError}
-                onRun={runMarketScorecard}
-                onSave={saveMarketScorecardReport}
-                scorecard={marketScorecard}
-                saveResult={scorecardReportSaveResult}
-                status={marketScorecardStatus}
-              />
-            </ResearchPanelErrorBoundary>
-          </div>
-        </details>
+        <DeferredResearchDetails
+          testId="advisor-market-scorecard-section"
+          title="Market Scorecard"
+          description="Ready. Expand to mount the market scorecard. No symbols are replayed until Run Market Scorecard is clicked."
+        >
+          <ResearchPanelErrorBoundary panelName="Market Scorecard" resetKey={`${activeSource.fingerprint}:${marketScorecardStatus}`}>
+            <MarketScorecardPanel
+              config={marketScorecardConfig}
+              disabled={deepResearchActionRunning && marketScorecardStatus !== "running"}
+              error={marketScorecardError}
+              onRun={runMarketScorecard}
+              onSave={saveMarketScorecardReport}
+              scorecard={marketScorecard}
+              saveResult={scorecardReportSaveResult}
+              status={marketScorecardStatus}
+            />
+          </ResearchPanelErrorBoundary>
+        </DeferredResearchDetails>
 
-        <details open className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
-          <summary className="cursor-pointer text-sm font-semibold text-slate-100">Saved Research Reports</summary>
-          <div className="mt-4">
-            <ResearchPanelErrorBoundary panelName="Saved Research Reports" resetKey={`${savedReports.length}`}>
-              <SavedResearchReportsPanel reports={savedReports} />
-            </ResearchPanelErrorBoundary>
-          </div>
-        </details>
+        <DeferredResearchDetails
+          testId="advisor-saved-reports-section"
+          title="Saved Research Reports"
+          description="Saved report history is not parsed on page load. Expand to read the compact saved-report list."
+          onOpenChange={setSavedReportsOpen}
+        >
+          <ResearchPanelErrorBoundary panelName="Saved Research Reports" resetKey={`${savedReports.length}`}>
+            <SavedResearchReportsPanel reports={savedReports} />
+          </ResearchPanelErrorBoundary>
+        </DeferredResearchDetails>
 
-        <details className="rounded-2xl border border-white/10 bg-slate-950/65 p-4">
-          <summary className="cursor-pointer text-sm font-semibold text-slate-100">External Advisory Bridge</summary>
-          <div className="mt-4">
-            <ResearchPanelErrorBoundary panelName="External Advisory Bridge" resetKey={snapshot.snapshotId}>
-              <LLMAdvisoryReviewPanel snapshot={snapshot} />
-            </ResearchPanelErrorBoundary>
-          </div>
-        </details>
+        <DeferredResearchDetails
+          title="External Advisory Bridge"
+          description="External LLM/OpenClaw bridge diagnostics are deferred. Expand to check provider status or run an advisory request."
+        >
+          <ResearchPanelErrorBoundary panelName="External Advisory Bridge" resetKey={snapshot.snapshotId}>
+            <LLMAdvisoryReviewPanel snapshot={snapshot} />
+          </ResearchPanelErrorBoundary>
+        </DeferredResearchDetails>
 
         <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4">
           <div className="flex items-center gap-2">
@@ -988,6 +995,53 @@ export function ResearchAdvisorView() {
         </div>
       </section>
     </div>
+  );
+}
+
+function DeferredResearchDetails({
+  children,
+  defaultOpen = false,
+  description,
+  onOpenChange,
+  testId,
+  title
+}: {
+  children: ReactNode;
+  defaultOpen?: boolean;
+  description: string;
+  onOpenChange?: (open: boolean) => void;
+  testId?: string;
+  title: string;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const handleToggle = (event: SyntheticEvent<HTMLDetailsElement>) => {
+    const nextOpen = event.currentTarget.open;
+    setOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  };
+
+  return (
+    <details
+      data-testid={testId}
+      open={open}
+      onToggle={handleToggle}
+      className="rounded-2xl border border-white/10 bg-slate-950/65 p-4"
+    >
+      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 text-sm font-semibold text-slate-100">
+        <span>{title}</span>
+        <span className="flex items-center gap-2">
+          <Badge variant={open ? "success" : "secondary"}>{open ? "loaded" : "deferred"}</Badge>
+          <span className="text-xs font-normal text-slate-500">{open ? "Collapse" : "Expand"}</span>
+        </span>
+      </summary>
+      {open ? (
+        <div className="mt-4">{children}</div>
+      ) : (
+        <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-400">
+          {description} Status: ready / not run / run manually. Authority remains none/none/none.
+        </div>
+      )}
+    </details>
   );
 }
 

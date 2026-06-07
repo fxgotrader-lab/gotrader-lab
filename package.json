@@ -54,6 +54,7 @@
     "test:research-advisor-stability": "node scripts/test-research-advisor-stability.mjs",
     "test:research-advisor-heavy-actions": "node scripts/test-research-advisor-heavy-actions.mjs",
     "test:gotrader-performance-audit": "node scripts/test-gotrader-performance-audit.mjs",
+    "test:gotrader-tab-performance": "node scripts/test-gotrader-tab-performance.mjs",
     "test:gotrader-system-coordination": "node scripts/test-gotrader-system-coordination.mjs",
     "test:ict-current-read-flow": "node scripts/test-ict-current-read-flow.mjs",
     "test:ict-approved-profile-optimizer": "node scripts/test-ict-approved-profile-optimizer.mjs",

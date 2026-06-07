@@ -174,6 +174,45 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Optimize Profile/i);
     await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Show Risk/i);
     await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Show SMT/i);
+    await expect(page.locator("main")).toContainText(/ICT Strategy Suite|ICT Advisor is waiting/i);
+    await expect(page.getByTestId("ict-current-read-data-flow")).toContainText(/Current Read Data Flow/i);
+    await expandDeferredDetails(page, "ict-current-read-data-flow");
+    await expect(page.getByTestId("ict-current-read-data-flow")).toContainText(/Model quality lane/i);
+    await expect(page.locator("main")).toContainText(/raw candles|Raw candles/i);
+    await expect(page.locator("main")).not.toContainText(/\"candles\"\\s*:/i);
+    await expect(page.locator("main")).not.toContainText(/accountNumber|orderId|positionId/i);
+    await expect(page.getByTestId("advisor-manual-replay-section")).toContainText(/deferred/i);
+    await expect(page.getByTestId("advisor-market-scorecard-section")).toContainText(/deferred/i);
+    await expect(page.getByTestId("ict-manual-replay-review")).toHaveCount(0);
+    await expect(page.getByTestId("ict-market-scorecard")).toHaveCount(0);
+
+    await expandDeferredDetails(page, "advisor-manual-replay-section");
+    await expect(page.getByTestId("ict-manual-replay-review")).toContainText(/Manual ICT Replay Review/i);
+    await expect(page.getByTestId("ict-manual-replay-status")).toContainText(/idle/i);
+    await expect(page.getByRole("button", { name: "Run Real Replay Review" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save Replay Report" })).toBeVisible();
+    await expect(page.getByTestId("ict-monte-carlo-robustness")).toContainText(/Monte Carlo Robustness/i);
+    await expect(page.getByTestId("ict-monte-carlo-status")).toContainText(/idle/i);
+    await expect(page.getByTestId("ict-monte-carlo-robustness")).toContainText(/Run Replay Review first/i);
+    await expect(page.getByRole("button", { name: "Run Monte Carlo Robustness" })).toBeVisible();
+    await page.getByRole("button", { name: "Run Monte Carlo Robustness" }).click();
+    await expect(page.getByTestId("ict-monte-carlo-status")).toContainText(/unavailable/i);
+    await expect(page.getByTestId("ict-monte-carlo-robustness")).toContainText(/Run Replay Review first/i);
+    await expect(page.locator("vite-error-overlay,#vite-error-overlay")).toHaveCount(0);
+
+    await expandDeferredDetails(page, "advisor-profile-optimizer-section");
+    await expect(page.getByTestId("ict-approved-profile-optimizer")).toContainText(/Optimize Approved Profile/i);
+    await expect(page.getByTestId("ict-approved-profile-optimizer-status")).toContainText(/idle/i);
+    await expect(page.getByRole("button", { name: "Run Profile Optimization" })).toBeVisible();
+
+    await expandDeferredDetails(page, "advisor-market-scorecard-section");
+    await expect(page.getByTestId("ict-market-scorecard")).toContainText(/ICT Market Scorecard/i);
+    await expect(page.getByTestId("ict-market-scorecard-status")).toContainText(/idle/i);
+    await expect(page.getByTestId("ict-market-scorecard").getByRole("button", { name: "Run Market Scorecard" })).toBeVisible();
+    await expect(page.getByTestId("ict-market-scorecard").getByRole("button", { name: "Save Scorecard Report" })).toBeVisible();
+
+    await expandDeferredDetails(page, "advisor-saved-reports-section");
+    await expect(page.getByTestId("ict-saved-research-reports")).toContainText(/Saved Research Reports/i);
     const chatAppearsBeforeManualPanels = await page.evaluate(() => {
       const chat = document.querySelector("[data-testid='research-advisor-chat-card']");
       const replay = document.querySelector("[data-testid='ict-manual-replay-review']");
@@ -187,32 +226,6 @@ test.describe("GoTrader browser route smoke", () => {
       );
     });
     expect(chatAppearsBeforeManualPanels).toBe(true);
-    await expect(page.locator("main")).toContainText(/ICT Strategy Suite|ICT Advisor is waiting/i);
-    await expect(page.getByTestId("ict-current-read-data-flow")).toContainText(/Current Read Data Flow/i);
-    await expect(page.getByTestId("ict-model-quality-lane-summary")).toContainText(/Model Quality Lane/i);
-    await expect(page.locator("main")).toContainText(/raw candles|Raw candles/i);
-    await expect(page.locator("main")).not.toContainText(/\"candles\"\\s*:/i);
-    await expect(page.locator("main")).not.toContainText(/accountNumber|orderId|positionId/i);
-    await expect(page.getByTestId("ict-manual-replay-review")).toContainText(/Manual ICT Replay Review/i);
-    await expect(page.getByTestId("ict-manual-replay-status")).toContainText(/idle/i);
-    await expect(page.getByRole("button", { name: "Run Real Replay Review" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Save Replay Report" })).toBeVisible();
-    await expect(page.getByTestId("ict-monte-carlo-robustness")).toContainText(/Monte Carlo Robustness/i);
-    await expect(page.getByTestId("ict-monte-carlo-status")).toContainText(/idle/i);
-    await expect(page.getByTestId("ict-monte-carlo-robustness")).toContainText(/Run Replay Review first/i);
-    await expect(page.getByRole("button", { name: "Run Monte Carlo Robustness" })).toBeVisible();
-    await page.getByRole("button", { name: "Run Monte Carlo Robustness" }).click();
-    await expect(page.getByTestId("ict-monte-carlo-status")).toContainText(/unavailable/i);
-    await expect(page.getByTestId("ict-monte-carlo-robustness")).toContainText(/Run Replay Review first/i);
-    await expect(page.locator("vite-error-overlay,#vite-error-overlay")).toHaveCount(0);
-    await expect(page.getByTestId("ict-approved-profile-optimizer")).toContainText(/Optimize Approved Profile/i);
-    await expect(page.getByTestId("ict-approved-profile-optimizer-status")).toContainText(/idle/i);
-    await expect(page.getByRole("button", { name: "Run Profile Optimization" })).toBeVisible();
-    await expect(page.getByTestId("ict-market-scorecard")).toContainText(/ICT Market Scorecard/i);
-    await expect(page.getByTestId("ict-market-scorecard-status")).toContainText(/idle/i);
-    await expect(page.getByTestId("ict-market-scorecard").getByRole("button", { name: "Run Market Scorecard" })).toBeVisible();
-    await expect(page.getByTestId("ict-market-scorecard").getByRole("button", { name: "Save Scorecard Report" })).toBeVisible();
-    await expect(page.getByTestId("ict-saved-research-reports")).toContainText(/Saved Research Reports/i);
 
     await gotoRoute(page, "/dashboard");
     await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Research Advisor/i);
@@ -297,6 +310,15 @@ async function expectUpgradedResultsPage(page: Page) {
   await expect(main).not.toContainText(/Simulation results cockpit/i);
   await expect(main).not.toContainText(/Monte Carlo Robustness|Run Real Replay Review|Run Market Scorecard/i);
   await expect(main).not.toContainText(/"candles"\s*:|accountNumber|orderId|positionId/i);
+}
+
+async function expandDeferredDetails(page: Page, testId: string) {
+  const details = page.getByTestId(testId);
+  await expect(details).toBeVisible();
+  const isOpen = await details.evaluate((element) => (element as HTMLDetailsElement).open);
+  if (!isOpen) {
+    await details.locator("summary").click();
+  }
 }
 
 function isExpectedOptionalLocalBridgeError(message: string) {
