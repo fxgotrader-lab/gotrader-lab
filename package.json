@@ -39,6 +39,7 @@
     "test:ict-multi-timeframe-context": "node scripts/test-ict-multi-timeframe-context.mjs",
     "test:ict-activate-market-pipeline": "node scripts/test-ict-activate-market-pipeline.mjs",
     "test:ict-activate-market-readiness": "node scripts/test-ict-activate-market-readiness.mjs",
+    "test:ict-activate-market-source-independence": "node scripts/test-ict-activate-market-source-independence.mjs",
     "test:ict-activate-market-real-read": "node scripts/test-ict-activate-market-real-read.mjs",
     "test:ict-model-fidelity-audit": "node scripts/test-ict-model-fidelity-audit.mjs",
     "test:ict-target-invalidation-rr-audit": "node scripts/test-ict-target-invalidation-rr-audit.mjs",

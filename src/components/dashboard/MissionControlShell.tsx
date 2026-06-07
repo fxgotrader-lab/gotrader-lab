@@ -120,6 +120,7 @@ import {
   runIctActivateMarketPipeline,
   summarizeActivateMarketResult
 } from "@/lib/ict-strategy-suite/ictActivateMarketPipeline";
+import { ensureMt5CanonicalResearchSource } from "@/lib/ict-strategy-suite/ictActivateMarketSourceActivation";
 import type {
   IctActivateMarketResult,
   IctActivateMarketStatus,
@@ -1196,11 +1197,56 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const runActivateMarketWorkflow = async () => {
     if (activateMarketStatus === "running" || mt5Busy) return;
     setActivateMarketStatus("running");
+    setMt5Busy(true);
     setActivateMarketSteps(createActivateMarketInitialSteps());
     setActivateMarketResult(undefined);
     try {
-      await connectMt5ReadOnly({ activationMode: "research_mode" });
-      const snapshot = await resolveAndStoreRuntime();
+      const loadedSettings = loadMt5ReadOnlySettings();
+      const requestedSymbol = (mt5RequestedSymbol || loadedSettings.requestedSymbol || commandCenterSymbol || "MNQ").trim();
+      const timeframe = (mt5PrimaryTimeframe || loadedSettings.timeframe || commandCenterTimeframe || "5m").trim();
+      const brokerSymbol = (mt5BrokerSymbol.trim() || loadedSettings.brokerSymbolOverride || "USTECH").trim();
+      const displayLabel = displayLabelForMt5Mapping({
+        brokerSymbol,
+        displayLabel: mt5DisplayLabel,
+        requestedSymbol
+      });
+      const higherTimeframes = mt5HigherTimeframes.filter((item) => item !== timeframe);
+      const candleLimit = Math.max(1, Number(mt5CandleLimit) || loadedSettings.candleLimit || 1000);
+      setMt5OperationMessage(`Activate Market started. Activating MT5 read-only ${brokerSymbol} -> ${requestedSymbol} ${timeframe} as chart and research source.`);
+      addDataConnectionEvent(
+        "MT5 research mode activation started",
+        `Shared Activate Market source activation requested ${requestedSymbol}; broker ${brokerSymbol}; timeframe ${timeframe}; limit ${candleLimit.toLocaleString()}.`,
+        "running",
+        brokerSymbol
+      );
+      const sourceActivation = await ensureMt5CanonicalResearchSource(
+        {
+          brokerSymbol,
+          candleLimit,
+          displayLabel,
+          higherTimeframes,
+          requestedSymbol,
+          timeframe
+        },
+        { resolveSnapshot: resolveAndStoreRuntime }
+      );
+      setMt5RequestedSymbol(sourceActivation.source.requestedSymbol);
+      setMt5BrokerSymbol(sourceActivation.source.brokerSymbol);
+      setMt5PrimaryTimeframe(sourceActivation.source.timeframe);
+      setMt5CandleLimit(String(sourceActivation.source.candleLimit));
+      setMt5DisplayLabel(displayLabel);
+      setMt5HigherTimeframes(higherTimeframes as Timeframe[]);
+      setMt5OperationMessage(sourceActivation.message);
+      addDataConnectionEvent(
+        sourceActivation.ok ? "MT5 research mode active" : "MT5 research mode blocked",
+        sourceActivation.message,
+        sourceActivation.ok ? "success" : "failed",
+        sourceActivation.source.sourceFingerprint
+      );
+      if (!sourceActivation.ok) {
+        throw new Error(sourceActivation.message);
+      }
+      const snapshot = sourceActivation.snapshot ?? await resolveAndStoreRuntime();
       const result = await runIctActivateMarketPipeline(
         { snapshot, saveLatestSummary: true },
         {
@@ -1224,6 +1270,8 @@ export function MissionControlShell({ state }: { state: LabState }) {
       });
       setActivateMarketStatus("failed");
       addDataConnectionEvent("Activate Market workflow failed", message, "failed");
+    } finally {
+      setMt5Busy(false);
     }
   };
 

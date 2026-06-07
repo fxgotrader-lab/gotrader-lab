@@ -83,6 +83,7 @@ import {
   type IctResearchReport,
   type IctResearchReportSaveResult
 } from "@/lib/ict-strategy-suite";
+import { ensureMt5CanonicalResearchSource } from "@/lib/ict-strategy-suite/ictActivateMarketSourceActivation";
 import { loadCanonicalCandleSource } from "@/lib/candleSources";
 import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
@@ -521,7 +522,11 @@ export function ResearchAdvisorView() {
     setActivateMarketSteps(createActivateMarketInitialSteps());
     setActivateMarketResult(undefined);
     try {
-      const nextSnapshot = await resolveResearchRuntimeSnapshot();
+      const sourceActivation = await ensureMt5CanonicalResearchSource();
+      if (!sourceActivation.ok) {
+        throw new Error(sourceActivation.message);
+      }
+      const nextSnapshot = sourceActivation.snapshot ?? await resolveResearchRuntimeSnapshot();
       setSnapshot(nextSnapshot);
       const result = await runIctActivateMarketPipeline(
         {
