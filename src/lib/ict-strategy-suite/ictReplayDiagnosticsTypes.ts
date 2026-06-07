@@ -57,6 +57,8 @@ export interface IctReplayDiagnostics {
   bySessionRiskState: Record<string, IctReplayBreakdownMetric>;
   byRiskGovernorAction: Record<string, IctReplayBreakdownMetric>;
   bySessionNarrativeProfile: Record<string, IctReplayBreakdownMetric>;
+  byModelName: Record<string, IctReplayBreakdownMetric>;
+  byModelState: Record<string, IctReplayBreakdownMetric>;
   bySessionDirectionalRead: Record<string, IctReplayBreakdownMetric>;
   bySessionMitigationDetected: Record<string, IctReplayBreakdownMetric>;
   byFvgTargetDetected: Record<string, IctReplayBreakdownMetric>;

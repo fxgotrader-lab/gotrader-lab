@@ -20,6 +20,9 @@ import type {
   IctMitigationContext,
   IctSessionDirectionalRead,
   IctSessionNarrative,
+  IctSessionModelDetection,
+  IctSessionModelName,
+  IctSessionModelState,
   IctSessionNarrativeProfile
 } from "./ictSessionNarrativeTypes";
 
@@ -127,6 +130,13 @@ export interface IctAdvisorSignal {
   sessionNarrativeProfile?: IctSessionNarrativeProfile;
   sessionDirectionalRead?: IctSessionDirectionalRead;
   sessionNarrativeConfidence?: number;
+  modelDetected?: boolean;
+  modelName?: IctSessionModelName;
+  modelState?: IctSessionModelState;
+  modelDirection?: IctSessionDirectionalRead;
+  modelConfidence?: number;
+  modelReasons?: string[];
+  modelMissingEvidence?: string[];
   sessionMitigationContext?: IctMitigationContext;
   fvgTargetDetected?: boolean;
   fvgTargetDirection?: "premium" | "discount" | "unknown";
@@ -236,6 +246,7 @@ export interface IctAdvisorPacket {
     sessionNarrativeProfile?: IctSessionNarrativeProfile;
     sessionDirectionalRead?: IctSessionDirectionalRead;
     sessionNarrativeConfidence?: number;
+    primaryModelDetection?: IctSessionModelDetection;
     sessionMitigationDetected?: boolean;
     fvgTargetDetected?: boolean;
     fvgTargetDirection?: "premium" | "discount" | "unknown";

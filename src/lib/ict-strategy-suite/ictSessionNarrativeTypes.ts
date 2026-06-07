@@ -21,6 +21,15 @@ export type IctSessionDirectionalRead = "bullish" | "bearish" | "neutral";
 
 export type IctDataDepthStatus = "sufficient" | "limited" | "insufficient" | "unavailable";
 
+export type IctSessionModelName =
+  | "consolidation_manipulation_distribution"
+  | "ny_session_reversal_to_premium_fvg"
+  | "accumulation_manipulation_expansion"
+  | "range_liquidity_sweep"
+  | "incomplete_session_model";
+
+export type IctSessionModelState = "forming" | "triggered" | "confirmed" | "invalidated" | "not_detected";
+
 export interface IctSessionRange {
   session: IctKillzoneName;
   label: string;
@@ -102,6 +111,17 @@ export interface IctSessionNarrativeDataDepth {
   note: string;
 }
 
+export interface IctSessionModelDetection {
+  modelDetected: boolean;
+  modelName: IctSessionModelName;
+  modelState: IctSessionModelState;
+  modelDirection: IctSessionDirectionalRead;
+  modelConfidence: number;
+  modelReasons: string[];
+  missingEvidence: string[];
+  supportingEventTypes: IctSessionNarrativeEvent["eventType"][];
+}
+
 export interface IctSessionNarrative {
   researchOnly: true;
   profile: IctSessionNarrativeProfile;
@@ -132,6 +152,8 @@ export interface IctSessionNarrative {
   };
   ranges: IctSessionRange[];
   events: IctSessionNarrativeEvent[];
+  primaryModelDetection?: IctSessionModelDetection;
+  modelDetections: IctSessionModelDetection[];
   fvgTarget?: IctSessionFvgTarget;
   mitigationContext: IctMitigationContext;
   dataDepth: IctSessionNarrativeDataDepth;

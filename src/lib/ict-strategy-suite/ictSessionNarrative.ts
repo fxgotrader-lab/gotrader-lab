@@ -6,6 +6,7 @@ import type {
   IctMitigationContext,
   IctSessionFvgTarget,
   IctSessionDirectionalRead,
+  IctSessionModelDetection,
   IctSessionNarrative,
   IctSessionNarrativeDataDepth,
   IctSessionNarrativeEvent,
@@ -662,6 +663,184 @@ const decideNarrativeProfile = ({
   };
 };
 
+const eventTypesFor = (events: Array<IctSessionNarrativeEvent | undefined>) =>
+  new Set(events.filter((event): event is IctSessionNarrativeEvent => Boolean(event)).map((event) => event.eventType));
+
+const detectionFor = ({
+  confidence,
+  direction,
+  eventTypes,
+  missingEvidence,
+  modelName,
+  reasons,
+  requiredEvents,
+  state
+}: {
+  confidence: number;
+  direction: IctSessionDirectionalRead;
+  eventTypes: Set<IctSessionNarrativeEvent["eventType"]>;
+  missingEvidence: string[];
+  modelName: IctSessionModelDetection["modelName"];
+  reasons: string[];
+  requiredEvents: IctSessionNarrativeEvent["eventType"][];
+  state: IctSessionModelDetection["modelState"];
+}): IctSessionModelDetection => ({
+  modelDetected: state !== "not_detected",
+  modelName,
+  modelState: state,
+  modelDirection: direction,
+  modelConfidence: clamp01(confidence),
+  modelReasons: reasons.slice(0, 6),
+  missingEvidence: missingEvidence.slice(0, 8),
+  supportingEventTypes: requiredEvents.filter((eventType) => eventTypes.has(eventType))
+});
+
+const buildModelDetections = ({
+  activeDealingRange,
+  events,
+  fvgTarget
+}: {
+  activeDealingRange?: { currentLocation: "premium" | "discount" | "equilibrium" };
+  events: IctSessionNarrativeEvent[];
+  fvgTarget?: IctSessionFvgTarget;
+}) => {
+  const eventTypes = eventTypesFor(events);
+  const hasAny = (...types: IctSessionNarrativeEvent["eventType"][]) => types.some((type) => eventTypes.has(type));
+  const missing = (checks: Array<[boolean, string]>) => checks.filter(([ok]) => !ok).map(([, reason]) => reason);
+  const all = (checks: Array<[boolean, string]>) => checks.every(([ok]) => ok);
+
+  const cmdChecks: Array<[boolean, string]> = [
+    [eventTypes.has("asia_range"), "Asia range"],
+    [hasAny("london_equal_lows", "london_compression"), "London equal lows or compression"],
+    [eventTypes.has("buyside_sweep"), "Buy-side liquidity sweep"],
+    [eventTypes.has("ny_open_mitigation"), "NY mitigation tap"],
+    [eventTypes.has("bearish_expansion"), "Bearish expansion away from mitigation/open context"]
+  ];
+  const cmdState = all(cmdChecks)
+    ? "confirmed"
+    : cmdChecks.slice(0, 4).every(([ok]) => ok)
+      ? "triggered"
+      : cmdChecks.slice(0, 3).every(([ok]) => ok)
+        ? "forming"
+        : "not_detected";
+
+  const reversalChecks: Array<[boolean, string]> = [
+    [activeDealingRange?.currentLocation === "discount", "Discount location in active dealing range"],
+    [Boolean(fvgTarget?.detected && fvgTarget.direction === "premium"), "Premium FVG draw target"],
+    [hasAny("london_swept_asia_high", "midnight_open_reclaim", "midnight_open_rejection"), "London/12AM raid and rejection context"],
+    [eventTypes.has("sellside_sweep"), "Sell-side liquidity sweep"],
+    [eventTypes.has("ny_preopen_consolidation"), "NY preopen consolidation"],
+    [eventTypes.has("ny_open_consolidation_low_sweep"), "9:30 sweep of consolidation low"],
+    [eventTypes.has("ny_reversal_higher"), "Aggressive reversal toward premium FVG"]
+  ];
+  const reversalState = all(reversalChecks)
+    ? "confirmed"
+    : reversalChecks.slice(0, 6).every(([ok]) => ok)
+      ? "triggered"
+      : reversalChecks.slice(0, 4).every(([ok]) => ok)
+        ? "forming"
+        : "not_detected";
+
+  const ameChecks: Array<[boolean, string]> = [
+    [eventTypes.has("asia_range"), "Asia range"],
+    [eventTypes.has("sellside_sweep"), "Sell-side manipulation"],
+    [eventTypes.has("ny_open_mitigation"), "NY mitigation tap"],
+    [hasAny("bullish_expansion", "ny_reversal_higher"), "Bullish expansion"]
+  ];
+  const ameState = all(ameChecks)
+    ? "confirmed"
+    : ameChecks.slice(0, 3).every(([ok]) => ok)
+      ? "triggered"
+      : ameChecks.slice(0, 2).every(([ok]) => ok)
+        ? "forming"
+        : "not_detected";
+
+  const rangeChecks: Array<[boolean, string]> = [
+    [eventTypes.has("asia_range"), "Asia range"],
+    [hasAny("buyside_sweep", "sellside_sweep", "london_swept_asia_high", "london_swept_asia_low"), "Liquidity sweep"],
+    [!hasAny("bearish_expansion", "bullish_expansion", "ny_reversal_higher", "ny_reversal_lower"), "No clean expansion confirmation"]
+  ];
+  const rangeState = rangeChecks[0][0] && rangeChecks[1][0] ? "triggered" : "not_detected";
+
+  return [
+    detectionFor({
+      confidence: cmdState === "confirmed" ? 0.82 : cmdState === "triggered" ? 0.68 : cmdState === "forming" ? 0.52 : 0,
+      direction: "bearish",
+      eventTypes,
+      missingEvidence: missing(cmdChecks),
+      modelName: "consolidation_manipulation_distribution",
+      reasons: [
+        "Asia/London liquidity family detected.",
+        "Buy-side manipulation and NY mitigation are evaluated separately from trade approval.",
+        "Bearish expansion is required for confirmation."
+      ],
+      requiredEvents: ["asia_range", "london_equal_lows", "london_compression", "buyside_sweep", "ny_open_mitigation", "bearish_expansion"],
+      state: cmdState
+    }),
+    detectionFor({
+      confidence: reversalState === "confirmed" ? 0.84 : reversalState === "triggered" ? 0.7 : reversalState === "forming" ? 0.55 : 0,
+      direction: "bullish",
+      eventTypes,
+      missingEvidence: missing(reversalChecks),
+      modelName: "ny_session_reversal_to_premium_fvg",
+      reasons: [
+        "Discount context, premium FVG draw, London/12AM raid, sell-side sweep, and 9:30 reversal are evaluated as a sequence.",
+        "The model can be detected before target, invalidation, RR, SMT, or risk gates approve a signal."
+      ],
+      requiredEvents: [
+        "london_swept_asia_high",
+        "midnight_open_reclaim",
+        "midnight_open_rejection",
+        "sellside_sweep",
+        "ny_preopen_consolidation",
+        "ny_open_consolidation_low_sweep",
+        "premium_fvg_target",
+        "ny_reversal_higher"
+      ],
+      state: reversalState
+    }),
+    detectionFor({
+      confidence: ameState === "confirmed" ? 0.74 : ameState === "triggered" ? 0.62 : ameState === "forming" ? 0.48 : 0,
+      direction: "bullish",
+      eventTypes,
+      missingEvidence: missing(ameChecks),
+      modelName: "accumulation_manipulation_expansion",
+      reasons: [
+        "Sell-side manipulation and NY mitigation are tracked as a bullish AME family.",
+        "Expansion confirmation is required before treating it as confirmed."
+      ],
+      requiredEvents: ["asia_range", "sellside_sweep", "ny_open_mitigation", "bullish_expansion", "ny_reversal_higher"],
+      state: ameState
+    }),
+    detectionFor({
+      confidence: rangeState === "triggered" ? 0.46 : 0,
+      direction: eventTypes.has("buyside_sweep") ? "bearish" : eventTypes.has("sellside_sweep") ? "bullish" : "neutral",
+      eventTypes,
+      missingEvidence: missing(rangeChecks),
+      modelName: "range_liquidity_sweep",
+      reasons: [
+        "Liquidity was swept, but the full expansion/reversal sequence is incomplete.",
+        "This should remain model context, not an approved signal."
+      ],
+      requiredEvents: ["asia_range", "buyside_sweep", "sellside_sweep", "london_swept_asia_high", "london_swept_asia_low"],
+      state: rangeState
+    })
+  ].filter((detection) => detection.modelDetected);
+};
+
+const primaryModelDetectionFor = (detections: IctSessionModelDetection[], profile: IctSessionNarrativeProfile) =>
+  detections
+    .slice()
+    .sort((left, right) => {
+      const stateWeight = (state: IctSessionModelDetection["modelState"]) =>
+        state === "confirmed" ? 4 : state === "triggered" ? 3 : state === "forming" ? 2 : state === "invalidated" ? 1 : 0;
+      const profileBonus = (name: IctSessionModelDetection["modelName"]) => name === profile ? 0.1 : 0;
+      return (
+        stateWeight(right.modelState) - stateWeight(left.modelState) ||
+        right.modelConfidence + profileBonus(right.modelName) - (left.modelConfidence + profileBonus(left.modelName))
+      );
+    })[0];
+
 export const buildIctSessionNarrative = (
   candles: Candle[] = [],
   options: IctSessionNarrativeOptions
@@ -868,7 +1047,16 @@ export const buildIctSessionNarrative = (
     nyReversalHigher,
     nyReversalLower
   ].filter((event): event is IctSessionNarrativeEvent => Boolean(event));
+  const modelDetections = buildModelDetections({
+    activeDealingRange,
+    events,
+    fvgTarget
+  });
+  const primaryModelDetection = primaryModelDetectionFor(modelDetections, classified.profile);
   const topReasons = [
+    primaryModelDetection
+      ? `Model detected: ${primaryModelDetection.modelName.replace(/_/g, " ")} (${primaryModelDetection.modelState}, ${primaryModelDetection.modelDirection}).`
+      : undefined,
     classified.profile === "consolidation_manipulation_distribution"
       ? "Asia range, London equal-lows/compression, buy-side sweep, NY mitigation, and bearish expansion align."
       : undefined,
@@ -921,6 +1109,8 @@ export const buildIctSessionNarrative = (
     activeDealingRange,
     ranges,
     events,
+    primaryModelDetection,
+    modelDetections,
     fvgTarget,
     mitigationContext: mitigationContextWithExpansion,
     dataDepth: depth,

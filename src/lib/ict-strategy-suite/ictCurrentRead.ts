@@ -184,6 +184,8 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     ...(recommended.newsSessionRisk?.newsSessionRiskNotes ?? []),
     recommended.smt?.reason,
     ...(packet.sessionNarrative?.topReasons ?? []),
+    ...(packet.sessionNarrative?.primaryModelDetection?.modelReasons ?? []),
+    ...(packet.sessionNarrative?.primaryModelDetection?.missingEvidence?.map((reason) => `Model missing evidence: ${reason}.`) ?? []),
     packet.sessionNarrative?.fvgTarget?.detected ? packet.sessionNarrative.fvgTarget.note : undefined,
     packet.sessionNarrative?.dataDepth.status !== "sufficient" ? packet.sessionNarrative?.dataDepth.note : undefined
   ]);
@@ -229,6 +231,13 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     sessionNarrativeProfile: packet.sessionNarrative?.profile ?? packet.compactSummary.sessionNarrativeProfile,
     sessionDirectionalRead: packet.sessionNarrative?.directionalRead ?? packet.compactSummary.sessionDirectionalRead,
     sessionNarrativeConfidence: packet.sessionNarrative?.confidence ?? packet.compactSummary.sessionNarrativeConfidence,
+    modelDetected: Boolean(packet.sessionNarrative?.primaryModelDetection?.modelDetected ?? packet.compactSummary.primaryModelDetection?.modelDetected),
+    modelName: packet.sessionNarrative?.primaryModelDetection?.modelName ?? packet.compactSummary.primaryModelDetection?.modelName,
+    modelState: packet.sessionNarrative?.primaryModelDetection?.modelState ?? packet.compactSummary.primaryModelDetection?.modelState,
+    modelDirection: packet.sessionNarrative?.primaryModelDetection?.modelDirection ?? packet.compactSummary.primaryModelDetection?.modelDirection,
+    modelConfidence: packet.sessionNarrative?.primaryModelDetection?.modelConfidence ?? packet.compactSummary.primaryModelDetection?.modelConfidence,
+    modelReasons: packet.sessionNarrative?.primaryModelDetection?.modelReasons ?? packet.compactSummary.primaryModelDetection?.modelReasons,
+    modelMissingEvidence: packet.sessionNarrative?.primaryModelDetection?.missingEvidence ?? packet.compactSummary.primaryModelDetection?.missingEvidence,
     sessionMitigationDetected: packet.sessionNarrative?.mitigationContext.detected ?? packet.compactSummary.sessionMitigationDetected,
     fvgTargetDetected: packet.sessionNarrative?.fvgTarget?.detected ?? packet.compactSummary.fvgTargetDetected,
     fvgTargetDirection: packet.sessionNarrative?.fvgTarget?.direction ?? packet.compactSummary.fvgTargetDirection,

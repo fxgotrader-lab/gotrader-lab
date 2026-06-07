@@ -145,6 +145,8 @@ export const buildReplayDiagnostics = (results: IctReplayResult[]): IctReplayDia
     bySessionRiskState: buildBreakdown(results, (result) => result.sessionRiskState ?? "not_evaluated"),
     byRiskGovernorAction: buildBreakdown(results, (result) => result.riskGovernorAction ?? "not_evaluated"),
     bySessionNarrativeProfile: buildBreakdown(results, (result) => result.sessionNarrativeProfile ?? "not_evaluated"),
+    byModelName: buildBreakdown(results, (result) => result.modelName ?? (result.modelDetected ? "detected_unknown_model" : "not_detected")),
+    byModelState: buildBreakdown(results, (result) => result.modelState ?? (result.modelDetected ? "detected_unknown_state" : "not_detected")),
     bySessionDirectionalRead: buildBreakdown(results, (result) => result.sessionDirectionalRead ?? "not_evaluated"),
     bySessionMitigationDetected: buildBreakdown(results, (result) =>
       result.sessionMitigationDetected === undefined ? "not_evaluated" : result.sessionMitigationDetected ? "detected" : "missing"

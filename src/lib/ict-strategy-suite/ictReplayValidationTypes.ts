@@ -11,6 +11,8 @@ import type {
 import type {
   IctDataDepthStatus,
   IctSessionDirectionalRead,
+  IctSessionModelName,
+  IctSessionModelState,
   IctSessionNarrativeProfile
 } from "./ictSessionNarrativeTypes";
 
@@ -98,6 +100,13 @@ export interface IctReplayResult {
   sessionNarrativeProfile?: IctSessionNarrativeProfile;
   sessionDirectionalRead?: IctSessionDirectionalRead;
   sessionNarrativeConfidence?: number;
+  modelDetected?: boolean;
+  modelName?: IctSessionModelName;
+  modelState?: IctSessionModelState;
+  modelDirection?: IctSessionDirectionalRead;
+  modelConfidence?: number;
+  modelReasons?: string[];
+  modelMissingEvidence?: string[];
   sessionMitigationDetected?: boolean;
   fvgTargetDetected?: boolean;
   fvgTargetDirection?: "premium" | "discount" | "unknown";
@@ -187,6 +196,8 @@ export interface IctReplayJournalEvent {
   newsSessionRiskNotes?: string[];
   sessionNarrativeProfile?: IctSessionNarrativeProfile;
   sessionDirectionalRead?: IctSessionDirectionalRead;
+  modelName?: IctSessionModelName;
+  modelState?: IctSessionModelState;
   sessionMitigationDetected?: boolean;
   fvgTargetDetected?: boolean;
   fvgTargetDirection?: "premium" | "discount" | "unknown";

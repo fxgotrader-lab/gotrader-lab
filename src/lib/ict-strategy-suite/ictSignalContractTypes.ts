@@ -4,6 +4,8 @@ import type { IctMonteCarloRobustnessRating } from "./ictMonteCarloTypes";
 import type {
   IctDataDepthStatus,
   IctSessionDirectionalRead,
+  IctSessionModelName,
+  IctSessionModelState,
   IctSessionNarrativeProfile
 } from "./ictSessionNarrativeTypes";
 
@@ -62,6 +64,13 @@ export interface IctResearchSignal {
   sessionNarrativeProfile?: IctSessionNarrativeProfile;
   sessionDirectionalRead?: IctSessionDirectionalRead;
   sessionNarrativeConfidence?: number;
+  modelDetected?: boolean;
+  modelName?: IctSessionModelName;
+  modelState?: IctSessionModelState;
+  modelDirection?: IctSessionDirectionalRead;
+  modelConfidence?: number;
+  modelReasons?: string[];
+  modelMissingEvidence?: string[];
   fvgTargetDirection?: "premium" | "discount" | "unknown";
   sessionNarrativeReasons?: string[];
   dataDepthStatus?: IctDataDepthStatus;

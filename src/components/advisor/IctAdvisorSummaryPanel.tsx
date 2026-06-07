@@ -181,6 +181,11 @@ export function IctAdvisorSummaryPanel({
                 detail={`${formatToken(currentRead.sessionDirectionalRead)} / ${pct(currentRead.sessionNarrativeConfidence)}`}
               />
               <AdvisorMini
+                label="Model detected"
+                value={currentRead.modelDetected ? formatToken(currentRead.modelName) : "no"}
+                detail={currentRead.modelDetected ? `${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : "model context only"}
+              />
+              <AdvisorMini
                 label="FVG target"
                 value={currentRead.fvgTargetDetected ? formatToken(currentRead.fvgTargetDirection) : "missing"}
                 detail="session draw context"
@@ -226,7 +231,7 @@ export function IctAdvisorSummaryPanel({
             </div>
             <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3">
               <p className="line-clamp-2 text-xs leading-5 text-slate-300">
-                Signal: {formatToken(researchSignal.status)} / {formatToken(researchSignal.side)} / execution disabled. Session: {formatToken(currentRead.sessionNarrativeProfile)} / {formatToken(currentRead.sessionDirectionalRead)}. {currentRead.topReasons[0] ?? recommended?.summary ?? "ICT advisor summary pending."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
+                Model detected: {currentRead.modelDetected ? `${formatToken(currentRead.modelName)} / ${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : "no"}. Signal: {formatToken(researchSignal.status)} / {formatToken(researchSignal.side)} / execution disabled. {currentRead.topReasons[0] ?? recommended?.summary ?? "ICT advisor summary pending."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
               </p>
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -284,6 +289,15 @@ export function IctAdvisorSummaryPanel({
               label="Session narrative"
               value={formatToken(packet.compactSummary.sessionNarrativeProfile)}
               detail={`${formatToken(packet.compactSummary.sessionDirectionalRead)} / ${pct(packet.compactSummary.sessionNarrativeConfidence)}`}
+            />
+            <AdvisorMini
+              label="Model detected"
+              value={packet.compactSummary.primaryModelDetection?.modelDetected ? formatToken(packet.compactSummary.primaryModelDetection.modelName) : "no"}
+              detail={
+                packet.compactSummary.primaryModelDetection
+                  ? `${formatToken(packet.compactSummary.primaryModelDetection.modelState)} / ${formatToken(packet.compactSummary.primaryModelDetection.modelDirection)} / ${pct(packet.compactSummary.primaryModelDetection.modelConfidence)}`
+                  : "session model not detected"
+              }
             />
             <AdvisorMini
               label="NY mitigation"
@@ -475,6 +489,8 @@ export function IctAdvisorSummaryPanel({
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Recommended signal detail</p>
               <div className="mt-3 grid gap-2 text-xs text-slate-300">
                 <AdvisorList label="No-trade reasons" values={recommended?.noTradeReasons ?? []} empty="none" />
+                <AdvisorList label="Model reasons" values={packet.compactSummary.primaryModelDetection?.modelReasons ?? []} empty="none" />
+                <AdvisorList label="Model missing evidence" values={packet.compactSummary.primaryModelDetection?.missingEvidence ?? []} empty="none" />
                 <AdvisorList label="Approved profile reasons" values={packet.approvedProfileDecision.approvedReasons} empty="none" />
                 <AdvisorList label="Rejection reasons" values={packet.approvedProfileDecision.rejectionReasons} empty="none" />
                 <AdvisorList label="Watchlist reasons" values={packet.approvedProfileDecision.watchlistReasons} empty="none" />
