@@ -9,11 +9,14 @@ import {
   buildIctCurrentReadFromPacket,
   buildIctResearchSignalFromCurrentRead,
   formatIctAdvisorSignalSummary,
+  ICT_CMD_PAPER_TRACKING_UPDATED_EVENT,
   ICT_LATEST_RESEARCH_STATE_UPDATED_EVENT,
   isResearchSignalEligibleForPaperSim,
+  readActiveCmdPaperTracking,
   readLatestResearchState,
   summarizeNewsSessionRisk,
   type IctAdvisorPacket,
+  type IctCmdPaperTrackingRecord,
   type IctLatestResearchState,
   type IctResearchSignal
 } from "@/lib/ict-strategy-suite";
@@ -101,6 +104,7 @@ export function IctAdvisorSummaryPanel({
 }) {
   const [packet, setPacket] = useState<IctAdvisorPacket>();
   const [latestResearchState, setLatestResearchState] = useState<IctLatestResearchState>();
+  const [cmdPaperTracking, setCmdPaperTracking] = useState<IctCmdPaperTrackingRecord>();
   const [error, setError] = useState<string>();
 
   useEffect(() => {
@@ -111,6 +115,17 @@ export function IctAdvisorSummaryPanel({
     return () => {
       window.removeEventListener(ICT_LATEST_RESEARCH_STATE_UPDATED_EVENT, refreshLatestState);
       window.removeEventListener("storage", refreshLatestState);
+    };
+  }, []);
+
+  useEffect(() => {
+    const refresh = () => setCmdPaperTracking(readActiveCmdPaperTracking());
+    refresh();
+    window.addEventListener(ICT_CMD_PAPER_TRACKING_UPDATED_EVENT, refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener(ICT_CMD_PAPER_TRACKING_UPDATED_EVENT, refresh);
+      window.removeEventListener("storage", refresh);
     };
   }, []);
 
@@ -171,6 +186,23 @@ export function IctAdvisorSummaryPanel({
   const paperSimLabel = paperSimEligibility.eligible ? "Paper Sim: Eligible" : "Paper Sim: Not Eligible";
   const paperSimVariant = paperSimEligibility.eligible ? "success" as const : "warning" as const;
   const modelLane = modelLaneLabel(currentRead.modelQualityLane);
+  const cmdPaperState = cmdPaperTracking?.state ?? "inactive";
+  const cmdPaperLabel =
+    cmdPaperState === "active" || cmdPaperState === "pending"
+      ? "tracking"
+      : cmdPaperState === "target_hit"
+        ? "target hit"
+        : cmdPaperState === "invalidation_hit"
+          ? "invalidation hit"
+          : cmdPaperState;
+  const cmdPaperVariant =
+    cmdPaperState === "target_hit"
+      ? "success" as const
+      : cmdPaperState === "invalidation_hit" || cmdPaperState === "expired" || cmdPaperState === "cancelled"
+        ? "danger" as const
+        : cmdPaperState === "active" || cmdPaperState === "pending"
+          ? "warning" as const
+          : "secondary" as const;
   const paperWatchlistLabel = paperWatchlistEligible ? "Paper-only eligible" : "Not eligible";
   const phaseOneSignals = useMemo(() => (packet?.signals ?? []).filter((signal) => signal.phase === "phase_1"), [packet?.signals]);
   const phaseTwoSignals = useMemo(() => (packet?.signals ?? []).filter((signal) => signal.phase === "phase_2"), [packet?.signals]);
@@ -198,6 +230,7 @@ export function IctAdvisorSummaryPanel({
             <Badge data-testid="dashboard-ict-model-lane" variant={modelLaneVariant(currentRead.modelQualityLane)}>Model lane: {modelLane}</Badge>
             <Badge data-testid="dashboard-ict-research-signal-status" variant={signalVariant(researchSignal)}>{formatToken(researchSignal.status)}</Badge>
             <Badge data-testid="dashboard-ict-paper-sim-status" variant={paperSimVariant}>{paperSimLabel}</Badge>
+            <Badge data-testid="dashboard-ict-cmd-paper-status" variant={cmdPaperVariant}>CMD Paper: {cmdPaperLabel}</Badge>
             <Badge data-testid="dashboard-ict-execution-status" variant="danger">Execution: Disabled</Badge>
             <Badge variant={smtVariant(packet)}>{smtLabel(packet)}</Badge>
             <Badge variant={riskVariant(packet)}>{riskLabel(packet)}</Badge>
@@ -241,6 +274,11 @@ export function IctAdvisorSummaryPanel({
                 detail={paperSimEligibility.eligible ? "paper-only review" : paperSimEligibility.reasons[0] ?? "Waiting for approved signal"}
               />
               <AdvisorMini
+                label="CMD Paper"
+                value={cmdPaperLabel}
+                detail={cmdPaperTracking ? `${cmdPaperTracking.side} / ${formatToken(cmdPaperTracking.outcome)}` : "inactive"}
+              />
+              <AdvisorMini
                 label="Execution"
                 value="Disabled"
                 detail="authority none / no broker mutation"
@@ -276,6 +314,7 @@ export function IctAdvisorSummaryPanel({
             <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3">
               <p className="line-clamp-2 text-xs leading-5 text-slate-300">
                 Model detected: {currentRead.modelDetected ? `${formatToken(currentRead.modelName)} / ${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : "no"}. Model lane: {modelLane}. Paper Sim: {paperSimEligibility.eligible ? "Eligible" : "Not Eligible"}. Execution: Disabled. Missing: {missingTradeFieldsLabel}. {currentRead.paperWatchlistReason ?? currentRead.topReasons[0] ?? recommended?.summary ?? "ICT advisor summary pending."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
+                {" "}CMD Paper: {cmdPaperLabel}.
               </p>
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -316,6 +355,7 @@ export function IctAdvisorSummaryPanel({
           <Badge variant={statusVariant(packet?.approvedProfileDecision.status)}>{formatToken(packet?.approvedProfileDecision.status)}</Badge>
           <Badge data-testid="ict-model-quality-lane" variant={modelLaneVariant(currentRead.modelQualityLane)}>Model lane: {modelLane}</Badge>
           <Badge data-testid="dashboard-ict-paper-sim-status-full" variant={paperSimVariant}>{paperSimLabel}</Badge>
+          <Badge data-testid="ict-cmd-paper-status-full" variant={cmdPaperVariant}>CMD Paper: {cmdPaperLabel}</Badge>
           <Badge variant={paperWatchlistEligible ? "warning" : "secondary"}>{paperWatchlistLabel}</Badge>
           <Badge variant={smtVariant(packet)}>{smtLabel(packet)}</Badge>
           <Badge variant={riskVariant(packet)}>{riskLabel(packet)}</Badge>
@@ -365,6 +405,7 @@ export function IctAdvisorSummaryPanel({
             <AdvisorMini label="Research signal" value={formatToken(researchSignal.status)} detail={`${formatToken(researchSignal.side)} / execution disabled`} />
             <AdvisorMini label="Missing trade fields" value={missingTradeFieldsLabel} detail="target / invalidation / RR" />
             <AdvisorMini label="Paper watchlist" value={paperWatchlistEligible ? "eligible" : "not eligible"} detail={paperWatchlistEligible ? "paper simulation only" : paperSimEligibility.reasons[0] ?? "approval or structure pending"} />
+            <AdvisorMini label="CMD Paper" value={cmdPaperLabel} detail={cmdPaperTracking ? `${cmdPaperTracking.side} / ${formatToken(cmdPaperTracking.outcome)}` : "inactive"} />
             <AdvisorMini label="Approval score" value={`${packet.approvedProfileDecision.approvalScore}/100`} />
             <AdvisorMini label="Signal next action" value={researchSignal.nextAction} detail="research-only contract" />
             <AdvisorMini label="Confidence" value={pct(packet.compactSummary.confidence)} />

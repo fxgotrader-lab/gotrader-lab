@@ -41,5 +41,7 @@ export * from "./ictSignalContractTypes";
 export * from "./ictSignalContract";
 export * from "./ictPaperSignalSimulatorTypes";
 export * from "./ictPaperSignalSimulator";
+export * from "./ictCmdPaperTrackingTypes";
+export * from "./ictCmdPaperTracking";
 export * from "./ictResearchReportTypes";
 export * from "./ictResearchReport";

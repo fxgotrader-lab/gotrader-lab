@@ -20,6 +20,8 @@ import {
   buildIctMonteCarloJournalEvent,
   buildIctResearchSignalFromCurrentRead,
   buildIctResearchSignalJournalEvent,
+  appendIctCmdPaperTrackingJournalEvent,
+  createCmdPaperTrackingFromResearchSignal,
   buildMarketScorecardResearchReport,
   buildIctMarketScorecardBrowserSafe,
   createPaperSignalFromResearchSignal,
@@ -30,6 +32,11 @@ import {
   extractMonteCarloOutcomesFromManualReplay,
   extractMonteCarloOutcomesFromMarketScorecard,
   ictBrowserSafeNotice,
+  evaluateCmdPaperTrackingEligibility,
+  readActiveCmdPaperTracking,
+  saveActiveCmdPaperTracking,
+  updateCmdPaperTrackingWithCandles,
+  ICT_CMD_PAPER_TRACKING_UPDATED_EVENT,
   isResearchSignalEligibleForPaperSim,
   listIctResearchReports,
   optimizeApprovedProfileFromReplayResultsBrowserSafe,
@@ -49,6 +56,8 @@ import {
   type IctMarketScorecard,
   type IctMarketScorecardConfig,
   type IctMarketScorecardStatus,
+  type IctCmdPaperTrackingEligibility,
+  type IctCmdPaperTrackingRecord,
   type IctManualReplayReviewRequest,
   type IctManualReplayReviewResult,
   type IctManualReplayReviewStatus,
@@ -59,6 +68,7 @@ import {
   type IctResearchReport,
   type IctResearchReportSaveResult
 } from "@/lib/ict-strategy-suite";
+import { loadCanonicalCandleSource } from "@/lib/candleSources";
 import {
   CANDLE_WINDOW_SETTINGS_UPDATED_EVENT,
   MARKET_DATA_IMPORT_UPDATED_EVENT
@@ -261,6 +271,8 @@ export function ResearchAdvisorView() {
   const [advisorPacket, setAdvisorPacket] = useState<IctAdvisorPacket>();
   const [advisorPacketError, setAdvisorPacketError] = useState<string>();
   const [paperSignal, setPaperSignal] = useState<IctPaperSignal>();
+  const [cmdPaperTracking, setCmdPaperTracking] = useState<IctCmdPaperTrackingRecord>();
+  const [cmdPaperTrackingMessage, setCmdPaperTrackingMessage] = useState<string>();
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<AdvisorChatMessage[]>([
     createAdvisorMessage(
@@ -271,6 +283,17 @@ export function ResearchAdvisorView() {
   const deepActionRunIdRef = useRef(0);
   const deepActionAbortRef = useRef<AbortController | undefined>(undefined);
   const lastResearchSignalJournalKeyRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    const refresh = () => setCmdPaperTracking(readActiveCmdPaperTracking());
+    refresh();
+    window.addEventListener(ICT_CMD_PAPER_TRACKING_UPDATED_EVENT, refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener(ICT_CMD_PAPER_TRACKING_UPDATED_EVENT, refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -413,6 +436,10 @@ export function ResearchAdvisorView() {
   );
   const paperSimEligibility = useMemo(
     () => isResearchSignalEligibleForPaperSim(researchSignal),
+    [researchSignal]
+  );
+  const cmdPaperTrackingEligibility = useMemo(
+    () => evaluateCmdPaperTrackingEligibility(researchSignal),
     [researchSignal]
   );
 
@@ -726,6 +753,45 @@ export function ResearchAdvisorView() {
     );
   };
 
+  const createCmdPaperTracking = () => {
+    const result = createCmdPaperTrackingFromResearchSignal(researchSignal);
+    if (!result.ok) {
+      setCmdPaperTrackingMessage(result.reason);
+      return;
+    }
+    saveActiveCmdPaperTracking(result.record);
+    appendIctCmdPaperTrackingJournalEvent(result.journalEvent);
+    setCmdPaperTracking(result.record);
+    setCmdPaperTrackingMessage("CMD paper tracking created. Paper-only evidence collection is active; execution remains disabled.");
+  };
+
+  const checkCmdPaperTrackingOutcome = async () => {
+    if (!cmdPaperTracking) {
+      setCmdPaperTrackingMessage("No active CMD paper tracking record is available.");
+      return;
+    }
+    try {
+      const source = await loadCanonicalCandleSource(activeSource.sourceId);
+      const compactCandles = (source?.candles ?? []).map((candle) => ({
+        timestamp: candle.timestamp,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close
+      }));
+      const result = updateCmdPaperTrackingWithCandles(cmdPaperTracking, compactCandles);
+      saveActiveCmdPaperTracking(result.record);
+      if (result.journalEvent) {
+        appendIctCmdPaperTrackingJournalEvent(result.journalEvent);
+      }
+      setCmdPaperTracking(result.record);
+      setCmdPaperTrackingMessage(
+        `CMD paper tracking checked ${result.checkedCandleCount.toLocaleString()} compact candles: ${formatToken(result.reason)}.`
+      );
+    } catch (error) {
+      setCmdPaperTrackingMessage(`CMD paper tracking check failed: ${errorMessage(error)}`);
+    }
+  };
+
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
       <section data-testid="research-advisor-page-header" className="rounded-[24px] border border-white/10 bg-slate-950/75 p-5 shadow-[0_0_45px_rgba(8,145,178,0.07)]">
@@ -753,6 +819,13 @@ export function ResearchAdvisorView() {
         onCreate={createPaperSimulation}
         paperSignal={paperSignal}
         signal={researchSignal}
+      />
+      <CmdPaperTrackingCard
+        eligibility={cmdPaperTrackingEligibility}
+        message={cmdPaperTrackingMessage}
+        onCheck={checkCmdPaperTrackingOutcome}
+        onCreate={createCmdPaperTracking}
+        tracking={cmdPaperTracking}
       />
       <LatestResearchStateStrip latestResearchState={latestResearchState} />
 
@@ -1112,6 +1185,82 @@ function LatestResearchStateStrip({ latestResearchState }: { latestResearchState
         <Badge variant="secondary">raw candles excluded</Badge>
         <Badge variant="secondary">manual results only</Badge>
       </div>
+    </section>
+  );
+}
+
+function CmdPaperTrackingCard({
+  eligibility,
+  message,
+  onCheck,
+  onCreate,
+  tracking
+}: {
+  eligibility: IctCmdPaperTrackingEligibility;
+  message?: string;
+  onCheck: () => void;
+  onCreate: () => void;
+  tracking?: IctCmdPaperTrackingRecord;
+}) {
+  const state = tracking?.state ?? "inactive";
+  const stateVariant =
+    state === "target_hit"
+      ? "success"
+      : state === "invalidation_hit" || state === "cancelled" || state === "expired"
+        ? "danger"
+        : state === "active" || state === "pending"
+          ? "warning"
+          : "secondary";
+  const canCreate = eligibility.eligible && (!tracking || tracking.state === "cancelled" || tracking.state === "expired");
+  const canCheck = Boolean(tracking && (tracking.state === "active" || tracking.state === "pending"));
+
+  return (
+    <section data-testid="ict-cmd-paper-tracking-card" className="rounded-[24px] border border-violet-300/15 bg-[radial-gradient(circle_at_12%_0%,rgba(168,85,247,0.12),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.9),rgba(2,6,23,0.94))] p-5 shadow-[0_0_50px_rgba(168,85,247,0.07)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-violet-300">CMD Paper Tracking</p>
+          <h3 className="mt-1 text-xl font-semibold text-slate-50">Paper-only current-market tracker</h3>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+            Tracks strict CMD paper-watchlist candidates against read-only candle high/low updates. This cannot execute, mutate broker state, or promote readiness.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge data-testid="ict-cmd-paper-tracking-status" variant={stateVariant}>CMD Paper: {formatToken(state)}</Badge>
+          <Badge variant={eligibility.eligible ? "warning" : "secondary"}>
+            {eligibility.eligible ? "CMD paper-watchlist eligible" : "Not CMD paper eligible"}
+          </Badge>
+          <Badge variant="danger">Execution Disabled</Badge>
+          <Badge variant="secondary">paperOnly true</Badge>
+          <Button type="button" size="sm" onClick={onCreate} disabled={!canCreate}>
+            Track CMD Paper Candidate
+          </Button>
+          <Button type="button" size="sm" variant="secondary" onClick={onCheck} disabled={!canCheck}>
+            Check CMD Paper Outcome
+          </Button>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <AdvisorReadout label="Source model" value={tracking ? formatToken(tracking.sourceModel) : "CMD only"} detail="consolidation manipulation distribution" />
+        <AdvisorReadout label="State" value={formatToken(state)} detail={tracking?.outcome ? formatToken(tracking.outcome) : "inactive"} />
+        <AdvisorReadout label="Symbol" value={tracking ? `${tracking.brokerSymbol} -> ${tracking.requestedSymbol}` : "waiting"} detail={tracking?.primaryTimeframe ?? "5m"} />
+        <AdvisorReadout label="Side" value={formatToken(tracking?.side)} detail={tracking?.setup ? formatToken(tracking.setup) : "strict CMD required"} />
+        <AdvisorReadout label="Target" value={compactPrice(tracking?.target)} />
+        <AdvisorReadout label="Invalidation" value={compactPrice(tracking?.invalidation)} />
+        <AdvisorReadout label="RR" value={rr(tracking?.rrEstimate)} />
+        <AdvisorReadout label="Last checked" value={formatDate(tracking?.lastCheckedAt)} detail={tracking?.lastPriceChecked ? `H ${compactPrice(tracking.lastPriceChecked.high)} / L ${compactPrice(tracking.lastPriceChecked.low)}` : "no read-only candle check yet"} />
+        <AdvisorReadout label="Paper only" value={tracking?.paperOnly ? "true" : "true"} detail="no readiness promotion" />
+        <AdvisorReadout label="Execution allowed" value="false" detail="authority none/none/none" />
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <AdvisorList label={eligibility.eligible ? "Eligibility" : "Blocked reasons"} values={eligibility.reasons} empty="No eligibility state recorded." />
+        <AdvisorList label="Tracking notes" values={tracking?.notes ?? ["No active CMD paper tracking record."]} empty="No notes." />
+      </div>
+      {message ? (
+        <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">{message}</p>
+      ) : null}
+      <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">
+        Safety: paperOnly true, realOrderPlaced false, brokerMutation false, raw candles/snapshots/secrets/account/order/position data excluded.
+      </p>
     </section>
   );
 }

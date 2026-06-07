@@ -35,6 +35,7 @@
     "test:ict-ame-paper-watchlist-diagnostic": "node scripts/test-ict-ame-paper-watchlist-diagnostic.mjs",
     "test:ict-cmd-paper-watchlist-diagnostic": "node scripts/test-ict-cmd-paper-watchlist-diagnostic.mjs",
     "test:ict-cmd-paper-watchlist-oos": "node scripts/test-ict-cmd-paper-watchlist-oos.mjs",
+    "test:ict-cmd-paper-tracking": "node scripts/test-ict-cmd-paper-tracking.mjs",
     "test:ict-model-fidelity-audit": "node scripts/test-ict-model-fidelity-audit.mjs",
     "test:ict-target-invalidation-rr-audit": "node scripts/test-ict-target-invalidation-rr-audit.mjs",
     "test:ict-phase2-models": "node scripts/test-ict-phase2-models.mjs",
