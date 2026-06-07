@@ -2,10 +2,20 @@ import { Component, useEffect, useMemo, useRef, useState, type ErrorInfo, type F
 import { Link } from "react-router-dom";
 import { BarChart3, MessageSquareText, PlayCircle, Send, ShieldCheck, Sparkles } from "lucide-react";
 
+import { ActivateMarketProgress } from "@/components/advisor/ActivateMarketProgress";
 import { IctAdvisorSummaryPanel } from "@/components/advisor/IctAdvisorSummaryPanel";
 import { LLMAdvisoryReviewPanel } from "@/components/dashboard/LLMAdvisoryReviewPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  createActivateMarketInitialSteps,
+  runIctActivateMarketPipeline
+} from "@/lib/ict-strategy-suite/ictActivateMarketPipeline";
+import type {
+  IctActivateMarketResult,
+  IctActivateMarketStatus,
+  IctActivateMarketStep
+} from "@/lib/ict-strategy-suite/ictActivateMarketPipelineTypes";
 import {
   appendIctMonteCarloJournalEvent,
   appendIctPaperSignalJournalEvent,
@@ -94,6 +104,21 @@ const browserSafeMonteCarloSimulationCount = 300;
 const browserSafeMonteCarloTradeCount = 60;
 const safeList = <T,>(values: T[] | undefined | null): T[] => Array.isArray(values) ? values : [];
 const safeCount = (value?: number) => (typeof value === "number" && Number.isFinite(value) ? value.toLocaleString() : "0");
+const markActivateMarketUiFailure = (steps: IctActivateMarketStep[], message: string): IctActivateMarketStep[] => {
+  const index = steps.findIndex((step) => step.status === "running" || step.status === "pending");
+  if (index < 0) return steps;
+  const completedAt = new Date().toISOString();
+  return steps.map((step, stepIndex) => {
+    if (stepIndex !== index) return step;
+    return {
+      ...step,
+      status: "failed",
+      error: message,
+      completedAt,
+      durationMs: step.startedAt ? Math.max(0, new Date(completedAt).getTime() - new Date(step.startedAt).getTime()) : undefined
+    };
+  });
+};
 type MarketScorecardRunStatus = "idle" | "running" | "partial" | "completed" | "unavailable" | "failed" | "timed_out";
 type ProfileOptimizationRunStatus = "idle" | "running" | "partial" | "completed" | "unavailable" | "failed" | "timed_out";
 type MonteCarloRunStatus = "idle" | "running" | "completed" | "unavailable" | "failed";
@@ -252,6 +277,9 @@ function buildLocalAdvisorReply(
 
 export function ResearchAdvisorView() {
   const [snapshot, setSnapshot] = useState<ResearchRuntimeSnapshot>();
+  const [activateMarketStatus, setActivateMarketStatus] = useState<IctActivateMarketStatus>("idle");
+  const [activateMarketSteps, setActivateMarketSteps] = useState<IctActivateMarketStep[]>(() => createActivateMarketInitialSteps());
+  const [activateMarketResult, setActivateMarketResult] = useState<IctActivateMarketResult>();
   const [manualReplayStatus, setManualReplayStatus] = useState<IctManualReplayReviewStatus>("idle");
   const [manualReplayResult, setManualReplayResult] = useState<IctManualReplayReviewResult>();
   const [manualReplayError, setManualReplayError] = useState<string>();
@@ -446,6 +474,34 @@ export function ResearchAdvisorView() {
     () => evaluateCmdPaperTrackingEligibility(researchSignal),
     [researchSignal]
   );
+  const runActivateMarket = async () => {
+    if (activateMarketStatus === "running") return;
+    setActivateMarketStatus("running");
+    setActivateMarketSteps(createActivateMarketInitialSteps());
+    setActivateMarketResult(undefined);
+    try {
+      const nextSnapshot = await resolveResearchRuntimeSnapshot();
+      setSnapshot(nextSnapshot);
+      const result = await runIctActivateMarketPipeline(
+        {
+          snapshot: nextSnapshot,
+          latestResearchState: readLatestResearchState(),
+          saveLatestSummary: true
+        },
+        {
+          onStepUpdate: (_step, allSteps) => setActivateMarketSteps(allSteps)
+        }
+      );
+      setActivateMarketResult(result);
+      setActivateMarketSteps(result.steps);
+      setActivateMarketStatus(result.status);
+    } catch (error) {
+      const failedSteps = markActivateMarketUiFailure(activateMarketSteps, errorMessage(error));
+      setActivateMarketSteps(failedSteps);
+      setActivateMarketResult(undefined);
+      setActivateMarketStatus("failed");
+    }
+  };
 
   useEffect(() => {
     if (!advisorPacket || !researchSignal.signalId) return;
@@ -463,6 +519,13 @@ export function ResearchAdvisorView() {
           <h2 className="mt-1 text-2xl font-semibold tracking-normal text-slate-50">Loading runtime snapshot</h2>
           <p className="mt-2 text-sm text-slate-400">Preparing compact advisory context. Deterministic research remains available.</p>
         </section>
+        <ActivateMarketProgress
+          onActivate={() => void runActivateMarket()}
+          status={activateMarketStatus}
+          steps={activateMarketSteps}
+          result={activateMarketResult}
+          disabled={activateMarketStatus === "running"}
+        />
       </div>
     );
   }
@@ -815,6 +878,14 @@ export function ResearchAdvisorView() {
           </div>
         </div>
       </section>
+
+      <ActivateMarketProgress
+        onActivate={() => void runActivateMarket()}
+        status={activateMarketStatus}
+        steps={activateMarketSteps}
+        result={activateMarketResult}
+        disabled={activateMarketStatus === "running" || deepResearchActionRunning}
+      />
 
       <CurrentReadPanel currentRead={currentRead} packetError={advisorPacketError} />
       <ResearchSignalCard signal={researchSignal} />

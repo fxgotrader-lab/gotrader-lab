@@ -554,7 +554,7 @@ export function SelfImprovementView() {
             id: "runtime_pending",
             label: "Runtime checklist pending",
             status: "warning",
-            nextAction: "Activate MT5 Research Mode or wait for the runtime snapshot before generating checklist-based proposals.",
+            nextAction: "Activate Market or wait for the runtime snapshot before generating checklist-based proposals.",
             proposalEligible: false
           }
         ];

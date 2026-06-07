@@ -102,7 +102,7 @@ const sourceQualityItem = (snapshot: ResearchRuntimeSnapshot) => {
     currentValue: `${formatToken(source.provider)}; ${source.candleCount.toLocaleString()} candles; research=${source.eligibility.researchCycle ? "yes" : "no"}`,
     requiredValue: `non-mock active research source, >= ${MIN_RESEARCH_CANDLES} candles, fingerprint recorded`,
     blockerReason: pass ? "Active research source is eligible." : "Active research source is missing, shallow, mock, or not selected for research.",
-    nextAction: pass ? "Keep the source pinned to the cycle." : "Activate MT5 Research Mode or select another eligible canonical research source."
+    nextAction: pass ? "Keep the source pinned to the cycle." : "Activate Market or select another eligible canonical research source."
   });
 };
 

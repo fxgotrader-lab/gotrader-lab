@@ -2,6 +2,7 @@ import { Component, useEffect, useMemo, useRef, useState, type ErrorInfo, type R
 import { Link } from "react-router-dom";
 import { Activity, ExternalLink, Lock, RadioTower, ShieldCheck, Zap } from "lucide-react";
 
+import { ActivateMarketProgress } from "@/components/advisor/ActivateMarketProgress";
 import { IctAdvisorSummaryPanel } from "@/components/advisor/IctAdvisorSummaryPanel";
 import { clearReplaySnapshotSourceMeta, loadReplaySnapshotSourceMeta } from "@/lib/backtesting";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
@@ -113,6 +114,17 @@ import {
   formatR
 } from "@/lib/researchMetrics";
 import { buildResearchCommitteeReport } from "@/lib/researchCommittee";
+import {
+  createActivateMarketInitialSteps,
+  markActivationStepFailed,
+  runIctActivateMarketPipeline,
+  summarizeActivateMarketResult
+} from "@/lib/ict-strategy-suite/ictActivateMarketPipeline";
+import type {
+  IctActivateMarketResult,
+  IctActivateMarketStatus,
+  IctActivateMarketStep
+} from "@/lib/ict-strategy-suite/ictActivateMarketPipelineTypes";
 import { buildGrinchProfileEvidenceDiagnostics } from "@/lib/strategyLibrary";
 import { RESEARCH_CYCLE_UPDATED_EVENT } from "@/lib/researchCycle";
 import {
@@ -159,7 +171,7 @@ const checklistStatusVariant = (status?: string) =>
   status === "pass" ? "success" as const : status === "fail" ? "danger" as const : status === "warning" ? "warning" as const : "secondary" as const;
 const formatBool = (value?: boolean) => (typeof value === "boolean" ? (value ? "yes" : "no") : "unknown");
 const pendingPaperDemoChecklistItems = [
-  ["source_quality_valid", "Source quality valid", "Activate MT5 Research Mode or wait for the runtime snapshot to resolve."],
+  ["source_quality_valid", "Source quality valid", "Activate Market or wait for the runtime snapshot to resolve."],
   ["source_provider_labeled", "MT5/source provider labeled correctly", "Confirm requested symbol, broker symbol, CFD/proxy label, and authority none."],
   ["minimum_trade_sample", "Minimum trade sample reached", "Run enough research cycles to reach the simulated trade sample threshold."],
   ["walk_forward_oos_trade_count", "Walk-forward OOS trade count reached", "Run walk-forward once the active source has enough depth and candidate trades."],
@@ -566,6 +578,9 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const [mt5Busy, setMt5Busy] = useState(false);
   const [mt5OperationMessage, setMt5OperationMessage] = useState("MT5 read-only bridge not checked.");
   const [mt5ActivationSteps, setMt5ActivationSteps] = useState<Mt5ActivationStep[]>([]);
+  const [activateMarketStatus, setActivateMarketStatus] = useState<IctActivateMarketStatus>("idle");
+  const [activateMarketSteps, setActivateMarketSteps] = useState<IctActivateMarketStep[]>(() => createActivateMarketInitialSteps());
+  const [activateMarketResult, setActivateMarketResult] = useState<IctActivateMarketResult>();
   const [mt5RequestedSymbol, setMt5RequestedSymbol] = useState(() => loadMt5ReadOnlySettings().requestedSymbol ?? "MNQ");
   const [mt5BrokerSymbol, setMt5BrokerSymbol] = useState(() => loadMt5ReadOnlySettings().brokerSymbolOverride ?? "USTECH");
   const [mt5DisplayLabel, setMt5DisplayLabel] = useState(() => loadMt5ReadOnlySettings().displayLabel ?? "MNQ via USTECH");
@@ -911,7 +926,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
     const primaryActivation = activationMode === "research_mode";
     const usageMode = activationMode === "chart_only" ? "chart_only" : "research_source";
     const actionLabel = primaryActivation
-      ? "Activate MT5 Research Mode"
+      ? "Activate Market"
       : usageMode === "research_source"
         ? "Use MT5 for Research"
         : "Connect MT5 Read-Only";
@@ -1155,7 +1170,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
       }
       setMt5OperationMessage(
         primaryActivation
-          ? `MT5 Research Mode active: ${feed.brokerSymbol ?? brokerSymbol} -> ${feed.requestedSymbol}, ${feed.candleCount.toLocaleString()} ${feed.timeframe} candles, chart/research source active, authority none.`
+          ? `Activate Market complete: MT5 read-only ${feed.brokerSymbol ?? brokerSymbol} -> ${feed.requestedSymbol}, ${feed.candleCount.toLocaleString()} ${feed.timeframe} candles, chart/research source active, authority none.`
           : [
               `${actionLabel} completed. MT5 read-only ${usageMode === "research_source" && feed.activeForResearch ? "research" : "chart"} source loaded with ${feed.candleCount.toLocaleString()} candles.`,
               `GoTrader ${feed.requestedSymbol}; MT5 broker symbol ${feed.brokerSymbol ?? brokerSymbol}; depth ${formatToken(feed.depthStatus)}.`,
@@ -1175,6 +1190,40 @@ export function MissionControlShell({ state }: { state: LabState }) {
       addDataConnectionEvent("MT5 failed", message, "failed");
     } finally {
       setMt5Busy(false);
+    }
+  };
+
+  const runActivateMarketWorkflow = async () => {
+    if (activateMarketStatus === "running" || mt5Busy) return;
+    setActivateMarketStatus("running");
+    setActivateMarketSteps(createActivateMarketInitialSteps());
+    setActivateMarketResult(undefined);
+    try {
+      await connectMt5ReadOnly({ activationMode: "research_mode" });
+      const snapshot = await resolveAndStoreRuntime();
+      const result = await runIctActivateMarketPipeline(
+        { snapshot, saveLatestSummary: true },
+        {
+          onStepUpdate: (_step, allSteps) => setActivateMarketSteps(allSteps)
+        }
+      );
+      setActivateMarketResult(result);
+      setActivateMarketSteps(result.steps);
+      setActivateMarketStatus(result.status);
+      addDataConnectionEvent(
+        "Activate Market workflow complete",
+        summarizeActivateMarketResult(result),
+        result.status === "failed" || result.status === "unavailable" ? "failed" : result.status === "partial" ? "warning" : "success",
+        snapshot.marketData.activeResearchSource.fingerprint
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Activate Market failed.");
+      setActivateMarketSteps((steps) => {
+        const failedStep = steps.find((step) => step.status === "running" || step.status === "pending")?.id ?? "complete";
+        return markActivationStepFailed(steps, failedStep, message);
+      });
+      setActivateMarketStatus("failed");
+      addDataConnectionEvent("Activate Market workflow failed", message, "failed");
     }
   };
 
@@ -1878,7 +1927,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const topDecisionSummary =
     (latestThesis && "summary" in latestThesis ? latestThesis.summary : latestThesis?.thesisSummary) ??
     grinch?.detail ??
-    "Activate MT5 Research Mode, then run a research cycle to populate the live advisor decision.";
+    "Activate Market, then run a research cycle to populate the live advisor decision.";
   const primarySetupLabel =
     grinch?.profile && grinch.profile !== "none"
       ? `${grinch.profile.replace(/_/g, " ")} / ${grinch.state}`
@@ -2169,12 +2218,12 @@ export function MissionControlShell({ state }: { state: LabState }) {
                 </div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <Button
-                    onClick={() => void connectMt5ReadOnly({ activationMode: "research_mode" })}
-                    disabled={mt5Busy}
+                    onClick={() => void runActivateMarketWorkflow()}
+                    disabled={mt5Busy || activateMarketStatus === "running"}
                     className="justify-start sm:col-span-2"
                   >
                     <RadioTower className="h-4 w-4" aria-hidden="true" />
-                    {mt5Busy ? "Activating MT5..." : "Activate MT5 Research Mode"}
+                    {mt5Busy || activateMarketStatus === "running" ? "Activating Market..." : "Activate Market"}
                   </Button>
                   <Button
                     variant="secondary"
@@ -2198,6 +2247,14 @@ export function MissionControlShell({ state }: { state: LabState }) {
                   >
                     Stop MT5 Refresh
                   </Button>
+                </div>
+                <div className="mt-3">
+                  <ActivateMarketProgress
+                    status={activateMarketStatus}
+                    steps={activateMarketSteps}
+                    result={activateMarketResult}
+                    compact
+                  />
                 </div>
                 <div className="mt-2 space-y-1 rounded-md border border-white/10 bg-black/20 p-2 text-[11px] leading-4 text-slate-400">
                   <p>
@@ -2332,7 +2389,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
           <div className="mt-4 rounded-lg border border-amber-300/25 bg-black/20 p-3 text-sm leading-6 text-amber-50">
             <span className="font-semibold">Current blocker:</span> {paperDemoChecklist?.primaryBlocker ?? "Runtime snapshot pending."}
             <span className="block text-xs text-amber-100/75">
-              Next action: {paperDemoChecklist?.nextAction ?? "Activate MT5 Research Mode or wait for the runtime snapshot to resolve."}
+              Next action: {paperDemoChecklist?.nextAction ?? "Activate Market or wait for the runtime snapshot to resolve."}
             </span>
           </div>
           <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
@@ -2622,7 +2679,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
                 <MiniReadout
                   label="Next action"
                   value={paperDemoChecklist?.proposalEligibleBlockers.length ? "proposal-targetable" : "operator review"}
-                  detail={paperDemoChecklist?.nextAction ?? "Activate MT5 Research Mode or wait for runtime data."}
+                  detail={paperDemoChecklist?.nextAction ?? "Activate Market or wait for runtime data."}
                 />
                 <MiniReadout
                   label="Source context"
@@ -2688,7 +2745,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">MT5 Developer Controls</p>
                 <h3 className="mt-1 text-base font-semibold text-slate-50">Step-Level Source Activation</h3>
                 <p className="mt-1 text-sm text-slate-400">
-                  Direct controls kept for diagnostics. The default Dashboard action should be Activate MT5 Research Mode.
+                  Direct controls kept for diagnostics. The default Dashboard action should be Activate Market.
                 </p>
               </div>
               <Badge variant={mt5ReadOnlyRegistered ? "success" : "warning"}>{mt5ReadOnlyRegistered ? "source registered" : "not registered"}</Badge>

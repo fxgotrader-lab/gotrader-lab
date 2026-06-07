@@ -128,6 +128,9 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.locator("main")).toContainText(/Go-Trader gate/i);
     await expect(page.locator("main")).toContainText(/Tradovate gate|Tradovate Future Gate/i);
     await expect(page.locator("main")).toContainText(/Loop progress/i);
+    await expect(page.getByRole("button", { name: "Activate Market" }).first()).toBeVisible();
+    await expect(page.getByTestId("activate-market-progress")).toBeVisible();
+    await expect(page.getByTestId("activate-market-progress")).toContainText(/Activate Market Workflow/i);
   });
 
   test("dashboard Results tab and /performance share the upgraded results page", async ({ page }) => {
@@ -146,6 +149,9 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByTestId("research-advisor-chat-card")).toBeVisible();
     await expect(page.getByTestId("research-advisor-chat-input")).toBeVisible();
     await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Explain Current Setup/i);
+    await expect(page.getByRole("button", { name: "Activate Market" }).first()).toBeVisible();
+    await expect(page.getByTestId("activate-market-progress")).toBeVisible();
+    await expect(page.getByTestId("activate-market-progress")).toContainText(/Activate Market Workflow/i);
     await expect(page.locator("main")).toContainText(/Setup/i);
     await expect(page.locator("main")).toContainText(/Replay/i);
     await expect(page.locator("main")).toContainText(/Scorecard/i);
@@ -165,6 +171,9 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByTestId("ict-current-read-panel")).toContainText(/Paper Sim|Paper-watchlist eligibility/i);
     await expect(page.getByTestId("ict-current-read-panel")).toContainText(/Execution Disabled|Execution/i);
     await expect(page.getByTestId("ict-current-read-panel")).toContainText(/Next action/i);
+    await expect(page.getByRole("button", { name: "Activate Market" }).first()).toBeVisible();
+    await expect(page.getByTestId("activate-market-progress")).toBeVisible();
+    await expect(page.getByTestId("activate-market-progress")).toContainText(/Activate Market Workflow/i);
     await expect(page.getByTestId("research-advisor-chat-card")).toBeVisible();
     await expect(page.getByTestId("research-advisor-chat-input")).toBeVisible();
     await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Explain Current Setup/i);

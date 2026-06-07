@@ -202,7 +202,7 @@ export const buildUnavailableIctCurrentRead = (
   paperWatchlistEvidenceSummary: "No compact ICT model-quality evidence is available.",
   executionAllowed: false,
   topReasons: [reason],
-  nextAction: "Activate MT5 Research Mode or check the canonical research source.",
+  nextAction: "Activate Market or check the canonical research source.",
   debug: {
     candleCount: 0,
     primaryTimeframeAvailable: false,
