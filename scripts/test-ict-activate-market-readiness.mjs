@@ -55,6 +55,19 @@ function compileForNode() {
   fs.writeFileSync(path.join(outRoot, "ictMarketAnalysisContext.mjs"), "export async function buildIctMarketAnalysisContextBundle() { return globalThis.__ACTIVATE_MARKET_READINESS_CONTEXT; }\n", "utf8");
   fs.writeFileSync(path.join(outRoot, "ictSignalContract.mjs"), "export function buildIctResearchSignalFromCurrentRead() { return globalThis.__ACTIVATE_MARKET_READINESS_SIGNAL; }\n", "utf8");
   fs.writeFileSync(path.join(outRoot, "ictCmdPaperTracking.mjs"), "export function evaluateCmdPaperTrackingEligibility() { return globalThis.__ACTIVATE_MARKET_READINESS_CMD; }\n", "utf8");
+  fs.writeFileSync(
+    path.join(outRoot, "ictSelfImprovement.mjs"),
+    `export function queueIctResearchHypothesis() {
+  return {
+    ok: false,
+    storage: "memory",
+    reason: "No eligible research hypothesis to queue.",
+    totalHypotheses: 0
+  };
+}
+`,
+    "utf8"
+  );
 }
 
 const snapshot = () => ({

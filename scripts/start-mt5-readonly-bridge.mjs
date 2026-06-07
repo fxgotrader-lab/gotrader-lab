@@ -212,13 +212,16 @@ const mt5TimeframeFor = (timeframe) => ({
   "1h": "H1",
   "4h": "H4",
   "1d": "D1",
+  "1w": "W1",
+  weekly: "W1",
   M1: "M1",
   M5: "M5",
   M15: "M15",
   M30: "M30",
   H1: "H1",
   H4: "H4",
-  D1: "D1"
+  D1: "D1",
+  W1: "W1"
 }[timeframe] ?? timeframe);
 const upstreamUrl = (path, params = {}) => {
   const url = new URL(`${upstreamBaseUrl}/${path.replace(/^\//, "")}`);

@@ -277,6 +277,112 @@ const mt5CandlesToGoTraderCandles = ({
     volume: candle.volume ?? candle.tickVolume
   }));
 
+const weekStartKeyUtc = (timestamp: string) => {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return undefined;
+  const day = date.getUTCDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  start.setUTCDate(start.getUTCDate() + mondayOffset);
+  return start.toISOString().slice(0, 10);
+};
+
+const deriveWeeklyCandlesFromDaily = ({
+  brokerSymbol,
+  dailyCandles,
+  requestedSymbol
+}: {
+  brokerSymbol: string;
+  dailyCandles: Candle[];
+  requestedSymbol: string;
+}): Candle[] => {
+  const ordered = dailyCandles
+    .filter(
+      (candle) =>
+        Boolean(candle.timestamp) &&
+        Number.isFinite(candle.open) &&
+        Number.isFinite(candle.high) &&
+        Number.isFinite(candle.low) &&
+        Number.isFinite(candle.close)
+    )
+    .slice()
+    .sort((left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime());
+  const groups = new Map<
+    string,
+    {
+      firstTimestamp: string;
+      lastTimestamp: string;
+      open: number;
+      high: number;
+      low: number;
+      close: number;
+      volume: number;
+      count: number;
+    }
+  >();
+  for (const candle of ordered) {
+    const key = weekStartKeyUtc(candle.timestamp);
+    if (!key) continue;
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, {
+        firstTimestamp: candle.timestamp,
+        lastTimestamp: candle.timestamp,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volume ?? 0,
+        count: 1
+      });
+      continue;
+    }
+    existing.lastTimestamp = candle.timestamp;
+    existing.high = Math.max(existing.high, candle.high);
+    existing.low = Math.min(existing.low, candle.low);
+    existing.close = candle.close;
+    existing.volume += candle.volume ?? 0;
+    existing.count += 1;
+  }
+  return [...groups.entries()]
+    .filter(([, group]) => group.count > 0)
+    .map(([weekKey, group]) => ({
+      id: `mt5_read_only_${requestedSymbol}_W1_derived_from_D1_${weekKey}`,
+      symbol: toFuturesSymbol(requestedSymbol),
+      timeframe: "1d" as Timeframe,
+      timestamp: group.firstTimestamp,
+      open: group.open,
+      high: group.high,
+      low: group.low,
+      close: group.close,
+      volume: group.volume
+    }));
+};
+
+const mt5CandlesFromGoTraderCandles = ({
+  brokerSymbol,
+  candles,
+  timeframe
+}: {
+  brokerSymbol: string;
+  candles: Candle[];
+  timeframe: string;
+}): Mt5ReadOnlyCandle[] =>
+  candles.map((candle, index) => ({
+    id: candle.id || `mt5_read_only_${brokerSymbol}_${timeframe}_derived_${index}`,
+    time: Math.floor(new Date(candle.timestamp).getTime() / 1000),
+    timestamp: candle.timestamp,
+    open: candle.open,
+    high: candle.high,
+    low: candle.low,
+    close: candle.close,
+    volume: candle.volume,
+    tickVolume: candle.volume,
+    source: "mt5_read_only",
+    symbol: brokerSymbol,
+    timeframe
+  }));
+
 const mt5DisplayCandlesToGoTraderCandles = ({
   candles,
   requestedSymbol,
@@ -529,7 +635,47 @@ export async function buildIctMarketAnalysisContextBundle(
       analysisContexts.push(contextFromDepthSummary(timeframe, summary, "mt5_chunked_range_unavailable"));
     }
   }
-  const weeklyBias = weeklyBiasFromCandles(analysisCandlesByTimeframe.W1 ?? []);
+  const nativeWeeklyCount = analysisCandlesByTimeframe.W1?.length ?? 0;
+  const derivedWeeklyCandles =
+    nativeWeeklyCount < 2 && (analysisCandlesByTimeframe.D1?.length ?? 0) >= 2
+      ? deriveWeeklyCandlesFromDaily({
+          brokerSymbol,
+          dailyCandles: analysisCandlesByTimeframe.D1 ?? [],
+          requestedSymbol
+        })
+      : [];
+  if (nativeWeeklyCount < 2 && derivedWeeklyCandles.length >= 2) {
+    const derivedSummary = summarizeHistoryDepth({
+      brokerSymbol,
+      candles: mt5CandlesFromGoTraderCandles({
+        brokerSymbol,
+        candles: derivedWeeklyCandles,
+        timeframe: "1w"
+      }),
+      chunkCount: depthSummariesByTimeframe.D1?.chunkCount ?? 0,
+      chunkingStatus: "chunked_cached",
+      limitationReason: undefined,
+      requestedLookbackDays: lookbackDays,
+      requestedSymbol,
+      timeframe: "1w"
+    });
+    analysisCandlesByTimeframe.W1 = derivedWeeklyCandles;
+    depthSummariesByTimeframe.W1 = {
+      ...derivedSummary,
+      warnings: [
+        ...derivedSummary.warnings,
+        "Native MT5 W1 history was unavailable or too shallow; weekly context was derived from explicit D1 read-only history."
+      ],
+      missingEvidence: derivedSummary.missingEvidence.filter(
+        (evidence) => !/Need closer|limited|unavailable/i.test(evidence)
+      )
+    };
+    const derivedContext = contextFromDepthSummary("W1", depthSummariesByTimeframe.W1, "derived_from_d1_chunked_history");
+    const existingIndex = analysisContexts.findIndex((context) => context.timeframe === "W1");
+    if (existingIndex >= 0) analysisContexts[existingIndex] = derivedContext;
+    else analysisContexts.push(derivedContext);
+  }
+  const resolvedWeeklyBias = weeklyBiasFromCandles(analysisCandlesByTimeframe.W1 ?? []);
 
   return {
     context: buildContext({
@@ -538,7 +684,7 @@ export async function buildIctMarketAnalysisContextBundle(
       chartDisplayCandleCount: displayCandles.length,
       displayTimeframe,
       requestedSymbol,
-      weeklyBias,
+      weeklyBias: resolvedWeeklyBias,
       warnings
     }),
     displayCandles,
