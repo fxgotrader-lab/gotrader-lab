@@ -2,7 +2,10 @@ import type { ResearchRuntimeSnapshot } from "../runtime";
 import { buildIctAdvisorPacketFromRuntime } from "./ictAdvisorEngine";
 import type { IctAdvisorPacket, IctAdvisorSignal } from "./ictAdvisorTypes";
 import { detectIctOpportunities } from "./ictOpportunityDetection";
+import type { IctDetectedOpportunity } from "./ictOpportunityDetectionTypes";
 import { buildIctResearchHypothesisFromOpportunity } from "./ictSelfImprovement";
+import { buildIctUniversalRecognition } from "./ictUniversalRecognition";
+import type { IctUniversalRecognitionResult } from "./ictUniversalRecognitionTypes";
 import type { IctLatestResearchState } from "./ictLatestResearchStateTypes";
 import type {
   IctCurrentRead,
@@ -400,11 +403,75 @@ const riskReasonFor = (signal: IctAdvisorSignal) => {
 const noOpportunity = (generatedAt = new Date().toISOString()) =>
   detectIctOpportunities({ generatedAt })[0]!;
 
+const unavailableRecognition = (generatedAt = new Date().toISOString()) =>
+  buildIctUniversalRecognition({ generatedAt });
+
+const recognizedFallbackOpportunity = (
+  recognition: IctUniversalRecognitionResult,
+  packet: IctAdvisorPacket
+): IctDetectedOpportunity | undefined => {
+  if (recognition.tier !== "scalp_setup" && recognition.tier !== "pd_array_setup") return undefined;
+  const scalp = recognition.scalpOpportunity;
+  const pdArray = recognition.pdArrays[0];
+  return {
+    researchOnly: true,
+    opportunityId: `ict_universal_${recognition.tier}_${packet.activeSource.sourceFingerprint || packet.packetId}`,
+    generatedAt: recognition.generatedAt,
+    type: recognition.tier === "scalp_setup" ? "liquidity_raid" : "retracement_to_pd_array",
+    stage: scalp?.status === "scalp_candidate" ? "triggered" : "forming",
+    quality: scalp?.status === "scalp_candidate" ? "medium" : "low",
+    modelName: recognition.knownModel?.modelName,
+    modelFamily: "ICT",
+    direction: scalp?.direction ?? recognition.knownModel?.direction ?? "neutral",
+    marketCycleStage: recognition.marketCycleStage === "range_bound"
+      ? "unknown"
+      : recognition.marketCycleStage === "accumulation_manipulation_expansion"
+        ? "expansion"
+        : recognition.marketCycleStage === "consolidation_manipulation_distribution"
+          ? "consolidation"
+          : recognition.marketCycleStage === "ny_session_reversal_to_premium_fvg" || recognition.marketCycleStage === "ny_session_reversal_from_premium_to_discount"
+            ? "reversal"
+            : "unknown",
+    liquidityObjective: scalp?.liquidityDraw
+      ? {
+          side: scalp.liquidityDraw.side,
+          target: scalp.liquidityDraw.level,
+          source: "universal_recognition",
+          reason: scalp.liquidityDraw.reason
+        }
+      : undefined,
+    pdArrayContext: recognition.pdArrays.slice(0, 4).map((array) => ({
+      type: array.type,
+      role: array.role === "draw" ? "target" : array.role,
+      high: array.high,
+      low: array.low,
+      reason: array.reason
+    })),
+    tradeIdea: scalp
+      ? {
+          side: scalp.side,
+          target: scalp.target,
+          invalidation: scalp.invalidation,
+          rrEstimate: scalp.rrEstimate,
+          confidence: scalp.confidence
+        }
+      : undefined,
+    confirmationNeeded: recognition.missingEvidence.slice(0, 8),
+    missingEvidence: recognition.missingEvidence.slice(0, 8),
+    blockers: recognition.blockers.slice(0, 8),
+    laneRecommendation: recognition.laneRecommendation,
+    nextAction: recognition.nextAction,
+    authority,
+    safety
+  };
+};
+
 export const buildUnavailableIctCurrentRead = (
   reason = "Active ICT advisor packet is unavailable.",
   latestState?: IctLatestResearchState
 ): IctCurrentRead => {
   const opportunity = noOpportunity();
+  const universalRecognition = unavailableRecognition();
   return ({
   researchOnly: true,
   packetSource: "unavailable",
@@ -431,6 +498,16 @@ export const buildUnavailableIctCurrentRead = (
   side: "flat",
   approvedStatus: "no_trade",
   modelQualityLane: "no_trade",
+  universalRecognition,
+  recognitionTier: universalRecognition.tier,
+  scalpStatus: universalRecognition.scalpOpportunity?.status,
+  scalpDirection: universalRecognition.scalpOpportunity?.direction,
+  scalpTarget: universalRecognition.scalpOpportunity?.target,
+  scalpInvalidation: universalRecognition.scalpOpportunity?.invalidation,
+  scalpRR: universalRecognition.scalpOpportunity?.rrEstimate,
+  pdArrayFocus: universalRecognition.pdArrays[0] ? `${universalRecognition.pdArrays[0].type} / ${universalRecognition.pdArrays[0].role}` : undefined,
+  recognitionOpportunitySummary: universalRecognition.opportunitySummary,
+  opportunitySummary: universalRecognition.opportunitySummary,
   opportunity,
   opportunityDetected: false,
   opportunityType: opportunity.type,
@@ -480,6 +557,9 @@ export const buildUnavailableIctCurrentRead = (
     sessionNarrativeStatus: "insufficient_data",
     modelDetectorUsed: "not_run_no_packet",
     opportunityDetectorUsed: "ict_opportunity_detector_v1_no_data",
+    universalRecognitionTier: universalRecognition.tier,
+    scalpStatus: universalRecognition.scalpOpportunity?.status,
+    pdArrayCount: universalRecognition.pdArrays.length,
     opportunityType: opportunity.type,
     opportunityStage: opportunity.stage,
     opportunityQuality: opportunity.quality,
@@ -581,12 +661,24 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     generatedAt: packet.generatedAt,
     sourceFingerprint: packet.activeSource.sourceFingerprint
   })[0] ?? noOpportunity(packet.generatedAt);
-  const opportunityDetected = primaryOpportunity.type !== "none" && primaryOpportunity.stage !== "insufficient_data";
+  const universalRecognition = buildIctUniversalRecognition({
+    packet,
+    sessionNarrative: packet.sessionNarrative,
+    recommendedSignal: recommended,
+    approvedStatus: packet.approvedProfileDecision.status,
+    primaryOpportunity,
+    generatedAt: packet.generatedAt
+  });
+  const recognizedOpportunity =
+    primaryOpportunity.type === "none" || primaryOpportunity.stage === "insufficient_data"
+      ? recognizedFallbackOpportunity(universalRecognition, packet) ?? primaryOpportunity
+      : primaryOpportunity;
+  const opportunityDetected = recognizedOpportunity.type !== "none" && recognizedOpportunity.stage !== "insufficient_data";
   const opportunityApprovalNote = opportunityDetected && modelQualityLane !== "approved"
-    ? `Opportunity detected, but not approved because ${primaryOpportunity.blockers[0] ?? primaryOpportunity.missingEvidence[0] ?? primaryOpportunity.confirmationNeeded[0] ?? "approval evidence is incomplete"}.`
+    ? `Opportunity detected, but not approved because ${recognizedOpportunity.blockers[0] ?? recognizedOpportunity.missingEvidence[0] ?? recognizedOpportunity.confirmationNeeded[0] ?? "approval evidence is incomplete"}.`
     : undefined;
   const selfImprovementDecision = buildIctResearchHypothesisFromOpportunity({
-    opportunity: primaryOpportunity,
+    opportunity: recognizedOpportunity,
     approvedStatus: packet.approvedProfileDecision.status,
     modelQualityLane,
     dataStatus,
@@ -595,7 +687,7 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     primaryTimeframe: packet.primaryTimeframe,
     sourceFingerprint: packet.activeSource.sourceFingerprint,
     candleCount: packet.activeSource.candleCount,
-    topReasons: reasons,
+    topReasons: uniqueReasons([universalRecognition.opportunitySummary, ...reasons]),
     generatedAt: packet.generatedAt
   });
   const selfImprovementHypothesis = selfImprovementDecision.ok ? selfImprovementDecision.hypothesis : undefined;
@@ -683,18 +775,30 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     side: recommended.side,
     approvedStatus: packet.approvedProfileDecision.status,
     modelQualityLane,
-    opportunity: primaryOpportunity,
+    universalRecognition,
+    recognitionTier: universalRecognition.tier,
+    knownModelName: universalRecognition.knownModel?.modelName,
+    knownModelState: universalRecognition.knownModel?.state,
+    scalpStatus: universalRecognition.scalpOpportunity?.status,
+    scalpDirection: universalRecognition.scalpOpportunity?.direction,
+    scalpTarget: universalRecognition.scalpOpportunity?.target,
+    scalpInvalidation: universalRecognition.scalpOpportunity?.invalidation,
+    scalpRR: universalRecognition.scalpOpportunity?.rrEstimate,
+    pdArrayFocus: universalRecognition.pdArrays[0] ? `${universalRecognition.pdArrays[0].type} / ${universalRecognition.pdArrays[0].role}` : undefined,
+    recognitionOpportunitySummary: universalRecognition.opportunitySummary,
+    opportunitySummary: universalRecognition.opportunitySummary,
     opportunityDetected,
-    opportunityType: primaryOpportunity.type,
-    opportunityStage: primaryOpportunity.stage,
-    opportunityQuality: primaryOpportunity.quality,
-    opportunityDirection: primaryOpportunity.direction,
-    opportunityModelName: primaryOpportunity.modelName,
-    opportunityLaneRecommendation: primaryOpportunity.laneRecommendation,
-    opportunityNextAction: primaryOpportunity.nextAction,
-    opportunityMissingEvidence: primaryOpportunity.missingEvidence,
-    opportunityBlockers: primaryOpportunity.blockers,
-    opportunityTradeIdea: primaryOpportunity.tradeIdea,
+    opportunity: recognizedOpportunity,
+    opportunityType: recognizedOpportunity.type,
+    opportunityStage: recognizedOpportunity.stage,
+    opportunityQuality: recognizedOpportunity.quality,
+    opportunityDirection: recognizedOpportunity.direction,
+    opportunityModelName: recognizedOpportunity.modelName,
+    opportunityLaneRecommendation: recognizedOpportunity.laneRecommendation,
+    opportunityNextAction: recognizedOpportunity.nextAction,
+    opportunityMissingEvidence: recognizedOpportunity.missingEvidence,
+    opportunityBlockers: recognizedOpportunity.blockers,
+    opportunityTradeIdea: recognizedOpportunity.tradeIdea,
     selfImprovementHypothesis,
     selfImprovementHypothesisQueued: Boolean(selfImprovementHypothesis),
     selfImprovementHypothesisStatus: selfImprovementHypothesis?.status,
@@ -755,13 +859,15 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     smtReason,
     riskReason,
     topReasons: reasons.length
-      ? uniqueReasons([opportunityApprovalNote, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, ...reasons])
+      ? uniqueReasons([universalRecognition.opportunitySummary, opportunityApprovalNote, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, ...reasons])
       : recommended.decision === "research_only"
-        ? uniqueReasons([opportunityApprovalNote, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, "Research candidate generated; validation is still required before any readiness review."])
-        : uniqueReasons([opportunityApprovalNote, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, "No explicit blocker was provided by the compact advisor packet."]),
+        ? uniqueReasons([universalRecognition.opportunitySummary, opportunityApprovalNote, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, "Research candidate generated; validation is still required before any readiness review."])
+        : uniqueReasons([universalRecognition.opportunitySummary, opportunityApprovalNote, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, "No explicit blocker was provided by the compact advisor packet."]),
     nextAction: opportunityDetected && modelQualityLane !== "approved"
-      ? selfImprovementHypothesis?.nextAction ?? primaryOpportunity.nextAction
-      : nextActionFor(packet, reasons),
+      ? selfImprovementHypothesis?.nextAction ?? recognizedOpportunity.nextAction
+      : universalRecognition.tier === "pd_array_setup" || universalRecognition.tier === "scalp_setup"
+        ? universalRecognition.nextAction
+        : nextActionFor(packet, reasons),
     debug: {
       candleCount: packet.activeSource.candleCount,
       primaryTimeframeAvailable: packet.activeSource.candleCount > 0,
@@ -783,10 +889,13 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
       sessionNarrativeStatus,
       modelDetectorUsed: packet.sessionNarrative ? "ict_session_narrative_model_detector_v1" : "not_run_no_hydrated_candles",
       opportunityDetectorUsed: "ict_opportunity_detector_v1",
-      opportunityType: primaryOpportunity.type,
-      opportunityStage: primaryOpportunity.stage,
-      opportunityQuality: primaryOpportunity.quality,
-      opportunityLaneRecommendation: primaryOpportunity.laneRecommendation,
+      universalRecognitionTier: universalRecognition.tier,
+      scalpStatus: universalRecognition.scalpOpportunity?.status,
+      pdArrayCount: universalRecognition.pdArrays.length,
+      opportunityType: recognizedOpportunity.type,
+      opportunityStage: recognizedOpportunity.stage,
+      opportunityQuality: recognizedOpportunity.quality,
+      opportunityLaneRecommendation: recognizedOpportunity.laneRecommendation,
       selfImprovementHypothesisStatus: selfImprovementHypothesis?.status,
       selfImprovementHypothesisReason: selfImprovementNote,
       fvgTargetStatus,

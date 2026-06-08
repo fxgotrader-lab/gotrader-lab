@@ -15,6 +15,11 @@ import type {
 } from "./ictOpportunityDetectionTypes";
 import type { IctResearchHypothesis, IctResearchHypothesisStatus } from "./ictSelfImprovementTypes";
 import type {
+  IctRecognitionTier,
+  IctScalpSetupStatus,
+  IctUniversalRecognitionResult
+} from "./ictUniversalRecognitionTypes";
+import type {
   IctDataDepthStatus,
   IctSessionDirectionalRead,
   IctSessionModelName,
@@ -109,6 +114,18 @@ export interface IctResearchSignal {
   modelConfidence?: number;
   modelReasons?: string[];
   modelMissingEvidence?: string[];
+  universalRecognition?: IctUniversalRecognitionResult;
+  recognitionTier?: IctRecognitionTier;
+  knownModelName?: string;
+  knownModelState?: string;
+  scalpStatus?: IctScalpSetupStatus;
+  scalpDirection?: "bullish" | "bearish" | "neutral";
+  scalpTarget?: number;
+  scalpInvalidation?: number;
+  scalpRR?: number;
+  pdArrayFocus?: string;
+  recognitionOpportunitySummary?: string;
+  opportunitySummary?: string;
   opportunity?: IctDetectedOpportunity;
   opportunityDetected?: boolean;
   opportunityType?: IctOpportunityType;

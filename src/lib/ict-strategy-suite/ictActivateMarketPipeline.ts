@@ -53,6 +53,7 @@ const stepDefinitions: Array<{ id: IctActivateMarketStepId; label: string }> = [
   { id: "build_multi_timeframe_context", label: "Build multi-timeframe context" },
   { id: "build_current_read", label: "Build current read" },
   { id: "detect_session_model", label: "Detect session model" },
+  { id: "run_universal_recognition", label: "Run universal recognition" },
   { id: "detect_market_opportunity", label: "Detect market opportunity" },
   { id: "queue_research_hypothesis", label: "Queue research hypothesis" },
   { id: "run_phase_one", label: "Run ICT Phase 1" },
@@ -176,6 +177,9 @@ export const readLatestActivateMarketSummary = (): IctActivateMarketLatestSummar
       opportunityStage: typeof parsed.opportunityStage === "string" ? parsed.opportunityStage : undefined,
       opportunityQuality: typeof parsed.opportunityQuality === "string" ? parsed.opportunityQuality : undefined,
       opportunityLaneRecommendation: typeof parsed.opportunityLaneRecommendation === "string" ? parsed.opportunityLaneRecommendation : undefined,
+      recognitionTier: typeof parsed.recognitionTier === "string" ? parsed.recognitionTier as IctActivateMarketLatestSummary["recognitionTier"] : undefined,
+      scalpStatus: typeof parsed.scalpStatus === "string" ? parsed.scalpStatus as IctActivateMarketLatestSummary["scalpStatus"] : undefined,
+      pdArrayFocus: typeof parsed.pdArrayFocus === "string" ? parsed.pdArrayFocus : undefined,
       selfImprovementHypothesisQueued: parsed.selfImprovementHypothesisQueued === true,
       selfImprovementHypothesisStatus: typeof parsed.selfImprovementHypothesisStatus === "string" ? parsed.selfImprovementHypothesisStatus : undefined,
       selfImprovementHypothesisReason: typeof parsed.selfImprovementHypothesisReason === "string" ? parsed.selfImprovementHypothesisReason : undefined,
@@ -420,6 +424,9 @@ const buildLatestSummary = (result: IctActivateMarketResult): IctActivateMarketL
   opportunityStage: result.summary.opportunityStage,
   opportunityQuality: result.summary.opportunityQuality,
   opportunityLaneRecommendation: result.summary.opportunityLaneRecommendation,
+  recognitionTier: result.summary.recognitionTier,
+  scalpStatus: result.summary.scalpStatus,
+  pdArrayFocus: result.summary.pdArrayFocus,
   selfImprovementHypothesisQueued: result.summary.selfImprovementHypothesisQueued,
   selfImprovementHypothesisStatus: result.summary.selfImprovementHypothesisStatus,
   selfImprovementHypothesisReason: result.summary.selfImprovementHypothesisReason,
@@ -668,6 +675,19 @@ export async function runIctActivateMarketPipeline(
     return `${currentRead.modelName ?? "model"} detected; state ${currentRead.modelState ?? "unknown"}.`;
   });
 
+  await run("run_universal_recognition", "Running universal model, PD-array, and scalp fallback recognition.", async () => {
+    if (!currentRead) return { error: "Current read is missing." };
+    const pdCount = currentRead.universalRecognition?.pdArrays.length ?? 0;
+    const message = `Recognition ${currentRead.recognitionTier}; scalp ${currentRead.scalpStatus ?? "n/a"}; PD arrays ${pdCount}.`;
+    const warning =
+      currentRead.recognitionTier === "insufficient_data"
+        ? currentRead.recognitionOpportunitySummary
+        : currentRead.recognitionTier === "market_map_only"
+          ? "Universal recognition found market-map context only; no model, PD-array setup, or scalp setup confirmed."
+          : undefined;
+    return warning ? { message, warning } : message;
+  });
+
   await run("detect_market_opportunity", "Detecting structured ICT market opportunity before approval.", async () => {
     if (!currentRead) return { error: "Current read is missing." };
     if (!currentRead.opportunityDetected) {
@@ -809,6 +829,10 @@ export async function runIctActivateMarketPipeline(
         opportunityQuality: currentRead?.opportunityQuality,
         opportunityLaneRecommendation: currentRead?.opportunityLaneRecommendation,
         opportunityNextAction: currentRead?.opportunityNextAction,
+        recognitionTier: currentRead?.recognitionTier,
+        scalpStatus: currentRead?.scalpStatus,
+        pdArrayFocus: currentRead?.pdArrayFocus,
+        recognitionOpportunitySummary: currentRead?.recognitionOpportunitySummary,
         selfImprovementHypothesisQueued: currentRead?.selfImprovementHypothesisQueued ?? false,
         selfImprovementHypothesisStatus: currentRead?.selfImprovementHypothesisStatus,
         selfImprovementHypothesisReason: selfImprovementQueue?.reason ?? currentRead?.selfImprovementHypothesisReason,

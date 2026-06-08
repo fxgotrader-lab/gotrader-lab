@@ -693,6 +693,55 @@ async function main() {
     )
   };
 
+  const universalRecognitions = narratives.map((narrative) =>
+    suite.buildIctUniversalRecognition({
+      sessionNarrative: narrative,
+      approvedStatus: narrative.primaryModelDetection?.modelDetected ? "watchlist_candidate" : "no_trade",
+      generatedAt: narrative.tradingDate ? `${narrative.tradingDate}T00:00:00.000Z` : undefined
+    })
+  );
+  const recognitionTierDistribution = countBy(universalRecognitions, (recognition) => recognition.tier);
+  const scalpRecognitions = universalRecognitions.filter((recognition) => recognition.tier === "scalp_setup");
+  const pdArrayRecognitions = universalRecognitions.filter((recognition) => recognition.tier === "pd_array_setup");
+  const scalpReplayableResults = researchResults.filter((result) =>
+    /sweep|raid|displacement|mitigation|fvg|scalp/i.test([
+      result.strategyId,
+      result.setup,
+      result.modelName,
+      result.sessionNarrativeProfile,
+      result.liquidityTargetType,
+      result.fvgStatus,
+      result.orderBlockVariant
+    ].filter(Boolean).join(" "))
+  );
+  const pdArrayReplayableResults = researchResults.filter((result) =>
+    Boolean(
+      result.fvgTargetDetected ||
+      result.fvgStatus ||
+      result.orderBlockVariant ||
+      /fvg|liquidity|target|order|mitigation|breaker|rejection|propulsion/i.test(targetTypeFor(result))
+    )
+  );
+  const universalRecognitionAudit = {
+    tierDistribution: recognitionTierDistribution,
+    scalpSetupCount: scalpRecognitions.length,
+    pdArraySetupCount: pdArrayRecognitions.length,
+    fullModelCount: universalRecognitions.filter((recognition) => recognition.tier === "full_model").length,
+    formingModelCount: universalRecognitions.filter((recognition) => recognition.tier === "forming_model").length,
+    unknownStructuredOpportunityCount: universalRecognitions.filter((recognition) => recognition.tier === "unknown_structured_opportunity").length,
+    marketMapOnlyCount: universalRecognitions.filter((recognition) => recognition.tier === "market_map_only").length,
+    insufficientDataCount: universalRecognitions.filter((recognition) => recognition.tier === "insufficient_data").length,
+    pdArrayCount: universalRecognitions.reduce((total, recognition) => total + recognition.pdArrays.length, 0),
+    scalpTargetFirstIfReplayable: {
+      replayableCount: scalpReplayableResults.length,
+      ...metricsFor(scalpReplayableResults)
+    },
+    pdArrayPerformanceIfReplayable: {
+      replayableCount: pdArrayReplayableResults.length,
+      ...metricsFor(pdArrayReplayableResults)
+    }
+  };
+
   const performance = {
     targetFirstByModel: performanceBreakdown(researchResults, (result) => result.modelName ?? result.sessionNarrativeProfile ?? "unknown"),
     targetFirstByPdArrayTargetType: performanceBreakdown(researchResults, targetTypeFor),
@@ -741,6 +790,7 @@ async function main() {
     marketFrameworkDetection: frameworkDetection,
     liquidityDetection,
     pdArrayDetection,
+    universalRecognition: universalRecognitionAudit,
     modelDetection,
     tradeConstruction,
     laneDistribution,
@@ -753,8 +803,11 @@ async function main() {
       opportunityCounts: {
         modelDetectedDays: modelDetectedNarratives.length,
         structuredOpportunityDays: structuredOpportunityNarratives.length,
+        pdArraySetupDays: universalRecognitionAudit.pdArraySetupCount,
+        scalpSetupDays: universalRecognitionAudit.scalpSetupCount,
         replayResearchSignals: researchResults.length
       },
+      universalRecognition: universalRecognitionAudit,
       laneDistribution,
       topMissedModelReasons: dailyClassification.topMissedModelReasons,
       topRejectedWithModelReasons: topCounts(rejectedWithModel, ({ decision }) => decision?.rejectionReasons?.[0] ?? "reason unavailable"),
@@ -779,6 +832,7 @@ async function main() {
   assert.ok(narratives.length > 0, "Calibration audit must classify trading days.");
   assert.ok(modelDetection.genericIctModelDetections > 0 || modelDetection.unknownStructuredOpportunities > 0, "Audit must detect models or structured opportunities before approval.");
   assert.ok(pdArrayDetection.fvgCountByTimeframe[primaryTimeframe] >= 0, "PD-array audit must run.");
+  assert.ok(Object.keys(universalRecognitionAudit.tierDistribution).length > 0, "Universal recognition tier distribution must be reported.");
   assert.ok(Object.keys(liquidityDetection).length >= 1, "Liquidity map must be reported.");
   assert.ok(Array.isArray(performance.targetFirstByHtfAlignmentState), "HTF alignment performance must be reported.");
   assertSafeReport(report);

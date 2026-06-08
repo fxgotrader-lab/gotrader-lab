@@ -58,6 +58,7 @@
     "test:ict-session-narrative-90d": "node scripts/test-ict-session-narrative-90d.mjs",
     "test:ict-session-model-recognition": "node scripts/test-ict-session-model-recognition.mjs",
     "test:ict-opportunity-detection": "node scripts/test-ict-opportunity-detection.mjs",
+    "test:ict-universal-recognition": "node scripts/test-ict-universal-recognition.mjs",
     "test:ict-self-improvement": "node scripts/test-ict-self-improvement.mjs",
     "test:ict-hypothesis-validation": "node scripts/test-ict-hypothesis-validation.mjs",
     "test:research-advisor-stability": "node scripts/test-research-advisor-stability.mjs",

@@ -19,6 +19,11 @@ import type {
 } from "./ictOpportunityDetectionTypes";
 import type { IctResearchHypothesis, IctResearchHypothesisStatus } from "./ictSelfImprovementTypes";
 import type {
+  IctRecognitionTier,
+  IctScalpSetupStatus,
+  IctUniversalRecognitionResult
+} from "./ictUniversalRecognitionTypes";
+import type {
   IctDataDepthStatus,
   IctSessionDirectionalRead,
   IctSessionModelName,
@@ -133,6 +138,18 @@ export interface IctCurrentRead {
   modelReasons?: string[];
   modelMissingEvidence?: string[];
   opportunity?: IctDetectedOpportunity;
+  universalRecognition?: IctUniversalRecognitionResult;
+  recognitionTier: IctRecognitionTier;
+  knownModelName?: string;
+  knownModelState?: string;
+  scalpStatus?: IctScalpSetupStatus;
+  scalpDirection?: "bullish" | "bearish" | "neutral";
+  scalpTarget?: number;
+  scalpInvalidation?: number;
+  scalpRR?: number;
+  pdArrayFocus?: string;
+  recognitionOpportunitySummary: string;
+  opportunitySummary: string;
   opportunityDetected: boolean;
   opportunityType: IctOpportunityType;
   opportunityStage: IctOpportunityStage;
@@ -189,6 +206,9 @@ export interface IctCurrentRead {
     sessionNarrativeStatus?: string;
     modelDetectorUsed?: string;
     opportunityDetectorUsed?: string;
+    universalRecognitionTier?: IctRecognitionTier;
+    scalpStatus?: IctScalpSetupStatus;
+    pdArrayCount?: number;
     opportunityType?: IctOpportunityType;
     opportunityStage?: IctOpportunityStage;
     opportunityQuality?: IctOpportunityQuality;

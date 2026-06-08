@@ -26,6 +26,11 @@ import type {
   IctSessionNarrativeProfile
 } from "./ictSessionNarrativeTypes";
 import type { IctMarketAnalysisContext, IctAnalysisTimeframe } from "./ictMarketAnalysisContextTypes";
+import type {
+  IctRecognitionTier,
+  IctScalpSetupStatus,
+  IctUniversalRecognitionResult
+} from "./ictUniversalRecognitionTypes";
 
 export type IctBias = "bullish" | "bearish" | "neutral";
 export type IctSide = "long" | "short" | "flat";
@@ -225,6 +230,7 @@ export interface IctAdvisorPacket {
   recommendedSignal: IctAdvisorSignal;
   indexSmt?: IctSmtSignal;
   sessionNarrative?: IctSessionNarrative;
+  universalRecognition?: IctUniversalRecognitionResult;
   compactSummary: {
     compositeBias: IctBias;
     drawOnLiquidity?: string;
@@ -274,6 +280,10 @@ export interface IctAdvisorPacket {
     weeklyBiasDirection?: IctMarketAnalysisContext["weeklyBiasDirection"];
     weeklyBiasReason?: string;
     htfAlignment?: IctHtfAlignmentBreakdown;
+    recognitionTier?: IctRecognitionTier;
+    scalpStatus?: IctScalpSetupStatus;
+    pdArrayCount?: number;
+    recognitionOpportunitySummary?: string;
     hydrationSource?: "canonical_source_store" | "active_mt5_readonly_feed" | "metadata_only" | "unavailable";
     hydrationWarning?: string;
     noTradeReasonCount: number;

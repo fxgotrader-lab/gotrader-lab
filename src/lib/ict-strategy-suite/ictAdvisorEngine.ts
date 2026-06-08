@@ -10,6 +10,7 @@ import type { ResearchRuntimeSnapshot } from "../runtime";
 import type { Candle } from "../types";
 import { buildIctMarketAnalysisContextFromSnapshot } from "./ictMarketAnalysisContext";
 import type { IctMarketAnalysisContextBundle } from "./ictMarketAnalysisContextTypes";
+import { buildIctUniversalRecognition } from "./ictUniversalRecognition";
 import {
   calculateDealingRange,
   detectDisplacement,
@@ -991,6 +992,12 @@ export async function buildIctAdvisorPacketFromRuntime(
   const journalWrite = appendIctAdvisorJournalEvents(journalEvents);
   appendIctIndexSmtJournalEvents(indexSmtJournalEvents);
   appendIctNewsSessionRiskJournalEvents(newsSessionRiskJournalEvents);
+  const universalRecognition = buildIctUniversalRecognition({
+    sessionNarrative,
+    recommendedSignal,
+    approvedStatus: finalApprovedProfileDecision.status,
+    generatedAt: new Date().toISOString()
+  });
   return {
     packetId: createId("ict_advisor_packet"),
     source: "gotrader_ict_strategy_suite",
@@ -1013,6 +1020,7 @@ export async function buildIctAdvisorPacketFromRuntime(
     recommendedSignal,
     indexSmt: recommendedSignal.smt,
     sessionNarrative,
+    universalRecognition,
     newsSessionRisk: recommendedSignal.newsSessionRisk,
     compactSummary: {
       compositeBias: recommendedSignal.bias.composite,
@@ -1065,6 +1073,10 @@ export async function buildIctAdvisorPacketFromRuntime(
       weeklyBiasDirection: marketAnalysisContext.weeklyBiasDirection,
       weeklyBiasReason: marketAnalysisContext.weeklyBiasReason,
       htfAlignment: finalApprovedProfileDecision.htfAlignment ?? recommendedSignal.htfAlignment,
+      recognitionTier: universalRecognition.tier,
+      scalpStatus: universalRecognition.scalpOpportunity?.status,
+      pdArrayCount: universalRecognition.pdArrays.length,
+      recognitionOpportunitySummary: universalRecognition.opportunitySummary,
       hydrationSource: analysis.hydrationSource,
       hydrationWarning: analysis.hydrationWarning,
       noTradeReasonCount: recommendedSignal.noTradeReasons.length + (analysis.hydrationWarning ? 1 : 0)

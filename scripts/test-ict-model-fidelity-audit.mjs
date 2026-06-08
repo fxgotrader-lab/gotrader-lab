@@ -74,6 +74,8 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictMarketAnalysisContext.ts" },
   { root: sourceRoot, file: "ictOpportunityDetectionTypes.ts" },
   { root: sourceRoot, file: "ictOpportunityDetection.ts" },
+  { root: sourceRoot, file: "ictUniversalRecognitionTypes.ts" },
+  { root: sourceRoot, file: "ictUniversalRecognition.ts" },
   { root: sourceRoot, file: "ictSelfImprovementTypes.ts" },
   { root: sourceRoot, file: "ictSelfImprovement.ts" },
   { root: sourceRoot, file: "ictHypothesisValidationTypes.ts" },
@@ -505,7 +507,23 @@ async function main() {
       newsSessionRiskContext: { syntheticNoRisk: true }
     }
   );
-  const replayResults = replay.replayResults ?? [];
+  const replayResults = replay.results ?? replay.replayResults ?? [];
+  const tradingDates = [...new Set(depth.candles.map((candle) => suite.tradingDateFor(candle.timestamp)))].sort();
+  const dailyNarratives = tradingDates.map((tradingDate) =>
+    suite.buildIctSessionNarrative(depth.candles, {
+      requestedSymbol,
+      brokerSymbol,
+      primaryTimeframe,
+      requestedLookbackDays,
+      tradingDate,
+      availableLookbackDays: depth.availableLookbackDays,
+      dataDepthStatus: depth.availableLookbackDays >= requestedLookbackDays * 0.8 ? "sufficient" : "limited"
+    })
+  );
+  const dailyModelDetections = dailyNarratives.flatMap((narrative) => [
+    ...(narrative.primaryModelDetection ? [narrative.primaryModelDetection] : []),
+    ...narrative.modelDetections
+  ]).filter((detection) => detection.modelDetected || detection.modelState === "confirmed" || detection.modelState === "triggered" || detection.modelState === "forming");
   const pairs = decisionPairsFor(suite, replayResults);
   const detectedPairs = pairs.filter(({ result }) => result.modelDetected);
   const confirmedPairs = detectedPairs.filter(({ result }) => result.modelState === "confirmed");
@@ -544,7 +562,9 @@ async function main() {
     },
     replayModelDetection: {
       totalReplayResults: replayResults.length,
-      totalModelDetections: detectedPairs.length,
+      totalModelDetections: detectedPairs.length + dailyModelDetections.length,
+      totalReplayRowModelDetections: detectedPairs.length,
+      totalNarrativeModelDetections: dailyModelDetections.length,
       totalConfirmedModels: confirmedPairs.length,
       totalFormingOrTriggeredModels: formingTriggeredPairs.length,
       totalApprovedTradeCandidates: approvedPairs.length,
@@ -553,7 +573,9 @@ async function main() {
       totalRejectedTradeCandidates: rejectedPairs.length,
       totalNoTradeCandidates: noTradePairs.length,
       byModelName: countBy(detectedPairs, ({ result }) => result.modelName),
+      byNarrativeModelName: countBy(dailyModelDetections, (detection) => detection.modelName),
       byModelState: countBy(detectedPairs, ({ result }) => result.modelState),
+      byNarrativeModelState: countBy(dailyModelDetections, (detection) => detection.modelState),
       byModelAndCandidateStatus: countBy(detectedPairs, ({ result, decision }) => `${result.modelName ?? "unknown"}:${decision?.status ?? "unknown"}`),
       bySessionNarrativeProfile: countBy(pairs, ({ result }) => result.sessionNarrativeProfile),
       modelDetectionRate: replayResults.length ? round(detectedPairs.length / replayResults.length) : 0,

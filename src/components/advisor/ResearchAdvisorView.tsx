@@ -1019,6 +1019,7 @@ export function ResearchAdvisorView() {
         packetError={activeAdvisorPacketError}
         researchSignal={researchSignal}
       />
+      <RecognitionSummaryCard currentRead={currentRead} />
       <MarketOpportunityCard currentRead={currentRead} />
       <ResearchHypothesisValidationPanel
         currentRead={currentRead}
@@ -1334,6 +1335,55 @@ function MarketOpportunityCard({ currentRead }: { currentRead: IctCurrentRead })
       <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">
         {approvedExplanation} {currentRead.selfImprovementHypothesisQueued ? "Research hypothesis queued - needs replay validation." : `Research hypothesis not queued: ${currentRead.selfImprovementHypothesisReason ?? "not eligible"}.`}
       </p>
+    </section>
+  );
+}
+
+function RecognitionSummaryCard({ currentRead }: { currentRead: IctCurrentRead }) {
+  const recognition = currentRead.universalRecognition;
+  const scalp = recognition?.scalpOpportunity;
+  const pdFocus = recognition?.pdArrays[0];
+  const tierVariant =
+    currentRead.recognitionTier === "full_model"
+      ? "success"
+      : currentRead.recognitionTier === "insufficient_data"
+        ? "danger"
+        : currentRead.recognitionTier === "market_map_only"
+          ? "secondary"
+          : "warning";
+
+  return (
+    <section data-testid="ict-universal-recognition-card" className="rounded-[24px] border border-violet-300/15 bg-[radial-gradient(circle_at_12%_0%,rgba(167,139,250,0.14),transparent_36%),linear-gradient(135deg,rgba(15,23,42,0.93),rgba(2,6,23,0.95))] p-5 shadow-[0_0_55px_rgba(124,58,237,0.08)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-violet-300">Recognition Summary</p>
+          <h2 className="mt-1 text-xl font-semibold text-slate-50">{formatToken(currentRead.recognitionTier)}</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+            Universal fallback maps full models first, then forming models, PD arrays, scalp structure, and finally market-map-only context. It cannot approve readiness or execution.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant={tierVariant}>{formatToken(currentRead.recognitionTier)}</Badge>
+          <Badge variant={currentRead.scalpStatus === "scalp_candidate" ? "warning" : "secondary"}>{formatToken(currentRead.scalpStatus)}</Badge>
+          <Badge variant="danger">authority none</Badge>
+          <Badge variant="secondary">compact only</Badge>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <AdvisorReadout label="Tier" value={formatToken(currentRead.recognitionTier)} detail={currentRead.recognitionOpportunitySummary} />
+        <AdvisorReadout label="Known model" value={currentRead.knownModelName ? formatToken(currentRead.knownModelName) : "none confirmed"} detail={currentRead.knownModelState ? formatToken(currentRead.knownModelState) : "fallback recognition active"} />
+        <AdvisorReadout label="PD array focus" value={pdFocus ? `${formatToken(pdFocus.type)} / ${formatToken(pdFocus.role)}` : "pending"} detail={pdFocus?.reason ?? "No compact PD array focus yet."} />
+        <AdvisorReadout label="Scalp status" value={formatToken(currentRead.scalpStatus)} detail={`${formatToken(currentRead.scalpDirection)} / ${scalp?.sourceTimeframe ?? currentRead.primaryTimeframe}`} />
+        <AdvisorReadout label="Scalp target" value={compactPrice(currentRead.scalpTarget)} detail={scalp?.liquidityDraw?.reason ?? "target requires compact structure"} />
+        <AdvisorReadout label="Scalp invalidation" value={compactPrice(currentRead.scalpInvalidation)} detail="structural invalidation only; no execution" />
+        <AdvisorReadout label="Scalp RR" value={typeof currentRead.scalpRR === "number" ? `${currentRead.scalpRR.toFixed(2)}R` : "n/a"} detail="computed only when target and invalidation exist" />
+        <AdvisorReadout label="Lane" value={formatToken(recognition?.laneRecommendation)} detail="not an approval override" />
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        <AdvisorList label="Missing confirmation" values={recognition?.missingEvidence ?? []} empty="No missing recognition evidence reported." />
+        <AdvisorList label="Blockers" values={recognition?.blockers ?? []} empty="No recognition blocker reported." />
+        <AdvisorReadout label="Next action" value={recognition?.nextAction ?? currentRead.nextAction} detail="research-only; no readiness promotion" />
+      </div>
     </section>
   );
 }

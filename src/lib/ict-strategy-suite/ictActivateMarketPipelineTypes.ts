@@ -33,6 +33,7 @@ export type IctActivateMarketStepId =
   | "build_multi_timeframe_context"
   | "build_current_read"
   | "detect_session_model"
+  | "run_universal_recognition"
   | "detect_market_opportunity"
   | "queue_research_hypothesis"
   | "run_phase_one"
@@ -97,6 +98,9 @@ export interface IctActivateMarketLatestSummary {
   opportunityStage?: IctOpportunityStage;
   opportunityQuality?: IctOpportunityQuality;
   opportunityLaneRecommendation?: IctOpportunityLaneRecommendation;
+  recognitionTier?: IctCurrentRead["recognitionTier"];
+  scalpStatus?: IctCurrentRead["scalpStatus"];
+  pdArrayFocus?: string;
   selfImprovementHypothesisQueued?: boolean;
   selfImprovementHypothesisStatus?: IctResearchHypothesisStatus;
   selfImprovementHypothesisReason?: string;
@@ -167,6 +171,10 @@ export interface IctActivateMarketResult {
     opportunityQuality?: IctOpportunityQuality;
     opportunityLaneRecommendation?: IctOpportunityLaneRecommendation;
     opportunityNextAction?: string;
+    recognitionTier?: IctCurrentRead["recognitionTier"];
+    scalpStatus?: IctCurrentRead["scalpStatus"];
+    pdArrayFocus?: string;
+    recognitionOpportunitySummary?: string;
     selfImprovementHypothesisQueued?: boolean;
     selfImprovementHypothesisStatus?: IctResearchHypothesisStatus;
     selfImprovementHypothesisReason?: string;

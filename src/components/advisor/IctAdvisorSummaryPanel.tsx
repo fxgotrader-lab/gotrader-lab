@@ -357,6 +357,26 @@ export function IctAdvisorSummaryPanel({
             <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               <AdvisorMini label="Packet source" value={formatToken(currentRead.packetSource)} detail={`${currentRead.candleCount?.toLocaleString() ?? 0} candles`} />
               <AdvisorMini
+                label="Recognition"
+                value={formatToken(currentRead.recognitionTier)}
+                detail={currentRead.recognitionOpportunitySummary}
+              />
+              <AdvisorMini
+                label="Direction"
+                value={formatToken(currentRead.scalpDirection ?? currentRead.modelDirection ?? currentRead.opportunityDirection)}
+                detail={currentRead.scalpStatus ? `Scalp ${formatToken(currentRead.scalpStatus)}` : "model/opportunity direction"}
+              />
+              <AdvisorMini
+                label="Lane"
+                value={modelLane}
+                detail={`Recognition lane ${formatToken(currentRead.universalRecognition?.laneRecommendation)}`}
+              />
+              <AdvisorMini
+                label="Next action"
+                value={currentRead.nextAction}
+                detail="research-only; no execution"
+              />
+              <AdvisorMini
                 label="Chart timeframe"
                 value={currentRead.displayTimeframe ?? packet.primaryTimeframe}
                 detail="display/reference only"
@@ -478,7 +498,7 @@ export function IctAdvisorSummaryPanel({
             <DecisionExplanationPanel explanation={decisionExplanation} compact />
             <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3">
               <p className="line-clamp-2 text-xs leading-5 text-slate-300">
-                Session: {formatToken(currentRead.sessionNarrativeStatus ?? currentRead.sessionNarrativeProfile)}. Model: {currentRead.modelDetected ? `${formatToken(currentRead.modelName)} / ${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : "not detected"}. Lane: {modelLane}. Paper Sim: {currentRead.paperSimAllowed ? "Eligible" : "Not Eligible"} ({currentRead.paperSimEligibilityReason ?? "reason pending"}). Readiness: Research {formatToken(currentRead.readinessSummary.researchReadiness)}, Paper {formatToken(currentRead.readinessSummary.paperReadiness)}, Execution Disabled. Trade fields: target {formatToken(currentRead.targetConstructionStatus)}, invalidation {formatToken(currentRead.invalidationConstructionStatus)}, RR {formatToken(currentRead.rrConstructionStatus)}. {currentRead.topReasons[0] ?? currentRead.paperWatchlistReason ?? recommended?.summary ?? "ICT advisor summary unavailable."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
+                Recognition: {formatToken(currentRead.recognitionTier)}. Session: {formatToken(currentRead.sessionNarrativeStatus ?? currentRead.sessionNarrativeProfile)}. Model: {currentRead.modelDetected ? `${formatToken(currentRead.modelName)} / ${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : "not detected"}. Lane: {modelLane}. Paper Sim: {currentRead.paperSimAllowed ? "Eligible" : "Not Eligible"} ({currentRead.paperSimEligibilityReason ?? "reason pending"}). Readiness: Research {formatToken(currentRead.readinessSummary.researchReadiness)}, Paper {formatToken(currentRead.readinessSummary.paperReadiness)}, Execution Disabled. Trade fields: target {formatToken(currentRead.targetConstructionStatus)}, invalidation {formatToken(currentRead.invalidationConstructionStatus)}, RR {formatToken(currentRead.rrConstructionStatus)}. {currentRead.topReasons[0] ?? currentRead.paperWatchlistReason ?? recommended?.summary ?? "ICT advisor summary unavailable."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
                 {" "}Hypothesis: {currentRead.selfImprovementHypothesisQueued ? "queued - needs replay validation" : "not queued"}. CMD Paper: {cmdPaperLabel}.
               </p>
             </div>
@@ -533,6 +553,10 @@ export function IctAdvisorSummaryPanel({
         <>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <AdvisorMini label="Symbol mapping" value={`${packet.brokerSymbol} -> ${packet.requestedSymbol}`} detail={packet.activeSource.provider.replace(/_/g, " ")} />
+            <AdvisorMini label="Recognition tier" value={formatToken(currentRead.recognitionTier)} detail={currentRead.recognitionOpportunitySummary} />
+            <AdvisorMini label="Known model" value={currentRead.knownModelName ? formatToken(currentRead.knownModelName) : "none confirmed"} detail={currentRead.knownModelState ? formatToken(currentRead.knownModelState) : "fallback can still map PD/scalp"} />
+            <AdvisorMini label="PD array focus" value={currentRead.pdArrayFocus ? formatToken(currentRead.pdArrayFocus) : "pending"} detail={`${currentRead.universalRecognition?.pdArrays.length ?? 0} compact arrays recognized`} />
+            <AdvisorMini label="Scalp fallback" value={formatToken(currentRead.scalpStatus)} detail={`${formatToken(currentRead.scalpDirection)} / T ${compactPrice(currentRead.scalpTarget)} / I ${compactPrice(currentRead.scalpInvalidation)} / RR ${typeof currentRead.scalpRR === "number" ? `${currentRead.scalpRR.toFixed(2)}R` : "n/a"}`} />
             <AdvisorMini label="Chart timeframe" value={currentRead.displayTimeframe ?? packet.primaryTimeframe} detail="display/reference only" />
             <AdvisorMini label="Analysis TFs" value={currentRead.analysisTimeframesUsed?.join(" / ") || "pending"} detail={`${formatToken(currentRead.analysisDepthStatus)} depth / ${formatToken(currentRead.multiTimeframeContextStatus)} context`} />
             <AdvisorMini label="Missing TFs" value={currentRead.missingTimeframes?.length ? currentRead.missingTimeframes.join(" / ") : "none"} detail="required W1/D1/H4/H1/M15/M5" />
@@ -644,6 +668,22 @@ export function IctAdvisorSummaryPanel({
           <StrategyCalibrationPanel summary={strategyCalibrationSummary} />
           <DecisionExplanationPanel explanation={decisionExplanation} />
           <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3">
+            <div data-testid="ict-universal-recognition-summary" className="mb-4 rounded-lg border border-violet-300/15 bg-violet-300/10 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-200">Recognition Summary</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-50">
+                    {formatToken(currentRead.recognitionTier)} / {currentRead.knownModelName ? formatToken(currentRead.knownModelName) : "no full model"} / {formatToken(currentRead.scalpStatus)}
+                  </p>
+                </div>
+                <Badge variant={currentRead.recognitionTier === "full_model" ? "success" : currentRead.recognitionTier === "insufficient_data" ? "danger" : "warning"}>
+                  {formatToken(currentRead.universalRecognition?.laneRecommendation)}
+                </Badge>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-violet-50">
+                {currentRead.recognitionOpportunitySummary} PD focus: {currentRead.pdArrayFocus ? formatToken(currentRead.pdArrayFocus) : "pending"}. Next: {currentRead.universalRecognition?.nextAction ?? currentRead.nextAction}
+              </p>
+            </div>
             <div data-testid="ict-model-quality-lane-summary" className="mb-4 rounded-lg border border-cyan-300/15 bg-cyan-300/10 p-3">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">Model Quality Lane</p>
               <p className="mt-1 text-sm font-semibold text-slate-50">
