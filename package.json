@@ -24,6 +24,7 @@
     "build": "tsc -b && vite build",
     "test": "node scripts/test-ict-strategy-suite.mjs",
     "test:ict-strategy-suite": "node scripts/test-ict-strategy-suite.mjs",
+    "test:ict-strategy-calibration-audit": "node scripts/test-ict-strategy-calibration-audit.mjs",
     "test:ict-replay-validation": "node scripts/test-ict-replay-validation.mjs",
     "test:ict-real-replay-runner": "node scripts/test-ict-real-replay-runner.mjs",
     "test:ict-replay-diagnostics": "node scripts/test-ict-replay-diagnostics.mjs",

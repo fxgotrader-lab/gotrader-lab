@@ -17,6 +17,7 @@ import {
   summarizeNewsSessionRisk,
   type IctAdvisorPacket,
   type IctCmdPaperTrackingRecord,
+  type IctCurrentRead,
   type IctLatestResearchState,
   type IctResearchSignal
 } from "@/lib/ict-strategy-suite";
@@ -105,6 +106,98 @@ const decisionStatusVariant = (status: IctResearchAdvisorDecisionStatus) =>
         ? "danger" as const
         : "secondary" as const;
 
+type StrategyCalibrationSummary = {
+  whatGoTraderSees: string;
+  whatGoTraderSeesDetail: string;
+  whatItMissed: string;
+  whatItMissedDetail: string;
+  strongestModelEvidence: string;
+  strongestModelEvidenceDetail: string;
+  weakestBlocker: string;
+  weakestBlockerDetail: string;
+  nextCalibrationRecommendation: string;
+};
+
+const firstText = (...values: Array<string | undefined | null | false>) =>
+  values.find((value): value is string => typeof value === "string" && value.trim().length > 0);
+
+const analysisTimeframeLabel = (currentRead: IctCurrentRead) =>
+  currentRead.analysisTimeframesUsed?.length ? currentRead.analysisTimeframesUsed.join(" / ") : "analysis context pending";
+
+const missingStructureFor = (currentRead: IctCurrentRead) =>
+  [
+    currentRead.targetConstructionStatus === "missing" ? "target" : undefined,
+    currentRead.invalidationConstructionStatus === "missing" ? "invalidation" : undefined,
+    currentRead.rrConstructionStatus === "missing" ? "RR" : undefined
+  ].filter((value): value is string => Boolean(value));
+
+const buildStrategyCalibrationSummary = (
+  currentRead: IctCurrentRead,
+  researchSignal: IctResearchSignal,
+  explanation: IctResearchAdvisorDecisionExplanation
+): StrategyCalibrationSummary => {
+  const missingStructure = missingStructureFor(currentRead);
+  const htfSection = explanation.sections.find((section) => section.id === "htf_alignment");
+  const laneSection = explanation.sections.find((section) => section.id === "lane_decision");
+  const paperSection = explanation.sections.find((section) => section.id === "paper_sim");
+  const weaknessSection =
+    explanation.sections.find((section) => section.status === "rejected" || section.status === "blocked") ??
+    explanation.sections.find((section) => section.status === "warning" || section.status === "missing" || section.status === "weak" || section.status === "insufficient");
+  const detectedLabel = currentRead.modelDetected
+    ? `${formatToken(currentRead.modelName)} / ${formatToken(currentRead.modelState)}`
+    : currentRead.opportunityDetected
+      ? `${formatToken(currentRead.opportunityType)} / ${formatToken(currentRead.opportunityStage)}`
+      : `${formatToken(currentRead.bias)} bias / ${formatToken(currentRead.sessionNarrativeStatus ?? currentRead.sessionNarrativeProfile)}`;
+  const missed = firstText(
+    missingStructure.length ? `missing ${missingStructure.join(", ")}` : undefined,
+    currentRead.modelMissingEvidence?.[0],
+    currentRead.opportunityMissingEvidence?.[0],
+    currentRead.opportunityBlockers?.[0],
+    currentRead.fvgTargetStatus === "missing" ? currentRead.fvgTargetReason : undefined,
+    htfSection?.status !== "ready" ? htfSection?.reason : undefined,
+    currentRead.topReasons[0]
+  ) ?? "no primary miss found in compact read";
+  const strongestEvidence = firstText(
+    currentRead.paperWatchlistEvidenceSummary,
+    currentRead.modelReasons?.[0],
+    currentRead.opportunityTradeIdea
+      ? `${formatToken(currentRead.opportunityTradeIdea.side)} idea from ${formatToken(currentRead.opportunityType)} / ${formatToken(currentRead.opportunityStage)} context`
+      : undefined,
+    currentRead.opportunityDetected ? `${formatToken(currentRead.opportunityQuality)} opportunity evidence` : undefined,
+    currentRead.sessionTopReasons?.[0],
+    laneSection?.reason
+  ) ?? "no model evidence strong enough for a lane";
+  const weakestBlocker = firstText(
+    weaknessSection?.reason,
+    currentRead.paperSimAllowed ? undefined : paperSection?.reason,
+    currentRead.paperWatchlistReason,
+    currentRead.topReasons[0],
+    researchSignal.rejectionReasons[0]
+  ) ?? "no blocking reason supplied";
+  const nextRecommendation =
+    missingStructure.length
+      ? "Calibrate target, invalidation, and RR construction before changing model thresholds."
+      : currentRead.selfImprovementHypothesisQueued
+        ? "Replay-test the queued research hypothesis; keep it research-only until evidence improves."
+        : currentRead.htfAlignment && currentRead.htfAlignment.alignmentStatus !== "aligned" && currentRead.htfAlignment.alignmentStatus !== "not_required_for_model"
+          ? "Review model-aware HTF alignment and keep conflicts as watchlist or paper-only evidence unless replay supports the model."
+          : currentRead.opportunityDetected && !currentRead.modelDetected
+            ? "Use the CLI calibration audit to turn repeated structured opportunities into explicit model contracts only after replay evidence."
+            : "Run npm.cmd run test:ict-strategy-calibration-audit before changing strategy rules.";
+
+  return {
+    whatGoTraderSees: detectedLabel,
+    whatGoTraderSeesDetail: `${formatToken(currentRead.packetSource)} / ${currentRead.candleCount?.toLocaleString() ?? 0} candles / ${analysisTimeframeLabel(currentRead)}`,
+    whatItMissed: missed,
+    whatItMissedDetail: `${formatToken(currentRead.modelQualityLane)} lane / ${formatToken(currentRead.approvedStatus)} / ${formatToken(currentRead.analysisDepthStatus)}`,
+    strongestModelEvidence: strongestEvidence,
+    strongestModelEvidenceDetail: `${formatToken(currentRead.weeklyBiasDirection)} weekly bias / HTF ${formatToken(currentRead.htfAlignment?.alignmentStatus)}`,
+    weakestBlocker,
+    weakestBlockerDetail: `Signal ${formatToken(researchSignal.status)} / paper ${formatToken(currentRead.paperSimEligibilityStatus)} / authority none`,
+    nextCalibrationRecommendation: nextRecommendation
+  };
+};
+
 export function IctAdvisorSummaryPanel({
   mode = "full",
   packetOverride,
@@ -183,6 +276,10 @@ export function IctAdvisorSummaryPanel({
   const decisionExplanation = useMemo(
     () => buildResearchAdvisorDecisionExplanation({ currentRead, researchSignal, latestResearchState, cmdPaperTracking }),
     [currentRead, researchSignal, latestResearchState, cmdPaperTracking]
+  );
+  const strategyCalibrationSummary = useMemo(
+    () => buildStrategyCalibrationSummary(currentRead, researchSignal, decisionExplanation),
+    [currentRead, researchSignal, decisionExplanation]
   );
   const decisionSection = (id: IctResearchAdvisorDecisionExplanation["sections"][number]["id"]) =>
     decisionExplanation.sections.find((section) => section.id === id);
@@ -377,6 +474,7 @@ export function IctAdvisorSummaryPanel({
               <AdvisorMini label="Invalidation" value={compactPrice(currentRead.invalidation)} detail={currentRead.invalidationConstructionReason} />
               <AdvisorMini label="RR estimate" value={typeof currentRead.rrEstimate === "number" ? `${currentRead.rrEstimate.toFixed(2)}R` : "n/a"} detail={currentRead.rrConstructionReason} />
             </div>
+            <StrategyCalibrationPanel summary={strategyCalibrationSummary} compact />
             <DecisionExplanationPanel explanation={decisionExplanation} compact />
             <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3">
               <p className="line-clamp-2 text-xs leading-5 text-slate-300">
@@ -543,6 +641,7 @@ export function IctAdvisorSummaryPanel({
             />
             <AdvisorMini label="Latest scorecard" value={currentRead.latestScorecardBestSymbol ?? "none saved"} detail="manual result" />
           </div>
+          <StrategyCalibrationPanel summary={strategyCalibrationSummary} />
           <DecisionExplanationPanel explanation={decisionExplanation} />
           <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3">
             <div data-testid="ict-model-quality-lane-summary" className="mb-4 rounded-lg border border-cyan-300/15 bg-cyan-300/10 p-3">
@@ -782,6 +881,60 @@ function DecisionExplanationPanel({
           </article>
         ))}
       </div>
+    </div>
+  );
+}
+
+function StrategyCalibrationPanel({
+  compact = false,
+  summary
+}: {
+  compact?: boolean;
+  summary: StrategyCalibrationSummary;
+}) {
+  return (
+    <div
+      data-testid="ict-strategy-calibration-summary"
+      className={`mt-4 rounded-2xl border border-emerald-300/15 bg-[radial-gradient(circle_at_12%_0%,rgba(16,185,129,0.12),transparent_34%),linear-gradient(135deg,rgba(2,6,23,0.62),rgba(15,23,42,0.66))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${compact ? "mb-1" : ""}`}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200">Strategy Calibration</p>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">
+            Compact recognition audit from the current read. The full 90-day strategy calibration audit is manual CLI only and never runs on Advisor or Dashboard load.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="secondary">manual CLI audit</Badge>
+          <Badge variant="danger">authority none</Badge>
+          <Badge variant="secondary">compact only</Badge>
+        </div>
+      </div>
+      <div className={`mt-4 grid gap-3 ${compact ? "sm:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-2 xl:grid-cols-4"}`}>
+        <AdvisorMini
+          label="What GoTrader sees"
+          value={summary.whatGoTraderSees}
+          detail={summary.whatGoTraderSeesDetail}
+        />
+        <AdvisorMini
+          label="What it missed"
+          value={summary.whatItMissed}
+          detail={summary.whatItMissedDetail}
+        />
+        <AdvisorMini
+          label="Strongest evidence"
+          value={summary.strongestModelEvidence}
+          detail={summary.strongestModelEvidenceDetail}
+        />
+        <AdvisorMini
+          label="Weakest blocker"
+          value={summary.weakestBlocker}
+          detail={summary.weakestBlockerDetail}
+        />
+      </div>
+      <p className="mt-3 rounded-xl border border-emerald-300/15 bg-emerald-300/10 p-3 text-xs leading-5 text-emerald-50">
+        Next calibration recommendation: {summary.nextCalibrationRecommendation}
+      </p>
     </div>
   );
 }

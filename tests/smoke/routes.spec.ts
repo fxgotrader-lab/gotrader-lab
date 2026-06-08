@@ -184,6 +184,7 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Show Risk/i);
     await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Show SMT/i);
     await expect(page.locator("main")).toContainText(/ICT Strategy Suite|ICT Advisor is waiting/i);
+    await expect(page.locator("main")).toContainText(/Strategy Calibration|ICT Advisor is waiting/i);
     await expect(page.getByTestId("ict-current-read-data-flow")).toContainText(/Current Read Data Flow/i);
     await expandDeferredDetails(page, "ict-current-read-data-flow");
     await expect(page.getByTestId("ict-current-read-data-flow")).toContainText(/Model quality lane/i);
@@ -241,6 +242,7 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Packet source/i);
     await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Model lane/i);
     await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Paper Sim/i);
+    await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Strategy Calibration/i);
     await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Execution: Disabled/i);
     await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Phase 1 \/ Phase 2/i);
     await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Open Advisor/i);

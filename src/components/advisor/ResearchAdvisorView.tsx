@@ -115,6 +115,8 @@ const browserSafeMonteCarloSimulationCount = 300;
 const browserSafeMonteCarloTradeCount = 60;
 const safeList = <T,>(values: T[] | undefined | null): T[] => Array.isArray(values) ? values : [];
 const safeCount = (value?: number) => (typeof value === "number" && Number.isFinite(value) ? value.toLocaleString() : "0");
+const firstText = (...values: Array<string | undefined | null | false>) =>
+  values.find((value): value is string => typeof value === "string" && value.trim().length > 0);
 const markActivateMarketUiFailure = (steps: IctActivateMarketStep[], message: string): IctActivateMarketStep[] => {
   const index = steps.findIndex((step) => step.status === "running" || step.status === "pending");
   if (index < 0) return steps;
@@ -1779,6 +1781,39 @@ function CurrentReadPanel({
     typeof currentRead.invalidation === "number" ? undefined : "invalidation",
     typeof currentRead.rrEstimate === "number" ? undefined : "RR"
   ].filter((field): field is string => Boolean(field));
+  const calibrationSees = currentRead.modelDetected
+    ? `${formatToken(currentRead.modelName)} / ${formatToken(currentRead.modelState)}`
+    : currentRead.opportunityDetected
+      ? `${formatToken(currentRead.opportunityType)} / ${formatToken(currentRead.opportunityStage)}`
+      : `${formatToken(currentRead.bias)} bias / ${formatToken(currentRead.sessionNarrativeStatus ?? currentRead.sessionNarrativeProfile)}`;
+  const calibrationMissed = firstText(
+    missingTradeFields.length ? `missing ${missingTradeFields.join(", ")}` : undefined,
+    currentRead.modelMissingEvidence?.[0],
+    currentRead.opportunityMissingEvidence?.[0],
+    currentRead.opportunityBlockers?.[0],
+    currentRead.fvgTargetStatus === "missing" ? currentRead.fvgTargetReason : undefined,
+    currentRead.topReasons[0]
+  ) ?? "no primary miss found";
+  const strongestEvidence = firstText(
+    currentRead.paperWatchlistEvidenceSummary,
+    currentRead.modelReasons?.[0],
+    currentRead.opportunityDetected ? `${formatToken(currentRead.opportunityQuality)} opportunity evidence` : undefined,
+    currentRead.sessionTopReasons?.[0]
+  ) ?? "no model evidence strong enough for a lane";
+  const weakestBlocker = firstText(
+    currentRead.paperSimAllowed ? undefined : currentRead.paperSimEligibilityReason,
+    currentRead.paperWatchlistReason,
+    currentRead.topReasons[0],
+    researchSignal.rejectionReasons[0]
+  ) ?? "no blocking reason supplied";
+  const nextCalibrationRecommendation =
+    missingTradeFields.length
+      ? "Calibrate target, invalidation, and RR construction before changing model thresholds."
+      : currentRead.selfImprovementHypothesisQueued
+        ? "Replay-test the queued research hypothesis; keep it research-only until evidence improves."
+        : currentRead.htfAlignment && currentRead.htfAlignment.alignmentStatus !== "aligned" && currentRead.htfAlignment.alignmentStatus !== "not_required_for_model"
+          ? "Review model-aware HTF alignment and keep conflicts as watchlist or paper-only evidence unless replay supports the model."
+          : "Run npm.cmd run test:ict-strategy-calibration-audit before changing strategy rules.";
   const decisionExplanation = buildResearchAdvisorDecisionExplanation({
     cmdPaperTracking,
     currentRead,
@@ -1898,6 +1933,29 @@ function CurrentReadPanel({
       <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.55fr)]">
         <AdvisorList label="Why this state" values={packetError ? [packetError, ...currentRead.topReasons] : currentRead.topReasons} empty="No blockers reported." />
         <AdvisorReadout label="Next action" value={currentRead.nextAction} detail="Research-only; does not promote readiness." />
+      </div>
+      <div data-testid="research-advisor-strategy-calibration-summary" className="mt-4 rounded-2xl border border-emerald-300/15 bg-emerald-300/10 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200">Strategy Calibration</p>
+            <p className="mt-1 text-xs leading-5 text-slate-400">
+              Compact recognition readout only. The 90-day calibration audit is manual CLI work and does not run on page load.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="secondary">manual CLI audit</Badge>
+            <Badge variant="danger">authority none</Badge>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <AdvisorReadout label="What GoTrader sees" value={calibrationSees} detail={`${formatToken(currentRead.packetSource)} / ${currentRead.candleCount?.toLocaleString() ?? 0} candles`} />
+          <AdvisorReadout label="What it missed" value={calibrationMissed} detail={`${formatToken(currentRead.modelQualityLane)} / ${formatToken(currentRead.approvedStatus)}`} />
+          <AdvisorReadout label="Strongest evidence" value={strongestEvidence} detail={`${formatToken(currentRead.weeklyBiasDirection)} weekly bias / HTF ${formatToken(currentRead.htfAlignment?.alignmentStatus)}`} />
+          <AdvisorReadout label="Weakest blocker" value={weakestBlocker} detail={`Signal ${formatToken(researchSignal.status)} / authority none`} />
+        </div>
+        <p className="mt-3 rounded-xl border border-emerald-300/15 bg-black/20 p-3 text-xs leading-5 text-emerald-50">
+          Next calibration recommendation: {nextCalibrationRecommendation}
+        </p>
       </div>
       <ResearchAdvisorDecisionExplanationPanel explanation={decisionExplanation} />
       <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.035] p-3">

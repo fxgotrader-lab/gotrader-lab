@@ -314,6 +314,10 @@ assert.equal(assertResearchAdvisorDecisionExplanationIsCompact(cmdExplanation).o
 const uiSource = fs.readFileSync(path.join(projectRoot, "src", "components", "advisor", "IctAdvisorSummaryPanel.tsx"), "utf8");
 assert.match(uiSource, /research-advisor-decision-explanation/);
 assert.match(uiSource, /Decision Explanation/);
+assert.match(uiSource, /ict-strategy-calibration-summary/);
+assert.match(uiSource, /Strategy Calibration/);
+assert.match(uiSource, /manual CLI only/i);
+assert.match(uiSource, /test:ict-strategy-calibration-audit/);
 
 process.stdout.write(JSON.stringify({
   status: "passed",
