@@ -224,6 +224,19 @@ const formatCountdown = (timestamp?: string, nowMs = Date.now()) => {
   return `${seconds}s`;
 };
 
+/**
+ * Isolated 1s countdown so the ticking clock re-renders only this leaf
+ * component instead of the entire Mission Control shell tree.
+ */
+function RefreshCountdownText({ prefix = "next ", timestamp }: { prefix?: string; timestamp?: string }) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return <>{`${prefix}${formatCountdown(timestamp, nowMs)}`}</>;
+}
+
 const canonicalMt5SourceFrom = (snapshot?: ResearchRuntimeSnapshot) =>
   snapshot?.marketData.allAvailableSources.find((source) => source.provider === "mt5_read_only" && source.candleCount > 0);
 const isTradingChartLineOverlay = (overlay: TradingChartLineOverlay | undefined): overlay is TradingChartLineOverlay => Boolean(overlay);
@@ -601,7 +614,6 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const [dashboardPerformanceMarks, setDashboardPerformanceMarks] = useState<DashboardPerformanceMark[]>([]);
   const [chartPerformanceMarks, setChartPerformanceMarks] = useState<TradingChartPerformanceEvent[]>([]);
   const [mt5SourceUpdateSerial, setMt5SourceUpdateSerial] = useState(0);
-  const [autoRefreshClock, setAutoRefreshClock] = useState(() => Date.now());
   const [dataConnectionEvents, setDataConnectionEvents] = useState<CommandCenterDataEvent[]>([]);
   const [sourceConsistencySerial, setSourceConsistencySerial] = useState(0);
   const latestRun = liveRun ?? latestAutonomousResearchRun(autonomyState);
@@ -1635,11 +1647,6 @@ export function MissionControlShell({ state }: { state: LabState }) {
     runtimeSnapshot?.tradingViewMcp.eligibilityReasons
   ]);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => setAutoRefreshClock(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-
   const startLoop = async () => {
     const controller = new AbortController();
     const settings: AutonomousResearchSettings = {
@@ -1746,9 +1753,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
     [runtimeSnapshot?.latestResearchCycle.latestCycleId]
   );
   const autoRefreshRunning = tradingViewAutoRefresh.status === "running" && tradingViewAutoRefresh.enabled;
-  const autoRefreshCountdown = formatCountdown(tradingViewAutoRefresh.nextRefreshAt, autoRefreshClock);
   const mt5RefreshRunning = mt5AutoRefresh.status === "running" && mt5AutoRefresh.enabled;
-  const mt5RefreshCountdown = formatCountdown(mt5AutoRefresh.nextRefreshAt, autoRefreshClock);
   const mt5LatestQuote =
     mt5AutoRefresh.lastQuote?.mid ??
     mt5AutoRefresh.lastQuote?.bid ??
@@ -2316,7 +2321,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
                   <MiniReadout
                     label="MT5 refresh"
                     value={formatToken(mt5AutoRefresh.status)}
-                    detail={mt5RefreshRunning ? `next ${mt5RefreshCountdown}` : mt5AutoRefresh.interval === "manual" ? "manual" : "stopped"}
+                    detail={mt5RefreshRunning ? <RefreshCountdownText timestamp={mt5AutoRefresh.nextRefreshAt} /> : mt5AutoRefresh.interval === "manual" ? "manual" : "stopped"}
                   />
                   <MiniReadout
                     label="Latest quote"
@@ -2960,7 +2965,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
               </label>
             </div>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <MiniReadout label="TV auto-refresh" value={formatToken(tradingViewAutoRefresh.status)} detail={autoRefreshRunning ? `next ${autoRefreshCountdown}` : "stopped"} />
+              <MiniReadout label="TV auto-refresh" value={formatToken(tradingViewAutoRefresh.status)} detail={autoRefreshRunning ? <RefreshCountdownText timestamp={tradingViewAutoRefresh.nextRefreshAt} /> : "stopped"} />
               <MiniReadout label="TV latest price" value={tradingViewAutoRefresh.lastPrice !== undefined ? String(tradingViewAutoRefresh.lastPrice) : "n/a"} detail={tradingViewAutoRefresh.lastCandleTimestamp ? formatDateTime(tradingViewAutoRefresh.lastCandleTimestamp) : "no candle yet"} />
             </div>
           </section>
@@ -2976,7 +2981,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
               </Badge>
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <MiniReadout label="Interval" value={String(mt5AutoRefresh.interval)} detail={mt5RefreshRunning ? `next ${mt5RefreshCountdown}` : "not scheduled"} />
+              <MiniReadout label="Interval" value={String(mt5AutoRefresh.interval)} detail={mt5RefreshRunning ? <RefreshCountdownText timestamp={mt5AutoRefresh.nextRefreshAt} /> : "not scheduled"} />
               <MiniReadout label="Refresh count" value={mt5AutoRefresh.refreshCount.toLocaleString()} detail={`failures ${mt5AutoRefresh.failureCount.toLocaleString()}`} />
               <MiniReadout label="Storage write" value={formatToken(mt5AutoRefresh.lastStorageWriteStatus)} detail={`${mt5AutoRefresh.skippedUnchangedCount.toLocaleString()} unchanged skips`} />
               <MiniReadout label="Last checked" value={mt5AutoRefresh.lastCheckedAt ? formatDateTime(mt5AutoRefresh.lastCheckedAt) : "n/a"} detail={mt5AutoRefresh.lastError ?? "no active error"} />
@@ -4374,7 +4379,7 @@ function MiniReadout({
   label,
   value
 }: {
-  detail?: string;
+  detail?: ReactNode;
   label: string;
   value: string;
 }) {

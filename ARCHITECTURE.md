@@ -44,19 +44,24 @@ gotrader/
 |   |-- App.tsx                <- router and all route definitions
 |   |-- main.tsx               <- React entry point
 |   |-- components/
+|   |   |-- AppShell.tsx       <- app shell and sidebar navigation (no `layout/` folder)
+|   |   |-- advisor/           <- Research Advisor workspace (`/advisor`, `/research-advisor`)
+|   |   |-- advisory/          <- OpenClaw/Hermes advisory planning UI (`/advisory-agents`)
+|   |   |-- agent-audit/       <- agent audit diagnostics (`/agent-audit`)
+|   |   |-- agent-debate/      <- debate sessions UI (`/agent-debate`)
 |   |   |-- agents/            <- agent roster/detail UI
 |   |   |-- auto-research/     <- auto research page
 |   |   |-- autonomous-research/ <- autonomous loop page
+|   |   |-- backtest-lab/      <- backtest lab UI (`/backtest-lab`)
 |   |   |-- charts/            <- Lightweight Charts wrapper and chart adapters
-|   |   |-- communications/    <- AI communications/audit UI
-|   |   |-- dashboard/         <- Command Center, status strip, flow tape, actions, chart, metrics
-|   |   |-- evidence-quality/  <- evidence quality page
+|   |   |-- communications/    <- AI communications audit UI
+|   |   |-- dashboard/         <- Command Center, Mission Control shell, actions, chart, metrics
+|   |   |-- evidence/          <- evidence quality page (`/evidence-quality`)
 |   |   |-- ict-lab/           <- ICT/Grinch analysis detail page
-|   |   |-- layout/            <- `AppShell` and navigation
 |   |   |-- market-data/       <- imported/canonical source inspection UI
+|   |   |-- maturity/          <- research maturity page (`/research-maturity`)
 |   |   |-- replay/            <- replay UI
 |   |   |-- research-cycle/    <- research cycle UI pieces
-|   |   |-- research-maturity/ <- maturity page
 |   |   |-- self-improvement/  <- self-improvement/proposal UI
 |   |   |-- settings/          <- settings/status UI
 |   |   |-- ui/                <- shared Button/Badge/Card primitives
@@ -66,7 +71,7 @@ gotrader/
 |   |   |-- agents/            <- internal agent types, registry, runner, CIO synthesis
 |   |   |-- autoResearch/      <- search space, calibration candidates, proposal metrics
 |   |   |-- autonomousResearch/ <- autonomous loop orchestration and persisted state
-|   |   |-- backtest/          <- backtest engine, config, prepared candle source
+|   |   |-- backtesting/       <- backtest engine, config, source resolver, replay engine
 |   |   |-- brokers/           <- research-only broker route/authority contracts
 |   |   |-- candleSources/     <- canonical candle source model, storage, eligibility, active source resolution
 |   |   |-- communications/    <- compact audit event store and logging
@@ -101,19 +106,21 @@ Routes are defined in `src/App.tsx`.
 | Route | Component file | Purpose | Status |
 | --- | --- | --- | --- |
 | `/` | `src/App.tsx` redirect | Redirects to `/dashboard`. | [IMPLEMENTED] |
-| `/dashboard` | `src/components/dashboard/ResearchCommandCenter.tsx` | Primary Command Center. | [IMPLEMENTED] |
+| `/dashboard` | `src/components/dashboard/ResearchCommandCenter.tsx` | Primary Command Center (tab shell embedding `MissionControlShell` and results). | [IMPLEMENTED] |
+| `/advisor` | `src/components/advisor/ResearchAdvisorView.tsx` | ICT Research Advisor workspace (MT5 read-only analysis, Activate Market, chat). | [IMPLEMENTED] |
+| `/research-advisor` | `src/components/advisor/ResearchAdvisorView.tsx` | Alias route for the same Research Advisor view. | [IMPLEMENTED] |
 | `/communications` | `src/components/communications/AICommunicationsView.tsx` | Communications audit/events. | [IMPLEMENTED] |
-| `/agent-audit` | `src/components/communications/AgentAuditView.tsx` | Agent audit diagnostics. | [IMPLEMENTED] |
-| `/agent-debate` | `src/components/communications/AgentDebateView.tsx` | Debate sessions. | [IMPLEMENTED] |
-| `/evidence-quality` | `src/components/evidence-quality/EvidenceQualityView.tsx` | Evidence scoring. | [IMPLEMENTED] |
-| `/research-maturity` | `src/components/research-maturity/ResearchMaturityView.tsx` | Research maturity scoring. | [IMPLEMENTED] |
+| `/agent-audit` | `src/components/agent-audit/AgentAuditView.tsx` | Agent audit diagnostics. | [IMPLEMENTED] |
+| `/agent-debate` | `src/components/agent-debate/AgentDebateView.tsx` | Debate sessions. | [IMPLEMENTED] |
+| `/evidence-quality` | `src/components/evidence/EvidenceQualityView.tsx` | Evidence scoring. | [IMPLEMENTED] |
+| `/research-maturity` | `src/components/maturity/ResearchMaturityView.tsx` | Research maturity scoring. | [IMPLEMENTED] |
 | `/agents` | `src/components/agents/AgentRoster.tsx` | Agent roster. | [IMPLEMENTED] |
 | `/agents/:id` | `src/components/agents/AgentDetail.tsx` | Agent detail route. | [IMPLEMENTED] |
 | `/research` | `src/components/research/ResearchWorkbench.tsx` | Research workbench. | [IMPLEMENTED] |
 | `/ict-lab` | `src/components/ict-lab/ICTLab.tsx` | ICT/Grinch analysis details. | [IMPLEMENTED] |
 | `/market-data` | `src/components/market-data/MarketDataView.tsx` | Data import/source inspection. | [IMPLEMENTED] |
 | `/replay` | `src/components/replay/ReplayView.tsx` | Replay-specific workflow. | [IMPLEMENTED] |
-| `/backtest-lab` | `src/components/backtest/BacktestLab.tsx` | Backtest lab. | [IMPLEMENTED] |
+| `/backtest-lab` | `src/components/backtest-lab/BacktestLab.tsx` | Backtest lab (engine logic lives in `src/lib/backtesting/`). | [IMPLEMENTED] |
 | `/validation` | `src/components/validation/StrategyValidationView.tsx` | Validation reports. | [IMPLEMENTED] |
 | `/walk-forward` | `src/components/walk-forward/WalkForwardView.tsx` | Walk-forward validation. | [IMPLEMENTED] |
 | `/research-quality` | `src/components/research-quality/ResearchQualityView.tsx` | Research quality reports. | [IMPLEMENTED] |
@@ -122,12 +129,16 @@ Routes are defined in `src/App.tsx`.
 | `/llm-agents` | `src/components/llm-agents/LLMAgentsView.tsx` | LLM advisory agents. | [IMPLEMENTED] |
 | `/auto-research` | `src/components/auto-research/AutoResearchView.tsx` | Auto research/calibration page. | [IMPLEMENTED] |
 | `/autonomous-research` | `src/components/autonomous-research/AutonomousResearchView.tsx` | Autonomous loop page. | [IMPLEMENTED] |
-| `/advisory-agents` | `src/components/advisory-agents/AdvisoryAgentsView.tsx` | Advisory agents. | [IMPLEMENTED] |
+| `/advisory-agents` | `src/components/advisory/AdvisoryAgentsView.tsx` | OpenClaw/Hermes advisory packet planning (advisory-only, authority none). | [IMPLEMENTED] |
 | `/self-improvement` | `src/components/self-improvement/SelfImprovementView.tsx` | Self-improvement proposals. | [IMPLEMENTED] |
 | `/performance` | `src/components/performance/PerformanceView.tsx` | Performance dashboards. | [IMPLEMENTED] |
 | `/prompt-lab` | `src/components/prompt-lab/PromptLab.tsx` | Prompt lab. | [IMPLEMENTED] |
 | `/settings` | `src/components/settings/SettingsView.tsx` | Settings and bridge status. | [IMPLEMENTED] |
 | `*` | `src/App.tsx` redirect | Unknown routes redirect to `/dashboard`. | [IMPLEMENTED] |
+
+Routes are code-split with `React.lazy` in `src/App.tsx`; the shell (`src/components/AppShell.tsx`) and `useLabState` load eagerly.
+
+OpenClaw advisory code is no longer planning-only: the browser client is `src/lib/llm/advisoryProviderClient.ts` (routing via `OPENCLAW_ADVISORY_URL` / `VITE_OPENCLAW_ADVISORY_URL`), pilot program types live in `src/lib/openclawPilot/`, and local bridges are `scripts/openclaw-phone-advisory-bridge.mjs` and `scripts/openclaw-gotrader-advisory-skill-server.mjs`. All paths remain advisory/proposal-only with authority fields `none`.
 
 I found no route in `src/App.tsx` whose component file is missing.
 

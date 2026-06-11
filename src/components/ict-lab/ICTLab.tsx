@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Activity, ChartCandlestick, Clock, Layers, ScanLine, ShieldAlert, Target } from "lucide-react";
 
 import { MetricCard } from "@/components/MetricCard";
@@ -132,6 +133,9 @@ export function ICTLab() {
   const activeCandles = displaySource.activeResearchCandleSource.length ? displaySource.activeResearchCandleSource : mockCandles;
   const chartCandles = displaySource.activeChartDisplayCandleSource.length ? displaySource.activeChartDisplayCandleSource : activeCandles;
   const sourceType = displaySource.activeResearchSourceMode;
+  // False-confidence guard: analysis below runs on mock/sample candles when
+  // MT5 is not research-active and no imported source resolved.
+  const analysisUsesMockData = sourceType === "mock" || !displaySource.activeResearchCandleSource.length;
   const chartSourceType = displaySource.activeChartDisplaySourceMode;
   const sourceLabel = displaySource.activeResearchSourceLabel;
   const chartSourceLabel = displaySource.activeChartDisplaySourceLabel;
@@ -460,7 +464,7 @@ export function ICTLab() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Badge variant={sourceType === "imported" ? "success" : "warning"}>
+          <Badge variant={sourceType === "imported" ? "success" : analysisUsesMockData ? "danger" : "warning"}>
             {sourceType === "tradingview_mcp_chart"
               ? "TradingView research source active"
               : sourceType === "mt5_read_only"
@@ -481,6 +485,34 @@ export function ICTLab() {
           <Badge variant="muted">No execution</Badge>
         </div>
       </div>
+
+      {analysisUsesMockData ? (
+        <div
+          className="rounded-xl border border-rose-400/40 bg-rose-500/10 p-4"
+          role="alert"
+          data-testid="ict-lab-mock-data-warning"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="flex items-center gap-2 text-sm font-semibold text-rose-200">
+                <ShieldAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+                Mock/sample data — not MT5 research-active.
+              </p>
+              <p className="mt-1 max-w-3xl text-sm text-rose-100/85">
+                Every ICT/Grinch readout on this page is computed from placeholder candles, not live market data. Do not
+                treat these structures, scores, or biases as real market analysis. Activate MT5 research mode (or select an
+                imported historical source in Market Data) to analyze real read-only candles.
+              </p>
+            </div>
+            <Link
+              to="/advisor"
+              className="inline-flex shrink-0 items-center rounded-md border border-rose-300/40 bg-rose-300/10 px-3 py-2 text-sm font-medium text-rose-100 transition-colors hover:bg-rose-300/20"
+            >
+              Activate MT5 Research Mode
+            </Link>
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <MetricCard label="Candles" value={String(activeCandles.length)} detail={`${latestCandle.symbol} ${latestCandle.timeframe}`} icon={<ChartCandlestick className="h-4 w-4" />} />

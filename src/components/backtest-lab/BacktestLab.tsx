@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Activity, RotateCcw, ShieldAlert, SlidersHorizontal, Target, TimerReset } from "lucide-react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { CalibrationAssistantPanel } from "@/components/backtest-lab/CalibrationAssistantPanel";
@@ -175,6 +175,14 @@ const configForSource = (config: ResolvedBacktestConfig, source: ResolvedBacktes
         timeframe: supportedBacktestTimeframe(source.candles[0]?.timeframe ?? source.appliedSettings.targetTimeframe)
       })
     : config;
+const backtestRunKey = (source: ResolvedBacktestCandleSource, config: ResolvedBacktestConfig) =>
+  JSON.stringify({
+    config,
+    count: source.candles.length,
+    first: source.candles[0]?.timestamp ?? null,
+    last: source.candles[source.candles.length - 1]?.timestamp ?? null,
+    provider: source.provider
+  });
 
 export function BacktestLab() {
   const [configResolution, setConfigResolution] = useState(() => resolveActiveBacktestConfig());
@@ -182,7 +190,15 @@ export function BacktestLab() {
   const [sourcePreference, setSourcePreference] = useState<BacktestSourcePreference>(() => loadBacktestSourcePreference());
   const [candleSource, setCandleSource] = useState<ResolvedBacktestCandleSource>(() => createMockBacktestCandleSource());
   const [sourceResolved, setSourceResolved] = useState(false);
-  const [result, setResult] = useState(() => runBacktest(candleSource.candles, resolveActiveBacktestConfig().config));
+  // Guard against running the same backtest twice on mount: the useState
+  // initializer covers the synchronous first paint, and the mount effect
+  // skips its run when the resolved source/config are identical.
+  const initialRunKeyRef = useRef<string | null>(null);
+  const [result, setResult] = useState(() => {
+    const initialConfig = resolveActiveBacktestConfig().config;
+    initialRunKeyRef.current = backtestRunKey(candleSource, initialConfig);
+    return runBacktest(candleSource.candles, initialConfig);
+  });
   const [activeCalibration, setActiveCalibration] = useState(() => loadActiveResearchCalibration());
   const [windowSettings, setWindowSettings] = useState<CandleWindowSettings>(() => loadCandleWindowSettings());
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
@@ -319,7 +335,11 @@ export function BacktestLab() {
         setCandleSource(source);
         setConfigResolution(sourceResolved);
         setDraftConfig(sourceResolved.config);
-        setResult(runBacktest(candlesForSource(source), sourceResolved.config));
+        const runKey = backtestRunKey(source, sourceResolved.config);
+        if (initialRunKeyRef.current !== runKey) {
+          setResult(runBacktest(candlesForSource(source), sourceResolved.config));
+        }
+        initialRunKeyRef.current = null;
         setSourceResolved(true);
         resolveResearchRuntimeSnapshot({ preparedCandleSource: source })
           .then((snapshot) => {

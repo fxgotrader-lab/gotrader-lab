@@ -24,10 +24,9 @@ llm/errors/*.json
 !llm/requests/.gitkeep
 !llm/responses/.gitkeep
 !llm/errors/.gitkeep
-.gotrader/journal/
-.gotrader/imports/
-.gotrader/local-stack.json
-.gotrader/local-stack-logs/
+# All .gotrader/ contents are generated local runtime/test artifacts
+# (journals, imports, local-stack state, *-test diagnostic output dirs).
+.gotrader/
 public/local-imports/*.json
 !public/local-imports/.gitkeep
 *.jsonl

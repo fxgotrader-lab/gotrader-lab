@@ -292,6 +292,37 @@ Each phase is independently shippable, ends green on build + smoke + safety test
 
 ---
 
+## 10b. Orphaned Component Inventory (Phase 0 follow-up, 2026-06-11)
+
+Verified by grep: no JSX usage (`<ComponentName`) and no value imports anywhere in `src/` except where noted. None are deleted yet - removal is deferred until the Phase 5 dashboard split decides what gets re-homed vs. dropped.
+
+**Active route-level views:** every component imported by `src/App.tsx` (see Section 6 route table) plus their direct children (`MissionControlShell`, `IctAdvisorSummaryPanel`, `LLMAdvisoryReviewPanel`, `ResearchCycleControl`, `ActivateMarketProgress`, `TradingChart`, `TechnicalDetails`, `WhyNotReadyCard`, `SafetyBanner`, UI primitives in `src/components/ui/`).
+
+**Likely orphaned (unrendered, deferred for removal):**
+
+| File | Note |
+|------|------|
+| `src/components/dashboard/DashboardOverview.tsx` | Superseded by `MissionControlShell` |
+| `src/components/dashboard/MissionControlActionPanel.tsx` | Only `MissionActionItem` **type** is imported by `MissionControlShell`; component itself unrendered. Move the type or keep file until Phase 5 |
+| `src/components/dashboard/MissionControlStatusStrip.tsx` | Unrendered |
+| `src/components/dashboard/SystemStatusGrid.tsx` | Unrendered |
+| `src/components/dashboard/SafetyLockCard.tsx` | Unrendered |
+| `src/components/dashboard/ValidationStatusCard.tsx` | Unrendered |
+| `src/components/dashboard/LLMAgentStatusCard.tsx` | Unrendered |
+| `src/components/dashboard/AutoResearchStatusCard.tsx` | Unrendered |
+| `src/components/dashboard/ReadinessSummaryCard.tsx` | Unrendered |
+| `src/components/dashboard/SelfImprovementStatusCard.tsx` | Unrendered |
+| `src/components/dashboard/SimulatedAccountCard.tsx` | Unrendered |
+| `src/components/dashboard/SimulationBridgeStatusCard.tsx` | Unrendered |
+| `src/components/dashboard/AutomationTimeline.tsx` | Unrendered (exports `AutomationTimelineEvent` type used only internally) |
+| `src/components/dashboard/AutonomousLoopProgress.tsx` | Unrendered; do not confuse with `AutonomousLoopProgressState` types in `src/lib/autonomousResearch/` (those are used) |
+| `src/components/common/ActionRequiredCard.tsx` | Unrendered |
+| `src/components/common/StatusSummaryCard.tsx` | Unrendered |
+
+Removal plan: candidates for re-use as extracted panels when `MissionControlShell` is split in Phase 5; whatever is not re-used then gets deleted in that phase with build + smoke verification.
+
+---
+
 ## 11. Tests Run and Results (2026-06-11)
 
 | Command | Result | Notes |

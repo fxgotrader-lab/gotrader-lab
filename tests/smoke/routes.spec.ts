@@ -21,14 +21,22 @@ const advancedRoutes = [
   "/validation",
   "/research-quality",
   "/auto-research",
+  "/research",
   "/agent-debate",
   "/agent-audit",
   "/llm-agents",
   "/evidence-quality",
   "/research-maturity",
-  "/simulation-runbook"
+  "/simulation-runbook",
+  "/advisory-agents",
+  "/agents",
+  "/prompt-lab"
 ];
 
+// Expected coverage: all 27 sidebar-reachable routes from src/App.tsx
+// (11 primary + 16 advanced). Excluded: "/" and "*" redirects and the
+// "/agents/:id" detail route. Keep this list in sync with
+// scripts/smoke-routes.mjs.
 const allRoutes = [...primaryRoutes, ...advancedRoutes];
 const chartRoutes = ["/dashboard", "/ict-lab", "/replay", "/backtest-lab", "/market-data"];
 const unsafeExecutionControls = [
@@ -59,12 +67,16 @@ const expectedHeadings: Record<string, RegExp> = {
   "/validation": /Validation/i,
   "/research-quality": /Research Quality/i,
   "/auto-research": /Auto Research/i,
+  "/research": /AI Research Workbench/i,
   "/agent-debate": /Agent Debate/i,
   "/agent-audit": /Agent Audit/i,
   "/llm-agents": /LLM/i,
   "/evidence-quality": /Evidence Quality/i,
   "/research-maturity": /Research Maturity/i,
-  "/simulation-runbook": /Verification Runbook|Simulation verification/i
+  "/simulation-runbook": /Verification Runbook|Simulation verification/i,
+  "/advisory-agents": /OpenClaw \/ Hermes Planning/i,
+  "/agents": /Research Agents/i,
+  "/prompt-lab": /Prompt Lab/i
 };
 
 test.describe("GoTrader browser route smoke", () => {

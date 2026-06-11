@@ -6,8 +6,14 @@ import http from "node:http";
 import net from "node:net";
 import path from "node:path";
 
+// Expected coverage: all 27 sidebar-reachable routes from src/App.tsx
+// (11 primary + 16 advanced). Excluded: "/" and "*" redirects and the
+// "/agents/:id" detail route. Keep this list in sync with
+// tests/smoke/routes.spec.ts.
 const primaryRoutes = [
   "/dashboard",
+  "/advisor",
+  "/research-advisor",
   "/market-data",
   "/autonomous-research",
   "/walk-forward",
@@ -25,12 +31,16 @@ const advancedRoutes = [
   "/validation",
   "/research-quality",
   "/auto-research",
+  "/research",
   "/agent-debate",
   "/agent-audit",
   "/llm-agents",
   "/evidence-quality",
   "/research-maturity",
-  "/simulation-runbook"
+  "/simulation-runbook",
+  "/advisory-agents",
+  "/agents",
+  "/prompt-lab"
 ];
 
 const chartRoutes = new Set(["/dashboard", "/market-data", "/ict-lab", "/replay", "/backtest-lab"]);
