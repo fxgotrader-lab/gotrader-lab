@@ -5,6 +5,7 @@ import { BarChart3, MessageSquareText, PlayCircle, Send, ShieldCheck, Sparkles }
 import { ActivateMarketProgress } from "@/components/advisor/ActivateMarketProgress";
 import { IctAdvisorSummaryPanel } from "@/components/advisor/IctAdvisorSummaryPanel";
 import { LLMAdvisoryReviewPanel } from "@/components/dashboard/LLMAdvisoryReviewPanel";
+import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -987,10 +988,15 @@ export function ResearchAdvisorView() {
   const submitAdvisorMessage = (content: string) => {
     const normalized = content.trim();
     if (!normalized) return;
+    const reply = buildLocalAdvisorReply(normalized, activeAdvisorPacket, currentRead, snapshot, manualReplayStatus, marketScorecardStatus, profileOptimizationStatus);
+    const packetSourceStatus = activeAdvisorPacket?.activeSource.sourceStatus;
+    const disclosedReply = packetSourceStatus?.isMockOrSample
+      ? `Source notice: ${packetSourceStatus.statusLabel}; sample-only, not research evidence. ${reply}`
+      : reply;
     setChatMessages((messages) => [
       ...messages,
       createAdvisorMessage("user", normalized),
-      createAdvisorMessage("assistant", buildLocalAdvisorReply(normalized, activeAdvisorPacket, currentRead, snapshot, manualReplayStatus, marketScorecardStatus, profileOptimizationStatus))
+      createAdvisorMessage("assistant", disclosedReply)
     ]);
     setChatInput("");
   };
@@ -1084,6 +1090,8 @@ export function ResearchAdvisorView() {
           </div>
         </div>
       </section>
+
+      <SourceStatusBanner />
 
       <ActivateMarketProgress
         onActivate={() => void runActivateMarket()}

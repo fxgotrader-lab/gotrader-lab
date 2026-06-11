@@ -2,6 +2,7 @@ import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, us
 import { ChevronLeft, ChevronRight, Pause, Play, RotateCcw, ShieldAlert, SkipBack, SkipForward } from "lucide-react";
 import { MetricCard } from "@/components/MetricCard";
 import { TradingChart } from "@/components/charts/TradingChart";
+import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -287,6 +288,8 @@ export function ReplayView() {
           <Badge variant="danger">authority none</Badge>
         </div>
       </div>
+
+      <SourceStatusBanner />
 
       <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
         <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />

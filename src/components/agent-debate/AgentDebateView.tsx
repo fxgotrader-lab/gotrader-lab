@@ -3,6 +3,7 @@ import { ArrowRight, MessagesSquare, ShieldAlert, Swords } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
+import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -159,6 +160,8 @@ export function AgentDebateView() {
         </div>
         <Badge variant="warning">Advisory only</Badge>
       </div>
+
+      <SourceStatusBanner />
 
       <SafetyLockBanner message="Agent debate is research-only. It cannot execute trades, approve trades, or override readiness gates." />
 

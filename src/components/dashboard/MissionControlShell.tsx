@@ -5,6 +5,7 @@ import { Activity, ExternalLink, Lock, RadioTower, ShieldCheck, Zap } from "luci
 import { ActivateMarketProgress } from "@/components/advisor/ActivateMarketProgress";
 import { IctAdvisorSummaryPanel } from "@/components/advisor/IctAdvisorSummaryPanel";
 import { clearReplaySnapshotSourceMeta, loadReplaySnapshotSourceMeta } from "@/lib/backtesting";
+import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import {
   TradingChart,
@@ -241,7 +242,7 @@ const canonicalMt5SourceFrom = (snapshot?: ResearchRuntimeSnapshot) =>
   snapshot?.marketData.allAvailableSources.find((source) => source.provider === "mt5_read_only" && source.candleCount > 0);
 const isTradingChartLineOverlay = (overlay: TradingChartLineOverlay | undefined): overlay is TradingChartLineOverlay => Boolean(overlay);
 
-type SourceConsistencyStatus = "consistent" | "different but explicit" | "stale/mismatch";
+type SourceConsistencyStatus = "consistent" | "different but explicit" | "stale/mismatch" | "mock" | "missing";
 type SourceConsistencyRow = {
   area: string;
   brokerSymbol?: string;
@@ -262,7 +263,11 @@ const compactFingerprint = (value?: string) =>
     : "no fingerprint";
 
 const sourceConsistencyVariant = (status: SourceConsistencyStatus) =>
-  status === "consistent" ? "success" as const : status === "stale/mismatch" ? "danger" as const : "warning" as const;
+  status === "consistent"
+    ? "success" as const
+    : status === "stale/mismatch" || status === "missing"
+      ? "danger" as const
+      : "warning" as const;
 
 const readBacktestSourcePreference = () => {
   if (typeof window === "undefined") {
@@ -287,7 +292,7 @@ const sourceSummaryRow = (
   fingerprint: compactFingerprint(source.fingerprint),
   provider: source.provider.replace(/_/g, " "),
   requestedSymbol: source.symbol,
-  status,
+  status: source.provider === "mock" ? "mock" : source.candleCount === 0 ? "missing" : status,
   timeframe: source.timeframe
 });
 
@@ -360,7 +365,7 @@ const buildSourceConsistencyRows = (snapshot?: ResearchRuntimeSnapshot): SourceC
         fingerprint: "no fingerprint",
         provider: "unavailable",
         requestedSymbol: activeResearch.symbol,
-        status: "stale/mismatch" as const,
+        status: "missing" as const,
         timeframe: activeResearch.timeframe
       };
 
@@ -387,7 +392,7 @@ const buildSourceConsistencyRows = (snapshot?: ResearchRuntimeSnapshot): SourceC
         fingerprint: compactFingerprint(researchFingerprint),
         provider: activeResearch.provider.replace(/_/g, " "),
         requestedSymbol: activeResearch.symbol,
-        status: "different but explicit",
+        status: "missing",
         timeframe: activeResearch.timeframe
       };
 
@@ -413,6 +418,13 @@ const buildSourceConsistencyRows = (snapshot?: ResearchRuntimeSnapshot): SourceC
     sourceSummaryRow("ICT Lab chart", activeChart, "consistent", "ICT Lab chart resolves through the canonical active chart source."),
     sourceSummaryRow("Autonomous", activeResearch, "consistent", "Autonomous preflight uses the active research source guard; mock fallback is refused by default."),
     sourceSummaryRow("Advisory packet", activeResearch, "consistent", "LLM/OpenClaw advisory context is compacted from the active research source metadata."),
+    sourceSummaryRow("Advisor workspace", activeResearch, "consistent", "Research Advisor source controls and shared source banner read the active research source."),
+    sourceSummaryRow(
+      "Debate / Self-Improvement / Evidence / Maturity",
+      activeResearch,
+      "consistent",
+      "Runtime metric pages derive from the research runtime snapshot of the active research source and show the shared source banner."
+    ),
     ...mt5HigherTimeframeRows
   ];
 };
@@ -2017,6 +2029,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
             </Button>
           </div>
         </div>
+        <SourceStatusBanner className="mt-4" />
         <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
           {statusChips.map((chip) => (
             <StatusChip key={chip.label} label={chip.label} value={chip.value} tone={chip.tone} />

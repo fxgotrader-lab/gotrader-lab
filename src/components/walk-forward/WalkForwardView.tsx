@@ -3,6 +3,7 @@ import { AlertTriangle, GitBranch, Loader2, Play, XCircle } from "lucide-react";
 
 import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDetails";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
+import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -285,6 +286,8 @@ export function WalkForwardView() {
           {walkForwardSource.walkForwardEligible ? `${providerLabel} source eligible` : `${providerLabel} source guarded`}
         </Badge>
       </div>
+
+      <SourceStatusBanner />
 
       <SafetyLockBanner message="Walk-forward validation is research/simulation only. It cannot execute trades, enable demo/live mode, or override readiness." />
 

@@ -89,7 +89,8 @@
     "test:openclaw-phone-bridge": "node scripts/test-openclaw-phone-bridge-routing.mjs",
     "test:openclaw-skill-server": "node scripts/test-openclaw-skill-server.mjs",
     "test:auto-research-candidate": "node scripts/run-auto-research-candidate.mjs",
-    "test:regime-classifier": "node scripts/test-regime-classifier.mjs"
+    "test:regime-classifier": "node scripts/test-regime-classifier.mjs",
+    "test:source-status": "node scripts/test-source-status.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.1.1",

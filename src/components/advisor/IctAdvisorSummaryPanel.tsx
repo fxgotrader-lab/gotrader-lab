@@ -551,6 +551,16 @@ export function IctAdvisorSummaryPanel({
       </div>
       {packet ? (
         <>
+          {packet.activeSource.sourceStatus?.isMockOrSample ? (
+            <div
+              className="mt-4 rounded-lg border border-rose-400/35 bg-rose-500/10 p-3 text-sm text-rose-100"
+              data-testid="ict-advisor-packet-mock-warning"
+              role="alert"
+            >
+              Packet source: {packet.activeSource.sourceStatus.statusLabel}.{" "}
+              {packet.activeSource.sourceStatus.warningLabel ?? "Sample-only, not research evidence."}
+            </div>
+          ) : null}
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <AdvisorMini label="Symbol mapping" value={`${packet.brokerSymbol} -> ${packet.requestedSymbol}`} detail={packet.activeSource.provider.replace(/_/g, " ")} />
             <AdvisorMini label="Recognition tier" value={formatToken(currentRead.recognitionTier)} detail={currentRead.recognitionOpportunitySummary} />

@@ -3,6 +3,7 @@ import { BarChart3, DatabaseZap, FileSpreadsheet, RadioTower, ShieldCheck, Uploa
 
 import { TradingChart } from "@/components/charts/TradingChart";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
+import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -793,6 +794,8 @@ export function MarketDataView() {
               : "mock / planning only"}
         </Badge>
       </div>
+
+      <SourceStatusBanner />
 
       <SafetyLockBanner message="Market data adapters are research inputs only. No broker execution or live trading." />
 

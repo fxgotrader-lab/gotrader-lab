@@ -4,6 +4,7 @@ import { BarChart3, ShieldAlert } from "lucide-react";
 import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDetails";
 import { AutonomySafetyPolicyPanel } from "@/components/autonomous-research/AutonomySafetyPolicyPanel";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
+import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -84,6 +85,8 @@ export function ResearchMaturityView() {
         </div>
         <Badge variant={maturityGradeVariant(summary?.grade)}>{maturityGradeLabel(summary?.grade)}</Badge>
       </div>
+
+      <SourceStatusBanner />
 
       <SafetyLockBanner message="Research maturity can block advancement, but cannot approve execution, enable demo/live mode, or override readiness." />
 

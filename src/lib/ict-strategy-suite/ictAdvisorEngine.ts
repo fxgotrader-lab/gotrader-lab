@@ -891,6 +891,39 @@ const timeframeLabelForAnalysis = (timeframe?: string) => {
   return undefined;
 };
 
+const buildPacketSourceStatus = ({
+  provider,
+  researchEligible,
+  candleCount,
+  requestedSymbol,
+  brokerSymbol
+}: {
+  provider: string;
+  researchEligible: boolean;
+  candleCount: number;
+  requestedSymbol: string;
+  brokerSymbol: string;
+}): IctAdvisorPacket["activeSource"]["sourceStatus"] => {
+  const isMockOrSample = provider === "mock" || candleCount === 0;
+  const isResearchActive = provider === "mt5_read_only" && researchEligible && candleCount > 0;
+  const isProxyInstrument = Boolean(brokerSymbol && requestedSymbol && brokerSymbol !== requestedSymbol);
+  return {
+    isMockOrSample,
+    isResearchActive,
+    isProxyInstrument,
+    statusLabel: isMockOrSample
+      ? "mock/sample data - not MT5 research-active"
+      : isResearchActive
+        ? "MT5 read-only research active"
+        : `${provider.replace(/_/g, " ")} (not research-active)`,
+    warningLabel: isMockOrSample
+      ? "Sample-only, not research evidence. Activate MT5 research mode before treating this packet as market analysis."
+      : isProxyInstrument
+        ? `MT5 ${brokerSymbol} is CFD/proxy market data for ${requestedSymbol}, not broker truth.`
+        : undefined
+  };
+};
+
 export async function buildIctAdvisorPacketFromRuntime(
   snapshot: ResearchRuntimeSnapshot,
   options: BuildIctAdvisorPacketFromRuntimeOptions = {}
@@ -1013,7 +1046,14 @@ export async function buildIctAdvisorPacketFromRuntime(
       firstTimestamp: candles[0]?.timestamp ?? activeSource?.firstTimestamp ?? sourceSummary.firstTimestamp,
       lastTimestamp: candles[candles.length - 1]?.timestamp ?? activeSource?.lastTimestamp ?? sourceSummary.lastTimestamp,
       sourceFingerprint: activeSource?.fingerprint ?? sourceSummary.fingerprint,
-      sourceLabel: sourceSummary.provenance.sourceLabel
+      sourceLabel: sourceSummary.provenance.sourceLabel,
+      sourceStatus: buildPacketSourceStatus({
+        provider: sourceSummary.provider,
+        researchEligible: sourceSummary.eligibility.researchCycle,
+        candleCount: candles.length,
+        requestedSymbol,
+        brokerSymbol
+      })
     },
     marketAnalysisContext,
     signals,

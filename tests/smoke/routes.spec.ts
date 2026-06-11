@@ -39,6 +39,19 @@ const advancedRoutes = [
 // scripts/smoke-routes.mjs.
 const allRoutes = [...primaryRoutes, ...advancedRoutes];
 const chartRoutes = ["/dashboard", "/ict-lab", "/replay", "/backtest-lab", "/market-data"];
+const sourceStatusRoutes = [
+  "/dashboard",
+  "/advisor",
+  "/market-data",
+  "/ict-lab",
+  "/backtest-lab",
+  "/replay",
+  "/walk-forward",
+  "/agent-debate",
+  "/self-improvement",
+  "/evidence-quality",
+  "/research-maturity"
+];
 const unsafeExecutionControls = [
   "Place Order",
   "Buy Market",
@@ -265,6 +278,21 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Execution: Disabled/i);
     await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Phase 1 \/ Phase 2/i);
     await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Open Advisor/i);
+  });
+
+  test("shared source status banner appears on key pages", async ({ page }) => {
+    for (const route of sourceStatusRoutes) {
+      await gotoRoute(page, route);
+      const banner = page.getByTestId("source-status-banner").first();
+      await expect(banner, `${route} should render the shared source status banner`).toBeVisible();
+      await expect(banner).toContainText(/Authority: none/i);
+      await expect
+        .poll(
+          async () => (await banner.textContent()) ?? "",
+          { message: `${route} source banner should resolve a source status` }
+        )
+        .toMatch(/MT5 read-only|Imported historical|TradingView MCP|Mock\/sample data|Source unavailable/i);
+    }
   });
 
   test("chart surfaces render canvas or a safe fallback", async ({ page }) => {

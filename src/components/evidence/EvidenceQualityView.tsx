@@ -3,6 +3,7 @@ import { DatabaseZap, ShieldAlert } from "lucide-react";
 
 import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDetails";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
+import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,6 +69,8 @@ export function EvidenceQualityView() {
         </div>
         <Badge variant="warning">Research confidence only</Badge>
       </div>
+
+      <SourceStatusBanner />
 
       <SafetyLockBanner message="Evidence quality can reduce readiness confidence, but cannot approve readiness or enable execution." />
 

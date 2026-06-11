@@ -224,6 +224,13 @@ export interface IctAdvisorPacket {
     lastTimestamp?: string;
     sourceFingerprint: string;
     sourceLabel: string;
+    sourceStatus: {
+      isMockOrSample: boolean;
+      isResearchActive: boolean;
+      isProxyInstrument: boolean;
+      statusLabel: string;
+      warningLabel?: string;
+    };
   };
   marketAnalysisContext?: IctMarketAnalysisContext;
   signals: IctAdvisorSignal[];

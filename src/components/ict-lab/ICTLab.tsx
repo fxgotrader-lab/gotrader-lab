@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Activity, ChartCandlestick, Clock, Layers, ScanLine, ShieldAlert, Target } from "lucide-react";
 
 import { MetricCard } from "@/components/MetricCard";
+import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
 import { TradingChart } from "@/components/charts/TradingChart";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -136,6 +137,9 @@ export function ICTLab() {
   // False-confidence guard: analysis below runs on mock/sample candles when
   // MT5 is not research-active and no imported source resolved.
   const analysisUsesMockData = sourceType === "mock" || !displaySource.activeResearchCandleSource.length;
+  const sampleOnlyBadge = analysisUsesMockData ? (
+    <Badge variant="danger" className="mt-1 w-fit">Sample-only, not research evidence</Badge>
+  ) : null;
   const chartSourceType = displaySource.activeChartDisplaySourceMode;
   const sourceLabel = displaySource.activeResearchSourceLabel;
   const chartSourceLabel = displaySource.activeChartDisplaySourceLabel;
@@ -486,6 +490,8 @@ export function ICTLab() {
         </div>
       </div>
 
+      <SourceStatusBanner />
+
       {analysisUsesMockData ? (
         <div
           className="rounded-xl border border-rose-400/40 bg-rose-500/10 p-4"
@@ -566,6 +572,7 @@ export function ICTLab() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <CardTitle>Grinch Strategy Score</CardTitle>
+              {sampleOnlyBadge}
               <CardDescription>
                 Research-only score used by Auto Research and walk-forward as supporting evidence. It cannot approve readiness by itself.
               </CardDescription>
@@ -815,6 +822,7 @@ export function ICTLab() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <CardTitle>Grinch ICT Phase 1 / Model 1</CardTitle>
+              {sampleOnlyBadge}
               <CardDescription>
                 Higher-timeframe bias, opening-price equilibrium, dealing range, PD hierarchy, cycle, timing, and Power 3 OTE profile.
               </CardDescription>
@@ -867,6 +875,7 @@ export function ICTLab() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <CardTitle>Grinch ICT Phase 3 / Consolidation Profile</CardTitle>
+              {sampleOnlyBadge}
               <CardDescription>
                 Tracks tight consolidation around 12AM Open into NY, consolidation-side raids, 12AM support/resistance, and expansion direction.
               </CardDescription>
@@ -935,6 +944,7 @@ export function ICTLab() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <CardTitle>Grinch ICT Phase 4 / SMT Intermarket Confirmation</CardTitle>
+              {sampleOnlyBadge}
               <CardDescription>
                 Confirms or conflicts with the active Grinch profile by comparing NQ, ES, and YM liquidity raids. It cannot create standalone trade signals.
               </CardDescription>
@@ -1003,6 +1013,7 @@ export function ICTLab() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <CardTitle>Grinch ICT Phase 2 / Reversal Profile</CardTitle>
+              {sampleOnlyBadge}
               <CardDescription>
                 Detects failed London interaction with 12AM Open, expansion into NY, first target back to 12AM, and continuation quality.
               </CardDescription>

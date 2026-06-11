@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
+import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1044,6 +1045,8 @@ export function SelfImprovementView() {
         </div>
         <Badge variant="warning">Simulation research only</Badge>
       </div>
+
+      <SourceStatusBanner />
 
       <SafetyLockBanner message="Simulation self-improvement only. No broker execution, readiness override, paper/demo enablement, or real trades." />
 

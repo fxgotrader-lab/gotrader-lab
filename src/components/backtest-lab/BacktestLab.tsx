@@ -5,6 +5,7 @@ import { CalibrationAssistantPanel } from "@/components/backtest-lab/Calibration
 import { TradingChart } from "@/components/charts/TradingChart";
 import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDetails";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
+import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { MetricCard } from "@/components/MetricCard";
 import { Badge } from "@/components/ui/badge";
@@ -386,6 +387,8 @@ export function BacktestLab() {
           <Badge variant="danger">authority none</Badge>
         </div>
       </div>
+
+      <SourceStatusBanner />
 
       <SafetyLockBanner message="Simulation calibration only. No broker connection, live market data, or real trades." />
 
