@@ -2,6 +2,7 @@ import type { IctApprovedSetupProfileRunSummary } from "./ictApprovedSetupProfil
 import type { IctMonteCarloTradeOutcome } from "./ictMonteCarloTypes";
 import type { IctReplayBreakdownMetric, IctReplayCalibrationResult } from "./ictReplayDiagnosticsTypes";
 import type { IctRealReplayRunConfig, IctRealReplayRunResult } from "./ictRealReplayRunnerTypes";
+import type { IctReplayResult } from "./ictReplayValidationTypes";
 
 export type IctManualReplayReviewStatus = "idle" | "running" | "completed" | "unavailable" | "failed";
 
@@ -88,6 +89,11 @@ export interface IctManualReplayReviewResult {
   topCalibrationFilterImprovements: IctManualReplayCalibrationImprovement[];
   approvedProfileComparison: IctManualReplayApprovedProfileComparison[];
   monteCarloOutcomes?: IctMonteCarloTradeOutcome[];
+  /**
+   * Compact per-window replay rows preserved for hypothesis validation
+   * occurrence matching (audit B5). Never contains raw candles.
+   */
+  replayResults?: IctReplayResult[];
   unavailableReason?: string;
   errors: string[];
   warnings: string[];

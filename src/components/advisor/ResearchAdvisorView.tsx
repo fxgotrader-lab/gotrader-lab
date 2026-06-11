@@ -114,6 +114,15 @@ import {
 import { RESEARCH_CYCLE_UPDATED_EVENT } from "@/lib/researchCycle";
 import { resolveResearchRuntimeSnapshot, type ResearchRuntimeSnapshot } from "@/lib/runtime";
 import type { Timeframe } from "@/lib/types";
+import {
+  describeValidationChainStage,
+  latestValidationChainEntry,
+  queueValidationChainEntry,
+  recordReplayReviewInValidationChain,
+  saveValidationChainEntry,
+  type ValidationChainEntry
+} from "@/lib/validationChain";
+import { ValidationChainCard } from "@/components/common/ValidationChainCard";
 import { WALK_FORWARD_UPDATED_EVENT } from "@/lib/walkForward";
 
 const formatDate = (value?: string) => (value ? new Date(value).toLocaleString() : "n/a");
@@ -324,8 +333,28 @@ function buildLocalAdvisorReply(
   if (lower.includes("smt")) {
     return `${smtLabel(currentRead.smtStatus)}. ${currentRead.smtReason ?? `Relative strength leader: ${packet.compactSummary.relativeStrengthLeader ?? "n/a"}. Relative weakness: ${packet.compactSummary.relativeWeaknessLeader ?? "n/a"}.`}`;
   }
+  if (lower.includes("validation") || lower.includes("chain") || lower.includes("evidence")) {
+    const chainEntry = latestValidationChainEntry();
+    if (!chainEntry) {
+      return "Recognition is not evidence. No recognition has been queued into the validation chain yet. Queue replay validation from a recognition card, then replay creates preliminary evidence and walk-forward/OOS creates stronger evidence.";
+    }
+    const replayLine = chainEntry.replayResult
+      ? `Replay ${chainEntry.replayResult.verdict.replace(/_/g, " ")} (${chainEntry.replayResult.reason})`
+      : "Replay validation has not produced a result yet";
+    const wfLine = chainEntry.walkForwardResult
+      ? `Walk-forward/OOS ${chainEntry.walkForwardResult.verdict.replace(/_/g, " ")} (${chainEntry.walkForwardResult.reason})`
+      : "Walk-forward/OOS validation has not run for this recognition";
+    const sampleLine = chainEntry.sourceStatus.isMockOrSample
+      ? " Current result is sample-only and cannot become research evidence."
+      : "";
+    return `Recognition is not evidence. ${describeValidationChainStage(chainEntry)} ${replayLine}. ${wfLine}. Next validation action: ${chainEntry.nextAction}${sampleLine} Authority remains none.`;
+  }
   if (lower.includes("replay")) {
-    return `Replay status: ${formatToken(manualReplayStatus)}. Replay does not auto-run from page load; use the quick action or lower replay panel when you want a real replay review.`;
+    const chainEntry = latestValidationChainEntry();
+    const chainNote = chainEntry?.replayResult
+      ? ` Latest chain replay verdict: ${chainEntry.replayResult.verdict.replace(/_/g, " ")} - ${chainEntry.replayResult.reason}`
+      : "";
+    return `Replay status: ${formatToken(manualReplayStatus)}. Replay does not auto-run from page load; use the quick action or lower replay panel when you want a real replay review.${chainNote}`;
   }
   if (lower.includes("scorecard")) {
     return `Market scorecard status: ${formatToken(marketScorecardStatus)}. It remains idle until explicitly run.`;
@@ -354,6 +383,28 @@ function buildLocalAdvisorReply(
   }
   return `Current GoTrader read: ${formatToken(currentRead.bias)} / opportunity ${formatToken(currentRead.opportunityType)} / ${approvalLabel(currentRead.approvedStatus)} / model lane ${formatToken(currentRead.modelQualityLane)} / ${formatToken(currentRead.riskStatus)}. Paper Sim ${currentRead.paperWatchlistEligible ? "eligible" : "not eligible"}; hypothesis ${currentRead.selfImprovementHypothesisQueued ? "queued" : "not queued"}; execution disabled. Source ${snapshot.marketData.activeResearchSource.provider.replace(/_/g, " ")} remains read-only with authority none.`;
 }
+
+const withValidationChainContext = (packet: IctAdvisorPacket): IctAdvisorPacket => {
+  const chainEntry = latestValidationChainEntry();
+  if (!chainEntry) {
+    return packet;
+  }
+  return {
+    ...packet,
+    validationChain: {
+      recognitionId: chainEntry.recognitionId,
+      setupLabel: chainEntry.setupLabel,
+      hypothesisStatus: chainEntry.hypothesisStatus,
+      stage: describeValidationChainStage(chainEntry),
+      replayVerdict: chainEntry.replayResult?.verdict,
+      walkForwardVerdict: chainEntry.walkForwardResult?.verdict,
+      nextAction: chainEntry.nextAction,
+      sampleOnly: chainEntry.sourceStatus.isMockOrSample,
+      recognitionIsEvidence: false,
+      authority: "none"
+    }
+  };
+};
 
 export function ResearchAdvisorView() {
   const [snapshot, setSnapshot] = useState<ResearchRuntimeSnapshot>();
@@ -485,7 +536,7 @@ export function ResearchAdvisorView() {
     void buildIctAdvisorPacketFromRuntime(snapshot)
       .then((packet) => {
         if (mounted) {
-          setAdvisorPacket(packet);
+          setAdvisorPacket(withValidationChainContext(packet));
           setAdvisorPacketError(undefined);
         }
       })
@@ -639,7 +690,7 @@ export function ResearchAdvisorView() {
       setActivateMarketSteps(result.steps);
       setActivateMarketStatus(result.status);
       if (result.advisorPacket) {
-        setAdvisorPacket(result.advisorPacket);
+        setAdvisorPacket(withValidationChainContext(result.advisorPacket));
         setAdvisorPacketError(undefined);
       }
     } catch (error) {
@@ -713,6 +764,7 @@ export function ResearchAdvisorView() {
       setManualReplayResult(result);
       setManualReplayStatus(result.status);
       if (result.status === "completed") {
+        recordReplayReviewInValidationChain(result);
         try {
           setLatestResearchState(
             saveLatestResearchStatePatch({ latestReplay: buildLatestReplaySnapshot(result) }, "manual_replay_review")
@@ -869,6 +921,9 @@ export function ResearchAdvisorView() {
       const result = validateIctResearchHypothesis({
         hypothesis,
         source: "manual_review",
+        // Audit B5 fix: pass full replay results so occurrence matching in
+        // findHypothesisOccurrences can use them, not just Monte Carlo outcomes.
+        replayResults: replayReview.replayResults ?? [],
         replayOutcomes: replayReview.monteCarloOutcomes ?? [],
         testedWindows: replayReview.totalWindows,
         runMonteCarlo: true
@@ -876,6 +931,7 @@ export function ResearchAdvisorView() {
       const journalEvent = buildIctResearchHypothesisValidationJournalEvent(result);
       appendIctResearchHypothesisValidationJournalEvent(journalEvent);
       applyIctHypothesisValidationToQueue(result);
+      recordReplayReviewInValidationChain(replayReview);
       setHypothesisValidationResult(result);
       setHypothesisValidationStatus("completed");
       setHypothesisValidationError(undefined);
@@ -1153,7 +1209,8 @@ export function ResearchAdvisorView() {
         packetError={activeAdvisorPacketError}
         researchSignal={researchSignal}
       />
-      <RecognitionSummaryCard currentRead={currentRead} />
+      <RecognitionSummaryCard currentRead={currentRead} packet={activeAdvisorPacket} />
+      <ValidationChainCard testId="advisor-validation-chain" />
       <MarketOpportunityCard currentRead={currentRead} />
       <ResearchHypothesisValidationPanel
         currentRead={currentRead}
@@ -1601,10 +1658,39 @@ function MarketOpportunityCard({ currentRead }: { currentRead: IctCurrentRead })
   );
 }
 
-function RecognitionSummaryCard({ currentRead }: { currentRead: IctCurrentRead }) {
+function RecognitionSummaryCard({ currentRead, packet }: { currentRead: IctCurrentRead; packet?: IctAdvisorPacket }) {
   const recognition = currentRead.universalRecognition;
   const scalp = recognition?.scalpOpportunity;
   const pdFocus = recognition?.pdArrays[0];
+  const [queueMessage, setQueueMessage] = useState<string>();
+  const sampleOnly = packet?.activeSource.sourceStatus?.isMockOrSample ?? currentRead.dataStatus !== "ready";
+  const queueReplayValidation = () => {
+    const result = queueValidationChainEntry({
+      recognitionId: `recognition_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+      recognitionType: currentRead.recognitionTier,
+      setupLabel: currentRead.knownModelName
+        ? formatToken(currentRead.knownModelName)
+        : formatToken(currentRead.recognitionTier),
+      symbol: currentRead.requestedSymbol,
+      brokerSymbol: currentRead.brokerSymbol,
+      timeframe: currentRead.primaryTimeframe,
+      htfContext: currentRead.htfTimeframes,
+      sourceFingerprint: packet?.activeSource.sourceFingerprint ?? currentRead.selfImprovementHypothesis?.sourceFingerprint,
+      sourceStatus: {
+        sourceProvider: packet?.activeSource.provider ?? "unknown",
+        isMockOrSample: sampleOnly,
+        isResearchActive: packet?.activeSource.sourceStatus?.isResearchActive ?? false,
+        statusLabel: packet?.activeSource.sourceStatus?.statusLabel ?? formatToken(currentRead.dataStatus)
+      },
+      hypothesisId: currentRead.selfImprovementHypothesis?.hypothesisId
+    });
+    if (result.ok) {
+      saveValidationChainEntry(result.entry);
+      setQueueMessage("Queued for replay validation. Recognition is not evidence until replay and walk-forward confirm it.");
+    } else {
+      setQueueMessage(result.reason);
+    }
+  };
   const tierVariant =
     currentRead.recognitionTier === "full_model"
       ? "success"
@@ -1646,6 +1732,26 @@ function RecognitionSummaryCard({ currentRead }: { currentRead: IctCurrentRead }
         <AdvisorList label="Blockers" values={recognition?.blockers ?? []} empty="No recognition blocker reported." />
         <AdvisorReadout label="Next action" value={recognition?.nextAction ?? currentRead.nextAction} detail="research-only; no readiness promotion" />
       </div>
+      <div className="mt-4 flex flex-wrap items-center gap-3" data-testid="recognition-validation-cta">
+        {sampleOnly ? (
+          <Button variant="outline" size="sm" onClick={queueReplayValidation}>
+            Activate MT5 before validation
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" onClick={queueReplayValidation}>
+            Queue replay validation
+          </Button>
+        )}
+        <Link to="/replay" className="text-xs font-medium text-sky-300 underline underline-offset-2">
+          Open Replay
+        </Link>
+        <span className="text-xs text-slate-500">Recognition is not evidence until replay and walk-forward validation confirm it.</span>
+      </div>
+      {queueMessage ? (
+        <p className="mt-2 text-xs leading-5 text-slate-300" data-testid="recognition-validation-queue-message">
+          {queueMessage}
+        </p>
+      ) : null}
     </section>
   );
 }

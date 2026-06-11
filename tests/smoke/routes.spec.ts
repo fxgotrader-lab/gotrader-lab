@@ -295,6 +295,44 @@ test.describe("GoTrader browser route smoke", () => {
     }
   });
 
+  test("recognition-to-validation chain surfaces render with safe defaults", async ({ page }) => {
+    // ICT Lab recognition cards expose a validation CTA (queue or activate-MT5).
+    await gotoRoute(page, "/ict-lab");
+    const ictCta = page.getByTestId("ict-recognition-cta").first();
+    await expect(ictCta).toBeVisible();
+    await expect(ictCta).toContainText(/Queue replay validation|Activate MT5 before validation/i);
+    await expect(ictCta).toContainText(/Open Replay/i);
+    await expect(page.getByTestId("validation-chain-card").first()).toBeVisible();
+
+    // Replay page shows the validation chain status.
+    await gotoRoute(page, "/replay");
+    const replayChain = page.getByTestId("replay-validation-chain");
+    await expect(replayChain).toBeVisible();
+    await expect(replayChain).toContainText(/Validation chain/i);
+    await expect(replayChain.getByTestId("validation-chain-status")).toBeVisible();
+    await expect(replayChain).toContainText(/Authority: none/i);
+
+    // Walk-Forward page shows the chain next action/status.
+    await gotoRoute(page, "/walk-forward");
+    const wfChain = page.getByTestId("walk-forward-validation-chain");
+    await expect(wfChain).toBeVisible();
+    await expect(wfChain.getByTestId("validation-chain-status")).toBeVisible();
+
+    // Advisor surfaces the validation chain status card.
+    await gotoRoute(page, "/research-advisor");
+    const advisorChain = page.getByTestId("advisor-validation-chain");
+    await expect(advisorChain).toBeVisible();
+    await expect(advisorChain).toContainText(/Validation chain/i);
+    await expect(advisorChain).toContainText(/Recognition is not evidence|Recognition only/i);
+
+    // Dashboard shows the compact validation chain summary.
+    await gotoRoute(page, "/dashboard");
+    const dashboardChain = page.getByTestId("validation-chain-card").first();
+    await expect(dashboardChain).toBeVisible();
+    await expect(dashboardChain.getByTestId("validation-chain-status")).toBeVisible();
+    await expect(dashboardChain).toContainText(/Authority: none/i);
+  });
+
   test("chart surfaces render canvas or a safe fallback", async ({ page }) => {
     for (const route of chartRoutes) {
       await gotoRoute(page, route);

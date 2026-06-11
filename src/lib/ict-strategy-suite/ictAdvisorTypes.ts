@@ -296,6 +296,23 @@ export interface IctAdvisorPacket {
     noTradeReasonCount: number;
   };
   approvedProfileDecision: IctApprovedSetupDecision;
+  /**
+   * Compact recognition-to-validation chain status. Recognition is never
+   * evidence; this only reports where validation stands and the next safe
+   * action. Populated client-side from the validation chain store.
+   */
+  validationChain?: {
+    recognitionId: string;
+    setupLabel: string;
+    hypothesisStatus: string;
+    stage: string;
+    replayVerdict?: string;
+    walkForwardVerdict?: string;
+    nextAction: string;
+    sampleOnly: boolean;
+    recognitionIsEvidence: false;
+    authority: "none";
+  };
   journalEvents: IctAdvisorJournalEvent[];
   indexSmtJournalEvents: IctIndexSmtJournalEvent[];
   newsSessionRisk?: IctNewsSessionRiskDecision;

@@ -63,6 +63,9 @@ import {
 } from "@/lib/strategyLibrary";
 import { classifyMarketRegime } from "@/lib/regime";
 import type { Candle, MarketBias, MarketStructureEvent, SessionContext } from "@/lib/types";
+import { queueValidationChainEntry, saveValidationChainEntry } from "@/lib/validationChain";
+import { ValidationChainCard } from "@/components/common/ValidationChainCard";
+import { Button } from "@/components/ui/button";
 
 const formatTime = (timestamp: string) => timestamp.slice(11, 16);
 
@@ -148,6 +151,58 @@ export function ICTLab() {
   const mt5HigherTimeframeSummary = mt5Runtime.higherTimeframeSources?.length
     ? mt5Runtime.higherTimeframeSources.map((source) => `${source.timeframe}:${source.candleCount.toLocaleString()}`).join(", ")
     : "HTF context missing";
+  const [recognitionQueueMessages, setRecognitionQueueMessages] = useState<Record<string, string>>({});
+  const queueRecognitionValidation = (setupLabel: string) => {
+    const result = queueValidationChainEntry({
+      recognitionId: `ictlab_${setupLabel.toLowerCase().replace(/\W+/g, "_")}_${Date.now().toString(36)}`,
+      recognitionType: "grinch_profile",
+      setupLabel,
+      symbol: mt5RequestedSymbol,
+      brokerSymbol: mt5BrokerSymbol,
+      timeframe: displaySource.activeResearchSource.timeframe,
+      htfContext: mt5Runtime.higherTimeframeSources?.map((source) => source.timeframe) ?? [],
+      sourceFingerprint: displaySource.activeResearchSource.fingerprint,
+      sourceStatus: {
+        sourceProvider: displaySource.activeResearchSource.provider,
+        isMockOrSample: analysisUsesMockData,
+        isResearchActive: mt5ResearchEligible,
+        statusLabel: sourceLabel
+      }
+    });
+    if (result.ok) {
+      saveValidationChainEntry(result.entry);
+      setRecognitionQueueMessages((prev) => ({
+        ...prev,
+        [setupLabel]: "Queued for replay validation. Recognition is not evidence until replay and walk-forward confirm it."
+      }));
+    } else {
+      setRecognitionQueueMessages((prev) => ({ ...prev, [setupLabel]: result.reason }));
+    }
+  };
+  const recognitionCta = (setupLabel: string) => (
+    <div className="mt-2 flex flex-col gap-1" data-testid="ict-recognition-cta">
+      <div className="flex flex-wrap items-center gap-2">
+        {analysisUsesMockData ? (
+          <Link
+            to="/advisor"
+            className="inline-flex h-8 items-center rounded-md border border-rose-400/40 px-3 text-xs font-medium text-rose-200 hover:bg-rose-500/10"
+          >
+            Activate MT5 before validation
+          </Link>
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => queueRecognitionValidation(setupLabel)}>
+            Queue replay validation
+          </Button>
+        )}
+        <Link to="/replay" className="text-xs font-medium text-sky-300 underline underline-offset-2">
+          Open Replay
+        </Link>
+      </div>
+      {recognitionQueueMessages[setupLabel] ? (
+        <p className="text-xs leading-5 text-slate-300">{recognitionQueueMessages[setupLabel]}</p>
+      ) : null}
+    </div>
+  );
   const sessionTimeMapping = useMemo(
     () =>
       resolveSessionTimeMapping({
@@ -491,6 +546,7 @@ export function ICTLab() {
       </div>
 
       <SourceStatusBanner />
+      <ValidationChainCard />
 
       {analysisUsesMockData ? (
         <div
@@ -573,6 +629,7 @@ export function ICTLab() {
             <div>
               <CardTitle>Grinch Strategy Score</CardTitle>
               {sampleOnlyBadge}
+              {recognitionCta("Grinch Strategy Score")}
               <CardDescription>
                 Research-only score used by Auto Research and walk-forward as supporting evidence. It cannot approve readiness by itself.
               </CardDescription>
@@ -823,6 +880,7 @@ export function ICTLab() {
             <div>
               <CardTitle>Grinch ICT Phase 1 / Model 1</CardTitle>
               {sampleOnlyBadge}
+              {recognitionCta("Grinch Phase 1 / Model 1")}
               <CardDescription>
                 Higher-timeframe bias, opening-price equilibrium, dealing range, PD hierarchy, cycle, timing, and Power 3 OTE profile.
               </CardDescription>
@@ -876,6 +934,7 @@ export function ICTLab() {
             <div>
               <CardTitle>Grinch ICT Phase 3 / Consolidation Profile</CardTitle>
               {sampleOnlyBadge}
+              {recognitionCta("Grinch Phase 3 / Consolidation")}
               <CardDescription>
                 Tracks tight consolidation around 12AM Open into NY, consolidation-side raids, 12AM support/resistance, and expansion direction.
               </CardDescription>
@@ -945,6 +1004,7 @@ export function ICTLab() {
             <div>
               <CardTitle>Grinch ICT Phase 4 / SMT Intermarket Confirmation</CardTitle>
               {sampleOnlyBadge}
+              {recognitionCta("Grinch Phase 4 / SMT Confirmation")}
               <CardDescription>
                 Confirms or conflicts with the active Grinch profile by comparing NQ, ES, and YM liquidity raids. It cannot create standalone trade signals.
               </CardDescription>
@@ -1014,6 +1074,7 @@ export function ICTLab() {
             <div>
               <CardTitle>Grinch ICT Phase 2 / Reversal Profile</CardTitle>
               {sampleOnlyBadge}
+              {recognitionCta("Grinch Phase 2 / Reversal")}
               <CardDescription>
                 Detects failed London interaction with 12AM Open, expansion into NY, first target back to 12AM, and continuation quality.
               </CardDescription>

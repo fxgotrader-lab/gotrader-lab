@@ -4,6 +4,8 @@ import { AlertTriangle, GitBranch, Loader2, Play, XCircle } from "lucide-react";
 import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDetails";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
 import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
+import { ValidationChainCard } from "@/components/common/ValidationChainCard";
+import { recordWalkForwardRunInValidationChain } from "@/lib/validationChain";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -120,6 +122,14 @@ export function WalkForwardView() {
       .then(setRuntimeSnapshot)
       .catch(() => undefined);
   };
+
+  useEffect(() => {
+    // Attach completed walk-forward verdicts to the recognition validation
+    // chain (idempotent: skips unrelated/already-recorded runs).
+    if (latestRun) {
+      recordWalkForwardRunInValidationChain(latestRun);
+    }
+  }, [latestRun]);
 
   useEffect(() => {
     refresh();
@@ -288,6 +298,7 @@ export function WalkForwardView() {
       </div>
 
       <SourceStatusBanner />
+      <ValidationChainCard testId="walk-forward-validation-chain" />
 
       <SafetyLockBanner message="Walk-forward validation is research/simulation only. It cannot execute trades, enable demo/live mode, or override readiness." />
 

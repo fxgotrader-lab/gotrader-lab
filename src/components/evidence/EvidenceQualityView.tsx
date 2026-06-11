@@ -5,6 +5,8 @@ import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDet
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
 import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
+import { ValidationChainCard } from "@/components/common/ValidationChainCard";
+import { recordEvidenceUpdateInValidationChain } from "@/lib/validationChain";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -56,6 +58,17 @@ export function EvidenceQualityView() {
   const summary = runtimeSnapshot?.evidence.evidenceLedgerSummary;
   const entries = summary?.entries ?? [];
 
+  useEffect(() => {
+    // After a walk-forward pass, fold the deterministic evidence/maturity
+    // snapshot into the validation chain (no readiness promotion).
+    if (!runtimeSnapshot) return;
+    recordEvidenceUpdateInValidationChain({
+      evidenceQualityScore: runtimeSnapshot.evidence.evidenceLedgerSummary.overallScore,
+      maturityScore: runtimeSnapshot.maturity.maturityScore,
+      maturityGrade: String(runtimeSnapshot.maturity.maturityGrade)
+    });
+  }, [runtimeSnapshot]);
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
@@ -71,6 +84,7 @@ export function EvidenceQualityView() {
       </div>
 
       <SourceStatusBanner />
+      <ValidationChainCard testId="evidence-validation-chain" />
 
       <SafetyLockBanner message="Evidence quality can reduce readiness confidence, but cannot approve readiness or enable execution." />
 

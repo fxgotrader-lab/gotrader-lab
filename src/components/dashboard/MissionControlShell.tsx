@@ -6,6 +6,7 @@ import { ActivateMarketProgress } from "@/components/advisor/ActivateMarketProgr
 import { IctAdvisorSummaryPanel } from "@/components/advisor/IctAdvisorSummaryPanel";
 import { clearReplaySnapshotSourceMeta, loadReplaySnapshotSourceMeta } from "@/lib/backtesting";
 import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
+import { ValidationChainCard } from "@/components/common/ValidationChainCard";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import {
   TradingChart,
@@ -2030,6 +2031,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
           </div>
         </div>
         <SourceStatusBanner className="mt-4" />
+        <ValidationChainCard className="mt-3" />
         <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
           {statusChips.map((chip) => (
             <StatusChip key={chip.label} label={chip.label} value={chip.value} tone={chip.tone} />

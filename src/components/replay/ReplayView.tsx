@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Pause, Play, RotateCcw, ShieldAlert, SkipBac
 import { MetricCard } from "@/components/MetricCard";
 import { TradingChart } from "@/components/charts/TradingChart";
 import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
+import { ValidationChainCard } from "@/components/common/ValidationChainCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -290,6 +291,7 @@ export function ReplayView() {
       </div>
 
       <SourceStatusBanner />
+      <ValidationChainCard testId="replay-validation-chain" />
 
       <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
         <ShieldAlert className="mr-2 inline h-4 w-4" aria-hidden="true" />

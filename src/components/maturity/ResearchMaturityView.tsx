@@ -5,6 +5,7 @@ import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDet
 import { AutonomySafetyPolicyPanel } from "@/components/autonomous-research/AutonomySafetyPolicyPanel";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
 import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
+import { ValidationChainCard } from "@/components/common/ValidationChainCard";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -87,6 +88,7 @@ export function ResearchMaturityView() {
       </div>
 
       <SourceStatusBanner />
+      <ValidationChainCard testId="maturity-validation-chain" />
 
       <SafetyLockBanner message="Research maturity can block advancement, but cannot approve execution, enable demo/live mode, or override readiness." />
 
