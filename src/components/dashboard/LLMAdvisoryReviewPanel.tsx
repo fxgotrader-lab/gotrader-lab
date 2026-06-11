@@ -33,6 +33,7 @@ import {
   type LocalBridgeProcessStatus,
   type LocalBridgeUnavailableReason
 } from "@/lib/llm";
+import { recordOpenClawPilotProposalIntent } from "@/lib/openclawPilot";
 import { mt5CfdProxyWarning } from "@/lib/integrations/mt5";
 import type { ResearchRuntimeSnapshot } from "@/lib/runtime";
 import { safeArray, safeTopN, uid } from "@/lib/utils";
@@ -806,6 +807,13 @@ export function LLMAdvisoryReviewPanel({
         const provenancePrefix = stub
           ? "[OpenClaw bridge stub - skill routing not wired; safe stub advisory, not full OpenClaw]"
           : "[OpenClaw skill-routed]";
+        const pilotDraft = response.selfImprovementProposalIntent?.createProposal
+          ? recordOpenClawPilotProposalIntent({
+              ...packet,
+              selfImprovementProposalIntent: response.selfImprovementProposalIntent,
+              authority: response.authority
+            }).draft
+          : undefined;
         setStatus("online");
         setBridgeProcessStatus("online");
         setAdvisoryCapabilityStatus("ready");
@@ -828,8 +836,8 @@ export function LLMAdvisoryReviewPanel({
           timeoutMs: result.timeoutMs,
           openClawEndpoint: result.endpoint,
           providerStatus: result.providerStatus,
-          openClawProposalIntent: response.selfImprovementProposalIntent?.createProposal
-            ? `${response.selfImprovementProposalIntent.proposalTitle ?? "proposal intent"} / auto-apply false`
+          openClawProposalIntent: pilotDraft
+            ? `${pilotDraft.proposalTitle} / ${pilotDraft.validationStatus.replace(/_/g, " ")} / auto-apply false`
             : "none"
         });
         appendMessage(
@@ -842,7 +850,7 @@ export function LLMAdvisoryReviewPanel({
               ? `Calibration recommendations: ${response.calibrationRecommendations.join(" ")}`
               : "Calibration recommendations: none returned.",
             response.selfImprovementProposalIntent?.createProposal
-              ? `Proposal intent: ${response.selfImprovementProposalIntent.proposalTitle ?? "draft proposal"}; auto-apply allowed: false.`
+              ? `Proposal intent: ${pilotDraft?.proposalTitle ?? "draft proposal"}; dry-run status: ${pilotDraft?.validationStatus.replace(/_/g, " ") ?? "not recorded"}; auto-apply allowed: false.`
               : "Proposal intent: none.",
             response.riskNotes.length ? `Risk notes: ${response.riskNotes.join(" ")}` : "Risk notes: advisory only; gates remain final authority."
           ].join("\n\n")

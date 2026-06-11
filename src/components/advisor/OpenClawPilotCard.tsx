@@ -2,8 +2,9 @@ import { Bot } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { useLatestValidationChainEntry } from "@/components/common/ValidationChainCard";
-import { openClawPilotProgram } from "@/lib/openclawPilot";
+import { latestBlockedOpenClawPilotDraft, latestOpenClawPilotDraft, openClawPilotProgram } from "@/lib/openclawPilot";
 import { validationChainStatusLabel } from "@/lib/validationChain";
+import { useOpenClawPilotDraftState } from "@/components/advisor/OpenClawProposalIntentPanel";
 
 const formatToken = (value?: string) => (value?.trim() ? value : "unknown").replace(/_/g, " ");
 
@@ -15,6 +16,9 @@ export function OpenClawPilotCard({ testId = "openclaw-pilot-card" }: { testId?:
   const program = openClawPilotProgram;
   const boundary = program.safetyBoundary;
   const chainEntry = useLatestValidationChainEntry();
+  const draftState = useOpenClawPilotDraftState();
+  const safeDraft = latestOpenClawPilotDraft(draftState);
+  const blockedDraft = latestBlockedOpenClawPilotDraft(draftState);
 
   return (
     <section
@@ -46,6 +50,26 @@ export function OpenClawPilotCard({ testId = "openclaw-pilot-card" }: { testId?:
           ? `${chainEntry.setupLabel} · ${chainEntry.symbol} ${chainEntry.timeframe} · ${validationChainStatusLabel(chainEntry.hypothesisStatus)}`
           : "no recognition queued"}
       </p>
+      <div className="mt-3 grid gap-2 md:grid-cols-3">
+        <div className="rounded-lg border border-white/10 bg-black/20 p-2">
+          <p className="text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">Latest draft</p>
+          <p className="mt-1 line-clamp-2 text-xs font-medium text-slate-100">
+            {safeDraft ? safeDraft.proposalTitle : "none"}
+          </p>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-black/20 p-2">
+          <p className="text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">Dry-run status</p>
+          <p className="mt-1 text-xs font-medium text-slate-100">
+            {safeDraft ? safeDraft.validationStatus.replace(/_/g, " ") : blockedDraft ? "blocked intent stored" : "no intent reviewed"}
+          </p>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-black/20 p-2">
+          <p className="text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">Blocked intent</p>
+          <p className="mt-1 line-clamp-2 text-xs font-medium text-slate-100">
+            {blockedDraft ? blockedDraft.blockedReason ?? blockedDraft.proposalTitle : "none"}
+          </p>
+        </div>
+      </div>
     </section>
   );
 }

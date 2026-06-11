@@ -110,6 +110,46 @@ export interface OpenClawPilotProposalIntent {
   authority: OpenClawPilotAuthority;
 }
 
+export type OpenClawPilotDraftValidationStatus =
+  | "safe_draft"
+  | "blocked"
+  | "needs_human_review"
+  | "queued_for_deterministic_validation";
+
+export interface OpenClawPilotProposalDraft {
+  id: string;
+  timestamp: string;
+  programVersion: string;
+  dryRunAuditId: string;
+  sourceFingerprint?: string;
+  requestedSymbol?: string;
+  brokerSymbol?: string;
+  timeframe?: string;
+  sourceProvider?: string;
+  validationChainId?: string;
+  proposalTitle: string;
+  targetSubsystem: string;
+  candidateFamilies: string[];
+  requiresReplay: boolean;
+  requiresWalkForward: boolean;
+  autoApplyAllowed: false;
+  authority: OpenClawPilotAuthority;
+  validationStatus: OpenClawPilotDraftValidationStatus;
+  blockedReason?: string;
+  blockedFields: string[];
+  requiredValidationGates: string[];
+  nextAction: string;
+  compactSummary: string;
+}
+
+export interface OpenClawPilotDraftState {
+  updatedAt: string;
+  latestDraftId?: string;
+  latestBlockedId?: string;
+  drafts: OpenClawPilotProposalDraft[];
+  authority: OpenClawPilotAuthority;
+}
+
 export interface OpenClawPilotValidationResult {
   valid: boolean;
   status: "passed" | "failed";

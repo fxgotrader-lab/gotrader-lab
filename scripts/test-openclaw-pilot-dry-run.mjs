@@ -9,7 +9,7 @@ import ts from "typescript";
 const projectRoot = process.cwd();
 const sourceRoot = path.join(projectRoot, "src", "lib", "openclawPilot");
 const outRoot = path.join(projectRoot, ".gotrader", "openclaw-pilot-dry-run-test");
-const sourceFiles = ["openclawPilotTypes.ts", "openclawProgram.ts", "openclawPilotDryRun.ts"];
+const sourceFiles = ["openclawPilotTypes.ts", "openclawProgram.ts", "openclawPilotDryRun.ts", "openclawPilotDrafts.ts"];
 
 function rewriteImports(source) {
   return source
@@ -115,6 +115,10 @@ async function main() {
     validateOpenClawPilotDryRunPacket,
     openClawPilotDryRunAuditIsSafe
   } = await import(pathToFileURL(path.join(outRoot, "openclawPilotDryRun.mjs")).href);
+  const {
+    buildOpenClawPilotProposalDraft,
+    openClawPilotDraftStateIsCompact
+  } = await import(pathToFileURL(path.join(outRoot, "openclawPilotDrafts.mjs")).href);
 
   const program = loadOpenClawPilotProgram();
   const programValidation = validateOpenClawPilotProgram(program);
@@ -252,6 +256,45 @@ async function main() {
   assert.equal(validationOnly.valid, false);
   assert.deepEqual(validationOnly.authority, authorityNone);
 
+  const safeDraft = buildOpenClawPilotProposalDraft(safePacket(), { timestamp: "2026-06-11T17:31:00.000Z" });
+  assert.equal(safeDraft.validationStatus, "safe_draft");
+  assert.equal(safeDraft.proposalTitle, "Review CMD paper-watchlist context");
+  assert.equal(safeDraft.autoApplyAllowed, false);
+  assert.deepEqual(safeDraft.authority, authorityNone);
+  assert.equal(safeDraft.requiresReplay, true);
+  assert.equal(safeDraft.requiresWalkForward, true);
+  assert.ok(safeDraft.requiredValidationGates.includes("Replay snapshot"));
+  assert.ok(safeDraft.requiredValidationGates.includes("Walk-forward"));
+  assert.ok(openClawPilotDraftStateIsCompact({
+    updatedAt: "2026-06-11T17:31:00.000Z",
+    latestDraftId: safeDraft.id,
+    drafts: [safeDraft],
+    authority: authorityNone
+  }));
+  assert.doesNotMatch(JSON.stringify(safeDraft), /"candles"\s*:|accountNumber|orderId|positionId|sk-test|password123/i);
+
+  const blockedDraft = buildOpenClawPilotProposalDraft(
+    cloneWith({
+      selfImprovementProposalIntent: {
+        ...safePacket().selfImprovementProposalIntent,
+        autoApplyAllowed: true
+      }
+    }),
+    { timestamp: "2026-06-11T17:32:00.000Z" }
+  );
+  assert.equal(blockedDraft.validationStatus, "blocked");
+  assert.match(blockedDraft.blockedReason ?? "", /autoApply/i);
+  assert.deepEqual(blockedDraft.authority, authorityNone);
+
+  const nonNoneAuthorityDraft = buildOpenClawPilotProposalDraft(
+    cloneWith({
+      safety: { ...authorityNone, executionAuthority: "paper", constraints: [] }
+    }),
+    { timestamp: "2026-06-11T17:33:00.000Z" }
+  );
+  assert.equal(nonNoneAuthorityDraft.validationStatus, "blocked");
+  assert.match(nonNoneAuthorityDraft.blockedReason ?? "", /executionAuthority/i);
+
   console.log("OpenClaw pilot dry-run tests passed.");
   console.log(
     JSON.stringify(
@@ -270,6 +313,10 @@ async function main() {
           "active calibration mutation language fails",
           "secrets/API keys/tokens fail",
           "safe audit packet contains no raw candles/secrets",
+          "safe proposal intent displays as draft model",
+          "autoApplyAllowed true is stored as blocked draft",
+          "executionAuthority non-none is stored as blocked draft",
+          "draft storage omits raw candles/secrets/account/order/position data",
           "authority remains none"
         ],
         authority: safe.authority,

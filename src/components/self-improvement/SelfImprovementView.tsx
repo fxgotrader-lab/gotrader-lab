@@ -10,6 +10,7 @@ import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
 import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
 import { ValidationChainCard } from "@/components/common/ValidationChainCard";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
+import { OpenClawProposalIntentPanel } from "@/components/advisor/OpenClawProposalIntentPanel";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -1049,6 +1050,13 @@ export function SelfImprovementView() {
 
       <SourceStatusBanner />
       <ValidationChainCard testId="self-improvement-validation-chain" />
+
+      <OpenClawProposalIntentPanel
+        context="self_improvement"
+        showDismiss
+        showValidationChain
+        testId="openclaw-pilot-drafts-section"
+      />
 
       <SafetyLockBanner message="Simulation self-improvement only. No broker execution, readiness override, paper/demo enablement, or real trades." />
 

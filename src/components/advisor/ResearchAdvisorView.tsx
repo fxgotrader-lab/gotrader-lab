@@ -7,6 +7,7 @@ import { AdvisorProviderStatusHeader } from "@/components/advisor/AdvisorProvide
 import { AdvisorWorkspaceSummary } from "@/components/advisor/AdvisorWorkspaceSummary";
 import { IctAdvisorSummaryPanel } from "@/components/advisor/IctAdvisorSummaryPanel";
 import { OpenClawPilotCard } from "@/components/advisor/OpenClawPilotCard";
+import { OpenClawProposalIntentPanel } from "@/components/advisor/OpenClawProposalIntentPanel";
 import { LLMAdvisoryReviewPanel } from "@/components/dashboard/LLMAdvisoryReviewPanel";
 import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
 import { Badge } from "@/components/ui/badge";
@@ -1413,6 +1414,8 @@ export function ResearchAdvisorView() {
       <AdvisorProviderStatusHeader />
 
       <OpenClawPilotCard />
+
+      <OpenClawProposalIntentPanel context="advisor" showValidationChain />
 
       <DeferredResearchDetails
         title="External Advisory Bridge"

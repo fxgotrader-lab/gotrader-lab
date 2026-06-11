@@ -358,6 +358,7 @@ test.describe("GoTrader browser route smoke", () => {
   });
 
   test("advisor provider status and OpenClaw pilot clarity surfaces render safely", async ({ page }) => {
+    await seedOpenClawPilotDrafts(page);
     await gotoRoute(page, "/research-advisor");
 
     // Deterministic chat is labeled as local deterministic guidance on the default Chat tab.
@@ -396,6 +397,28 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(pilotCard).toContainText(/executionAuthority: none/i);
     await expect(pilotCard).toContainText(/readinessOverrideAuthority: none/i);
     await expect(pilotCard.getByTestId("openclaw-pilot-chain-status")).toBeVisible();
+    await expect(pilotCard).toContainText(/Review CMD paper-watchlist context/i);
+    await expect(pilotCard).toContainText(/autoApplyAllowed true is blocked/i);
+
+    const proposalPanel = page.getByTestId("openclaw-proposal-intent-panel");
+    await expect(proposalPanel).toBeVisible();
+    await expect(proposalPanel).toContainText(/Draft only/i);
+    await expect(proposalPanel.getByTestId("openclaw-pilot-safe-draft")).toContainText(/Review CMD paper-watchlist context/i);
+    await expect(proposalPanel.getByTestId("openclaw-pilot-safe-draft")).toContainText(/safe draft/i);
+    await expect(proposalPanel.getByTestId("openclaw-pilot-blocked-draft")).toContainText(/autoApplyAllowed true is blocked/i);
+    await expect(proposalPanel.getByTestId("openclaw-pilot-draft-authority")).toContainText(/authority none/i);
+    await expect(proposalPanel.getByTestId("openclaw-pilot-draft-auto-apply")).toContainText(/autoApplyAllowed false/i);
+    await expect(proposalPanel).toContainText(/Queue deterministic validation/i);
+    await expect(proposalPanel).not.toContainText(/applyCalibration|approveCalibrationProposal|active_calibration/i);
+
+    await gotoRoute(page, "/self-improvement");
+    const pilotDrafts = page.getByTestId("openclaw-pilot-drafts-section");
+    await expect(pilotDrafts).toBeVisible();
+    await expect(pilotDrafts).toContainText(/OpenClaw Pilot Drafts/i);
+    await expect(pilotDrafts).toContainText(/Review CMD paper-watchlist context/i);
+    await expect(pilotDrafts).toContainText(/Draft only/i);
+    await expect(pilotDrafts).toContainText(/Dismiss draft/i);
+    await expect(pilotDrafts).not.toContainText(/rawCandles|"candles"\s*:|accountNumber|orderId|positionId/i);
 
     // Dashboard compact advisor stays compact: provider status only, no chat input.
     await gotoRoute(page, "/dashboard");
@@ -520,6 +543,75 @@ test.describe("GoTrader browser route smoke", () => {
 async function gotoRoute(page: Page, route: string) {
   await page.goto(route, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(700);
+}
+
+async function seedOpenClawPilotDrafts(page: Page) {
+  await page.addInitScript(() => {
+    const authority = {
+      executionAuthority: "none",
+      brokerAuthority: "none",
+      readinessOverrideAuthority: "none"
+    };
+    window.localStorage.setItem(
+      "gotrader.openclaw-pilot-drafts.v1",
+      JSON.stringify({
+        updatedAt: "2026-06-11T18:00:00.000Z",
+        latestDraftId: "openclaw_pilot_draft_safe_smoke",
+        latestBlockedId: "openclaw_pilot_draft_blocked_smoke",
+        authority,
+        drafts: [
+          {
+            id: "openclaw_pilot_draft_safe_smoke",
+            timestamp: "2026-06-11T18:00:00.000Z",
+            programVersion: "0.1.0",
+            dryRunAuditId: "openclaw_pilot_dry_run_safe_smoke",
+            sourceFingerprint: "mt5_read_only|MNQ|USTECH|5m|1000|first|last",
+            requestedSymbol: "MNQ",
+            brokerSymbol: "USTECH",
+            timeframe: "5m",
+            sourceProvider: "mt5_read_only",
+            validationChainId: "validation_chain_smoke",
+            proposalTitle: "Review CMD paper-watchlist context",
+            targetSubsystem: "ICT Strategy Suite",
+            candidateFamilies: ["ict_hypothesis_validation"],
+            requiresReplay: true,
+            requiresWalkForward: true,
+            autoApplyAllowed: false,
+            authority,
+            validationStatus: "safe_draft",
+            blockedFields: [],
+            requiredValidationGates: ["Replay snapshot", "Walk-forward", "Evidence quality", "Research maturity"],
+            nextAction: "Queue deterministic validation; replay and walk-forward must pass before progression.",
+            compactSummary: "MNQ via USTECH on mt5_read_only: passed OpenClaw pilot dry-run validation."
+          },
+          {
+            id: "openclaw_pilot_draft_blocked_smoke",
+            timestamp: "2026-06-11T18:01:00.000Z",
+            programVersion: "0.1.0",
+            dryRunAuditId: "openclaw_pilot_dry_run_blocked_smoke",
+            sourceFingerprint: "mt5_read_only|MNQ|USTECH|5m|1000|first|last",
+            requestedSymbol: "MNQ",
+            brokerSymbol: "USTECH",
+            timeframe: "5m",
+            sourceProvider: "mt5_read_only",
+            proposalTitle: "Unsafe calibration request",
+            targetSubsystem: "ICT Strategy Suite",
+            candidateFamilies: ["ict_hypothesis_validation"],
+            requiresReplay: true,
+            requiresWalkForward: true,
+            autoApplyAllowed: false,
+            authority,
+            validationStatus: "blocked",
+            blockedReason: "autoApplyAllowed true is blocked by the OpenClaw pilot dry-run.",
+            blockedFields: ["autoApply:$.selfImprovementProposalIntent.autoApplyAllowed"],
+            requiredValidationGates: ["Replay snapshot", "Walk-forward", "Evidence quality", "Research maturity"],
+            nextAction: "Remove blocked fields and rerun the OpenClaw pilot dry-run.",
+            compactSummary: "MNQ via USTECH on mt5_read_only: blocked unsafe field."
+          }
+        ]
+      })
+    );
+  });
 }
 
 async function expectChartOrFallback(page: Page, route: string) {
