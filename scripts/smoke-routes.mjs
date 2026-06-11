@@ -6,9 +6,9 @@ import http from "node:http";
 import net from "node:net";
 import path from "node:path";
 
-// Expected coverage: all 27 sidebar-reachable routes from src/App.tsx
-// (11 primary + 16 advanced). Excluded: "/" and "*" redirects and the
-// "/agents/:id" detail route. Keep this list in sync with
+// Expected coverage: all 27 routes from src/App.tsx, reachable through the
+// 8 sidebar hubs and their workspace tabs. Excluded: "/" and "*" redirects
+// and the "/agents/:id" detail route. Keep this list in sync with
 // tests/smoke/routes.spec.ts.
 const primaryRoutes = [
   "/dashboard",
@@ -195,6 +195,12 @@ function hasViteOverlay(text) {
   return /vite-error-overlay|Internal server error|\[plugin:vite|Transform failed/i.test(text);
 }
 
+// Keep in sync with tests/smoke/routes.spec.ts: the optional local LLM bridge
+// health probe is expected to fail when the bridge is not running.
+function isExpectedOptionalLocalBridgeError(message) {
+  return message.includes("127.0.0.1:8787/health") || message.includes("localhost:8787/health");
+}
+
 function hasUnsafeExecutionControl(controlText) {
   return /\b(place order|submit order|buy market|sell market|enable live trading|start live trading|connect tradovate|send order|flatten position)\b/i.test(
     controlText
@@ -222,7 +228,10 @@ async function runBrowserSmoke(baseUrl, playwright) {
     const pageErrors = [];
     page.on("console", (message) => {
       if (message.type() === "error") {
-        consoleErrors.push(message.text());
+        const rendered = `${message.text()} ${message.location().url ?? ""}`;
+        if (!isExpectedOptionalLocalBridgeError(rendered)) {
+          consoleErrors.push(message.text());
+        }
       }
     });
     page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -230,6 +239,21 @@ async function runBrowserSmoke(baseUrl, playwright) {
     try {
       await page.goto(`${baseUrl}${route}`, { waitUntil: "domcontentloaded", timeout: routeTimeoutMs });
       await page.waitForTimeout(500);
+      if (chartRoutes.has(route)) {
+        // Charts mount after data resolves; poll briefly like the Playwright spec.
+        await page
+          .waitForFunction(
+            () =>
+              document.querySelectorAll("canvas").length > 0 ||
+              Boolean(document.querySelector("[role='application']")) ||
+              /Chart unavailable|No candles|No chart data|preview unavailable|data unavailable/i.test(
+                document.body.textContent ?? ""
+              ),
+            undefined,
+            { timeout: 6000 }
+          )
+          .catch(() => undefined);
+      }
       const detail = await page.evaluate(() => {
         const bodyText = document.body.textContent ?? "";
         const visibleControls = Array.from(document.querySelectorAll("button,a,input,select,textarea"))
@@ -247,7 +271,9 @@ async function runBrowserSmoke(baseUrl, playwright) {
         return {
           bodyText,
           canvasCount: document.querySelectorAll("canvas").length,
-          chartFallback: /Chart unavailable/i.test(bodyText),
+          chartFallback:
+            /Chart unavailable|No candles|No chart data|preview unavailable|data unavailable/i.test(bodyText) ||
+            Boolean(document.querySelector("[role='application']")),
           hasMain: Boolean(document.querySelector("main")),
           heading: document.querySelector("h1,h2")?.textContent?.trim() ?? "",
           path: location.pathname,
@@ -306,22 +332,29 @@ async function runBrowserSmoke(baseUrl, playwright) {
 async function runNavigationSmoke(context, baseUrl, failures) {
   const page = await context.newPage();
   try {
+    // Sidebar hub navigation: each hub link routes to the hub's primary page.
     await page.goto(`${baseUrl}/dashboard`, { waitUntil: "domcontentloaded", timeout: routeTimeoutMs });
-    for (const route of ["/market-data", "/walk-forward", "/self-improvement", "/settings"]) {
-      await page.locator(`nav a[href="${route}"]`).click({ timeout: 10000 });
+    for (const route of ["/market-data", "/replay", "/self-improvement", "/settings"]) {
+      await page.locator(`nav a[href="${route}"]`).first().click({ timeout: 10000 });
       await page.waitForTimeout(250);
       const path = await page.evaluate(() => location.pathname);
       if (path !== route) {
         failures.push(`navigation: clicking ${route} landed on ${path}`);
       }
     }
-    await page.goto(`${baseUrl}/dashboard`, { waitUntil: "domcontentloaded", timeout: routeTimeoutMs });
-    await page.getByRole("button", { name: "Advanced Lab" }).click();
-    await page.locator('nav a[href="/ict-lab"]').click({ timeout: 10000 });
-    await page.waitForTimeout(250);
-    const advancedPath = await page.evaluate(() => location.pathname);
-    if (advancedPath !== "/ict-lab") {
-      failures.push(`navigation: Advanced Lab ICT Lab click landed on ${advancedPath}`);
+    // Workspace tabs reach the remaining hub destinations.
+    const tabChecks = [
+      { start: "/replay", target: "/walk-forward" },
+      { start: "/market-data", target: "/ict-lab" }
+    ];
+    for (const { start, target } of tabChecks) {
+      await page.goto(`${baseUrl}${start}`, { waitUntil: "domcontentloaded", timeout: routeTimeoutMs });
+      await page.locator(`nav[data-testid="workspace-tabs"] a[href="${target}"]`).click({ timeout: 10000 });
+      await page.waitForTimeout(250);
+      const tabPath = await page.evaluate(() => location.pathname);
+      if (tabPath !== target) {
+        failures.push(`navigation: workspace tab ${target} landed on ${tabPath}`);
+      }
     }
   } finally {
     await page.close();

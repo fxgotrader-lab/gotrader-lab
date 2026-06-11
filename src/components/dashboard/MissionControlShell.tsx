@@ -624,6 +624,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
     String(loadMt5ReadOnlyAutoRefreshState().interval)
   );
   const [dashboardAdvancedOpen, setDashboardAdvancedOpen] = useState(false);
+  const [stateMetricsOpen, setStateMetricsOpen] = useState(false);
   const [dashboardPerformanceMarks, setDashboardPerformanceMarks] = useState<DashboardPerformanceMark[]>([]);
   const [chartPerformanceMarks, setChartPerformanceMarks] = useState<TradingChartPerformanceEvent[]>([]);
   const [mt5SourceUpdateSerial, setMt5SourceUpdateSerial] = useState(0);
@@ -2474,6 +2475,14 @@ export function MissionControlShell({ state }: { state: LabState }) {
           </div>
         </section>
 
+      <TechnicalDetails
+        testId="dashboard-state-metrics"
+        title="Market state and research metrics"
+        description="Regime, loop progress, research-quality metrics, layer contribution, and the data feed. Collapsed so the command overview stays focused."
+        onOpenChange={setStateMetricsOpen}
+      >
+        {stateMetricsOpen ? (
+          <div className="space-y-4">
       <section className="grid gap-4 xl:grid-cols-2">
         <div className="rounded-xl border border-white/10 bg-slate-950/85 p-4">
           <div className="flex items-start justify-between gap-3">
@@ -2631,6 +2640,9 @@ export function MissionControlShell({ state }: { state: LabState }) {
       </section>
 
       <MissionControlDataFeed items={safeTopN(feedItems, 10)} />
+          </div>
+        ) : null}
+      </TechnicalDetails>
 
       <TechnicalDetails
         title="Advanced details and drill-down controls"

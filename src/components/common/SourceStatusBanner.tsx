@@ -76,6 +76,51 @@ function Field({ label, value }: { label: string; value: string }) {
 }
 
 /**
+ * Compact one-row source readout for the global app shell top bar. Reads the
+ * same snapshot as the full banner so every page shares one source of truth.
+ */
+export function GlobalSourceBar({ className = "" }: { className?: string }) {
+  const snapshot = useSourceStatusSnapshot();
+
+  if (!snapshot) {
+    return (
+      <div
+        data-testid="global-source-bar"
+        className={`flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400 ${className}`}
+      >
+        <Badge variant="secondary">Resolving source...</Badge>
+        <Badge variant="muted">Authority: none</Badge>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      data-testid="global-source-bar"
+      className={`flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs ${className}`}
+    >
+      <Badge variant={statusVariant(snapshot)} data-testid="global-source-status-level">
+        {sourceStatusLabel(snapshot.sourceStatus)}
+      </Badge>
+      <Field label="" value={`${snapshot.requestedSymbol} <- ${snapshot.brokerSymbol ?? "n/a"}`} />
+      <Field label="TF" value={snapshot.primaryTimeframe} />
+      <span className="hidden sm:inline-flex">
+        <Field
+          label="HTF"
+          value={snapshot.higherTimeframes.length ? snapshot.higherTimeframes.join(", ") : "none"}
+        />
+      </span>
+      <span className="hidden md:inline-flex">
+        <Field label="Candles" value={snapshot.candleCount.toLocaleString()} />
+      </span>
+      {snapshot.isProxyInstrument ? <Badge variant="warning">CFD proxy</Badge> : null}
+      {snapshot.isMockOrSample ? <Badge variant="danger">Not research evidence</Badge> : null}
+      <Badge variant="muted">Authority: none</Badge>
+    </div>
+  );
+}
+
+/**
  * Shared source context bar. Drop this under any page header so the page
  * states which candle source it reads: provider status, requested vs broker
  * symbol, primary timeframe, HTF context, candle count, fingerprint,

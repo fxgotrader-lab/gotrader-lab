@@ -9,6 +9,7 @@ type DisclosureSectionProps = {
   defaultOpen?: boolean;
   description?: string;
   onOpenChange?: (open: boolean) => void;
+  testId?: string;
   title: string;
 };
 
@@ -18,12 +19,14 @@ export function DisclosureSection({
   defaultOpen = false,
   description,
   onOpenChange,
+  testId,
   title,
 }: DisclosureSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
 
   return (
     <details
+      data-testid={testId}
       className={cn(
         "group rounded-lg border border-border bg-card/55 shadow-sm transition-colors open:border-primary/25 open:bg-card/80",
         className

@@ -44,7 +44,7 @@ gotrader/
 |   |-- App.tsx                <- router and all route definitions
 |   |-- main.tsx               <- React entry point
 |   |-- components/
-|   |   |-- AppShell.tsx       <- app shell and sidebar navigation (no `layout/` folder)
+|   |   |-- AppShell.tsx       <- app shell: 8-hub sidebar, top source bar, workspace tabs, context panel, footer safety strip (no `layout/` folder)
 |   |   |-- advisor/           <- Research Advisor workspace (`/advisor`, `/research-advisor`)
 |   |   |-- advisory/          <- OpenClaw/Hermes advisory planning UI (`/advisory-agents`)
 |   |   |-- agent-audit/       <- agent audit diagnostics (`/agent-audit`)
@@ -137,6 +137,8 @@ Routes are defined in `src/App.tsx`.
 | `*` | `src/App.tsx` redirect | Unknown routes redirect to `/dashboard`. | [IMPLEMENTED] |
 
 Routes are code-split with `React.lazy` in `src/App.tsx`; the shell (`src/components/AppShell.tsx`) and `useLabState` load eagerly.
+
+The shell groups navigation into 8 hubs (Home, Advisor, Data, Validate, Evidence, Automate, Agents, Settings). Each hub link opens the hub's primary route and the remaining hub destinations render as workspace tabs in the top bar, so every legacy route stays reachable at its original URL. The shell also renders a global compact source bar (same `sourceStatus` snapshot as the per-page `SourceStatusBanner`), an optional right-side context panel with the latest validation-chain entry, and a footer safety strip (research only / MT5 read-only / execution, broker, readiness-override authority none).
 
 OpenClaw advisory code is no longer planning-only: the browser client is `src/lib/llm/advisoryProviderClient.ts` (routing via `OPENCLAW_ADVISORY_URL` / `VITE_OPENCLAW_ADVISORY_URL`), pilot program types live in `src/lib/openclawPilot/`, and local bridges are `scripts/openclaw-phone-advisory-bridge.mjs` and `scripts/openclaw-gotrader-advisory-skill-server.mjs`. All paths remain advisory/proposal-only with authority fields `none`.
 

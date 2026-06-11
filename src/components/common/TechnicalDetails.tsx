@@ -7,6 +7,7 @@ type TechnicalDetailsProps = {
   defaultOpen?: boolean;
   description?: string;
   onOpenChange?: (open: boolean) => void;
+  testId?: string;
   title?: string;
 };
 
@@ -15,10 +16,11 @@ export function TechnicalDetails({
   defaultOpen = false,
   description = "Open for raw metrics, full tables, JSON, command snippets, or debug inputs.",
   onOpenChange,
+  testId,
   title = "Advanced details",
 }: TechnicalDetailsProps) {
   return (
-    <DisclosureSection title={title} description={description} defaultOpen={defaultOpen} onOpenChange={onOpenChange}>
+    <DisclosureSection title={title} description={description} defaultOpen={defaultOpen} onOpenChange={onOpenChange} testId={testId}>
       {children}
     </DisclosureSection>
   );

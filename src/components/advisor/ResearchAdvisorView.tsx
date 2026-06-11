@@ -408,8 +408,19 @@ const withValidationChainContext = (packet: IctAdvisorPacket): IctAdvisorPacket 
   };
 };
 
+const ADVISOR_WORKSPACE_TABS = [
+  { id: "chat", label: "Chat" },
+  { id: "source", label: "Source" },
+  { id: "validation", label: "Validation" },
+  { id: "openclaw", label: "OpenClaw" },
+  { id: "notes", label: "Notes / History" }
+] as const;
+
+type AdvisorWorkspaceTab = (typeof ADVISOR_WORKSPACE_TABS)[number]["id"];
+
 export function ResearchAdvisorView() {
   const [snapshot, setSnapshot] = useState<ResearchRuntimeSnapshot>();
+  const [workspaceTab, setWorkspaceTab] = useState<AdvisorWorkspaceTab>("chat");
   const [activateMarketStatus, setActivateMarketStatus] = useState<IctActivateMarketStatus>("idle");
   const [activateMarketSteps, setActivateMarketSteps] = useState<IctActivateMarketStep[]>(() => createActivateMarketInitialSteps());
   const [activateMarketResult, setActivateMarketResult] = useState<IctActivateMarketResult>();
@@ -1151,10 +1162,6 @@ export function ResearchAdvisorView() {
 
       <SourceStatusBanner />
 
-      <AdvisorProviderStatusHeader />
-
-      <OpenClawPilotCard />
-
       <ActivateMarketProgress
         onActivate={() => void runActivateMarket()}
         status={activateMarketStatus}
@@ -1163,6 +1170,30 @@ export function ResearchAdvisorView() {
         disabled={activateMarketStatus === "running" || deepResearchActionRunning}
       />
 
+      <nav
+        data-testid="advisor-workspace-tabs"
+        aria-label="Advisor workspace tabs"
+        className="scrollbar-thin flex gap-1 overflow-x-auto rounded-xl border border-white/10 bg-slate-950/70 p-1.5"
+      >
+        {ADVISOR_WORKSPACE_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            data-testid={`advisor-tab-${tab.id}`}
+            className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 ${
+              workspaceTab === tab.id
+                ? "bg-cyan-300/15 text-cyan-100 shadow-sm"
+                : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+            }`}
+            onClick={() => setWorkspaceTab(tab.id)}
+            aria-pressed={workspaceTab === tab.id}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+
+      {workspaceTab === "source" ? (
       <AdvisorSourceWorkspaceControls
         activeBrokerSymbol={brokerSymbol}
         activeCandleCount={activeSource.candleCount}
@@ -1207,41 +1238,10 @@ export function ResearchAdvisorView() {
         primaryTimeframe={advisorPrimaryTimeframe}
         requestedSymbol={advisorRequestedSymbol}
       />
+      ) : null}
 
-      <CurrentReadPanel
-        cmdPaperTracking={cmdPaperTracking}
-        currentRead={currentRead}
-        latestResearchState={latestResearchState}
-        packetError={activeAdvisorPacketError}
-        researchSignal={researchSignal}
-      />
-      <RecognitionSummaryCard currentRead={currentRead} packet={activeAdvisorPacket} />
-      <ValidationChainCard testId="advisor-validation-chain" detailed />
-      <MarketOpportunityCard currentRead={currentRead} />
-      <ResearchHypothesisValidationPanel
-        currentRead={currentRead}
-        disabled={deepResearchActionRunning && hypothesisValidationStatus !== "running"}
-        error={hypothesisValidationError}
-        onValidate={runHypothesisValidation}
-        result={hypothesisValidationResult}
-        status={hypothesisValidationStatus}
-      />
-      <ResearchSignalCard signal={researchSignal} />
-      <PaperSimulationCard
-        eligibility={paperSimEligibility}
-        onCreate={createPaperSimulation}
-        paperSignal={paperSignal}
-        signal={researchSignal}
-      />
-      <CmdPaperTrackingCard
-        eligibility={cmdPaperTrackingEligibility}
-        message={cmdPaperTrackingMessage}
-        onCheck={checkCmdPaperTrackingOutcome}
-        onCreate={createCmdPaperTracking}
-        tracking={cmdPaperTracking}
-      />
-      <LatestResearchStateStrip latestResearchState={latestResearchState} />
-
+      {workspaceTab === "chat" ? (
+      <>
       <section data-testid="research-advisor-chat-workspace" className="grid items-start gap-4 xl:grid-cols-[minmax(220px,0.62fr)_minmax(420px,1.35fr)_minmax(240px,0.72fr)]">
         <ResearchAdvisorChatCard
           currentRead={currentRead}
@@ -1293,19 +1293,46 @@ export function ResearchAdvisorView() {
         </div>
       </section>
 
+      <CurrentReadPanel
+        cmdPaperTracking={cmdPaperTracking}
+        currentRead={currentRead}
+        latestResearchState={latestResearchState}
+        packetError={activeAdvisorPacketError}
+        researchSignal={researchSignal}
+      />
+      <RecognitionSummaryCard currentRead={currentRead} packet={activeAdvisorPacket} />
+      <MarketOpportunityCard currentRead={currentRead} />
+      <ResearchSignalCard signal={researchSignal} />
+      <LatestResearchStateStrip latestResearchState={latestResearchState} />
+      </>
+      ) : null}
+
+      {workspaceTab === "validation" ? (
+      <>
+      <ValidationChainCard testId="advisor-validation-chain" detailed />
+      <ResearchHypothesisValidationPanel
+        currentRead={currentRead}
+        disabled={deepResearchActionRunning && hypothesisValidationStatus !== "running"}
+        error={hypothesisValidationError}
+        onValidate={runHypothesisValidation}
+        result={hypothesisValidationResult}
+        status={hypothesisValidationStatus}
+      />
+      <PaperSimulationCard
+        eligibility={paperSimEligibility}
+        onCreate={createPaperSimulation}
+        paperSignal={paperSignal}
+        signal={researchSignal}
+      />
+      <CmdPaperTrackingCard
+        eligibility={cmdPaperTrackingEligibility}
+        message={cmdPaperTrackingMessage}
+        onCheck={checkCmdPaperTrackingOutcome}
+        onCreate={createCmdPaperTracking}
+        tracking={cmdPaperTracking}
+      />
+
       <section data-testid="advisor-deep-research-panels" className="space-y-4">
-        <DeferredResearchDetails title="ICT Strategy Suite details" description="Compact suite details are ready. Expand to mount the full ICT panel.">
-          <IctAdvisorSummaryPanel snapshot={snapshot} packetOverride={activeAdvisorPacket} />
-        </DeferredResearchDetails>
-
-        <DeferredResearchDetails
-          testId="ict-current-read-data-flow"
-          title="Current Read Data Flow"
-          description="Current-read data flow is deferred until expanded. No replay, scorecard, Monte Carlo, or raw candles are loaded by opening Advisor."
-        >
-          <CurrentReadDataFlowPanel currentRead={currentRead} />
-        </DeferredResearchDetails>
-
         <DeferredResearchDetails
           testId="advisor-manual-replay-section"
           title="Manual Replay Review"
@@ -1375,38 +1402,69 @@ export function ResearchAdvisorView() {
           </ResearchPanelErrorBoundary>
         </DeferredResearchDetails>
 
-        <DeferredResearchDetails
-          testId="advisor-saved-reports-section"
-          title="Saved Research Reports"
-          description="Saved report history is not parsed on page load. Expand to read the compact saved-report list."
-          onOpenChange={setSavedReportsOpen}
-        >
-          <ResearchPanelErrorBoundary panelName="Saved Research Reports" resetKey={`${savedReports.length}`}>
-            <SavedResearchReportsPanel reports={savedReports} />
-          </ResearchPanelErrorBoundary>
-        </DeferredResearchDetails>
-
-        <DeferredResearchDetails
-          title="External Advisory Bridge"
-          description="External LLM/OpenClaw bridge diagnostics are deferred. Expand to check provider status or run an advisory request."
-        >
-          <ResearchPanelErrorBoundary panelName="External Advisory Bridge" resetKey={snapshot.snapshotId}>
-            <LLMAdvisoryReviewPanel snapshot={snapshot} />
-          </ResearchPanelErrorBoundary>
-        </DeferredResearchDetails>
-
-        <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-emerald-300" aria-hidden="true" />
-            <h3 className="text-base font-semibold text-slate-50">Packet Safety Contract</h3>
-          </div>
-          <div className="mt-3 grid gap-2 text-sm text-slate-300 md:grid-cols-3">
-            <AdvisorReadout label="Excluded" value="candles / raw snapshots" detail="No candle arrays, raw source objects, logs, screenshots, or base64 payloads." />
-            <AdvisorReadout label="Excluded" value="secrets / credentials" detail="No MT5 credentials, account data, orders, or positions." />
-            <AdvisorReadout label="Authority" value="none" detail="OpenClaw and LLM advice cannot promote readiness or execute anything." />
-          </div>
-        </div>
       </section>
+      </>
+      ) : null}
+
+      {workspaceTab === "openclaw" ? (
+      <>
+      <AdvisorProviderStatusHeader />
+
+      <OpenClawPilotCard />
+
+      <DeferredResearchDetails
+        title="External Advisory Bridge"
+        description="External LLM/OpenClaw bridge diagnostics are deferred. Expand to check provider status or run an advisory request."
+      >
+        <ResearchPanelErrorBoundary panelName="External Advisory Bridge" resetKey={snapshot.snapshotId}>
+          <LLMAdvisoryReviewPanel snapshot={snapshot} />
+        </ResearchPanelErrorBoundary>
+      </DeferredResearchDetails>
+
+      <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-emerald-300" aria-hidden="true" />
+          <h3 className="text-base font-semibold text-slate-50">Packet Safety Contract</h3>
+        </div>
+        <div className="mt-3 grid gap-2 text-sm text-slate-300 md:grid-cols-3">
+          <AdvisorReadout label="Excluded" value="candles / raw snapshots" detail="No candle arrays, raw source objects, logs, screenshots, or base64 payloads." />
+          <AdvisorReadout label="Excluded" value="secrets / credentials" detail="No MT5 credentials, account data, orders, or positions." />
+          <AdvisorReadout label="Authority" value="none" detail="OpenClaw and LLM advice cannot promote readiness or execute anything." />
+        </div>
+      </div>
+      </>
+      ) : null}
+
+      {workspaceTab === "notes" ? (
+      <>
+      <DeferredResearchDetails
+        testId="advisor-saved-reports-section"
+        title="Saved Research Reports"
+        description="Saved report history is not parsed on page load. Expand to read the compact saved-report list."
+        onOpenChange={setSavedReportsOpen}
+      >
+        <ResearchPanelErrorBoundary panelName="Saved Research Reports" resetKey={`${savedReports.length}`}>
+          <SavedResearchReportsPanel reports={savedReports} />
+        </ResearchPanelErrorBoundary>
+      </DeferredResearchDetails>
+
+      <DeferredResearchDetails
+        testId="advisor-ict-suite-section"
+        title="ICT Strategy Suite details"
+        description="Compact suite details are ready. Expand to mount the full ICT panel."
+      >
+        <IctAdvisorSummaryPanel snapshot={snapshot} packetOverride={activeAdvisorPacket} />
+      </DeferredResearchDetails>
+
+      <DeferredResearchDetails
+        testId="ict-current-read-data-flow"
+        title="Current Read Data Flow"
+        description="Current-read data flow is deferred until expanded. No replay, scorecard, Monte Carlo, or raw candles are loaded by opening Advisor."
+      >
+        <CurrentReadDataFlowPanel currentRead={currentRead} />
+      </DeferredResearchDetails>
+      </>
+      ) : null}
     </div>
   );
 }
