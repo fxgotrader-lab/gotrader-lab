@@ -1,3 +1,9 @@
+import {
+  classifyOpenClawAdvisoryOutcome,
+  openClawHealthUrlFor,
+  openClawResponseLooksLikeStub,
+  type AdvisorProviderStatusLevel
+} from "@/lib/llm/advisorProviderStatus";
 import type {
   GoTraderAdvisoryPacket,
   GoTraderAdvisoryProviderMode,
@@ -28,6 +34,7 @@ export interface AdvisoryProviderSettings {
 
 export type OpenClawAdvisoryUnavailableReason =
   | "disabled"
+  | "not_configured"
   | "offline"
   | "timeout"
   | "invalid_response"
@@ -38,17 +45,32 @@ export type OpenClawAdvisoryRunResult =
   | {
       advisoryStatus: "available";
       response: OpenClawAdvisoryResponse;
+      providerStatus: Extract<AdvisorProviderStatusLevel, "openclaw_bridge_stub" | "openclaw_skill_routed">;
+      skillRouted: boolean;
       endpoint: string;
       timeoutMs: number;
     }
   | {
       advisoryStatus: "unavailable";
       reason: OpenClawAdvisoryUnavailableReason;
+      providerStatus: AdvisorProviderStatusLevel;
       warnings: string[];
       details?: string[];
       endpoint: string;
       timeoutMs: number;
     };
+
+export interface OpenClawBridgeHealthResult {
+  reachable: boolean;
+  /** Bridge-reported advisory status: "connected" | "stub". */
+  advisoryStatus?: string;
+  openClawAgentEndpointConfigured?: boolean;
+  openClawAgentEndpointHost?: string;
+  openClawAgentTimeoutMs?: number;
+  providerStatus: AdvisorProviderStatusLevel;
+  checkedAt: string;
+  detail?: string;
+}
 
 const isBrowser = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 
@@ -118,22 +140,31 @@ const fetchWithTimeout = async (endpoint: string, init: RequestInit, timeoutMs: 
   }
 };
 
-const normalizeResponse = (payload: unknown): OpenClawAdvisoryResponse | undefined => {
+const unwrapResponseCandidate = (payload: unknown): Partial<OpenClawAdvisoryResponse> | undefined => {
   const maybeWrapped = payload as { response?: unknown };
   const candidate = (maybeWrapped?.response ?? payload) as Partial<OpenClawAdvisoryResponse>;
-  if (!candidate || typeof candidate !== "object") {
+  return candidate && typeof candidate === "object" ? candidate : undefined;
+};
+
+const responseHasUnsafeAuthority = (candidate: Partial<OpenClawAdvisoryResponse>): boolean => {
+  const authority = candidate.authority;
+  return (
+    authority?.executionAuthority !== "none" ||
+    authority?.brokerAuthority !== "none" ||
+    authority?.readinessOverrideAuthority !== "none"
+  );
+};
+
+const normalizeResponse = (payload: unknown): OpenClawAdvisoryResponse | undefined => {
+  const candidate = unwrapResponseCandidate(payload);
+  if (!candidate) {
     return undefined;
   }
   const advisoryStatus = candidate.advisoryStatus;
   if (advisoryStatus !== "complete" && advisoryStatus !== "unavailable" && advisoryStatus !== "error" && advisoryStatus !== "timeout") {
     return undefined;
   }
-  const authority = candidate.authority;
-  if (
-    authority?.executionAuthority !== "none" ||
-    authority?.brokerAuthority !== "none" ||
-    authority?.readinessOverrideAuthority !== "none"
-  ) {
+  if (responseHasUnsafeAuthority(candidate)) {
     return {
       advisoryStatus: "error",
       summary: "OpenClaw response was rejected because authority fields were not locked to none.",
@@ -184,6 +215,26 @@ export async function runOpenClawAdvisory(
   endpoint = loadAdvisoryProviderSettings().openClawAdvisoryUrl,
   timeoutMs = OPENCLAW_ADVISORY_TIMEOUT_MS
 ): Promise<OpenClawAdvisoryRunResult> {
+  const unavailable = (
+    reason: OpenClawAdvisoryUnavailableReason,
+    warnings: string[],
+    details?: string[]
+  ): OpenClawAdvisoryRunResult => ({
+    advisoryStatus: "unavailable",
+    reason,
+    providerStatus: classifyOpenClawAdvisoryOutcome({ endpoint, unavailableReason: reason }),
+    warnings,
+    details,
+    endpoint,
+    timeoutMs
+  });
+
+  if (!endpoint.trim()) {
+    return unavailable("not_configured", [
+      "OpenClaw advisory URL is not configured. This is not an app failure; deterministic research remains available."
+    ]);
+  }
+
   let response: Response;
   try {
     response = await fetchWithTimeout(endpoint, {
@@ -196,68 +247,131 @@ export async function runOpenClawAdvisory(
     }, timeoutMs);
   } catch (error) {
     const timedOut = error instanceof Error && error.name === abortErrorName;
-    return {
-      advisoryStatus: "unavailable",
-      reason: timedOut ? "timeout" : "offline",
-      warnings: [
+    return unavailable(
+      timedOut ? "timeout" : "offline",
+      [
         timedOut
           ? `OpenClaw advisory timed out after ${Math.round(timeoutMs / 1000)} seconds.`
           : "OpenClaw advisory offline; deterministic research remains available."
       ],
-      details: [error instanceof Error ? error.message : "OpenClaw advisory request failed."],
-      endpoint,
-      timeoutMs
-    };
+      [error instanceof Error ? error.message : "OpenClaw advisory request failed."]
+    );
   }
 
   let payload: unknown;
   try {
     payload = await response.json();
   } catch {
-    return {
-      advisoryStatus: "unavailable",
-      reason: "invalid_response",
-      warnings: ["OpenClaw advisory returned a non-JSON response."],
-      endpoint,
-      timeoutMs
-    };
+    return unavailable("invalid_response", ["OpenClaw advisory returned a non-JSON response."]);
   }
 
   if (!response.ok) {
     const errorPayload = payload as { error?: string; message?: string };
-    return {
-      advisoryStatus: "unavailable",
-      reason: response.status === 504 ? "timeout" : "request_failed",
-      warnings: [errorPayload.message ?? errorPayload.error ?? "OpenClaw advisory request failed."],
-      endpoint,
-      timeoutMs
-    };
+    return unavailable(
+      response.status === 504 ? "timeout" : "request_failed",
+      [errorPayload.message ?? errorPayload.error ?? "OpenClaw advisory request failed."]
+    );
+  }
+
+  const candidate = unwrapResponseCandidate(payload);
+  if (candidate && responseHasUnsafeAuthority(candidate)) {
+    return unavailable(
+      "unsafe_response",
+      [
+        "OpenClaw response was rejected because authority fields were not locked to none. It cannot influence proposal or validation state."
+      ],
+      ["unsafe_authority"]
+    );
   }
 
   const normalized = normalizeResponse(payload);
   if (!normalized) {
-    return {
-      advisoryStatus: "unavailable",
-      reason: "invalid_response",
-      warnings: ["OpenClaw advisory response did not match the GoTrader response contract."],
-      endpoint,
-      timeoutMs
-    };
+    return unavailable("invalid_response", ["OpenClaw advisory response did not match the GoTrader response contract."]);
   }
   if (normalized.advisoryStatus !== "complete") {
-    return {
-      advisoryStatus: "unavailable",
-      reason: normalized.advisoryStatus === "timeout" ? "timeout" : "request_failed",
-      warnings: [normalized.summary],
-      details: [...normalized.riskNotes, ...normalized.topBlockers],
-      endpoint,
-      timeoutMs
-    };
+    return unavailable(
+      normalized.advisoryStatus === "timeout" ? "timeout" : "request_failed",
+      [normalized.summary],
+      [...normalized.riskNotes, ...normalized.topBlockers]
+    );
   }
+  const stub = openClawResponseLooksLikeStub({
+    responseSummary: normalized.summary,
+    responseTopBlockers: normalized.topBlockers
+  });
   return {
     advisoryStatus: "available",
     response: normalized,
+    providerStatus: stub ? "openclaw_bridge_stub" : "openclaw_skill_routed",
+    skillRouted: !stub,
     endpoint,
     timeoutMs
   };
+}
+
+/**
+ * Read-only GET against the phone bridge /health endpoint to distinguish
+ * stub vs skill-routed OpenClaw without sending an advisory packet.
+ */
+export async function checkOpenClawBridgeHealth(
+  advisoryUrl = loadAdvisoryProviderSettings().openClawAdvisoryUrl,
+  timeoutMs = 8_000
+): Promise<OpenClawBridgeHealthResult> {
+  const checkedAt = new Date().toISOString();
+  if (!advisoryUrl.trim()) {
+    return {
+      reachable: false,
+      providerStatus: "openclaw_not_configured",
+      checkedAt,
+      detail: "No OpenClaw advisory URL configured."
+    };
+  }
+  const healthUrl = openClawHealthUrlFor(advisoryUrl);
+  if (!healthUrl) {
+    return {
+      reachable: false,
+      providerStatus: "openclaw_not_configured",
+      checkedAt,
+      detail: "OpenClaw advisory URL is not a valid URL."
+    };
+  }
+  try {
+    const response = await fetchWithTimeout(healthUrl, { method: "GET", headers: { Accept: "application/json" } }, timeoutMs);
+    if (!response.ok) {
+      return {
+        reachable: false,
+        providerStatus: "openclaw_bridge_offline",
+        checkedAt,
+        detail: `Bridge health returned HTTP ${response.status}.`
+      };
+    }
+    const payload = (await response.json()) as {
+      advisoryStatus?: string;
+      openClawAgentEndpointConfigured?: boolean;
+      openClawAgentEndpointHost?: string;
+      openClawAgentTimeoutMs?: number;
+    };
+    const providerStatus = classifyOpenClawAdvisoryOutcome({
+      endpoint: advisoryUrl,
+      healthAdvisoryStatus: payload.advisoryStatus,
+      healthOpenClawAgentEndpointConfigured: payload.openClawAgentEndpointConfigured
+    });
+    return {
+      reachable: true,
+      advisoryStatus: payload.advisoryStatus,
+      openClawAgentEndpointConfigured: payload.openClawAgentEndpointConfigured,
+      openClawAgentEndpointHost: payload.openClawAgentEndpointHost,
+      openClawAgentTimeoutMs: payload.openClawAgentTimeoutMs,
+      providerStatus,
+      checkedAt
+    };
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === abortErrorName;
+    return {
+      reachable: false,
+      providerStatus: timedOut ? "openclaw_timeout" : "openclaw_bridge_offline",
+      checkedAt,
+      detail: error instanceof Error ? error.message : "Bridge health check failed."
+    };
+  }
 }

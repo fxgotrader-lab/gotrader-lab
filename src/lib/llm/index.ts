@@ -1,5 +1,6 @@
 export {
   ADVISORY_PROVIDER_SETTINGS_STORAGE_KEY,
+  checkOpenClawBridgeHealth,
   loadAdvisoryProviderSettings,
   OPENCLAW_ADVISORY_DEFAULT_URL,
   OPENCLAW_ADVISORY_TIMEOUT_MS,
@@ -12,8 +13,25 @@ export {
 export type {
   AdvisoryProviderSettings,
   OpenClawAdvisoryRunResult,
-  OpenClawAdvisoryUnavailableReason
+  OpenClawAdvisoryUnavailableReason,
+  OpenClawBridgeHealthResult
 } from "@/lib/llm/advisoryProviderClient";
+export {
+  ADVISOR_PROVIDER_AUTHORITY,
+  advisorProviderStatusInfo,
+  classifyLocalLlmCapability,
+  classifyOpenClawAdvisoryOutcome,
+  OPENCLAW_STUB_BLOCKER_MARKER,
+  OPENCLAW_STUB_SETUP_STEPS,
+  OPENCLAW_STUB_SUMMARY_MARKER,
+  openClawHealthUrlFor,
+  openClawResponseLooksLikeStub
+} from "@/lib/llm/advisorProviderStatus";
+export type {
+  AdvisorProviderStatusInfo,
+  AdvisorProviderStatusLevel,
+  OpenClawAdvisoryOutcomeInput
+} from "@/lib/llm/advisorProviderStatus";
 export {
   buildLLMResearchContextPacket,
   runLLMAgentOrchestrator

@@ -58,17 +58,27 @@ const evidenceLabel = (entry: ValidationChainEntry): string => {
   return "No validated evidence yet";
 };
 
+const stepVerdictLabel = (verdict?: string, running?: boolean, required?: boolean): string => {
+  if (running) return "running";
+  if (verdict) return verdict.replace(/_/g, " ");
+  return required ? "required - not run yet" : "not reached yet";
+};
+
 /**
  * Compact recognition-to-validation chain summary. Recognition is never
  * evidence; this card shows where the latest recognition sits in the
  * replay -> walk-forward -> evidence chain and the safe next action.
+ * With `detailed`, it expands into a focused explanation panel listing
+ * replay, walk-forward, and evidence status per step.
  */
 export function ValidationChainCard({
   className = "",
-  testId = "validation-chain-card"
+  testId = "validation-chain-card",
+  detailed = false
 }: {
   className?: string;
   testId?: string;
+  detailed?: boolean;
 }) {
   const entry = useLatestValidationChainEntry();
 
@@ -85,6 +95,11 @@ export function ValidationChainCard({
             no recognition queued
           </Badge>
           <Badge variant="muted">Authority: none</Badge>
+          {detailed ? (
+            <Badge variant="warning" data-testid="validation-chain-recognition-is-evidence">
+              Recognition is evidence: false
+            </Badge>
+          ) : null}
         </div>
         <p className="mt-2 text-xs leading-5 text-slate-400">
           Recognition is not evidence. Queue replay validation from a recognition card in the{" "}
@@ -96,6 +111,33 @@ export function ValidationChainCard({
       </section>
     );
   }
+
+  const detailRows = detailed
+    ? [
+        {
+          label: "Latest recognition",
+          value: `${entry.setupLabel} · ${entry.symbol} ${entry.timeframe} (${entry.recognitionType.replace(/_/g, " ")})`
+        },
+        {
+          label: "Replay status",
+          value: stepVerdictLabel(
+            entry.replayResult?.verdict,
+            entry.hypothesisStatus === "replay_running",
+            entry.hypothesisStatus === "queued" || entry.hypothesisStatus === "replay_required"
+          )
+        },
+        {
+          label: "Walk-forward status",
+          value: stepVerdictLabel(
+            entry.walkForwardResult?.verdict,
+            entry.hypothesisStatus === "walk_forward_running",
+            entry.hypothesisStatus === "walk_forward_required"
+          )
+        },
+        { label: "Evidence status", value: evidenceLabel(entry) },
+        { label: "Next action", value: entry.nextAction }
+      ]
+    : [];
 
   return (
     <section
@@ -112,8 +154,23 @@ export function ValidationChainCard({
           {entry.setupLabel} · {entry.symbol} {entry.timeframe}
         </span>
         <Badge variant="muted">Authority: none</Badge>
+        {detailed ? (
+          <Badge variant="warning" data-testid="validation-chain-recognition-is-evidence">
+            Recognition is evidence: false
+          </Badge>
+        ) : null}
       </div>
       <p className="mt-2 text-xs leading-5 text-slate-400">{describeValidationChainStage(entry)}</p>
+      {detailed ? (
+        <dl className="mt-2 grid gap-x-4 gap-y-1 text-xs text-slate-300 sm:grid-cols-2" data-testid="validation-chain-detail-rows">
+          {detailRows.map((row) => (
+            <div key={row.label} className="flex flex-wrap gap-x-2">
+              <dt className="text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">{row.label}</dt>
+              <dd className="min-w-0">{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
       <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
         <span data-testid="validation-chain-next-action">
           <span className="text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">Next</span> {entry.nextAction}

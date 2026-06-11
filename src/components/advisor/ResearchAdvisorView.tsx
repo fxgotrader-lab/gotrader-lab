@@ -3,7 +3,9 @@ import { Link } from "react-router-dom";
 import { BarChart3, MessageSquareText, PlayCircle, Send, ShieldCheck, Sparkles } from "lucide-react";
 
 import { ActivateMarketProgress } from "@/components/advisor/ActivateMarketProgress";
+import { AdvisorProviderStatusHeader } from "@/components/advisor/AdvisorProviderStatusHeader";
 import { IctAdvisorSummaryPanel } from "@/components/advisor/IctAdvisorSummaryPanel";
+import { OpenClawPilotCard } from "@/components/advisor/OpenClawPilotCard";
 import { LLMAdvisoryReviewPanel } from "@/components/dashboard/LLMAdvisoryReviewPanel";
 import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
 import { Badge } from "@/components/ui/badge";
@@ -1149,6 +1151,10 @@ export function ResearchAdvisorView() {
 
       <SourceStatusBanner />
 
+      <AdvisorProviderStatusHeader />
+
+      <OpenClawPilotCard />
+
       <ActivateMarketProgress
         onActivate={() => void runActivateMarket()}
         status={activateMarketStatus}
@@ -1210,7 +1216,7 @@ export function ResearchAdvisorView() {
         researchSignal={researchSignal}
       />
       <RecognitionSummaryCard currentRead={currentRead} packet={activeAdvisorPacket} />
-      <ValidationChainCard testId="advisor-validation-chain" />
+      <ValidationChainCard testId="advisor-validation-chain" detailed />
       <MarketOpportunityCard currentRead={currentRead} />
       <ResearchHypothesisValidationPanel
         currentRead={currentRead}
@@ -2573,11 +2579,18 @@ function ResearchAdvisorChatCard({
           <div className="min-w-0">
             <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
               <Sparkles className="h-4 w-4" aria-hidden="true" />
-              GoTrader AI Research Assistant
+              Deterministic Research Helper
             </p>
             <h2 className="mt-2 text-xl font-semibold text-slate-50">Ask about this market read</h2>
+            <p className="mt-1 text-xs text-slate-400">
+              Replies here are local deterministic guidance, not an LLM or OpenClaw. Use the LLM Advisory / OpenClaw
+              panel below for provider-routed advisory.
+            </p>
           </div>
-          <Badge variant="danger">Authority: None</Badge>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="muted" data-testid="research-advisor-chat-mode">Local deterministic</Badge>
+            <Badge variant="danger">Authority: None</Badge>
+          </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <Badge variant="secondary">{snapshot.marketData.symbol}</Badge>
@@ -2635,6 +2648,11 @@ function AdvisorMessageBubble({ children, role }: { children: ReactNode; role: A
             : "border-white/10 bg-white/[0.045] text-slate-300"
         }`}
       >
+        {!user ? (
+          <p className="mb-1 text-[0.6rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Local deterministic
+          </p>
+        ) : null}
         {children}
       </div>
     </div>

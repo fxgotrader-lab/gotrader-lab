@@ -8,10 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
+  advisorProviderStatusInfo,
   checkLocalBridgeHealth,
   loadAdvisoryProviderSettings,
   getLocalBridgeStatusSnapshot,
   OPENCLAW_ADVISORY_DEFAULT_URL,
+  OPENCLAW_STUB_SETUP_STEPS,
   LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS,
   LLM_LOCAL_BRIDGE_BASE_URL,
   openClawEndpointHostLabel,
@@ -19,6 +21,7 @@ import {
   runOpenClawAdvisory,
   runLocalBridgeAdvisory,
   saveAdvisoryProviderSettings,
+  type AdvisorProviderStatusLevel,
   type GoTraderAdvisoryMode,
   type GoTraderAdvisoryPacket,
   type GoTraderAdvisoryProviderMode,
@@ -72,6 +75,7 @@ type LastAdvisoryPayload = {
   model?: string;
   openClawEndpoint?: string;
   openClawProposalIntent?: string;
+  providerStatus?: AdvisorProviderStatusLevel;
 };
 
 const authority = {
@@ -757,7 +761,9 @@ export function LLMAdvisoryReviewPanel({
         const packet = buildOpenClawPacket(snapshot, trimmedQuestion);
         const result = await runOpenClawAdvisory(packet, settings.openClawAdvisoryUrl);
         if (result.advisoryStatus === "unavailable") {
-          const message = result.warnings.join(" ") || "OpenClaw advisory offline; deterministic research remains available.";
+          const unsafeRejected = result.reason === "unsafe_response";
+          const statusInfo = advisorProviderStatusInfo(result.providerStatus);
+          const message = `[${statusInfo.label}] ${result.warnings.join(" ") || "OpenClaw advisory offline; deterministic research remains available."}`;
           const nextBridgeProcessStatus: PanelBridgeProcessStatus = result.reason === "offline" ? "offline" : "online";
           const nextCapability: PanelAdvisoryCapabilityStatus =
             result.reason === "timeout" ? "timeout" : result.reason === "offline" ? "unavailable" : "error";
@@ -781,14 +787,25 @@ export function LLMAdvisoryReviewPanel({
             includedSections: compactIncludedSections,
             excludedLargeSections: packet.excludedLargeSections,
             timeoutMs: result.timeoutMs,
-            openClawEndpoint: result.endpoint
+            openClawEndpoint: result.endpoint,
+            providerStatus: result.providerStatus,
+            openClawProposalIntent: "none"
           });
           appendMessage("assistant", message);
-          onAdvisoryEvent?.("OpenClaw advisory unavailable", message, "warning", result.endpoint);
+          onAdvisoryEvent?.(
+            unsafeRejected ? "OpenClaw unsafe response blocked" : "OpenClaw advisory unavailable",
+            message,
+            unsafeRejected ? "locked" : "warning",
+            result.endpoint
+          );
           return;
         }
 
         const response = result.response;
+        const stub = result.providerStatus === "openclaw_bridge_stub";
+        const provenancePrefix = stub
+          ? "[OpenClaw bridge stub - skill routing not wired; safe stub advisory, not full OpenClaw]"
+          : "[OpenClaw skill-routed]";
         setStatus("online");
         setBridgeProcessStatus("online");
         setAdvisoryCapabilityStatus("ready");
@@ -802,12 +819,15 @@ export function LLMAdvisoryReviewPanel({
           checkedAt: new Date().toISOString(),
           lastAdvisoryRequestAt: new Date().toISOString(),
           question: trimmedQuestion,
-          warnings: response.topBlockers,
+          warnings: stub
+            ? [advisorProviderStatusInfo("openclaw_bridge_stub").detail, ...response.topBlockers]
+            : response.topBlockers,
           payloadBytes: approximatePayloadBytes(packet),
           includedSections: compactIncludedSections,
           excludedLargeSections: packet.excludedLargeSections,
           timeoutMs: result.timeoutMs,
           openClawEndpoint: result.endpoint,
+          providerStatus: result.providerStatus,
           openClawProposalIntent: response.selfImprovementProposalIntent?.createProposal
             ? `${response.selfImprovementProposalIntent.proposalTitle ?? "proposal intent"} / auto-apply false`
             : "none"
@@ -815,7 +835,7 @@ export function LLMAdvisoryReviewPanel({
         appendMessage(
           "assistant",
           [
-            response.summary,
+            `${provenancePrefix} ${response.summary}`,
             response.topBlockers.length ? `Top blockers: ${response.topBlockers.join(" ")}` : "Top blockers: none reported by OpenClaw.",
             response.nextActions.length ? `Next actions: ${response.nextActions.join(" ")}` : "Next actions: continue deterministic research.",
             response.calibrationRecommendations.length
@@ -827,7 +847,23 @@ export function LLMAdvisoryReviewPanel({
             response.riskNotes.length ? `Risk notes: ${response.riskNotes.join(" ")}` : "Risk notes: advisory only; gates remain final authority."
           ].join("\n\n")
         );
-        onAdvisoryEvent?.("OpenClaw advisory reviewed", "OpenClaw returned an advisory-only calibration review. Auto-apply remains disabled.", "success", packet.packetId);
+        if (stub) {
+          appendMessage(
+            "system",
+            [
+              "OpenClaw bridge is in stub mode. To enable full routed OpenClaw advisory:",
+              ...OPENCLAW_STUB_SETUP_STEPS.map((step) => `${step.title}: ${step.command.replace(/\n/g, " && ")}`)
+            ].join("\n")
+          );
+        }
+        onAdvisoryEvent?.(
+          stub ? "OpenClaw stub advisory (not skill-routed)" : "OpenClaw advisory reviewed",
+          stub
+            ? "Phone bridge answered in stub mode; OpenClaw skill routing is not wired. Treat the advisory as a placeholder."
+            : "OpenClaw returned a skill-routed advisory-only calibration review. Auto-apply remains disabled.",
+          stub ? "warning" : "success",
+          packet.packetId
+        );
         return;
       }
 
@@ -862,9 +898,10 @@ export function LLMAdvisoryReviewPanel({
           payloadBytes: diagnostics?.approximateBytes,
           includedSections: diagnostics?.includedSections,
           excludedLargeSections: diagnostics?.excludedLargeSections,
-          timeoutMs: result.timeoutMs ?? diagnostics?.timeoutMs ?? LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS
+          timeoutMs: result.timeoutMs ?? diagnostics?.timeoutMs ?? LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS,
+          providerStatus: result.reason === "timeout" ? "local_llm_timeout" : "local_llm_config_missing"
         });
-        const message = advisoryMessageForUnavailable(result.reason, result.warnings, nextBridgeProcessStatus);
+        const message = `[Offline/not configured] ${advisoryMessageForUnavailable(result.reason, result.warnings, nextBridgeProcessStatus)}`;
         appendMessage("assistant", message);
         onAdvisoryEvent?.(
           result.reason === "bridge_offline" ? "LLM advisory bridge offline" : "LLM advisory unavailable",
@@ -896,12 +933,13 @@ export function LLMAdvisoryReviewPanel({
         includedSections: diagnostics?.includedSections,
         excludedLargeSections: diagnostics?.excludedLargeSections,
         timeoutMs: result.advisoryTimeoutMs ?? diagnostics?.timeoutMs ?? LLM_LOCAL_BRIDGE_ADVISORY_TIMEOUT_MS,
-        model: result.model
+        model: result.model,
+        providerStatus: "local_llm_online"
       });
       appendMessage(
         "assistant",
         [
-          summary.summary,
+          `[Local LLM] ${summary.summary}`,
           summary.topBlockers.length ? `Top blockers: ${summary.topBlockers.join(" ")}` : "Top blockers: none reported by the advisory reviewers.",
           `Next suggested action: ${summary.nextAction}`,
           summary.caveats.length ? `Caveats: ${summary.caveats.join(" ")}` : "Caveat: advisory only; deterministic gates still decide readiness."
@@ -936,8 +974,18 @@ export function LLMAdvisoryReviewPanel({
       ? snapshot.mt5ReadOnly.higherTimeframeSources.map((source) => `${source.timeframe}:${source.candleCount.toLocaleString()}`).join(", ")
       : "HTF missing";
 
+    const compactOpenClawStatus =
+      providerMode !== "openclaw"
+        ? "not selected"
+        : lastPayload.providerStatus?.startsWith("openclaw")
+          ? advisorProviderStatusInfo(lastPayload.providerStatus).label
+          : `configured at ${openClawEndpointHostLabel(openClawUrl)} (not checked)`;
+
     return (
-      <section className="rounded-xl border border-cyan-300/15 bg-slate-950/85 p-4 shadow-[0_0_45px_rgba(8,145,178,0.07)]">
+      <section
+        data-testid="dashboard-compact-advisor"
+        className="rounded-xl border border-cyan-300/15 bg-slate-950/85 p-4 shadow-[0_0_45px_rgba(8,145,178,0.07)]"
+      >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Research Advisor</p>
@@ -950,7 +998,7 @@ export function LLMAdvisoryReviewPanel({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Badge variant="secondary">Provider {providerMode.replace(/_/g, " ")}</Badge>
+            <Badge variant="secondary" data-testid="dashboard-advisor-provider-mode">Provider {providerMode.replace(/_/g, " ")}</Badge>
             <Badge variant={advisoryBadgeVariant(advisoryCapabilityStatus)}>Advisory {shortStatus(advisoryCapabilityStatus)}</Badge>
             <Badge variant="warning">advisory-only</Badge>
             <Badge variant="danger">authority none</Badge>
@@ -962,6 +1010,7 @@ export function LLMAdvisoryReviewPanel({
           <MiniAdvisoryReadout label="Primary / HTF" value={snapshot ? `${snapshot.marketData.timeframe} primary / ${higherTimeframeSummary}` : "loading"} />
           <MiniAdvisoryReadout label="Readiness" value={snapshot?.readiness.readinessState ?? "loading"} />
           <MiniAdvisoryReadout label="Next action" value={nextSuggestedAction} />
+          <MiniAdvisoryReadout label="OpenClaw status" value={compactOpenClawStatus} />
         </div>
 
         <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3">
@@ -1134,6 +1183,24 @@ export function LLMAdvisoryReviewPanel({
         </div>
       ) : null}
 
+      {lastPayload.providerStatus === "openclaw_bridge_stub" ? (
+        <div
+          data-testid="llm-advisory-openclaw-stub-warning"
+          className="mt-3 rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-xs leading-5 text-amber-100"
+        >
+          <p className="font-semibold">OpenClaw bridge stub - not skill-routed</p>
+          <p className="mt-1">
+            The phone bridge answered, but OpenClaw skill routing is not wired. The advisory above is a safe stub, not a
+            full OpenClaw review. To enable routing, run on the phone:
+          </p>
+          {OPENCLAW_STUB_SETUP_STEPS.map((step) => (
+            <pre key={step.title} className="mt-2 overflow-x-auto rounded-md bg-black/40 p-2 font-mono text-[0.7rem] leading-5">
+              {`# ${step.title}\n${step.command}`}
+            </pre>
+          ))}
+        </div>
+      ) : null}
+
       <div className="mt-3 grid gap-2 sm:grid-cols-3">
         <AuthorityLine label="Execution authority" value={authority.executionAuthority} />
         <AuthorityLine label="Broker authority" value={authority.brokerAuthority} />
@@ -1176,6 +1243,10 @@ export function LLMAdvisoryReviewPanel({
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <MiniAdvisoryReadout label="Provider" value={lastPayload.providerMode?.replace(/_/g, " ") ?? providerMode.replace(/_/g, " ")} />
+          <MiniAdvisoryReadout
+            label="Provider status"
+            value={lastPayload.providerStatus ? advisorProviderStatusInfo(lastPayload.providerStatus).label : "no provider request yet"}
+          />
           <MiniAdvisoryReadout label="Last checked" value={formatDateTime(lastPayload.checkedAt)} />
           <MiniAdvisoryReadout label="Local bridge URL" value={LLM_LOCAL_BRIDGE_BASE_URL} />
           <MiniAdvisoryReadout label="OpenClaw endpoint host" value={openClawEndpointHostLabel(lastPayload.openClawEndpoint ?? openClawUrl)} />

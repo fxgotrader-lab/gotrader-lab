@@ -333,6 +333,54 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(dashboardChain).toContainText(/Authority: none/i);
   });
 
+  test("advisor provider status and OpenClaw pilot clarity surfaces render safely", async ({ page }) => {
+    await gotoRoute(page, "/research-advisor");
+
+    // Provider status header with mode, status chip, last checked, and authority none.
+    const providerHeader = page.getByTestId("advisor-provider-status");
+    await expect(providerHeader).toBeVisible();
+    await expect(providerHeader.getByTestId("advisor-provider-mode")).toBeVisible();
+    await expect(providerHeader.getByTestId("advisor-provider-authority")).toContainText(/Authority: none/i);
+    await expect(providerHeader.getByTestId("advisor-provider-last-checked")).toBeVisible();
+    await expect(providerHeader).toContainText(/Deterministic Research Helper/i);
+
+    // Status chip never claims ordinary success in the default unchecked state.
+    const statusChip = providerHeader.getByTestId("advisor-provider-status-chip");
+    await expect(statusChip).toBeVisible();
+    const statusChipText = (await statusChip.innerText()).trim();
+    expect(statusChipText).toMatch(/not checked|not configured|config missing|disabled|deterministic|stub|offline|timeout/i);
+    expect(statusChipText).not.toMatch(/^(online|ready|connected)$/i);
+
+    // OpenClaw pilot card: advisory/proposal-only with auto-apply locked off.
+    const pilotCard = page.getByTestId("openclaw-pilot-card");
+    await expect(pilotCard).toBeVisible();
+    await expect(pilotCard).toContainText(/advisory\/proposal-only/i);
+    await expect(pilotCard.getByTestId("openclaw-pilot-auto-apply")).toContainText(/autoApplyAllowed: false/i);
+    await expect(pilotCard).toContainText(/executionAuthority: none/i);
+    await expect(pilotCard).toContainText(/readinessOverrideAuthority: none/i);
+    await expect(pilotCard.getByTestId("openclaw-pilot-chain-status")).toBeVisible();
+
+    // Deterministic chat is labeled as local deterministic guidance, not full AI.
+    await expect(page.getByTestId("research-advisor-chat-mode")).toContainText(/Local deterministic/i);
+    await expect(page.getByTestId("research-advisor-chat-card")).toContainText(/Deterministic Research Helper/i);
+
+    // Validation-chain explanation panel: detailed rows + recognition is not evidence.
+    const advisorChain = page.getByTestId("advisor-validation-chain");
+    await expect(advisorChain).toBeVisible();
+    await expect(advisorChain.getByTestId("validation-chain-recognition-is-evidence")).toContainText(
+      /Recognition is evidence: false/i
+    );
+
+    // Dashboard compact advisor stays compact: provider status only, no chat input.
+    await gotoRoute(page, "/dashboard");
+    const compactAdvisor = page.getByTestId("dashboard-compact-advisor");
+    await expect(compactAdvisor).toBeVisible();
+    await expect(compactAdvisor.getByTestId("dashboard-advisor-provider-mode")).toContainText(/Provider/i);
+    await expect(compactAdvisor).toContainText(/OpenClaw status/i);
+    await expect(compactAdvisor).toContainText(/Open Advisor/i);
+    expect(await compactAdvisor.locator("input, textarea").count()).toBe(0);
+  });
+
   test("chart surfaces render canvas or a safe fallback", async ({ page }) => {
     for (const route of chartRoutes) {
       await gotoRoute(page, route);
