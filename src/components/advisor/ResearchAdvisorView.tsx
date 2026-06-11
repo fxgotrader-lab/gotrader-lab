@@ -7,6 +7,8 @@ import { IctAdvisorSummaryPanel } from "@/components/advisor/IctAdvisorSummaryPa
 import { LLMAdvisoryReviewPanel } from "@/components/dashboard/LLMAdvisoryReviewPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import {
   createActivateMarketInitialSteps,
   runIctActivateMarketPipeline
@@ -97,9 +99,20 @@ import {
 import {
   MT5_HIGHER_TIMEFRAME_SOURCES_UPDATED_EVENT
 } from "@/lib/integrations/mt5/mt5MultiTimeframe";
-import { MT5_READ_ONLY_UPDATED_EVENT } from "@/lib/integrations/mt5";
+import {
+  displayLabelForMt5Mapping,
+  loadMt5ReadOnlySettings,
+  mt5CfdProxyWarning,
+  mt5ReadOnlyHigherTimeframeOptions,
+  mt5ReadOnlySymbolOptions,
+  mt5ReadOnlyTimeframeOptions,
+  resolveDefaultMt5BrokerSymbol,
+  saveMt5ReadOnlySettings,
+  MT5_READ_ONLY_UPDATED_EVENT
+} from "@/lib/integrations/mt5";
 import { RESEARCH_CYCLE_UPDATED_EVENT } from "@/lib/researchCycle";
 import { resolveResearchRuntimeSnapshot, type ResearchRuntimeSnapshot } from "@/lib/runtime";
+import type { Timeframe } from "@/lib/types";
 import { WALK_FORWARD_UPDATED_EVENT } from "@/lib/walkForward";
 
 const formatDate = (value?: string) => (value ? new Date(value).toLocaleString() : "n/a");
@@ -113,6 +126,10 @@ const isAbortError = (error: unknown) => (error as { name?: string })?.name === 
 const browserSafeReplayCandleLimit = Math.min(1000, DEFAULT_ICT_BROWSER_RESEARCH_LIMITS.maxCandlesPerSymbol);
 const browserSafeMonteCarloSimulationCount = 300;
 const browserSafeMonteCarloTradeCount = 60;
+const advisorCandleLimitOptions = [100, 240, 400, 1000, 5000].map((value) => ({
+  label: `${value.toLocaleString()} candles`,
+  value: String(value)
+}));
 const safeList = <T,>(values: T[] | undefined | null): T[] => Array.isArray(values) ? values : [];
 const safeCount = (value?: number) => (typeof value === "number" && Number.isFinite(value) ? value.toLocaleString() : "0");
 const firstText = (...values: Array<string | undefined | null | false>) =>
@@ -312,6 +329,22 @@ function buildLocalAdvisorReply(
   if (lower.includes("scorecard")) {
     return `Market scorecard status: ${formatToken(marketScorecardStatus)}. It remains idle until explicitly run.`;
   }
+  if (lower.includes("paper-demo") || lower.includes("paper demo") || lower.includes("checklist")) {
+    const readiness = currentRead.readinessSummary;
+    const blockers = readiness.reasons.length ? readiness.reasons.slice(0, 4).join("; ") : currentRead.topReasons.slice(0, 4).join("; ");
+    return `Paper-Demo Candidate review remains separate from Research Ready. Research readiness ${formatToken(readiness.researchReadiness)}; paper-demo ${formatToken(readiness.paperReadiness)}. Blockers: ${blockers || "no compact checklist blockers are available yet"}. This advisor cannot promote readiness or override gates.`;
+  }
+  if (lower.includes("self-improvement") || lower.includes("self improvement")) {
+    return currentRead.selfImprovementHypothesisQueued
+      ? `Self-improvement has a research-only hypothesis queued: ${currentRead.selfImprovementHypothesisReason ?? "needs replay validation"}. It cannot auto-apply, change thresholds, promote readiness, or create execution authority.`
+      : `No self-improvement hypothesis is queued: ${currentRead.selfImprovementHypothesisReason ?? "current opportunity is not eligible"}. Keep collecting compact evidence before creating a proposal.`;
+  }
+  if (lower.includes("calibration") || lower.includes("suggest")) {
+    return `Calibration suggestion: keep the current model lane as ${formatToken(currentRead.modelQualityLane)} and test only compact research hypotheses with replay, evidence quality, maturity, and regime consistency checks. No threshold change or auto-apply is allowed from chat.`;
+  }
+  if (lower.includes("test next") || lower.includes("next")) {
+    return `Next research action: ${currentRead.nextAction || "rerun Activate Market after the selected MT5 source updates"}. Use the selected primary timeframe for display/reference and the explicit HTF context for analysis. Execution remains disabled.`;
+  }
   if (lower.includes("optimize") || lower.includes("profile")) {
     return `Profile optimizer status: ${formatToken(profileOptimizationStatus)}. Optimization is research-only and cannot auto-apply thresholds or promote readiness.`;
   }
@@ -351,6 +384,14 @@ export function ResearchAdvisorView() {
   const [paperSignal, setPaperSignal] = useState<IctPaperSignal>();
   const [cmdPaperTracking, setCmdPaperTracking] = useState<IctCmdPaperTrackingRecord>();
   const [cmdPaperTrackingMessage, setCmdPaperTrackingMessage] = useState<string>();
+  const [advisorRequestedSymbol, setAdvisorRequestedSymbol] = useState(() => loadMt5ReadOnlySettings().requestedSymbol ?? "MNQ");
+  const [advisorBrokerSymbol, setAdvisorBrokerSymbol] = useState(() => loadMt5ReadOnlySettings().brokerSymbolOverride ?? "USTECH");
+  const [advisorDisplayLabel, setAdvisorDisplayLabel] = useState(() => loadMt5ReadOnlySettings().displayLabel ?? "MNQ via USTECH");
+  const [advisorPrimaryTimeframe, setAdvisorPrimaryTimeframe] = useState(() => loadMt5ReadOnlySettings().timeframe ?? "5m");
+  const [advisorHigherTimeframes, setAdvisorHigherTimeframes] = useState<Timeframe[]>(() =>
+    (loadMt5ReadOnlySettings().higherTimeframes as Timeframe[] | undefined) ?? ["15m", "1h"]
+  );
+  const [advisorCandleLimit, setAdvisorCandleLimit] = useState(() => String(Math.max(1000, loadMt5ReadOnlySettings().candleLimit ?? 1000)));
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<AdvisorChatMessage[]>([
     createAdvisorMessage(
@@ -531,16 +572,56 @@ export function ResearchAdvisorView() {
     () => evaluateCmdPaperTrackingEligibility(researchSignal),
     [researchSignal]
   );
+  const updateAdvisorRequestedSymbol = (requestedSymbol: string) => {
+    const brokerSymbol = resolveDefaultMt5BrokerSymbol(requestedSymbol);
+    const displayLabel = displayLabelForMt5Mapping({ brokerSymbol, requestedSymbol });
+    setAdvisorRequestedSymbol(requestedSymbol);
+    setAdvisorBrokerSymbol(brokerSymbol);
+    setAdvisorDisplayLabel(displayLabel);
+    saveMt5ReadOnlySettings({
+      requestedSymbol,
+      brokerSymbolOverride: brokerSymbol,
+      displayLabel
+    });
+  };
+  const updateAdvisorHigherTimeframe = (timeframe: Timeframe, checked: boolean) => {
+    const next = checked
+      ? [...advisorHigherTimeframes, timeframe].filter((item, index, all) => all.indexOf(item) === index)
+      : advisorHigherTimeframes.filter((item) => item !== timeframe);
+    const normalized = next.filter((item) => item !== advisorPrimaryTimeframe);
+    setAdvisorHigherTimeframes(normalized);
+    saveMt5ReadOnlySettings({ higherTimeframes: normalized });
+  };
   const runActivateMarket = async () => {
     if (activateMarketStatus === "running") return;
     setActivateMarketStatus("running");
     setActivateMarketSteps(createActivateMarketInitialSteps());
     setActivateMarketResult(undefined);
     try {
-      const sourceActivation = await ensureMt5CanonicalResearchSource();
+      const candleLimit = Math.max(1, Number(advisorCandleLimit) || 1000);
+      const higherTimeframes = advisorHigherTimeframes.filter((item) => item !== advisorPrimaryTimeframe);
+      const displayLabel = displayLabelForMt5Mapping({
+        brokerSymbol: advisorBrokerSymbol,
+        displayLabel: advisorDisplayLabel,
+        requestedSymbol: advisorRequestedSymbol
+      });
+      const sourceActivation = await ensureMt5CanonicalResearchSource({
+        brokerSymbol: advisorBrokerSymbol,
+        candleLimit,
+        displayLabel,
+        higherTimeframes,
+        requestedSymbol: advisorRequestedSymbol,
+        timeframe: advisorPrimaryTimeframe
+      });
       if (!sourceActivation.ok) {
         throw new Error(sourceActivation.message);
       }
+      setAdvisorRequestedSymbol(sourceActivation.source.requestedSymbol);
+      setAdvisorBrokerSymbol(sourceActivation.source.brokerSymbol);
+      setAdvisorDisplayLabel(displayLabel);
+      setAdvisorPrimaryTimeframe(sourceActivation.source.timeframe);
+      setAdvisorHigherTimeframes(higherTimeframes as Timeframe[]);
+      setAdvisorCandleLimit(String(sourceActivation.source.candleLimit));
       const nextSnapshot = sourceActivation.snapshot ?? await resolveResearchRuntimeSnapshot();
       setSnapshot(nextSnapshot);
       const result = await runIctActivateMarketPipeline(
@@ -1012,6 +1093,51 @@ export function ResearchAdvisorView() {
         disabled={activateMarketStatus === "running" || deepResearchActionRunning}
       />
 
+      <AdvisorSourceWorkspaceControls
+        activeBrokerSymbol={brokerSymbol}
+        activeCandleCount={activeSource.candleCount}
+        activeProvider={activeSource.provider}
+        activeRequestedSymbol={snapshot.marketData.symbol}
+        activeTimeframe={snapshot.marketData.timeframe}
+        brokerSymbol={advisorBrokerSymbol}
+        candleLimit={advisorCandleLimit}
+        displayLabel={advisorDisplayLabel}
+        higherTimeframes={advisorHigherTimeframes}
+        onBrokerSymbolChange={(value) => {
+          const nextBrokerSymbol = value.trim();
+          const nextDisplayLabel = displayLabelForMt5Mapping({
+            brokerSymbol: nextBrokerSymbol,
+            displayLabel: advisorDisplayLabel,
+            requestedSymbol: advisorRequestedSymbol
+          });
+          setAdvisorBrokerSymbol(value);
+          setAdvisorDisplayLabel(nextDisplayLabel);
+          saveMt5ReadOnlySettings({
+            brokerSymbolOverride: nextBrokerSymbol || undefined,
+            displayLabel: nextDisplayLabel
+          });
+        }}
+        onCandleLimitChange={(value) => {
+          setAdvisorCandleLimit(value);
+          saveMt5ReadOnlySettings({ candleLimit: Number(value) });
+        }}
+        onDisplayLabelChange={(value) => {
+          setAdvisorDisplayLabel(value);
+          saveMt5ReadOnlySettings({ displayLabel: value.trim() || undefined });
+        }}
+        onHigherTimeframeChange={updateAdvisorHigherTimeframe}
+        onPrimaryTimeframeChange={(value) => {
+          const nextTimeframe = value as Timeframe;
+          const nextHigherTimeframes = advisorHigherTimeframes.filter((item) => item !== nextTimeframe);
+          setAdvisorPrimaryTimeframe(nextTimeframe);
+          setAdvisorHigherTimeframes(nextHigherTimeframes);
+          saveMt5ReadOnlySettings({ timeframe: nextTimeframe, higherTimeframes: nextHigherTimeframes });
+        }}
+        onRequestedSymbolChange={updateAdvisorRequestedSymbol}
+        primaryTimeframe={advisorPrimaryTimeframe}
+        requestedSymbol={advisorRequestedSymbol}
+      />
+
       <CurrentReadPanel
         cmdPaperTracking={cmdPaperTracking}
         currentRead={currentRead}
@@ -1211,6 +1337,134 @@ export function ResearchAdvisorView() {
         </div>
       </section>
     </div>
+  );
+}
+
+function AdvisorSourceWorkspaceControls({
+  activeBrokerSymbol,
+  activeCandleCount,
+  activeProvider,
+  activeRequestedSymbol,
+  activeTimeframe,
+  brokerSymbol,
+  candleLimit,
+  displayLabel,
+  higherTimeframes,
+  onBrokerSymbolChange,
+  onCandleLimitChange,
+  onDisplayLabelChange,
+  onHigherTimeframeChange,
+  onPrimaryTimeframeChange,
+  onRequestedSymbolChange,
+  primaryTimeframe,
+  requestedSymbol
+}: {
+  activeBrokerSymbol: string;
+  activeCandleCount: number;
+  activeProvider: string;
+  activeRequestedSymbol: string;
+  activeTimeframe: string;
+  brokerSymbol: string;
+  candleLimit: string;
+  displayLabel: string;
+  higherTimeframes: Timeframe[];
+  onBrokerSymbolChange: (value: string) => void;
+  onCandleLimitChange: (value: string) => void;
+  onDisplayLabelChange: (value: string) => void;
+  onHigherTimeframeChange: (timeframe: Timeframe, checked: boolean) => void;
+  onPrimaryTimeframeChange: (value: string) => void;
+  onRequestedSymbolChange: (value: string) => void;
+  primaryTimeframe: string;
+  requestedSymbol: string;
+}) {
+  const selectedHtf = higherTimeframes.filter((item) => item !== primaryTimeframe);
+  const selectedSummary = `${brokerSymbol || "broker symbol"} -> ${requestedSymbol || "GoTrader symbol"} / ${primaryTimeframe}`;
+  const activeMatches =
+    activeProvider === "mt5_read_only" &&
+    activeRequestedSymbol === requestedSymbol &&
+    activeBrokerSymbol === brokerSymbol &&
+    activeTimeframe === primaryTimeframe;
+
+  return (
+    <section data-testid="research-advisor-source-controls" className="rounded-[24px] border border-cyan-300/15 bg-slate-950/75 p-5 shadow-[0_0_45px_rgba(8,145,178,0.07)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">MT5 Research Source</p>
+          <h2 className="mt-1 text-xl font-semibold text-slate-50">{selectedSummary}</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            Select the read-only MT5 symbol mapping and explicit analysis timeframes before running Activate Market. The selected chart timeframe is display/reference only; analysis uses the compact MTF context built by the workflow.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant={activeMatches ? "success" : "warning"}>{activeMatches ? "active selection" : "selection pending activation"}</Badge>
+          <Badge variant="secondary">MT5 read-only</Badge>
+          <Badge variant="warning">CFD/proxy labeled</Badge>
+          <Badge variant="danger">authority none</Badge>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <label className="space-y-1 text-xs text-slate-300">
+          Requested GoTrader symbol
+          <Select value={requestedSymbol} options={mt5ReadOnlySymbolOptions} onChange={(event) => onRequestedSymbolChange(event.target.value)} />
+        </label>
+        <label className="space-y-1 text-xs text-slate-300">
+          MT5 broker symbol
+          <Input value={brokerSymbol} onChange={(event) => onBrokerSymbolChange(event.target.value)} placeholder="USTECH" />
+        </label>
+        <label className="space-y-1 text-xs text-slate-300">
+          Display label
+          <Input value={displayLabel} onChange={(event) => onDisplayLabelChange(event.target.value)} placeholder="MNQ via USTECH" />
+        </label>
+        <label className="space-y-1 text-xs text-slate-300">
+          Primary timeframe
+          <Select value={primaryTimeframe} options={mt5ReadOnlyTimeframeOptions} onChange={(event) => onPrimaryTimeframeChange(event.target.value)} />
+        </label>
+        <label className="space-y-1 text-xs text-slate-300">
+          Candle limit
+          <Select value={candleLimit} options={advisorCandleLimitOptions} onChange={(event) => onCandleLimitChange(event.target.value)} />
+        </label>
+      </div>
+
+      <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Higher-timeframe context</p>
+          <Badge variant={selectedHtf.length ? "secondary" : "warning"}>{selectedHtf.length ? selectedHtf.join(", ") : "missing"}</Badge>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {mt5ReadOnlyHigherTimeframeOptions.map((option) => {
+            const value = option.value as Timeframe;
+            const disabled = value === primaryTimeframe;
+            return (
+              <label
+                key={option.value}
+                className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${
+                  disabled ? "border-white/5 bg-white/[0.02] text-slate-600" : "border-white/10 bg-white/[0.035] text-slate-300"
+                }`}
+                title={disabled ? "Primary timeframe is fetched as the main source." : `Fetch ${option.label} as separate read-only context.`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedHtf.includes(value)}
+                  disabled={disabled}
+                  onChange={(event) => onHigherTimeframeChange(value, event.target.checked)}
+                />
+                {option.label}
+              </label>
+            );
+          })}
+        </div>
+        <p className="mt-2 text-[11px] leading-5 text-slate-500">
+          Each timeframe is cached as a separate canonical MT5 read-only source key. Fetching 15m, 1h, 4h, or 1d never overwrites the selected {primaryTimeframe} source.
+        </p>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <AdvisorReadout label="Active source" value={activeProvider.replace(/_/g, " ")} detail={`${activeBrokerSymbol || "n/a"} -> ${activeRequestedSymbol} / ${activeTimeframe}`} />
+        <AdvisorReadout label="Active candles" value={activeCandleCount.toLocaleString()} detail={activeMatches ? "matches selected MT5 mapping" : "run Activate Market to apply selection"} />
+        <AdvisorReadout label="Proxy warning" value="read-only CFD/proxy" detail={mt5CfdProxyWarning(brokerSymbol, requestedSymbol)} />
+      </div>
+    </section>
   );
 }
 
@@ -2182,13 +2436,12 @@ function ResearchAdvisorChatCard({
   snapshot: ResearchRuntimeSnapshot;
 }) {
   const quickActions = [
-    "Explain Current Setup",
-    "Why No Trade?",
-    "Run Replay Review",
-    "Run Market Scorecard",
-    "Optimize Profile",
-    "Show Risk",
-    "Show SMT"
+    "Explain this cycle",
+    "Why is this blocked?",
+    "What should I test next?",
+    "Suggest calibration",
+    "Review self-improvement",
+    "Review Paper-Demo checklist"
   ];
   const readSummary =
     packet?.recommendedSignal.summary ??

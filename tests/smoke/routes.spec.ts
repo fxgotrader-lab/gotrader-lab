@@ -146,9 +146,14 @@ test.describe("GoTrader browser route smoke", () => {
   test("ICT Strategy Suite advisor panels render in advisor workspace and dashboard", async ({ page }) => {
     await gotoRoute(page, "/advisor");
     await expect(page.locator("main")).toContainText(/Research Advisor/i);
+    await expect(page.getByTestId("research-advisor-source-controls")).toBeVisible();
+    await expect(page.getByTestId("research-advisor-source-controls")).toContainText(/Requested GoTrader symbol/i);
+    await expect(page.getByTestId("research-advisor-source-controls")).toContainText(/MT5 broker symbol/i);
+    await expect(page.getByTestId("research-advisor-source-controls")).toContainText(/Primary timeframe/i);
+    await expect(page.getByTestId("research-advisor-source-controls")).toContainText(/Higher-timeframe context/i);
     await expect(page.getByTestId("research-advisor-chat-card")).toBeVisible();
     await expect(page.getByTestId("research-advisor-chat-input")).toBeVisible();
-    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Explain Current Setup/i);
+    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Explain this cycle/i);
     await expect(page.getByRole("button", { name: "Activate Market" }).first()).toBeVisible();
     await expect(page.getByTestId("activate-market-progress")).toBeVisible();
     await expect(page.getByTestId("activate-market-progress")).toContainText(/Activate Market Workflow/i);
@@ -164,6 +169,9 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.locator("main")).toContainText(/MT5 Read Only/i);
     await expect(page.locator("main")).toContainText(/Research Only/i);
     await expect(page.locator("main")).toContainText(/Authority: None/i);
+    await expect(page.getByTestId("research-advisor-source-controls")).toContainText(/MT5 Research Source/i);
+    await expect(page.getByTestId("research-advisor-source-controls")).toContainText(/display\/reference only/i);
+    await expect(page.getByTestId("research-advisor-source-controls")).toContainText(/Each timeframe is cached as a separate canonical MT5 read-only source key/i);
     await expect(page.getByTestId("ict-current-read-panel")).toContainText(/Current Read/i);
     await expect(page.getByTestId("ict-current-read-panel")).toContainText(/Phase 1/i);
     await expect(page.getByTestId("ict-current-read-panel")).toContainText(/Phase 2/i);
@@ -176,13 +184,12 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByTestId("activate-market-progress")).toContainText(/Activate Market Workflow/i);
     await expect(page.getByTestId("research-advisor-chat-card")).toBeVisible();
     await expect(page.getByTestId("research-advisor-chat-input")).toBeVisible();
-    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Explain Current Setup/i);
-    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Why No Trade/i);
-    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Run Replay Review/i);
-    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Run Market Scorecard/i);
-    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Optimize Profile/i);
-    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Show Risk/i);
-    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Show SMT/i);
+    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Explain this cycle/i);
+    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Why is this blocked/i);
+    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/What should I test next/i);
+    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Suggest calibration/i);
+    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Review self-improvement/i);
+    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Review Paper-Demo checklist/i);
     await expect(page.locator("main")).toContainText(/ICT Strategy Suite|ICT Advisor is waiting/i);
     await expect(page.locator("main")).toContainText(/Strategy Calibration|ICT Advisor is waiting/i);
     await expect(page.getByTestId("ict-current-read-data-flow")).toContainText(/Current Read Data Flow/i);
