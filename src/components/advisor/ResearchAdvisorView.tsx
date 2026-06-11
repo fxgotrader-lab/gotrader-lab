@@ -4,6 +4,7 @@ import { BarChart3, MessageSquareText, PlayCircle, Send, ShieldCheck, Sparkles }
 
 import { ActivateMarketProgress } from "@/components/advisor/ActivateMarketProgress";
 import { AdvisorProviderStatusHeader } from "@/components/advisor/AdvisorProviderStatusHeader";
+import { AdvisorWorkspaceSummary } from "@/components/advisor/AdvisorWorkspaceSummary";
 import { IctAdvisorSummaryPanel } from "@/components/advisor/IctAdvisorSummaryPanel";
 import { OpenClawPilotCard } from "@/components/advisor/OpenClawPilotCard";
 import { LLMAdvisoryReviewPanel } from "@/components/dashboard/LLMAdvisoryReviewPanel";
@@ -1242,7 +1243,8 @@ export function ResearchAdvisorView() {
 
       {workspaceTab === "chat" ? (
       <>
-      <section data-testid="research-advisor-chat-workspace" className="grid items-start gap-4 xl:grid-cols-[minmax(220px,0.62fr)_minmax(420px,1.35fr)_minmax(240px,0.72fr)]">
+      <AdvisorWorkspaceSummary />
+      <section data-testid="research-advisor-chat-workspace" className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(220px,0.62fr)_minmax(420px,1.35fr)_minmax(240px,0.72fr)]">
         <ResearchAdvisorChatCard
           currentRead={currentRead}
           packet={activeAdvisorPacket}

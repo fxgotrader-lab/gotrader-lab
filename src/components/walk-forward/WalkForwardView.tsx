@@ -4,7 +4,11 @@ import { AlertTriangle, GitBranch, Loader2, Play, XCircle } from "lucide-react";
 import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDetails";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
 import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
+import { PageHeader } from "@/components/common/PageHeader";
+import { ValidateWorkspaceSummary } from "@/components/common/ValidateWorkspaceSummary";
 import { ValidationChainCard } from "@/components/common/ValidationChainCard";
+import { WorkspaceEmptyState } from "@/components/common/WorkspaceEmptyState";
+import { WORKSPACE_PAGE } from "@/components/common/workspaceStyles";
 import { recordWalkForwardRunInValidationChain } from "@/lib/validationChain";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
@@ -282,22 +286,40 @@ export function WalkForwardView() {
   };
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
-        <div>
-          <p className="text-sm uppercase text-primary">Canonical source validation</p>
-          <h2 className="mt-1 text-3xl font-semibold tracking-normal">Walk-Forward Validation</h2>
-          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Tests active calibration behavior across in-sample, validation, and out-of-sample windows so one selected
-            candle window cannot masquerade as robust research.
-          </p>
-        </div>
-        <Badge variant={walkForwardSource.walkForwardEligible ? "success" : "warning"}>
-          {walkForwardSource.walkForwardEligible ? `${providerLabel} source eligible` : `${providerLabel} source guarded`}
-        </Badge>
-      </div>
+    <div className={WORKSPACE_PAGE} data-testid="walk-forward-workspace">
+      <PageHeader
+        eyebrow="Canonical source validation"
+        title="Walk-Forward Validation"
+        description="Tests calibration across in-sample, validation, and out-of-sample windows. Stronger readiness evidence than replay alone — still no execution authority."
+        badges={
+          <Badge variant={walkForwardSource.walkForwardEligible ? "success" : "warning"}>
+            {walkForwardSource.walkForwardEligible ? `${providerLabel} eligible` : `${providerLabel} guarded`}
+          </Badge>
+        }
+      />
 
       <SourceStatusBanner />
+      <ValidateWorkspaceSummary
+        resultSummary={
+          latestRun?.stability?.verdict
+            ? `${latestRun.stability.verdict.replace(/_/g, " ")} · ${latestRun.stability.stabilityScore ?? 0}/100 stability`
+            : undefined
+        }
+        nextAction={
+          latestRun
+            ? latestRun.stability?.recommendedNextAction ?? "Review OOS windows and update evidence ledger."
+            : walkForwardSource.walkForwardEligible
+              ? "Run walk-forward when replay validation has passed."
+              : "Fix walk-forward source eligibility (MT5 read-only or imported historical)."
+        }
+        blocker={
+          !walkForwardSource.walkForwardEligible
+            ? sourceEligibilityLabel
+            : !latestRun
+              ? "No walk-forward result yet — run validation after replay passes."
+              : undefined
+        }
+      />
       <ValidationChainCard testId="walk-forward-validation-chain" />
 
       <SafetyLockBanner message="Walk-forward validation is research/simulation only. It cannot execute trades, enable demo/live mode, or override readiness." />
@@ -476,6 +498,16 @@ export function WalkForwardView() {
             <CardDescription>{latestRun?.stability?.summary ?? "Run walk-forward validation to evaluate stability across windows."}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {!latestRun ? (
+              <WorkspaceEmptyState
+                testId="walk-forward-empty-result"
+                tone="muted"
+                title="No walk-forward result yet"
+                message="Run walk-forward after replay validation passes. Out-of-sample behavior is weighted heavily — one good in-sample window is never enough."
+                actionHref="/replay"
+                actionLabel="Open Replay validation"
+              />
+            ) : null}
             <div className="flex flex-wrap gap-2">
               <Badge variant={latestRun?.status === "completed" ? "success" : latestRun?.status === "failed" || latestRun?.status === "canceled" ? "danger" : "warning"}>
                 {latestRun?.status ?? "not run"}

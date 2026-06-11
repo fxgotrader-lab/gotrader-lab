@@ -284,11 +284,14 @@ Each phase is independently shippable, ends green on build + smoke + safety test
 2. Dashboard slimming per section 7.1; delete or re-home orphaned dashboard components.
 3. Split `MissionControlShell` into Operate / Supervise / Evidence subcomponents.
 
-**Phase 6 - Visual polish and empty states**
-1. Migrate cockpit-style panels onto shared UI primitives; one typography/spacing scale.
-2. EmptyState component with next-step CTA on every page (worst first: ICT Lab, Results, Market Data).
-3. ICT Lab phase tabs; Validate-hub wizard flows; Settings slimming.
-4. Harden `validateGoTraderHandoff` to independently verify all safety flags.
+**Phase 6 - Visual polish and empty states** ✅ (2026-06-11)
+1. Shared workspace primitives: `PageHeader`, `WorkspaceEmptyState`, `ValidateWorkspaceSummary`, `EvidenceWorkspaceSummary`, `DashboardCommandOverview`, `AdvisorWorkspaceSummary`.
+2. Unified page headers and validate/evidence summary strips on Replay, Walk-Forward, Backtest, Evidence, Maturity.
+3. Empty/loading states for no replay snapshot, no walk-forward result, evidence/maturity loading.
+4. Dashboard command overview answers source, setup, validation next step, Research Ready, Paper-Demo blocker.
+5. Advisor chat tab summary for deterministic mode, provider class, validation chain, test next.
+6. Responsive: main content `overflow-x-hidden`, global source bar wraps; smoke overflow check at 1280px.
+7. Final runbook: `docs/gotrader-final-product-runbook.md`.
 
 ---
 

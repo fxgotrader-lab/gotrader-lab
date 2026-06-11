@@ -3,7 +3,11 @@ import { ChevronLeft, ChevronRight, Pause, Play, RotateCcw, ShieldAlert, SkipBac
 import { MetricCard } from "@/components/MetricCard";
 import { TradingChart } from "@/components/charts/TradingChart";
 import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
+import { PageHeader } from "@/components/common/PageHeader";
+import { ValidateWorkspaceSummary } from "@/components/common/ValidateWorkspaceSummary";
 import { ValidationChainCard } from "@/components/common/ValidationChainCard";
+import { WorkspaceEmptyState } from "@/components/common/WorkspaceEmptyState";
+import { WORKSPACE_PAGE } from "@/components/common/workspaceStyles";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -266,31 +270,47 @@ export function ReplayView() {
   }, [isAtEnd, replayState.isPlaying]);
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
-        <div>
-          <p className="text-sm uppercase text-primary">Candle-by-candle research replay</p>
-          <h2 className="mt-1 text-3xl font-semibold tracking-normal">Replay Lab</h2>
-          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Step through a frozen snapshot from the selected canonical source and watch the ICT engine, internal agents,
-            CIO synthesis, and simulated outcomes evolve.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="warning">Replay simulation</Badge>
-          {snapshotReady ? (
-            <>
-              <Badge variant={sourceVariant(replaySource)}>{formatSource(replaySource.provider)}</Badge>
-              {replaySource.brokerSymbol ? <Badge variant="secondary">{replaySource.brokerSymbol} for {replaySource.requestedSymbol}</Badge> : null}
-            </>
-          ) : (
-            <Badge variant="secondary">no replay snapshot</Badge>
-          )}
-          <Badge variant="danger">authority none</Badge>
-        </div>
-      </div>
+    <div className={WORKSPACE_PAGE} data-testid="replay-workspace">
+      <PageHeader
+        eyebrow="Candle-by-candle research replay"
+        title="Replay Lab"
+        description="Step through a frozen snapshot from the selected canonical source. Recognition is not evidence until replay validation passes."
+        badges={
+          <>
+            <Badge variant="warning">Replay simulation</Badge>
+            {snapshotReady ? (
+              <>
+                <Badge variant={sourceVariant(replaySource)}>{formatSource(replaySource.provider)}</Badge>
+                {replaySource.brokerSymbol ? (
+                  <Badge variant="secondary">
+                    CFD/proxy: {replaySource.brokerSymbol} → {replaySource.requestedSymbol}
+                  </Badge>
+                ) : null}
+              </>
+            ) : (
+              <Badge variant="secondary">No replay snapshot</Badge>
+            )}
+            <Badge variant="danger">Authority: none</Badge>
+          </>
+        }
+      />
 
       <SourceStatusBanner />
+      <ValidateWorkspaceSummary
+        resultSummary={snapshotReady ? `${replaySource.candles.length.toLocaleString()} candles frozen` : undefined}
+        nextAction={
+          snapshotReady
+            ? "Step through candles and compare ICT engine output to the validation chain."
+            : "Create a replay snapshot from active MT5 read-only or import historical data."
+        }
+        blocker={
+          !snapshotReady
+            ? "No frozen replay snapshot. MT5 must be research-active for canonical replay."
+            : replaySource.provider === "mock"
+              ? "Mock snapshot — sample only, not research evidence."
+              : undefined
+        }
+      />
       <ValidationChainCard testId="replay-validation-chain" />
 
       <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
@@ -358,10 +378,14 @@ export function ReplayView() {
               ) : null}
             </>
           ) : (
-            <div className="rounded-lg border border-border bg-background/45 p-4 text-muted-foreground">
-              Replay source is not loaded yet. Active-source replay now requires an eligible MT5 read-only canonical source;
-              imported and mock replay modes must be selected explicitly.
-            </div>
+            <WorkspaceEmptyState
+              testId="replay-empty-snapshot"
+              tone="warning"
+              title="No replay snapshot loaded"
+              message="Create a frozen snapshot from MT5 read-only (preferred), imported historical, or mock demo. Replay does not silently use live candles without an explicit snapshot."
+              actionHref="/market-data"
+              actionLabel="Configure source in Market Data"
+            />
           )}
         </CardContent>
       </Card>

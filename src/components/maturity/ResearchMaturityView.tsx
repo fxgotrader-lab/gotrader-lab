@@ -5,6 +5,10 @@ import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDet
 import { AutonomySafetyPolicyPanel } from "@/components/autonomous-research/AutonomySafetyPolicyPanel";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
 import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
+import { EvidenceWorkspaceSummary } from "@/components/common/EvidenceWorkspaceSummary";
+import { PageHeader } from "@/components/common/PageHeader";
+import { WorkspaceEmptyState } from "@/components/common/WorkspaceEmptyState";
+import { WORKSPACE_PAGE } from "@/components/common/workspaceStyles";
 import { ValidationChainCard } from "@/components/common/ValidationChainCard";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
@@ -74,21 +78,31 @@ export function ResearchMaturityView() {
   const latestAutoResearch = latestAutoResearchCycle(loadAutoResearchState());
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
-        <div>
-          <p className="text-sm uppercase text-primary">Research maturity</p>
-          <h2 className="mt-1 text-3xl font-semibold tracking-normal">Maturity Score</h2>
-          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Measures how much confidence to place in the current active calibration across repeated cycles, data windows,
-            evidence quality, LLM review, validation, and proposal history.
-          </p>
-        </div>
-        <Badge variant={maturityGradeVariant(summary?.grade)}>{maturityGradeLabel(summary?.grade)}</Badge>
-      </div>
+    <div className={WORKSPACE_PAGE} data-testid="maturity-workspace">
+      <PageHeader
+        eyebrow="Research maturity"
+        title="Maturity Score"
+        description="How much confidence to place in the active calibration across cycles, evidence, validation, and proposals. Maturity informs Paper-Demo review — it cannot approve execution."
+        badges={<Badge variant={maturityGradeVariant(summary?.grade)}>{maturityGradeLabel(summary?.grade)}</Badge>}
+      />
 
       <SourceStatusBanner />
+      <EvidenceWorkspaceSummary
+        evidenceScore={runtimeSnapshot?.evidence.evidenceQualityScore}
+        maturityScore={summary?.score}
+        missingEvidence={selectMaturityNextRequirement(summary)}
+        paperDemoBlocker={selectMaturityReadinessWarning(summary)}
+      />
       <ValidationChainCard testId="maturity-validation-chain" />
+
+      {!runtimeSnapshot ? (
+        <WorkspaceEmptyState
+          testId="maturity-loading-state"
+          tone="loading"
+          title="Loading maturity snapshot"
+          message="Maturity scores update after research cycles, walk-forward runs, and evidence ledger changes."
+        />
+      ) : null}
 
       <SafetyLockBanner message="Research maturity can block advancement, but cannot approve execution, enable demo/live mode, or override readiness." />
 

@@ -6,6 +6,10 @@ import { TradingChart } from "@/components/charts/TradingChart";
 import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDetails";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
 import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
+import { PageHeader } from "@/components/common/PageHeader";
+import { ValidateWorkspaceSummary } from "@/components/common/ValidateWorkspaceSummary";
+import { ValidationChainCard } from "@/components/common/ValidationChainCard";
+import { WORKSPACE_PAGE } from "@/components/common/workspaceStyles";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { MetricCard } from "@/components/MetricCard";
 import { Badge } from "@/components/ui/badge";
@@ -368,27 +372,50 @@ export function BacktestLab() {
   }, []);
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
-        <div>
-          <p className="text-sm uppercase text-primary">Backtest configuration</p>
-          <h2 className="mt-1 text-3xl font-semibold tracking-normal">Parameter Lab</h2>
-          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Tune simulation replay assumptions for ICT filters, confluence gates, agent weights, stop model, and
-            simulated target logic. The run uses the active candle source selected in Market Data.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="warning">Simulation only</Badge>
-          <Badge variant={!sourceResolved ? "secondary" : candleSource.provider === "mt5_read_only" ? "success" : candleSource.provider === "mock" ? "warning" : "muted"}>
-            {sourceResolved ? candleSource.provider.replace(/_/g, " ") : "resolving source"}
-          </Badge>
-          {sourceResolved && candleSource.brokerSymbol ? <Badge variant="secondary">{candleSource.brokerSymbol} -&gt; {candleSource.requestedSymbol}</Badge> : null}
-          <Badge variant="danger">authority none</Badge>
-        </div>
-      </div>
+    <div className={WORKSPACE_PAGE} data-testid="backtest-workspace">
+      <PageHeader
+        eyebrow="Backtest configuration"
+        title="Parameter Lab"
+        description="Tune simulation replay assumptions. Runs use the active candle source from Market Data — mock/sample sources are labeled and are not research evidence."
+        badges={
+          <>
+            <Badge variant="warning">Simulation only</Badge>
+            <Badge
+              variant={
+                !sourceResolved
+                  ? "secondary"
+                  : candleSource.provider === "mt5_read_only"
+                    ? "success"
+                    : candleSource.provider === "mock"
+                      ? "warning"
+                      : "muted"
+              }
+            >
+              {sourceResolved ? candleSource.provider.replace(/_/g, " ") : "Resolving source"}
+            </Badge>
+            {sourceResolved && candleSource.brokerSymbol ? (
+              <Badge variant="secondary">
+                CFD/proxy: {candleSource.brokerSymbol} → {candleSource.requestedSymbol}
+              </Badge>
+            ) : null}
+            <Badge variant="danger">Authority: none</Badge>
+          </>
+        }
+      />
 
       <SourceStatusBanner />
+      <ValidateWorkspaceSummary
+        resultSummary={sourceResolved ? `${summary.totalTrades} trades in latest preview` : undefined}
+        nextAction="Adjust parameters and re-run simulation preview when source is research-active."
+        blocker={
+          sourceResolved && candleSource.provider === "mock"
+            ? "Mock/sample data — not research evidence."
+            : !sourceResolved
+              ? "Waiting for candle source resolution."
+              : undefined
+        }
+      />
+      <ValidationChainCard testId="backtest-validation-chain" />
 
       <SafetyLockBanner message="Simulation calibration only. No broker connection, live market data, or real trades." />
 

@@ -7,6 +7,7 @@ import { IctAdvisorSummaryPanel } from "@/components/advisor/IctAdvisorSummaryPa
 import { clearReplaySnapshotSourceMeta, loadReplaySnapshotSourceMeta } from "@/lib/backtesting";
 import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
 import { ValidationChainCard } from "@/components/common/ValidationChainCard";
+import { DashboardCommandOverview } from "@/components/dashboard/DashboardCommandOverview";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import {
   TradingChart,
@@ -2033,6 +2034,15 @@ export function MissionControlShell({ state }: { state: LabState }) {
         </div>
         <SourceStatusBanner className="mt-4" />
         <ValidationChainCard className="mt-3" />
+        <DashboardCommandOverview
+          className="mt-3"
+          primarySetupLabel={primarySetupLabel}
+          researchReady={paperDemoChecklist?.researchReady}
+          paperDemoCandidate={paperDemoChecklist?.paperDemoCandidate}
+          paperDemoBlocker={paperDemoChecklist?.primaryBlocker ?? primaryBlockerDetail}
+          primaryBlocker={primaryBlocker}
+          validationNextAction={paperDemoChecklist?.nextAction}
+        />
         <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
           {statusChips.map((chip) => (
             <StatusChip key={chip.label} label={chip.label} value={chip.value} tone={chip.tone} />

@@ -140,6 +140,8 @@ Routes are code-split with `React.lazy` in `src/App.tsx`; the shell (`src/compon
 
 The shell groups navigation into 8 hubs (Home, Advisor, Data, Validate, Evidence, Automate, Agents, Settings). Each hub link opens the hub's primary route and the remaining hub destinations render as workspace tabs in the top bar, so every legacy route stays reachable at its original URL. The shell also renders a global compact source bar (same `sourceStatus` snapshot as the per-page `SourceStatusBanner`), an optional right-side context panel with the latest validation-chain entry, and a footer safety strip (research only / MT5 read-only / execution, broker, readiness-override authority none).
 
+Shared workspace UI (Phase 6 polish) lives under `src/components/common/`: `PageHeader`, `WorkspaceEmptyState`, `ValidateWorkspaceSummary`, `EvidenceWorkspaceSummary`, plus dashboard/advisor overview strips. Operator runbook: `docs/gotrader-final-product-runbook.md`.
+
 OpenClaw advisory code is no longer planning-only: the browser client is `src/lib/llm/advisoryProviderClient.ts` (routing via `OPENCLAW_ADVISORY_URL` / `VITE_OPENCLAW_ADVISORY_URL`), pilot program types live in `src/lib/openclawPilot/`, and local bridges are `scripts/openclaw-phone-advisory-bridge.mjs` and `scripts/openclaw-gotrader-advisory-skill-server.mjs`. All paths remain advisory/proposal-only with authority fields `none`.
 
 I found no route in `src/App.tsx` whose component file is missing.

@@ -289,8 +289,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             data-testid="app-top-bar"
             className="z-10 shrink-0 border-b border-border bg-background/85 backdrop-blur"
           >
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 sm:px-6">
-              <div data-testid="app-breadcrumb" className="flex min-w-0 items-center gap-2 text-sm">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 sm:px-6">
+              <div data-testid="app-breadcrumb" className="flex min-w-0 max-w-full items-center gap-2 text-sm">
                 <span className="shrink-0 text-muted-foreground">{activeHub.label}</span>
                 <span className="shrink-0 text-muted-foreground/50">/</span>
                 <span className="truncate font-semibold text-foreground">{activeItem.label}</span>
@@ -337,7 +337,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           </header>
 
           <div className="flex min-h-0 flex-1">
-            <main className="scrollbar-thin min-w-0 flex-1 overflow-x-auto px-4 py-5 sm:px-6 lg:overflow-y-auto xl:px-8">
+            <main
+              data-testid="app-main-content"
+              className="scrollbar-thin min-w-0 flex-1 overflow-x-hidden px-4 py-5 sm:px-6 lg:overflow-y-auto xl:px-8"
+            >
               <div className="min-w-0">{children}</div>
             </main>
             {contextOpen ? (

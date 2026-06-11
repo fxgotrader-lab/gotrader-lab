@@ -4,6 +4,10 @@ import { DatabaseZap, ShieldAlert } from "lucide-react";
 import { MetricProvenanceDetails } from "@/components/common/MetricProvenanceDetails";
 import { SafetyLockBanner } from "@/components/common/SafetyLockBanner";
 import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
+import { EvidenceWorkspaceSummary } from "@/components/common/EvidenceWorkspaceSummary";
+import { PageHeader } from "@/components/common/PageHeader";
+import { WorkspaceEmptyState } from "@/components/common/WorkspaceEmptyState";
+import { WORKSPACE_PAGE } from "@/components/common/workspaceStyles";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { ValidationChainCard } from "@/components/common/ValidationChainCard";
 import { recordEvidenceUpdateInValidationChain } from "@/lib/validationChain";
@@ -70,21 +74,31 @@ export function EvidenceQualityView() {
   }, [runtimeSnapshot]);
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
-        <div>
-          <p className="text-sm uppercase text-primary">Evidence quality</p>
-          <h2 className="mt-1 text-3xl font-semibold tracking-normal">Evidence Ledger</h2>
-          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Track whether each research input is real imported evidence, derived from real data, manual, mock, planned,
-            or unavailable before agents, LLM reviewers, readiness, and proposals use it.
-          </p>
-        </div>
-        <Badge variant="warning">Research confidence only</Badge>
-      </div>
+    <div className={WORKSPACE_PAGE} data-testid="evidence-workspace">
+      <PageHeader
+        eyebrow="Evidence quality"
+        title="Evidence Ledger"
+        description="What research inputs are real, derived, mock, or missing before agents, readiness, and Paper-Demo review use them. Scores inform confidence — they do not enable execution."
+        badges={<Badge variant="warning">Research confidence only</Badge>}
+      />
 
       <SourceStatusBanner />
+      <EvidenceWorkspaceSummary
+        evidenceScore={summary?.overallScore}
+        maturityScore={runtimeSnapshot?.maturity.maturityScore}
+        missingEvidence={selectWeakestEvidenceLabel(summary)}
+        paperDemoBlocker={runtimeSnapshot?.readiness.actualBlockers[0] ?? "Paper-Demo checklist is reporting-only."}
+      />
       <ValidationChainCard testId="evidence-validation-chain" />
+
+      {!runtimeSnapshot ? (
+        <WorkspaceEmptyState
+          testId="evidence-loading-state"
+          tone="loading"
+          title="Loading evidence ledger"
+          message="Resolving runtime snapshot and source fingerprint. Evidence scores appear when research cycles or imports populate the ledger."
+        />
+      ) : null}
 
       <SafetyLockBanner message="Evidence quality can reduce readiness confidence, but cannot approve readiness or enable execution." />
 

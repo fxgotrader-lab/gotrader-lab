@@ -145,6 +145,9 @@ test.describe("GoTrader browser route smoke", () => {
 
   test("dashboard shows command-center safety locks and progress panel", async ({ page }) => {
     await gotoRoute(page, "/dashboard");
+    await expect(page.getByTestId("dashboard-command-overview")).toBeVisible();
+    await expect(page.getByTestId("dashboard-overview-source")).toBeVisible();
+    await expect(page.getByTestId("dashboard-overview-next-action")).toBeVisible();
     await expect(page.locator("main")).toContainText(/MT5-first research cockpit/i);
     await expect(page.locator("main")).toContainText(/Composite ICT bias/i);
     await expect(page.locator("main")).toContainText(/Replay score/i);
@@ -179,6 +182,7 @@ test.describe("GoTrader browser route smoke", () => {
       await expect(page.getByTestId(`advisor-tab-${tab}`)).toBeVisible();
     }
     await expect(page.getByTestId("research-advisor-chat-card")).toBeVisible();
+    await expect(page.getByTestId("advisor-workspace-summary")).toBeVisible();
     await expect(page.getByTestId("research-advisor-chat-input")).toBeVisible();
     await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Explain this cycle/i);
     await expect(page.getByRole("button", { name: "Activate Market" }).first()).toBeVisible();
@@ -227,6 +231,7 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByTestId("activate-market-progress")).toBeVisible();
     await expect(page.getByTestId("activate-market-progress")).toContainText(/Activate Market Workflow/i);
     await expect(page.getByTestId("research-advisor-chat-card")).toBeVisible();
+    await expect(page.getByTestId("advisor-workspace-summary")).toBeVisible();
     await expect(page.getByTestId("research-advisor-chat-input")).toBeVisible();
     await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Explain this cycle/i);
     await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Why is this blocked/i);
@@ -447,6 +452,39 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByTestId("context-panel")).toHaveCount(0);
 
     await expectNoVisibleExecutionControls(page);
+  });
+
+  test("validate and evidence workspaces show summary strips and safe empty states", async ({ page }) => {
+    await gotoRoute(page, "/replay");
+    await expect(page.getByTestId("validate-workspace-summary")).toBeVisible();
+    await expect(page.getByTestId("replay-empty-snapshot")).toBeVisible();
+
+    await gotoRoute(page, "/walk-forward");
+    await expect(page.getByTestId("validate-workspace-summary")).toBeVisible();
+    await expect(page.getByTestId("walk-forward-empty-result")).toBeVisible();
+
+    await gotoRoute(page, "/backtest-lab");
+    await expect(page.getByTestId("validate-workspace-summary")).toBeVisible();
+    await expect(page.getByTestId("backtest-validation-chain")).toBeVisible();
+
+    await gotoRoute(page, "/evidence-quality");
+    await expect(page.getByTestId("evidence-workspace-summary")).toBeVisible();
+
+    await gotoRoute(page, "/research-maturity");
+    await expect(page.getByTestId("evidence-workspace-summary")).toBeVisible();
+    await expectNoVisibleExecutionControls(page);
+  });
+
+  test("key routes avoid horizontal page overflow at laptop width", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    for (const route of ["/dashboard", "/research-advisor", "/replay", "/evidence-quality"]) {
+      await gotoRoute(page, route);
+      const overflow = await page.evaluate(() => {
+        const doc = document.documentElement;
+        return doc.scrollWidth - doc.clientWidth;
+      });
+      expect(overflow, `${route} should not horizontally overflow`).toBeLessThanOrEqual(8);
+    }
   });
 
   test("chart surfaces render canvas or a safe fallback", async ({ page }) => {

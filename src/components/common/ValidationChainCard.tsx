@@ -102,11 +102,11 @@ export function ValidationChainCard({
           ) : null}
         </div>
         <p className="mt-2 text-xs leading-5 text-slate-400">
-          Recognition is not evidence. Queue replay validation from a recognition card in the{" "}
+          Recognition is not evidence. Queue replay validation from{" "}
           <Link to="/ict-lab" className="font-medium underline underline-offset-2">
             ICT Lab
           </Link>{" "}
-          to start the replay → walk-forward → evidence chain.
+          after MT5 read-only is active (not mock/sample).
         </p>
       </section>
     );
