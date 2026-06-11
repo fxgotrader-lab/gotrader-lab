@@ -21,6 +21,8 @@ export type OpenClawPilotForbiddenField =
   | "candleArrays"
   | "rawRuntimeSnapshot"
   | "secrets"
+  | "apiKeys"
+  | "tokensPasswords"
   | "mt5Credentials"
   | "accountData"
   | "orderData"
@@ -29,7 +31,11 @@ export type OpenClawPilotForbiddenField =
   | "executionRequest"
   | "readinessOverride"
   | "activeCalibrationMutation"
-  | "autoApply";
+  | "applyCalibration"
+  | "approveCalibrationProposal"
+  | "autoApply"
+  | "screenshotsBase64"
+  | "importedOhlcvArrays";
 
 export interface OpenClawPilotAuthority {
   executionAuthority: "none";
@@ -63,6 +69,26 @@ export interface OpenClawPilotProgram {
   requiredValidationGates: string[];
 }
 
+export interface OpenClawPilotProgramValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  summary: string;
+}
+
+export interface OpenClawPilotProgramSummary {
+  programId: string;
+  version: string;
+  phase: OpenClawPilotPhase;
+  name: string;
+  summary: string;
+  allowedProposalFamilies: string[];
+  requiredValidationGates: string[];
+  authority: OpenClawPilotAuthority;
+  autoApplyAllowed: false;
+  forbiddenFieldCount: number;
+}
+
 export interface OpenClawPilotProposalIntent {
   intentId: string;
   createdAt: string;
@@ -84,23 +110,57 @@ export interface OpenClawPilotProposalIntent {
   authority: OpenClawPilotAuthority;
 }
 
+export interface OpenClawPilotValidationResult {
+  valid: boolean;
+  status: "passed" | "failed";
+  blockedFields: string[];
+  errors: string[];
+  warnings: string[];
+  authority: OpenClawPilotAuthority;
+  autoApplyAllowed: false;
+  programSummary: OpenClawPilotProgramSummary;
+}
+
 export interface OpenClawPilotAuditEntry {
+  id: string;
   auditId: string;
   timestamp: string;
   eventType:
     | "program_loaded"
+    | "program_validation_failed"
     | "advisory_packet_sent"
     | "advisory_response_received"
     | "unsafe_response_rejected"
     | "proposal_intent_created"
     | "proposal_intent_rejected"
     | "memory_packet_created"
-    | "validation_required";
+    | "validation_required"
+    | "dry_run_passed"
+    | "dry_run_rejected";
   summary: string;
+  compactSummary?: string;
   relatedPacketId?: string;
   relatedIntentId?: string;
+  requestedSymbol?: string;
+  brokerSymbol?: string;
+  sourceProvider?: string;
+  sourceFingerprint?: string;
+  validationResult?: OpenClawPilotValidationResult;
+  blockedFields?: string[];
+  nextAction?: string;
   authority: OpenClawPilotAuthority;
   forbiddenFieldsAbsent: true;
+  exclusions?: OpenClawPilotForbiddenField[];
+  safety: {
+    rawCandlesExcluded: true;
+    rawSnapshotsExcluded: true;
+    accountDataExcluded: true;
+    orderDataExcluded: true;
+    positionDataExcluded: true;
+    secretsExcluded: true;
+    screenshotsBase64Excluded: true;
+    importedOhlcvArraysExcluded: true;
+  };
 }
 
 export interface OpenClawPilotMemoryEntry {
@@ -122,4 +182,3 @@ export interface OpenClawPilotMemoryEntry {
   exclusions: OpenClawPilotForbiddenField[];
   authority: OpenClawPilotAuthority;
 }
-

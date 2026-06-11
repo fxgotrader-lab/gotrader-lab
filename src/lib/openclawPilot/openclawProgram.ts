@@ -3,6 +3,8 @@ import type {
   OpenClawPilotForbiddenField,
   OpenClawPilotPermission,
   OpenClawPilotProgram,
+  OpenClawPilotProgramSummary,
+  OpenClawPilotProgramValidationResult,
   OpenClawPilotSafetyBoundary
 } from "@/lib/openclawPilot/openclawPilotTypes";
 
@@ -17,6 +19,8 @@ export const openClawPilotForbiddenFields: OpenClawPilotForbiddenField[] = [
   "candleArrays",
   "rawRuntimeSnapshot",
   "secrets",
+  "apiKeys",
+  "tokensPasswords",
   "mt5Credentials",
   "accountData",
   "orderData",
@@ -25,7 +29,11 @@ export const openClawPilotForbiddenFields: OpenClawPilotForbiddenField[] = [
   "executionRequest",
   "readinessOverride",
   "activeCalibrationMutation",
-  "autoApply"
+  "applyCalibration",
+  "approveCalibrationProposal",
+  "autoApply",
+  "screenshotsBase64",
+  "importedOhlcvArrays"
 ];
 
 export const openClawPilotPermissions: OpenClawPilotPermission[] = [
@@ -83,7 +91,9 @@ export const openClawPilotProgram: OpenClawPilotProgram = {
     "No readiness override.",
     "No auto-apply.",
     "No active calibration mutation.",
-    "No raw candle arrays, raw runtime snapshots, screenshots, secrets, or MT5 credentials."
+    "No applyCalibration or approveCalibrationProposal.",
+    "No raw candle arrays, raw runtime snapshots, screenshots/base64, imported OHLCV arrays, secrets, API keys, tokens, passwords, or MT5 credentials.",
+    "OpenClaw cannot edit docs/openclaw/program.md."
   ],
   optimizationPriorities: [
     "Explain deterministic GoTrader research clearly.",
@@ -115,3 +125,84 @@ export function assertOpenClawPilotAuthorityNone(authority: OpenClawPilotAuthori
   );
 }
 
+/**
+ * Browser-safe program loader. The app cannot read docs/openclaw/program.md at
+ * runtime, so the embedded program mirrors the human-editable docs file.
+ */
+export function loadOpenClawPilotProgram(program?: Partial<OpenClawPilotProgram>): OpenClawPilotProgram {
+  if (!program) {
+    return openClawPilotProgram;
+  }
+  return {
+    ...openClawPilotProgram,
+    ...program,
+    safetyBoundary: program.safetyBoundary ?? openClawPilotProgram.safetyBoundary,
+    constraints: program.constraints ?? openClawPilotProgram.constraints,
+    optimizationPriorities: program.optimizationPriorities ?? openClawPilotProgram.optimizationPriorities,
+    allowedProposalFamilies: program.allowedProposalFamilies ?? openClawPilotProgram.allowedProposalFamilies,
+    permissions: program.permissions ?? openClawPilotProgram.permissions,
+    requiredValidationGates: program.requiredValidationGates ?? openClawPilotProgram.requiredValidationGates
+  };
+}
+
+export function summarizeOpenClawPilotProgram(program: OpenClawPilotProgram = openClawPilotProgram): OpenClawPilotProgramSummary {
+  return {
+    programId: program.programId,
+    version: program.version,
+    phase: program.phase,
+    name: program.name,
+    summary: program.summary,
+    allowedProposalFamilies: [...program.allowedProposalFamilies],
+    requiredValidationGates: [...program.requiredValidationGates],
+    authority: openClawPilotAuthorityNone,
+    autoApplyAllowed: false,
+    forbiddenFieldCount: program.safetyBoundary.forbiddenFields.length
+  };
+}
+
+export function validateOpenClawPilotProgram(
+  program: OpenClawPilotProgram = openClawPilotProgram
+): OpenClawPilotProgramValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  if (!program.programId.trim()) errors.push("programId is required.");
+  if (!program.version.trim()) errors.push("version is required.");
+  if (program.phase !== "phase_1_program_file") {
+    warnings.push(`Program phase is ${program.phase}; Phase 1 dry-run expects phase_1_program_file.`);
+  }
+  if (!program.constraints.length) errors.push("constraints are required.");
+  if (!program.optimizationPriorities.length) errors.push("optimization priorities are required.");
+  if (!program.allowedProposalFamilies.length) errors.push("allowed proposal families are required.");
+  if (!program.requiredValidationGates.length) errors.push("required validation gates are required.");
+  if (!assertOpenClawPilotAuthorityNone(program.safetyBoundary.authority)) {
+    errors.push("authority must remain none/none/none.");
+  }
+  if (program.safetyBoundary.autoApplyAllowed !== false) {
+    errors.push("autoApplyAllowed must be false.");
+  }
+  if (program.safetyBoundary.openClawCanApproveReadiness !== false) {
+    errors.push("OpenClaw cannot approve readiness.");
+  }
+  if (program.safetyBoundary.openClawCanPlaceTrades !== false) {
+    errors.push("OpenClaw cannot place trades.");
+  }
+  if (program.safetyBoundary.openClawCanCallMt5 !== false) {
+    errors.push("OpenClaw cannot call MT5.");
+  }
+  if (program.safetyBoundary.openClawCanMutateBrokerState !== false) {
+    errors.push("OpenClaw cannot mutate broker state.");
+  }
+  const missingForbiddenFields = openClawPilotForbiddenFields.filter(
+    (field) => !program.safetyBoundary.forbiddenFields.includes(field)
+  );
+  if (missingForbiddenFields.length) {
+    errors.push(`forbidden fields missing: ${missingForbiddenFields.join(", ")}`);
+  }
+  const summary = `${program.name} v${program.version}: ${program.summary}`;
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    summary
+  };
+}

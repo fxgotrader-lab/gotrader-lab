@@ -538,7 +538,7 @@ async function expectChartOrFallback(page: Page, route: string) {
     await expect(chartApplication.first()).toBeVisible();
     return;
   }
-  await expect(page.getByText(/Chart unavailable|No candles|No chart data|preview unavailable|data unavailable/i)).toBeVisible();
+  await expect(page.getByText(/Chart unavailable|No candles|No chart data|preview unavailable|data unavailable/i).first()).toBeVisible();
 }
 
 async function expectNoVisibleExecutionControls(page: Page) {
