@@ -116,6 +116,7 @@ import {
   MT5_READ_ONLY_UPDATED_EVENT
 } from "@/lib/integrations/mt5";
 import { RESEARCH_CYCLE_UPDATED_EVENT } from "@/lib/researchCycle";
+import { loadAutoPaperDemoCycleState } from "@/lib/paperDemoOperations";
 import { resolveResearchRuntimeSnapshot, type ResearchRuntimeSnapshot } from "@/lib/runtime";
 import type { Timeframe } from "@/lib/types";
 import {
@@ -362,6 +363,19 @@ function buildLocalAdvisorReply(
   }
   if (lower.includes("scorecard")) {
     return `Market scorecard status: ${formatToken(marketScorecardStatus)}. It remains idle until explicitly run.`;
+  }
+  if (lower.includes("auto paper-demo") || lower.includes("auto paper demo") || lower.includes("automatic paper-demo")) {
+    const autoCycle = loadAutoPaperDemoCycleState().latestCycle;
+    if (!autoCycle) {
+      return "No Auto Paper-Demo cycle has been run yet. Use Run cycle now from Dashboard or Paper-Demo Operations. It will queue validation only from the active non-mock research source, and authority remains none.";
+    }
+    const source = autoCycle.sourceStatus
+      ? `${autoCycle.sourceStatus.sourceProvider.replace(/_/g, " ")} ${autoCycle.sourceStatus.requestedSymbol}${autoCycle.sourceStatus.brokerSymbol ? ` via ${autoCycle.sourceStatus.brokerSymbol}` : ""} ${autoCycle.sourceStatus.candleCount.toLocaleString()} candles`
+      : "source unavailable";
+    const replay = autoCycle.replaySummary?.verdict ?? "queued/not wired";
+    const walkForward = autoCycle.walkForwardSummary?.verdict ?? "queued/not wired";
+    const blockers = autoCycle.blockers.length ? ` Blockers: ${autoCycle.blockers.slice(0, 3).join("; ")}.` : "";
+    return `Auto Paper-Demo cycle ${formatToken(autoCycle.currentStage)}. Source: ${source}. Recognition: ${autoCycle.recognitionSummary?.setupLabel ?? "none"}. Replay ${formatToken(replay)}; walk-forward ${formatToken(walkForward)}.${blockers} Next action: ${autoCycle.nextAction}. It creates no execution intent and cannot promote readiness.`;
   }
   if (lower.includes("paper-demo") || lower.includes("paper demo") || lower.includes("checklist")) {
     const readiness = currentRead.readinessSummary;
@@ -2627,7 +2641,8 @@ function ResearchAdvisorChatCard({
     "What should I test next?",
     "Suggest calibration",
     "Review self-improvement",
-    "Review Paper-Demo checklist"
+    "Review Paper-Demo checklist",
+    "Review auto paper-demo cycle"
   ];
   const readSummary =
     packet?.recommendedSignal.summary ??

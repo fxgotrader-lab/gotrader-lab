@@ -137,8 +137,13 @@ import {
   SELF_IMPROVEMENT_UPDATED_EVENT
 } from "@/lib/selfImprovement";
 import {
+  AUTO_PAPER_DEMO_CYCLE_UPDATED_EVENT,
+  loadAutoPaperDemoCycleState,
   loadPaperDemoOperationsState,
   PAPER_DEMO_OPERATIONS_UPDATED_EVENT,
+  runAutoPaperDemoCycle,
+  stopAutoPaperDemoCycle,
+  type AutoPaperDemoCycleState,
   type PaperDemoOperationsState
 } from "@/lib/paperDemoOperations";
 import {
@@ -639,6 +644,13 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const [paperDemoOperations, setPaperDemoOperations] = useState<PaperDemoOperationsState>(() =>
     loadPaperDemoOperationsState()
   );
+  const [autoPaperDemoCycle, setAutoPaperDemoCycle] = useState<AutoPaperDemoCycleState>(() =>
+    loadAutoPaperDemoCycleState()
+  );
+  const [autoPaperDemoBusy, setAutoPaperDemoBusy] = useState(false);
+  const [autoPaperDemoRunOnOpen, setAutoPaperDemoRunOnOpen] = useState(false);
+  const [autoPaperDemoIntervalMinutes, setAutoPaperDemoIntervalMinutes] = useState("off");
+  const autoPaperDemoRunOnOpenRef = useRef(false);
   const latestRun = liveRun ?? latestAutonomousResearchRun(autonomyState);
   const currentIteration = latestRun?.iterations.find((iteration) => iteration.iteration === latestRun.currentIteration);
   const recoveryRun = !busy && autonomyState.activeRun?.status === "running" ? autonomyState.activeRun : undefined;
@@ -700,6 +712,43 @@ export function MissionControlShell({ state }: { state: LabState }) {
         16
       )
     );
+  };
+
+  const runDashboardAutoPaperDemoCycle = async (trigger: "manual" | "open" | "interval" = "manual") => {
+    if (autoPaperDemoBusy) {
+      return;
+    }
+    if (trigger !== "manual" && typeof document !== "undefined" && document.hidden) {
+      return;
+    }
+    setAutoPaperDemoBusy(true);
+    addDataConnectionEvent(
+      "Auto Paper-Demo cycle started",
+      "Running compact research automation. Replay/walk-forward/evidence advance only when deterministic summaries are available.",
+      "running"
+    );
+    try {
+      const result = await runAutoPaperDemoCycle({ persist: true, createWatchlistCandidate: true });
+      setAutoPaperDemoCycle(loadAutoPaperDemoCycleState());
+      setPaperDemoOperations(loadPaperDemoOperationsState());
+      addDataConnectionEvent(
+        result.blockers.length ? "Auto Paper-Demo cycle queued" : "Auto Paper-Demo cycle complete",
+        result.nextAction,
+        result.blockers.length ? "warning" : "success",
+        result.sourceStatus?.sourceFingerprint
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Auto Paper-Demo cycle failed.";
+      addDataConnectionEvent("Auto Paper-Demo cycle failed", message, "failed");
+    } finally {
+      setAutoPaperDemoBusy(false);
+    }
+  };
+
+  const stopDashboardAutoPaperDemoCycle = () => {
+    const stopped = stopAutoPaperDemoCycle("Stopped from Dashboard. Browser-session automation is inactive.");
+    setAutoPaperDemoCycle(stopped);
+    addDataConnectionEvent("Auto Paper-Demo cycle stopped", "Browser-session automation stopped. Existing compact state remains available.", "warning");
   };
 
   const resetMt5ActivationSteps = (steps: string[]) => {
@@ -1630,14 +1679,41 @@ export function MissionControlShell({ state }: { state: LabState }) {
   }, []);
 
   useEffect(() => {
-    const refreshPaperDemoOperations = () => setPaperDemoOperations(loadPaperDemoOperationsState());
+    const refreshPaperDemoOperations = () => {
+      setPaperDemoOperations(loadPaperDemoOperationsState());
+      setAutoPaperDemoCycle(loadAutoPaperDemoCycleState());
+    };
     window.addEventListener(PAPER_DEMO_OPERATIONS_UPDATED_EVENT, refreshPaperDemoOperations);
+    window.addEventListener(AUTO_PAPER_DEMO_CYCLE_UPDATED_EVENT, refreshPaperDemoOperations);
     window.addEventListener("storage", refreshPaperDemoOperations);
     return () => {
       window.removeEventListener(PAPER_DEMO_OPERATIONS_UPDATED_EVENT, refreshPaperDemoOperations);
+      window.removeEventListener(AUTO_PAPER_DEMO_CYCLE_UPDATED_EVENT, refreshPaperDemoOperations);
       window.removeEventListener("storage", refreshPaperDemoOperations);
     };
   }, []);
+
+  useEffect(() => {
+    if (!autoPaperDemoRunOnOpen || autoPaperDemoRunOnOpenRef.current) {
+      return;
+    }
+    autoPaperDemoRunOnOpenRef.current = true;
+    void runDashboardAutoPaperDemoCycle("open");
+  }, [autoPaperDemoRunOnOpen]);
+
+  useEffect(() => {
+    if (autoPaperDemoIntervalMinutes === "off") {
+      return undefined;
+    }
+    const minutes = Number(autoPaperDemoIntervalMinutes);
+    if (!Number.isFinite(minutes) || minutes <= 0) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => {
+      void runDashboardAutoPaperDemoCycle("interval");
+    }, minutes * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [autoPaperDemoIntervalMinutes, autoPaperDemoBusy]);
 
   useEffect(() => {
     if (!runtimeSnapshot) {
@@ -1886,6 +1962,15 @@ export function MissionControlShell({ state }: { state: LabState }) {
     paperDemoOperationsCandidates.find((candidate) => candidate.status === "watchlist")?.nextAction ??
     paperDemoOperationsCandidates.find((candidate) => candidate.status === "blocked")?.blockers[0] ??
     "Open Paper-Demo Operations to evaluate the current validation chain.";
+  const latestAutoPaperDemoCycle = autoPaperDemoCycle.latestCycle;
+  const autoPaperDemoCycleStage = latestAutoPaperDemoCycle?.currentStage ?? "idle";
+  const autoPaperDemoRecognition = latestAutoPaperDemoCycle?.recognitionSummary?.setupLabel ?? "none queued";
+  const autoPaperDemoNextAction =
+    latestAutoPaperDemoCycle?.nextAction ??
+    "Run cycle now to queue recognition into validation using the active research source.";
+  const autoPaperDemoLastReport = latestAutoPaperDemoCycle?.dailyReport?.date
+    ? `${latestAutoPaperDemoCycle.dailyReport.date} / ${latestAutoPaperDemoCycle.dailyReport.replayStatus} replay`
+    : "none created";
   const primaryBlocker =
     actionItems[0]?.title ??
     runtimeSnapshot?.readiness.actualBlockers[0] ??
@@ -2184,6 +2269,71 @@ export function MissionControlShell({ state }: { state: LabState }) {
               <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
             </Link>
           </Button>
+        </section>
+        <section data-testid="dashboard-auto-paper-demo-cycle-card" className="rounded-xl border border-cyan-300/20 bg-cyan-300/[0.055] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-200">Auto Paper-Demo Cycle</p>
+              <h3 className="mt-1 text-lg font-semibold text-slate-50">{formatToken(autoPaperDemoCycleStage)}</h3>
+              <p className="mt-2 line-clamp-2 text-xs leading-5 text-cyan-100/75">{autoPaperDemoNextAction}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={autoPaperDemoBusy ? "warning" : latestAutoPaperDemoCycle?.blockers.length ? "warning" : "secondary"}>
+                {autoPaperDemoBusy ? "running" : "research-only"}
+              </Badge>
+              <Badge variant="danger">authority none</Badge>
+            </div>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <MiniReadout label="Latest recognition" value={autoPaperDemoRecognition} detail="compact summary only" />
+            <MiniReadout label="Last report" value={autoPaperDemoLastReport} detail="daily research report" />
+            <MiniReadout label="Auto-run" value={autoPaperDemoIntervalMinutes === "off" ? "off" : `${autoPaperDemoIntervalMinutes}m`} detail="browser session only" />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={() => void runDashboardAutoPaperDemoCycle("manual")} disabled={autoPaperDemoBusy}>
+              {autoPaperDemoBusy ? "Running..." : "Run cycle now"}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setAutoPaperDemoIntervalMinutes("off");
+                stopDashboardAutoPaperDemoCycle();
+              }}
+            >
+              Stop cycle
+            </Button>
+            <Button variant="secondary" size="sm">
+              <Link to="/paper-demo" className="inline-flex items-center gap-2">
+                Open Paper-Demo
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+            </Button>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_160px]">
+            <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-300">
+              <input
+                type="checkbox"
+                checked={autoPaperDemoRunOnOpen}
+                onChange={(event) => setAutoPaperDemoRunOnOpen(event.target.checked)}
+                className="h-4 w-4 accent-cyan-300"
+              />
+              Auto-run when Dashboard opens
+            </label>
+            <Select
+              value={autoPaperDemoIntervalMinutes}
+              options={[
+                { label: "Interval off", value: "off" },
+                { label: "Every 5m", value: "5" },
+                { label: "Every 15m", value: "15" },
+                { label: "Every 30m", value: "30" }
+              ]}
+              onChange={(event) => setAutoPaperDemoIntervalMinutes(event.target.value)}
+            />
+          </div>
+          <p className="mt-3 text-xs leading-5 text-cyan-100/70">
+            Automatic means research workflow automation only. No broker paper trading, order placement, execution intent, or readiness override is created.
+          </p>
         </section>
         </div>
 

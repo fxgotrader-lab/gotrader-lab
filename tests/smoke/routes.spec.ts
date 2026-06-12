@@ -156,6 +156,11 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.locator("main")).toContainText(/Replay score/i);
     await expect(page.getByTestId("dashboard-paper-demo-operations-card")).toBeVisible();
     await expect(page.getByTestId("dashboard-paper-demo-operations-card")).toContainText(/Paper-Demo Operations/i);
+    const autoPaperDemoCard = page.getByTestId("dashboard-auto-paper-demo-cycle-card");
+    await expect(autoPaperDemoCard).toBeVisible();
+    await expect(autoPaperDemoCard).toContainText(/Auto Paper-Demo Cycle/i);
+    await expect(autoPaperDemoCard.getByRole("button", { name: "Run cycle now" })).toBeVisible();
+    await expect(autoPaperDemoCard.getByRole("button", { name: "Stop cycle" })).toBeVisible();
     await expect(page.locator("main")).toContainText(/Broker execution disabled/i);
     await expect(page.locator("main")).toContainText(/Simulation research only|Command Center can start research loops only/i);
     await expect(page.locator("main")).toContainText(/Go-Trader gate/i);
@@ -244,6 +249,7 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Suggest calibration/i);
     await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Review self-improvement/i);
     await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Review Paper-Demo checklist/i);
+    await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Review auto paper-demo cycle/i);
     // Chat is the default tab; heavy manual panels only mount on the Validation tab.
     await expect(page.getByTestId("ict-manual-replay-review")).toHaveCount(0);
     await expect(page.getByTestId("ict-market-scorecard")).toHaveCount(0);
@@ -550,12 +556,20 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByTestId("paper-demo-tabs")).toBeVisible();
     await expect(page.getByTestId("paper-demo-tabs")).toContainText(/Overview/i);
     await expect(page.getByTestId("paper-demo-tabs")).toContainText(/Watchlist/i);
+    await expect(page.getByTestId("paper-demo-tabs")).toContainText(/Auto Cycle/i);
     await expect(page.getByTestId("paper-demo-tabs")).toContainText(/Daily Checklist/i);
     await expect(page.getByTestId("paper-demo-overview")).toBeVisible();
 
     const paperDemoTabs = page.getByTestId("paper-demo-tabs");
     await paperDemoTabs.getByRole("button", { name: "Watchlist" }).click();
     await expect(page.getByTestId("paper-demo-watchlist")).toBeVisible();
+
+    await paperDemoTabs.getByRole("button", { name: "Auto Cycle" }).click();
+    const autoCyclePanel = page.getByTestId("paper-demo-auto-cycle-panel");
+    await expect(autoCyclePanel).toBeVisible();
+    await expect(autoCyclePanel).toContainText(/Auto Paper-Demo Cycle/i);
+    await expect(autoCyclePanel.getByRole("button", { name: "Run cycle now" })).toBeVisible();
+    await expect(autoCyclePanel.getByRole("button", { name: "Stop cycle" })).toBeVisible();
 
     await paperDemoTabs.getByRole("button", { name: "Daily Checklist" }).click();
     await expect(page.getByTestId("paper-demo-daily-checklist")).toBeVisible();

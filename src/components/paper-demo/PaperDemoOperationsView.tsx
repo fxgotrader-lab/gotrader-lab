@@ -13,19 +13,24 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  AUTO_PAPER_DEMO_CYCLE_UPDATED_EVENT,
   appendPaperDemoSessionJournalEntry,
   buildPaperDemoCandidateFromContext,
   buildPaperDemoEligibility,
   buildPaperDemoReport,
   formatPaperDemoReport,
+  loadAutoPaperDemoCycleState,
   latestPaperDemoDailyChecklist,
   loadPaperDemoOperationsState,
   PAPER_DEMO_AUTHORITY,
   PAPER_DEMO_OPERATIONS_UPDATED_EVENT,
+  runAutoPaperDemoCycle,
   savePaperDemoDailyChecklist,
+  stopAutoPaperDemoCycle,
   toPaperDemoWatchlistStatus,
   updatePaperDemoCandidateStatus,
   upsertPaperDemoCandidate,
+  type AutoPaperDemoCycleState,
   type PaperDemoCandidate,
   type PaperDemoCandidateStatus,
   type PaperDemoDailyChecklist,
@@ -35,7 +40,7 @@ import { resolveSourceStatusSnapshot, type SourceStatusSnapshot } from "@/lib/so
 import { latestValidationChainEntry, readValidationChainState, type ValidationChainEntry } from "@/lib/validationChain";
 import { cn } from "@/lib/utils";
 
-type PaperDemoTab = "overview" | "watchlist" | "checklist" | "detail" | "journal" | "export";
+type PaperDemoTab = "overview" | "watchlist" | "auto" | "checklist" | "detail" | "journal" | "export";
 type PaperDemoJournalForm = {
   symbol: string;
   setup: string;
@@ -49,6 +54,7 @@ type PaperDemoJournalForm = {
 const tabs: Array<{ id: PaperDemoTab; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "watchlist", label: "Watchlist" },
+  { id: "auto", label: "Auto Cycle" },
   { id: "checklist", label: "Daily Checklist" },
   { id: "detail", label: "Candidate Detail" },
   { id: "journal", label: "Session Journal" },
@@ -75,6 +81,20 @@ function usePaperDemoState() {
     window.addEventListener("storage", refresh);
     return () => {
       window.removeEventListener(PAPER_DEMO_OPERATIONS_UPDATED_EVENT, refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
+  return [state, setState] as const;
+}
+
+function useAutoPaperDemoCycleState() {
+  const [state, setState] = useState<AutoPaperDemoCycleState>(() => loadAutoPaperDemoCycleState());
+  useEffect(() => {
+    const refresh = () => setState(loadAutoPaperDemoCycleState());
+    window.addEventListener(AUTO_PAPER_DEMO_CYCLE_UPDATED_EVENT, refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener(AUTO_PAPER_DEMO_CYCLE_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
   }, []);
@@ -110,9 +130,11 @@ function useSourceAndValidation() {
 export function PaperDemoOperationsView() {
   const [activeTab, setActiveTab] = useState<PaperDemoTab>("overview");
   const [state, setState] = usePaperDemoState();
+  const [autoCycleState, setAutoCycleState] = useAutoPaperDemoCycleState();
   const { source, validationChain } = useSourceAndValidation();
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | undefined>();
   const [candidateNote, setCandidateNote] = useState("");
+  const [autoCycleBusy, setAutoCycleBusy] = useState(false);
   const [journalForm, setJournalForm] = useState<PaperDemoJournalForm>({
     symbol: "MNQ",
     setup: "Current research setup",
@@ -135,6 +157,22 @@ export function PaperDemoOperationsView() {
   const reportText = useMemo(() => formatPaperDemoReport(report), [report]);
 
   const refreshState = (next: PaperDemoOperationsState) => setState(next);
+
+  const runPaperDemoAutoCycle = async () => {
+    if (autoCycleBusy) return;
+    setAutoCycleBusy(true);
+    try {
+      await runAutoPaperDemoCycle({ persist: true, createWatchlistCandidate: true });
+      setAutoCycleState(loadAutoPaperDemoCycleState());
+      setState(loadPaperDemoOperationsState());
+    } finally {
+      setAutoCycleBusy(false);
+    }
+  };
+
+  const stopPaperDemoAutoCycle = () => {
+    setAutoCycleState(stopAutoPaperDemoCycle("Stopped from Paper-Demo Operations."));
+  };
 
   const addCurrentCandidateToWatchlist = () => {
     const nextCandidate = toPaperDemoWatchlistStatus(currentCandidate);
@@ -244,6 +282,14 @@ export function PaperDemoOperationsView() {
       {activeTab === "watchlist" ? (
         <PaperDemoWatchlist candidates={state.candidates} onSelect={setSelectedCandidateId} onStatus={updateStatus} />
       ) : null}
+      {activeTab === "auto" ? (
+        <PaperDemoAutoCyclePanel
+          state={autoCycleState}
+          busy={autoCycleBusy}
+          onRun={runPaperDemoAutoCycle}
+          onStop={stopPaperDemoAutoCycle}
+        />
+      ) : null}
       {activeTab === "checklist" ? <PaperDemoDailyChecklistView checklist={checklist} onToggle={toggleChecklistItem} /> : null}
       {activeTab === "detail" ? (
         <PaperDemoCandidateDetail
@@ -264,6 +310,89 @@ export function PaperDemoOperationsView() {
       ) : null}
       {activeTab === "export" ? <PaperDemoExport report={report} reportText={reportText} /> : null}
     </div>
+  );
+}
+
+function PaperDemoAutoCyclePanel({
+  busy,
+  onRun,
+  onStop,
+  state
+}: {
+  busy: boolean;
+  onRun: () => Promise<void>;
+  onStop: () => void;
+  state: AutoPaperDemoCycleState;
+}) {
+  const latest = state.latestCycle;
+  const blockers = latest?.blockers ?? [];
+  const report = latest?.dailyReport;
+  return (
+    <section data-testid="paper-demo-auto-cycle-panel" className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
+      <div className={cn(WORKSPACE_CARD, "p-5")}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className={WORKSPACE_SECTION_LABEL}>Auto Paper-Demo Cycle</p>
+            <h3 className="mt-1 text-xl font-semibold text-slate-50">{formatToken(latest?.currentStage ?? "idle")}</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              Research workflow automation only. Recognition can be queued into validation, but replay, walk-forward, and evidence advance only from safe deterministic summaries.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant={busy ? "warning" : blockers.length ? "warning" : "secondary"}>
+              {busy ? "running" : formatToken(latest?.status ?? "idle")}
+            </Badge>
+            <Badge variant="danger">authority none</Badge>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <Readout label="Recognition" value={latest?.recognitionSummary?.setupLabel ?? "none queued"} detail={latest?.recognitionSummary?.recognitionType} />
+          <Readout label="Validation chain" value={latest?.validationChainId ?? "none"} detail={latest?.replaySummary?.verdict ? `replay ${latest.replaySummary.verdict}` : "replay queued only"} />
+          <Readout label="Watchlist candidate" value={latest?.watchlistCandidateId ?? "none"} detail="created only if all gates pass" />
+        </div>
+        <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
+          <p className="text-sm font-semibold text-slate-100">Next action</p>
+          <p className="mt-1 text-sm leading-6 text-slate-400">
+            {latest?.nextAction ?? "Run cycle now to evaluate the active research source and queue validation."}
+          </p>
+          {blockers.length ? (
+            <ul className="mt-3 space-y-1 text-sm text-amber-100">
+              {blockers.slice(0, 6).map((blocker) => (
+                <li key={blocker}>- {blocker}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button onClick={() => void onRun()} disabled={busy}>{busy ? "Running..." : "Run cycle now"}</Button>
+          <Button variant="secondary" onClick={onStop}>Stop cycle</Button>
+          <Button variant="secondary">
+            <Link to="/advisor" className="inline-flex items-center gap-2">
+              Open Advisor <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            </Link>
+          </Button>
+          <Button variant="secondary">
+            <Link to="/validation" className="inline-flex items-center gap-2">
+              Open validation chain <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            </Link>
+          </Button>
+        </div>
+      </div>
+      <div className={cn(WORKSPACE_CARD, "p-5")}>
+        <p className={WORKSPACE_SECTION_LABEL}>Daily report</p>
+        <h3 className="mt-1 text-xl font-semibold text-slate-50">{report?.date ?? "No report yet"}</h3>
+        <div className="mt-4 grid gap-3">
+          <Readout label="Source" value={report?.sourceStatus.sourceProvider ?? "pending"} detail={report ? `${report.sourceStatus.requestedSymbol} / ${report.sourceStatus.brokerSymbol ?? "no broker"} / ${report.sourceStatus.candleCount.toLocaleString()} candles` : "activate source first"} />
+          <Readout label="Replay / Walk-forward" value={`${report?.replayStatus ?? "pending"} / ${report?.walkForwardStatus ?? "pending"}`} />
+          <Readout label="Evidence / maturity" value={report?.evidenceMaturityStatus ?? "pending"} />
+          <Readout label="Checklist" value={report ? `${report.checklistStatus.completed}/${report.checklistStatus.total} complete` : "pending"} />
+        </div>
+        <div className="mt-4 rounded-xl border border-emerald-300/20 bg-emerald-300/10 p-3 text-sm leading-6 text-emerald-100">
+          <ShieldCheck className="mr-2 inline h-4 w-4" aria-hidden="true" />
+          {report?.disclaimer ?? "Research-only manual paper-demo operations. No broker execution."}
+        </div>
+      </div>
+    </section>
   );
 }
 

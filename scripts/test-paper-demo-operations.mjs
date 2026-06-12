@@ -7,34 +7,52 @@ import { pathToFileURL } from "node:url";
 import ts from "typescript";
 
 const projectRoot = process.cwd();
-const sourceRoot = path.join(projectRoot, "src", "lib", "paperDemoOperations");
 const outRoot = path.join(projectRoot, ".gotrader", "paper-demo-operations-test");
-const sourceFiles = [
-  "paperDemoTypes.ts",
-  "paperDemoEligibility.ts",
-  "paperDemoStore.ts",
-  "paperDemoReport.ts",
-  "index.ts"
+const modules = [
+  {
+    sourceRoot: path.join(projectRoot, "src", "lib", "paperDemoOperations"),
+    targetRoot: outRoot,
+    sourceFiles: [
+      "paperDemoTypes.ts",
+      "paperDemoEligibility.ts",
+      "paperDemoStore.ts",
+      "paperDemoReport.ts",
+      "autoPaperDemoCycleTypes.ts",
+      "buildPaperDemoDailyReport.ts",
+      "runAutoPaperDemoCycle.ts",
+      "index.ts"
+    ]
+  },
+  {
+    sourceRoot: path.join(projectRoot, "src", "lib", "validationChain"),
+    targetRoot: path.join(outRoot, "validationChain"),
+    sourceFiles: ["validationChainTypes.ts", "buildValidationChain.ts", "validationChainStore.ts"]
+  }
 ];
 
 function compileForNode() {
-  fs.mkdirSync(outRoot, { recursive: true });
-  for (const file of sourceFiles) {
-    const sourcePath = path.join(sourceRoot, file);
-    const source = fs.readFileSync(sourcePath, "utf8");
-    const transpiled = ts.transpileModule(source, {
-      compilerOptions: {
-        module: ts.ModuleKind.ES2022,
-        target: ts.ScriptTarget.ES2022,
-        importsNotUsedAsValues: ts.ImportsNotUsedAsValues.Remove,
-        verbatimModuleSyntax: false
-      },
-      fileName: sourcePath
-    }).outputText;
-    const rewritten = transpiled
-      .replace(/from\s+"\.\/([^"]+)"/g, 'from "./$1.mjs"')
-      .replace(/from\s+'\.\/([^']+)'/g, "from './$1.mjs'");
-    fs.writeFileSync(path.join(outRoot, file.replace(/\.ts$/, ".mjs")), rewritten, "utf8");
+  fs.rmSync(outRoot, { recursive: true, force: true });
+  for (const moduleConfig of modules) {
+    fs.mkdirSync(moduleConfig.targetRoot, { recursive: true });
+    for (const file of moduleConfig.sourceFiles) {
+      const sourcePath = path.join(moduleConfig.sourceRoot, file);
+      const source = fs.readFileSync(sourcePath, "utf8");
+      const transpiled = ts.transpileModule(source, {
+        compilerOptions: {
+          module: ts.ModuleKind.ES2022,
+          target: ts.ScriptTarget.ES2022,
+          importsNotUsedAsValues: ts.ImportsNotUsedAsValues.Remove,
+          verbatimModuleSyntax: false
+        },
+        fileName: sourcePath
+      }).outputText;
+      const rewritten = transpiled
+        .replace(/from\s+"\.\/([^"]+)"/g, 'from "./$1.mjs"')
+        .replace(/from\s+'\.\/([^']+)'/g, "from './$1.mjs'")
+        .replace(/from\s+"\.\.\/validationChain\/([^"]+)"/g, 'from "./validationChain/$1.mjs"')
+        .replace(/from\s+'\.\.\/validationChain\/([^']+)'/g, "from './validationChain/$1.mjs'");
+      fs.writeFileSync(path.join(moduleConfig.targetRoot, file.replace(/\.ts$/, ".mjs")), rewritten, "utf8");
+    }
   }
 }
 

@@ -94,7 +94,8 @@
     "test:validation-chain": "node scripts/test-validation-chain.mjs",
     "test:advisor-provider-status": "node scripts/test-advisor-provider-status.mjs",
     "test:openclaw-pilot-dry-run": "node scripts/test-openclaw-pilot-dry-run.mjs",
-    "test:paper-demo-operations": "node scripts/test-paper-demo-operations.mjs"
+    "test:paper-demo-operations": "node scripts/test-paper-demo-operations.mjs",
+    "test:auto-paper-demo-cycle": "node scripts/test-auto-paper-demo-cycle.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.1.1",
