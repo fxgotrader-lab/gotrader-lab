@@ -79,7 +79,8 @@ const navigationHubs: NavigationHub[] = [
       { href: "/walk-forward", label: "Walk-Forward" },
       { href: "/backtest-lab", label: "Backtest Lab" },
       { href: "/validation", label: "Validation Suite" },
-      { href: "/research-quality", label: "Research Quality" }
+      { href: "/research-quality", label: "Research Quality" },
+      { href: "/paper-demo", label: "Paper-Demo Ops" }
     ]
   },
   {

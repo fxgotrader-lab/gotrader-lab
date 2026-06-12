@@ -6,7 +6,7 @@ import http from "node:http";
 import net from "node:net";
 import path from "node:path";
 
-// Expected coverage: all 27 routes from src/App.tsx, reachable through the
+// Expected coverage: all 28 routes from src/App.tsx, reachable through the
 // 8 sidebar hubs and their workspace tabs. Excluded: "/" and "*" redirects
 // and the "/agents/:id" detail route. Keep this list in sync with
 // tests/smoke/routes.spec.ts.
@@ -27,6 +27,7 @@ const primaryRoutes = [
 const advancedRoutes = [
   "/ict-lab",
   "/replay",
+  "/paper-demo",
   "/backtest-lab",
   "/validation",
   "/research-quality",

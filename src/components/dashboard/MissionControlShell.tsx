@@ -137,6 +137,11 @@ import {
   SELF_IMPROVEMENT_UPDATED_EVENT
 } from "@/lib/selfImprovement";
 import {
+  loadPaperDemoOperationsState,
+  PAPER_DEMO_OPERATIONS_UPDATED_EVENT,
+  type PaperDemoOperationsState
+} from "@/lib/paperDemoOperations";
+import {
   resolveResearchRuntimeSnapshot,
   selectRuntimeProvenanceRows,
   selectRuntimeWarnings,
@@ -631,6 +636,9 @@ export function MissionControlShell({ state }: { state: LabState }) {
   const [mt5SourceUpdateSerial, setMt5SourceUpdateSerial] = useState(0);
   const [dataConnectionEvents, setDataConnectionEvents] = useState<CommandCenterDataEvent[]>([]);
   const [sourceConsistencySerial, setSourceConsistencySerial] = useState(0);
+  const [paperDemoOperations, setPaperDemoOperations] = useState<PaperDemoOperationsState>(() =>
+    loadPaperDemoOperationsState()
+  );
   const latestRun = liveRun ?? latestAutonomousResearchRun(autonomyState);
   const currentIteration = latestRun?.iterations.find((iteration) => iteration.iteration === latestRun.currentIteration);
   const recoveryRun = !busy && autonomyState.activeRun?.status === "running" ? autonomyState.activeRun : undefined;
@@ -1622,6 +1630,16 @@ export function MissionControlShell({ state }: { state: LabState }) {
   }, []);
 
   useEffect(() => {
+    const refreshPaperDemoOperations = () => setPaperDemoOperations(loadPaperDemoOperationsState());
+    window.addEventListener(PAPER_DEMO_OPERATIONS_UPDATED_EVENT, refreshPaperDemoOperations);
+    window.addEventListener("storage", refreshPaperDemoOperations);
+    return () => {
+      window.removeEventListener(PAPER_DEMO_OPERATIONS_UPDATED_EVENT, refreshPaperDemoOperations);
+      window.removeEventListener("storage", refreshPaperDemoOperations);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!runtimeSnapshot) {
       return;
     }
@@ -1859,6 +1877,15 @@ export function MissionControlShell({ state }: { state: LabState }) {
       ? paperDemoChecklist.proposalEligibleBlockers
       : safeTopN(paperDemoChecklist.items.filter((entry) => entry.status !== "pass"), 4)
     : safeTopN(pendingPaperDemoChecklistItems, 4);
+  const paperDemoOperationsCandidates = paperDemoOperations.candidates;
+  const paperDemoOperationsWatchlistCount = paperDemoOperationsCandidates.filter((candidate) => candidate.status === "watchlist").length;
+  const paperDemoOperationsMonitoringCount = paperDemoOperationsCandidates.filter((candidate) => candidate.status === "monitoring").length;
+  const paperDemoOperationsBlockedCount = paperDemoOperationsCandidates.filter((candidate) => candidate.status === "blocked").length;
+  const paperDemoOperationsNextAction =
+    paperDemoOperationsCandidates.find((candidate) => candidate.status === "monitoring")?.nextAction ??
+    paperDemoOperationsCandidates.find((candidate) => candidate.status === "watchlist")?.nextAction ??
+    paperDemoOperationsCandidates.find((candidate) => candidate.status === "blocked")?.blockers[0] ??
+    "Open Paper-Demo Operations to evaluate the current validation chain.";
   const primaryBlocker =
     actionItems[0]?.title ??
     runtimeSnapshot?.readiness.actualBlockers[0] ??
@@ -2137,6 +2164,27 @@ export function MissionControlShell({ state }: { state: LabState }) {
         </div>
         <IctAdvisorSummaryPanel mode="compact" snapshot={runtimeSnapshot} packetOverride={activateMarketResult?.advisorPacket} />
         <LLMAdvisoryReviewPanel mode="compact" snapshot={runtimeSnapshot} onAdvisoryEvent={addDataConnectionEvent} />
+        <section data-testid="dashboard-paper-demo-operations-card" className="rounded-xl border border-emerald-300/20 bg-emerald-300/[0.055] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">Paper-Demo Operations</p>
+              <h3 className="mt-1 text-lg font-semibold text-slate-50">Manual watchlist</h3>
+              <p className="mt-2 line-clamp-2 text-xs leading-5 text-emerald-100/75">{paperDemoOperationsNextAction}</p>
+            </div>
+            <Badge variant="secondary">manual only</Badge>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <MiniReadout label="Watchlist" value={`${paperDemoOperationsWatchlistCount}`} detail="candidate setups" />
+            <MiniReadout label="Monitoring" value={`${paperDemoOperationsMonitoringCount}`} detail="manual review" />
+            <MiniReadout label="Blocked" value={`${paperDemoOperationsBlockedCount}`} detail="needs evidence" />
+          </div>
+          <Button variant="secondary" size="sm" className="mt-3">
+            <Link to="/paper-demo" className="inline-flex items-center gap-2">
+              Open Paper-Demo Operations
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            </Link>
+          </Button>
+        </section>
         </div>
 
         <div className="space-y-4">

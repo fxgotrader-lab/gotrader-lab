@@ -21,6 +21,7 @@ const ICTLab = lazy(() => import("@/components/ict-lab/ICTLab").then((m) => ({ d
 const LLMAgentsView = lazy(() => import("@/components/llm-agents/LLMAgentsView").then((m) => ({ default: m.LLMAgentsView })));
 const MarketDataView = lazy(() => import("@/components/market-data/MarketDataView").then((m) => ({ default: m.MarketDataView })));
 const ResearchMaturityView = lazy(() => import("@/components/maturity/ResearchMaturityView").then((m) => ({ default: m.ResearchMaturityView })));
+const PaperDemoOperationsView = lazy(() => import("@/components/paper-demo/PaperDemoOperationsView").then((m) => ({ default: m.PaperDemoOperationsView })));
 const PerformanceView = lazy(() => import("@/components/performance/PerformanceView").then((m) => ({ default: m.PerformanceView })));
 const PromptLab = lazy(() => import("@/components/prompt-lab/PromptLab").then((m) => ({ default: m.PromptLab })));
 const ReadinessGateView = lazy(() => import("@/components/readiness/ReadinessGateView").then((m) => ({ default: m.ReadinessGateView })));
@@ -67,6 +68,7 @@ export default function App() {
           <Route path="/validation" element={<StrategyValidationView />} />
           <Route path="/walk-forward" element={<WalkForwardView />} />
           <Route path="/research-quality" element={<ResearchQualityView />} />
+          <Route path="/paper-demo" element={<PaperDemoOperationsView />} />
           <Route path="/simulation-runbook" element={<SimulationRunbookView />} />
           <Route path="/readiness-gate" element={<ReadinessGateView />} />
           <Route path="/llm-agents" element={<LLMAgentsView state={state} />} />

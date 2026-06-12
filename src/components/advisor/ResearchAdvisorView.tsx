@@ -1156,6 +1156,9 @@ export function ResearchAdvisorView() {
             <Badge variant="warning">Research Only</Badge>
             <Badge variant="danger">Authority: None</Badge>
             <Button variant="secondary" size="sm">
+              <Link to="/paper-demo">Review Paper-Demo Operations</Link>
+            </Button>
+            <Button variant="secondary" size="sm">
               <Link to="/dashboard">Back to Dashboard</Link>
             </Button>
           </div>

@@ -17,6 +17,7 @@ const primaryRoutes = [
 const advancedRoutes = [
   "/ict-lab",
   "/replay",
+  "/paper-demo",
   "/backtest-lab",
   "/validation",
   "/research-quality",
@@ -33,7 +34,7 @@ const advancedRoutes = [
   "/prompt-lab"
 ];
 
-// Expected coverage: all 27 routes from src/App.tsx, reachable through the
+// Expected coverage: all 28 routes from src/App.tsx, reachable through the
 // 8 sidebar hubs and their workspace tabs. Excluded: "/" and "*" redirects
 // and the "/agents/:id" detail route. Keep this list in sync with
 // scripts/smoke-routes.mjs.
@@ -45,6 +46,7 @@ const sourceStatusRoutes = [
   "/market-data",
   "/ict-lab",
   "/backtest-lab",
+  "/paper-demo",
   "/replay",
   "/walk-forward",
   "/agent-debate",
@@ -76,6 +78,7 @@ const expectedHeadings: Record<string, RegExp> = {
   "/settings": /Settings/i,
   "/ict-lab": /ICT Lab/i,
   "/replay": /Replay/i,
+  "/paper-demo": /Paper-Demo Operations/i,
   "/backtest-lab": /Backtest Lab/i,
   "/validation": /Validation/i,
   "/research-quality": /Research Quality/i,
@@ -151,6 +154,8 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.locator("main")).toContainText(/MT5-first research cockpit/i);
     await expect(page.locator("main")).toContainText(/Composite ICT bias/i);
     await expect(page.locator("main")).toContainText(/Replay score/i);
+    await expect(page.getByTestId("dashboard-paper-demo-operations-card")).toBeVisible();
+    await expect(page.getByTestId("dashboard-paper-demo-operations-card")).toContainText(/Paper-Demo Operations/i);
     await expect(page.locator("main")).toContainText(/Broker execution disabled/i);
     await expect(page.locator("main")).toContainText(/Simulation research only|Command Center can start research loops only/i);
     await expect(page.locator("main")).toContainText(/Go-Trader gate/i);
@@ -538,6 +543,26 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByText(/Live trading/i).first()).toBeVisible();
     await expect(page.getByText(/Readiness override/i).first()).toBeVisible();
   });
+
+  test("paper-demo operations workspace renders manual workflow safely", async ({ page }) => {
+    await gotoRoute(page, "/paper-demo");
+    await expect(page.locator("main")).toContainText(/Paper-Demo Operations/i);
+    await expect(page.getByTestId("paper-demo-tabs")).toBeVisible();
+    await expect(page.getByTestId("paper-demo-tabs")).toContainText(/Overview/i);
+    await expect(page.getByTestId("paper-demo-tabs")).toContainText(/Watchlist/i);
+    await expect(page.getByTestId("paper-demo-tabs")).toContainText(/Daily Checklist/i);
+    await expect(page.getByTestId("paper-demo-overview")).toBeVisible();
+
+    const paperDemoTabs = page.getByTestId("paper-demo-tabs");
+    await paperDemoTabs.getByRole("button", { name: "Watchlist" }).click();
+    await expect(page.getByTestId("paper-demo-watchlist")).toBeVisible();
+
+    await paperDemoTabs.getByRole("button", { name: "Daily Checklist" }).click();
+    await expect(page.getByTestId("paper-demo-daily-checklist")).toBeVisible();
+    await expect(page.locator("main")).toContainText(/No execution authority confirmed/i);
+    await expect(page.getByTestId("footer-safety-strip")).toContainText(/Execution authority none/i);
+    await expectNoVisibleExecutionControls(page);
+  });
 });
 
 async function gotoRoute(page: Page, route: string) {
@@ -630,7 +655,13 @@ async function expectChartOrFallback(page: Page, route: string) {
     await expect(chartApplication.first()).toBeVisible();
     return;
   }
-  await expect(page.getByText(/Chart unavailable|No candles|No chart data|preview unavailable|data unavailable/i).first()).toBeVisible();
+  await expect(
+    page
+      .getByText(
+        /Chart unavailable|No candles|No chart data|preview unavailable|data unavailable|ICT Candle Map|Structure Tape|Chart input/i
+      )
+      .first()
+  ).toBeVisible();
 }
 
 async function expectNoVisibleExecutionControls(page: Page) {
