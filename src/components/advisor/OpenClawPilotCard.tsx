@@ -47,7 +47,7 @@ export function OpenClawPilotCard({ testId = "openclaw-pilot-card" }: { testId?:
       <p className="mt-1 text-xs text-slate-400" data-testid="openclaw-pilot-chain-status">
         <span className="text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">Latest validation chain</span>{" "}
         {chainEntry
-          ? `${chainEntry.setupLabel} · ${chainEntry.symbol} ${chainEntry.timeframe} · ${validationChainStatusLabel(chainEntry.hypothesisStatus)}`
+          ? `${chainEntry.setupLabel} / ${chainEntry.symbol} ${chainEntry.timeframe} / ${validationChainStatusLabel(chainEntry.hypothesisStatus)}`
           : "no recognition queued"}
       </p>
       <div className="mt-3 grid gap-2 md:grid-cols-3">

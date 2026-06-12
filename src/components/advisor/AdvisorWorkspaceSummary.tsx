@@ -41,11 +41,11 @@ export function AdvisorWorkspaceSummary({ testNextAction }: { testNextAction?: s
       ? "OpenClaw advisory path (check OpenClaw tab for stub vs skill-routed)"
       : settings.providerMode === "disabled"
         ? "Deterministic Research Helper only"
-        : "Local LLM bridge (optional — chat tab is deterministic by default)";
+        : "Local LLM bridge (optional - chat tab is deterministic by default)";
 
   const validationLine = chain
-    ? `${chain.setupLabel} · ${validationChainStatusLabel(chain.hypothesisStatus)} · next: ${chain.nextAction}`
-    : "No validation queued. Recognition is not evidence — queue replay from ICT Lab or Validation tab.";
+    ? `${chain.setupLabel} / ${validationChainStatusLabel(chain.hypothesisStatus)} / next: ${chain.nextAction}`
+    : "No validation queued. Recognition is not evidence - queue replay from ICT Lab or Validation tab.";
 
   const testNext =
     testNextAction ??

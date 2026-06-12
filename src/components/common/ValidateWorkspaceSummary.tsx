@@ -31,11 +31,11 @@ export function ValidateWorkspaceSummary({
   const chain = useLatestValidationChainEntry();
 
   const sourceLine = source
-    ? `${source.requestedSymbol} / ${source.primaryTimeframe} · ${sourceStatusLabel(source.sourceStatus)}`
-    : "Resolving source…";
+    ? `${source.requestedSymbol} / ${source.primaryTimeframe} / ${sourceStatusLabel(source.sourceStatus)}`
+    : "Resolving source...";
 
   const chainLine = chain
-    ? `${chain.setupLabel} · ${validationChainStatusLabel(chain.hypothesisStatus)}`
+    ? `${chain.setupLabel} / ${validationChainStatusLabel(chain.hypothesisStatus)}`
     : "No recognition queued yet";
 
   return (

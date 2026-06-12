@@ -116,7 +116,7 @@ export function ValidationChainCard({
     ? [
         {
           label: "Latest recognition",
-          value: `${entry.setupLabel} · ${entry.symbol} ${entry.timeframe} (${entry.recognitionType.replace(/_/g, " ")})`
+          value: `${entry.setupLabel} / ${entry.symbol} ${entry.timeframe} (${entry.recognitionType.replace(/_/g, " ")})`
         },
         {
           label: "Replay status",
@@ -151,7 +151,7 @@ export function ValidationChainCard({
           {validationChainStatusLabel(entry.hypothesisStatus)}
         </Badge>
         <span className="font-mono text-xs text-slate-200">
-          {entry.setupLabel} · {entry.symbol} {entry.timeframe}
+          {entry.setupLabel} / {entry.symbol} {entry.timeframe}
         </span>
         <Badge variant="muted">Authority: none</Badge>
         {detailed ? (
