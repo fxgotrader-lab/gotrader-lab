@@ -161,10 +161,10 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(autoPaperDemoCard).toContainText(/Auto Paper-Demo Cycle/i);
     await expect(autoPaperDemoCard.getByRole("button", { name: "Run cycle now" })).toBeVisible();
     await expect(autoPaperDemoCard.getByRole("button", { name: "Stop cycle" })).toBeVisible();
-    await expect(page.locator("main")).toContainText(/Broker execution disabled/i);
-    await expect(page.locator("main")).toContainText(/Simulation research only|Command Center can start research loops only/i);
-    await expect(page.locator("main")).toContainText(/Go-Trader gate/i);
-    await expect(page.locator("main")).toContainText(/Tradovate gate|Tradovate Future Gate/i);
+    await expect(page.locator("main")).toContainText(/Execution disabled/i);
+    await expect(page.locator("main")).toContainText(/Broker gates locked/i);
+    await expect(page.locator("main")).toContainText(/Every action remains research-only|Research only/i);
+    await expect(page.locator("main")).toContainText(/MT5 read-only/i);
     // Loop progress lives in the collapsed state-and-metrics section.
     await expandDeferredDetails(page, "dashboard-state-metrics");
     await expect(page.locator("main")).toContainText(/Loop progress/i);
@@ -219,7 +219,7 @@ test.describe("GoTrader browser route smoke", () => {
 
     await gotoRoute(page, "/research-advisor");
     await expect(page.locator("main")).toContainText(/Research Advisor/i);
-    await expect(page.locator("main")).toContainText(/ICT research assistant for read-only market analysis/i);
+    await expect(page.locator("main")).toContainText(/Clean research workspace for Activate Market/i);
     await expect(page.locator("main")).toContainText(/MT5 Read Only/i);
     await expect(page.locator("main")).toContainText(/Research Only/i);
     await expect(page.locator("main")).toContainText(/Authority: None/i);

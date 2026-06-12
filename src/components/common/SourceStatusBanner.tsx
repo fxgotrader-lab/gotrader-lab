@@ -17,6 +17,7 @@ import {
   sourceStatusLabel,
   type SourceStatusSnapshot
 } from "@/lib/sourceStatus";
+import { WORKSPACE_CARD } from "@/components/common/workspaceStyles";
 
 const REFRESH_EVENTS = [
   MT5_READ_ONLY_UPDATED_EVENT,
@@ -97,7 +98,7 @@ export function GlobalSourceBar({ className = "" }: { className?: string }) {
   return (
     <div
       data-testid="global-source-bar"
-      className={`flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs ${className}`}
+      className={`flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-xs ${className}`}
     >
       <Badge variant={statusVariant(snapshot)} data-testid="global-source-status-level">
         {sourceStatusLabel(snapshot.sourceStatus)}
@@ -133,7 +134,7 @@ export function SourceStatusBanner({ className = "" }: { className?: string }) {
     return (
       <section
         data-testid="source-status-banner"
-        className={`rounded-xl border border-white/10 bg-slate-950/55 px-4 py-3 text-xs text-slate-400 ${className}`}
+        className={`${WORKSPACE_CARD} px-4 py-3 text-xs text-slate-400 ${className}`}
       >
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <Badge variant="secondary">Resolving source status...</Badge>
@@ -144,17 +145,17 @@ export function SourceStatusBanner({ className = "" }: { className?: string }) {
   }
 
   const borderClass = snapshot.isMockOrSample
-    ? "border-rose-400/35 bg-rose-500/10"
+      ? "border-rose-400/35 bg-rose-500/10"
     : snapshot.isResearchActive
-      ? "border-emerald-300/25 bg-emerald-300/5"
-      : "border-amber-300/25 bg-amber-300/5";
+      ? "border-emerald-300/25 bg-emerald-300/[0.055]"
+      : "border-amber-300/25 bg-amber-300/[0.06]";
 
   return (
     <section
       data-testid="source-status-banner"
-      className={`rounded-xl border px-4 py-3 ${borderClass} ${className}`}
+      className={`premium-surface-soft rounded-2xl border px-4 py-3 ${borderClass} ${className}`}
     >
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Badge variant={statusVariant(snapshot)} data-testid="source-status-level">
           {sourceStatusLabel(snapshot.sourceStatus)}
         </Badge>

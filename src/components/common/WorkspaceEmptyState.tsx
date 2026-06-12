@@ -21,22 +21,22 @@ type WorkspaceEmptyStateProps = {
 
 const toneStyles: Record<WorkspaceEmptyTone, { border: string; icon: typeof Inbox; text: string }> = {
   muted: {
-    border: "border-white/10 bg-slate-950/45",
+    border: "premium-surface-soft",
     icon: Inbox,
     text: "text-slate-300"
   },
   warning: {
-    border: "border-amber-300/25 bg-amber-300/10",
+    border: "border border-amber-300/25 bg-amber-300/10",
     icon: AlertTriangle,
     text: "text-amber-100"
   },
   danger: {
-    border: "border-rose-400/30 bg-rose-500/10",
+    border: "border border-rose-400/30 bg-rose-500/10",
     icon: ShieldAlert,
     text: "text-rose-100"
   },
   loading: {
-    border: "border-cyan-300/20 bg-cyan-300/5",
+    border: "border border-cyan-300/20 bg-cyan-300/5",
     icon: Loader2,
     text: "text-cyan-100"
   }

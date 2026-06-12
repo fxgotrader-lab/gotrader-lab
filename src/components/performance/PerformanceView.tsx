@@ -34,6 +34,7 @@ import { aggregatePortfolioMetrics, identifyWeakestAgent } from "@/lib/scoring";
 import type { LabState, MarketOutcome } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { loadLatestValidationReport } from "@/lib/validation";
+import { WORKSPACE_PAGE, WORKSPACE_SECTION_LABEL } from "@/components/common/workspaceStyles";
 
 const money = new Intl.NumberFormat(undefined, {
   currency: "USD",
@@ -112,10 +113,10 @@ export function PerformanceView({ state }: { state: LabState }) {
   }, [state]);
 
   return (
-    <div data-testid="performance-results-page" className="mx-auto flex w-full max-w-[1800px] flex-col gap-5 px-3 py-4 text-slate-100 sm:px-5 lg:px-6">
-      <header className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
+    <div data-testid="performance-results-page" className={`${WORKSPACE_PAGE} text-slate-100`}>
+      <header className="premium-surface premium-panel-grid flex flex-col justify-between gap-4 rounded-[24px] p-4 sm:p-5 lg:flex-row lg:items-end">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-300">Research Results</p>
+          <p className={WORKSPACE_SECTION_LABEL}>Research Results</p>
           <h2 className="mt-1 text-3xl font-semibold tracking-normal text-slate-50">Performance Results</h2>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">
             Simulation and research-cycle results only. The calendar and metrics are derived from local GoTrader evidence, never broker account/order/position data.
@@ -339,7 +340,7 @@ export function PerformanceView({ state }: { state: LabState }) {
 
 function ResultsCalendar({ calendar, pnlPositive }: { calendar: ReturnType<typeof buildResultsCalendar>; pnlPositive: boolean }) {
   return (
-    <section data-testid="results-calendar" className="overflow-hidden rounded-xl border border-white/10 bg-[#25252b] shadow-[0_0_60px_rgba(0,0,0,0.25)]">
+    <section data-testid="results-calendar" className="premium-surface overflow-hidden rounded-[24px]">
       <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-5 md:px-6">
         <div className="flex flex-wrap items-center justify-center gap-2 text-center text-2xl font-semibold">
           <span className="text-slate-50">Monthly P/L:</span>
@@ -420,7 +421,7 @@ function CalendarDayCell({ cell }: { cell: CalendarCell }) {
 
 function ResultMetricCard({ detail, label, tone = "neutral", value, visual }: { detail?: string; label: string; tone?: "positive" | "negative" | "neutral"; value: string; visual?: ReactNode }) {
   return (
-    <section className="min-h-[132px] rounded-lg border border-white/10 bg-[#25252b] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+    <section className="premium-surface-soft min-h-[132px] rounded-2xl p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm text-slate-400">{label}</p>
@@ -435,7 +436,7 @@ function ResultMetricCard({ detail, label, tone = "neutral", value, visual }: { 
 
 function ResultPanel({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <section className={cn("rounded-lg border border-white/10 bg-[#17181d] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]", className)}>
+    <section className={cn("premium-surface-soft rounded-2xl p-5", className)}>
       {children}
     </section>
   );

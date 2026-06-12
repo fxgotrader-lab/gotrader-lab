@@ -213,7 +213,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <aside
           data-testid="app-sidebar"
           className={cn(
-            "min-w-0 border-b border-border bg-background/80 backdrop-blur transition-[width] duration-200 lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-[var(--app-sidebar-width)] lg:flex-col lg:border-b-0 lg:border-r"
+            "min-w-0 border-b border-white/10 bg-black/45 backdrop-blur-2xl transition-[width] duration-200 lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-[var(--app-sidebar-width)] lg:flex-col lg:border-b-0 lg:border-r"
           )}
         >
           <div
@@ -223,7 +223,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             )}
           >
             <div className={cn("flex min-w-0 items-center gap-3", navCollapsed && "lg:justify-center")}>
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/30 bg-primary/10">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 shadow-[0_0_28px_rgba(16,185,129,0.16)]">
                 <Gauge className="h-5 w-5 text-primary" aria-hidden="true" />
               </div>
               <div className={cn("min-w-0", navCollapsed && "lg:hidden")}>
@@ -233,7 +233,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
             <button
               type="button"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-card/70 text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.06] text-muted-foreground transition-colors hover:bg-white/[0.10] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               onClick={() => setNavCollapsed((value) => !value)}
               aria-label={navCollapsed ? "Expand navigation" : "Collapse navigation"}
               title={navCollapsed ? "Expand navigation" : "Collapse navigation"}
@@ -259,8 +259,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                   to={hub.items[0].href}
                   data-testid={`nav-hub-${hub.id}`}
                   className={cn(
-                    "flex min-w-fit items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99] lg:min-w-0",
-                    hubActive && "bg-secondary text-foreground shadow-sm",
+                    "flex min-w-fit items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-white/[0.07] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99] lg:min-w-0",
+                    hubActive && "border border-white/10 bg-white/[0.09] text-foreground shadow-sm",
                     navCollapsed && "lg:mx-auto lg:w-10 lg:justify-center lg:px-0"
                   )}
                   aria-label={`${hub.label} hub`}
@@ -275,7 +275,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
 
           <div className={cn("hidden shrink-0 border-t border-border/70 px-4 pb-4 pt-3 lg:block", navCollapsed && "lg:hidden")}>
-            <div className="rounded-lg border border-border bg-card/70 p-3 text-xs text-muted-foreground">
+            <div className="premium-surface-soft rounded-2xl p-3 text-xs text-muted-foreground">
               <div className="mb-1.5 flex items-center gap-2 text-foreground">
                 <ShieldCheck className="h-4 w-4 text-emerald-300" aria-hidden="true" />
                 Research only
@@ -288,7 +288,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="flex min-w-0 flex-col lg:h-screen">
           <header
             data-testid="app-top-bar"
-            className="z-10 shrink-0 border-b border-border bg-background/85 backdrop-blur"
+            className="z-10 shrink-0 border-b border-white/10 bg-black/35 backdrop-blur-2xl"
           >
             <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 sm:px-6">
               <div data-testid="app-breadcrumb" className="flex min-w-0 max-w-full items-center gap-2 text-sm">
@@ -302,7 +302,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 data-testid="context-panel-toggle"
-                className="hidden h-8 shrink-0 items-center gap-2 rounded-md border border-border bg-card/70 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:inline-flex"
+                className="hidden h-8 shrink-0 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.06] px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-white/[0.10] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:inline-flex"
                 onClick={() => setContextOpen((value) => !value)}
                 aria-pressed={contextOpen}
                 aria-label={contextOpen ? "Hide context panel" : "Show context panel"}
@@ -324,8 +324,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                       key={item.href}
                       to={item.href}
                       className={cn(
-                        "shrink-0 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground",
-                        tabActive && "bg-secondary text-foreground shadow-sm"
+                    "shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-white/[0.07] hover:text-foreground",
+                    tabActive && "border border-white/10 bg-white/[0.09] text-foreground shadow-sm"
                       )}
                       aria-current={tabActive ? "page" : undefined}
                     >
@@ -347,13 +347,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             {contextOpen ? (
               <aside
                 data-testid="context-panel"
-                className="scrollbar-thin hidden w-[330px] shrink-0 space-y-3 overflow-y-auto border-l border-border bg-background/70 p-4 xl:block"
+                className="scrollbar-thin hidden w-[340px] shrink-0 space-y-3 overflow-y-auto border-l border-white/10 bg-black/30 p-4 backdrop-blur-2xl xl:block"
               >
                 <p className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                   Research context
                 </p>
                 <ValidationChainCard testId="context-panel-validation-chain" detailed />
-                <div className="rounded-xl border border-white/10 bg-slate-950/55 px-4 py-3 text-xs leading-5 text-slate-400">
+                <div className="premium-surface-soft rounded-2xl px-4 py-3 text-xs leading-5 text-slate-400">
                   <p className="text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">Quick links</p>
                   <div className="mt-2 flex flex-col gap-1.5">
                     <Link className="text-sky-300 underline underline-offset-2" to="/advisor">
@@ -376,7 +376,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <footer
             data-testid="footer-safety-strip"
-            className="shrink-0 border-t border-border bg-background/85 px-4 py-2 backdrop-blur sm:px-6"
+            className="shrink-0 border-t border-white/10 bg-black/35 px-4 py-2 backdrop-blur-2xl sm:px-6"
           >
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.7rem] text-muted-foreground">
               <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-300" aria-hidden="true" />

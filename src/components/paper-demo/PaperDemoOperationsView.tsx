@@ -5,7 +5,7 @@ import { ExternalLink, FileText, NotebookPen, ShieldCheck } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
 import { ValidationChainCard } from "@/components/common/ValidationChainCard";
-import { WORKSPACE_CARD, WORKSPACE_PAGE, WORKSPACE_SECTION_LABEL } from "@/components/common/workspaceStyles";
+import { WORKSPACE_CARD, WORKSPACE_PAGE, WORKSPACE_SECTION_LABEL, WORKSPACE_TABS } from "@/components/common/workspaceStyles";
 import { WorkspaceEmptyState } from "@/components/common/WorkspaceEmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -233,7 +233,7 @@ export function PaperDemoOperationsView() {
   };
 
   return (
-    <div className={cn(WORKSPACE_PAGE, "mx-auto w-full max-w-7xl")}>
+    <div className={WORKSPACE_PAGE}>
       <PageHeader
         eyebrow="Validate / Paper-Demo Operations"
         title="Paper-Demo Operations"
@@ -253,15 +253,15 @@ export function PaperDemoOperationsView() {
       <nav
         data-testid="paper-demo-tabs"
         aria-label="Paper-Demo Operations tabs"
-        className="scrollbar-thin flex gap-1 overflow-x-auto rounded-xl border border-white/10 bg-slate-950/70 p-1.5"
+        className={WORKSPACE_TABS}
       >
         {tabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
             className={cn(
-              "shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60",
-              activeTab === tab.id ? "bg-cyan-300/15 text-cyan-100 shadow-sm" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+              "shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60",
+              activeTab === tab.id ? "border border-white/10 bg-white/[0.10] text-slate-50 shadow-sm" : "text-slate-400 hover:bg-white/[0.06] hover:text-slate-200"
             )}
             onClick={() => setActiveTab(tab.id)}
             aria-pressed={activeTab === tab.id}

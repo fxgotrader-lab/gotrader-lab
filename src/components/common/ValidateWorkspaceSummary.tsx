@@ -6,7 +6,7 @@ import { useLatestValidationChainEntry } from "@/components/common/ValidationCha
 import { useSourceStatusSnapshot } from "@/components/common/SourceStatusBanner";
 import { sourceStatusLabel } from "@/lib/sourceStatus";
 import { validationChainStatusLabel } from "@/lib/validationChain";
-import { AUTHORITY_BADGE_LABEL, WORKSPACE_CARD } from "@/components/common/workspaceStyles";
+import { AUTHORITY_BADGE_LABEL, WORKSPACE_CARD, WORKSPACE_SECTION_LABEL } from "@/components/common/workspaceStyles";
 
 type ValidateWorkspaceSummaryProps = {
   /** Page-specific status line (e.g. snapshot ready, run completed). */
@@ -41,26 +41,26 @@ export function ValidateWorkspaceSummary({
   return (
     <section data-testid={testId} className={`${WORKSPACE_CARD} px-4 py-3`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <ClipboardCheck className="h-3.5 w-3.5 shrink-0 text-cyan-300" aria-hidden="true" />
-        <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Validate workspace</span>
+        <ClipboardCheck className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+        <span className={WORKSPACE_SECTION_LABEL}>Validate workspace</span>
         <Badge variant="muted">{AUTHORITY_BADGE_LABEL}</Badge>
       </div>
-      <dl className="mt-2 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2 lg:grid-cols-4">
-        <div>
+      <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
           <dt className="text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">Source</dt>
-          <dd className="mt-0.5 text-slate-200">{sourceLine}</dd>
+          <dd className="mt-1 text-slate-200">{sourceLine}</dd>
         </div>
-        <div>
+        <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
           <dt className="text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">Validation chain</dt>
-          <dd className="mt-0.5 text-slate-200">{chainLine}</dd>
+          <dd className="mt-1 text-slate-200">{chainLine}</dd>
         </div>
-        <div>
+        <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
           <dt className="text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">Result</dt>
-          <dd className="mt-0.5 text-slate-200">{resultSummary ?? "Not run on this page yet"}</dd>
+          <dd className="mt-1 text-slate-200">{resultSummary ?? "Not run on this page yet"}</dd>
         </div>
-        <div>
+        <div className="rounded-xl border border-primary/20 bg-primary/[0.055] px-3 py-2">
           <dt className="text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">Next action</dt>
-          <dd className="mt-0.5 text-slate-200" data-testid="validate-workspace-next-action">
+          <dd className="mt-1 text-slate-100" data-testid="validate-workspace-next-action">
             {nextAction}
           </dd>
         </div>

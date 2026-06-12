@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { GitBranch } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { WORKSPACE_CARD, WORKSPACE_SECTION_LABEL } from "@/components/common/workspaceStyles";
 import {
   describeValidationChainStage,
   latestValidationChainEntry,
@@ -86,11 +87,11 @@ export function ValidationChainCard({
     return (
       <section
         data-testid={testId}
-        className={`rounded-xl border border-white/10 bg-slate-950/55 px-4 py-3 text-xs text-slate-400 ${className}`}
+        className={`${WORKSPACE_CARD} px-4 py-3 text-xs text-slate-400 ${className}`}
       >
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <GitBranch className="h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden="true" />
-          <span className="text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">Validation chain</span>
+          <GitBranch className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+          <span className={WORKSPACE_SECTION_LABEL}>Validation chain</span>
           <Badge variant="muted" data-testid="validation-chain-status">
             no recognition queued
           </Badge>
@@ -142,11 +143,11 @@ export function ValidationChainCard({
   return (
     <section
       data-testid={testId}
-      className={`rounded-xl border border-white/10 bg-slate-950/55 px-4 py-3 text-xs text-slate-300 ${className}`}
+      className={`${WORKSPACE_CARD} px-4 py-3 text-xs text-slate-300 ${className}`}
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <GitBranch className="h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden="true" />
-        <span className="text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">Validation chain</span>
+        <GitBranch className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+        <span className={WORKSPACE_SECTION_LABEL}>Validation chain</span>
         <Badge variant={statusVariant(entry.hypothesisStatus)} data-testid="validation-chain-status">
           {validationChainStatusLabel(entry.hypothesisStatus)}
         </Badge>
@@ -162,11 +163,11 @@ export function ValidationChainCard({
       </div>
       <p className="mt-2 text-xs leading-5 text-slate-400">{describeValidationChainStage(entry)}</p>
       {detailed ? (
-        <dl className="mt-2 grid gap-x-4 gap-y-1 text-xs text-slate-300 sm:grid-cols-2" data-testid="validation-chain-detail-rows">
+        <dl className="mt-3 grid gap-2 text-xs text-slate-300 sm:grid-cols-2" data-testid="validation-chain-detail-rows">
           {detailRows.map((row) => (
-            <div key={row.label} className="flex flex-wrap gap-x-2">
+            <div key={row.label} className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
               <dt className="text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">{row.label}</dt>
-              <dd className="min-w-0">{row.value}</dd>
+              <dd className="mt-1 min-w-0 text-slate-100">{row.value}</dd>
             </div>
           ))}
         </dl>

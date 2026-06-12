@@ -9,7 +9,15 @@ import { IctAdvisorSummaryPanel } from "@/components/advisor/IctAdvisorSummaryPa
 import { OpenClawPilotCard } from "@/components/advisor/OpenClawPilotCard";
 import { OpenClawProposalIntentPanel } from "@/components/advisor/OpenClawProposalIntentPanel";
 import { LLMAdvisoryReviewPanel } from "@/components/dashboard/LLMAdvisoryReviewPanel";
+import { PageHeader } from "@/components/common/PageHeader";
 import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
+import {
+  WORKSPACE_CARD,
+  WORKSPACE_PAGE,
+  WORKSPACE_PRIMARY_PANEL,
+  WORKSPACE_SECTION_LABEL,
+  WORKSPACE_TABS
+} from "@/components/common/workspaceStyles";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1157,15 +1165,14 @@ export function ResearchAdvisorView() {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
-      <section data-testid="research-advisor-page-header" className="rounded-[24px] border border-white/10 bg-slate-950/75 p-5 shadow-[0_0_45px_rgba(8,145,178,0.07)]">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-cyan-300">GoTrader AI Workspace</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-50">Research Advisor</h1>
-            <p className="mt-2 text-sm text-slate-400">ICT research assistant for read-only market analysis.</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+    <div className={WORKSPACE_PAGE}>
+      <PageHeader
+        testId="research-advisor-page-header"
+        eyebrow="GoTrader AI Workspace"
+        title="Research Advisor"
+        description="Clean research workspace for Activate Market, ICT recognition, validation review, OpenClaw proposal intents, and deterministic local explanations."
+        badges={
+          <>
             <Badge variant="secondary">MT5 Read Only</Badge>
             <Badge variant="warning">Research Only</Badge>
             <Badge variant="danger">Authority: None</Badge>
@@ -1175,9 +1182,9 @@ export function ResearchAdvisorView() {
             <Button variant="secondary" size="sm">
               <Link to="/dashboard">Back to Dashboard</Link>
             </Button>
-          </div>
-        </div>
-      </section>
+          </>
+        }
+      />
 
       <SourceStatusBanner />
 
@@ -1192,17 +1199,17 @@ export function ResearchAdvisorView() {
       <nav
         data-testid="advisor-workspace-tabs"
         aria-label="Advisor workspace tabs"
-        className="scrollbar-thin flex gap-1 overflow-x-auto rounded-xl border border-white/10 bg-slate-950/70 p-1.5"
+        className={WORKSPACE_TABS}
       >
         {ADVISOR_WORKSPACE_TABS.map((tab) => (
           <button
             key={tab.id}
             type="button"
             data-testid={`advisor-tab-${tab.id}`}
-            className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 ${
+            className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
               workspaceTab === tab.id
-                ? "bg-cyan-300/15 text-cyan-100 shadow-sm"
-                : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                ? "border border-white/10 bg-white/[0.10] text-slate-50 shadow-sm"
+                : "text-slate-400 hover:bg-white/[0.06] hover:text-slate-200"
             }`}
             onClick={() => setWorkspaceTab(tab.id)}
             aria-pressed={workspaceTab === tab.id}
@@ -1262,7 +1269,7 @@ export function ResearchAdvisorView() {
       {workspaceTab === "chat" ? (
       <>
       <AdvisorWorkspaceSummary />
-      <section data-testid="research-advisor-chat-workspace" className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(220px,0.62fr)_minmax(420px,1.35fr)_minmax(240px,0.72fr)]">
+      <section data-testid="research-advisor-chat-workspace" className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(260px,0.65fr)_minmax(480px,1.35fr)_minmax(260px,0.72fr)]">
         <ResearchAdvisorChatCard
           currentRead={currentRead}
           packet={activeAdvisorPacket}
@@ -1443,7 +1450,7 @@ export function ResearchAdvisorView() {
         </ResearchPanelErrorBoundary>
       </DeferredResearchDetails>
 
-      <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4">
+      <div className={`${WORKSPACE_CARD} p-4`}>
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-4 w-4 text-emerald-300" aria-hidden="true" />
           <h3 className="text-base font-semibold text-slate-50">Packet Safety Contract</h3>
@@ -1537,10 +1544,10 @@ function AdvisorSourceWorkspaceControls({
     activeTimeframe === primaryTimeframe;
 
   return (
-    <section data-testid="research-advisor-source-controls" className="rounded-[24px] border border-cyan-300/15 bg-slate-950/75 p-5 shadow-[0_0_45px_rgba(8,145,178,0.07)]">
+    <section data-testid="research-advisor-source-controls" className={WORKSPACE_PRIMARY_PANEL}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">MT5 Research Source</p>
+          <p className={WORKSPACE_SECTION_LABEL}>MT5 Research Source</p>
           <h2 className="mt-1 text-xl font-semibold text-slate-50">{selectedSummary}</h2>
           <p className="mt-2 text-sm leading-6 text-slate-400">
             Select the read-only MT5 symbol mapping and explicit analysis timeframes before running Activate Market. The selected chart timeframe is display/reference only; analysis uses the compact MTF context built by the workflow.
@@ -1646,7 +1653,7 @@ function DeferredResearchDetails({
       data-testid={testId}
       open={open}
       onToggle={handleToggle}
-      className="rounded-2xl border border-white/10 bg-slate-950/65 p-4"
+      className={`${WORKSPACE_CARD} p-4`}
     >
       <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 text-sm font-semibold text-slate-100">
         <span>{title}</span>
@@ -1658,7 +1665,7 @@ function DeferredResearchDetails({
       {open ? (
         <div className="mt-4">{children}</div>
       ) : (
-        <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-400">
+        <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3 text-sm leading-5 text-slate-400">
           {description} Status: ready / not run / run manually. Authority remains none/none/none.
         </div>
       )}
@@ -1678,10 +1685,10 @@ function MarketOpportunityCard({ currentRead }: { currentRead: IctCurrentRead })
       : "No structured opportunity is confirmed from the compact current read yet.";
 
   return (
-    <section data-testid="ict-market-opportunity-card" className="rounded-[24px] border border-fuchsia-300/15 bg-[radial-gradient(circle_at_14%_0%,rgba(217,70,239,0.12),transparent_36%),linear-gradient(135deg,rgba(15,23,42,0.92),rgba(2,6,23,0.94))] p-5 shadow-[0_0_55px_rgba(217,70,239,0.07)]">
+    <section data-testid="ict-market-opportunity-card" className={`${WORKSPACE_PRIMARY_PANEL} border-fuchsia-300/15 bg-fuchsia-300/[0.035]`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-fuchsia-300">Market Opportunity</p>
+          <p className={WORKSPACE_SECTION_LABEL}>Market Opportunity</p>
           <h2 className="mt-1 text-xl font-semibold text-slate-50">
             {currentRead.opportunityDetected ? formatToken(currentRead.opportunityType) : "No confirmed opportunity"}
           </h2>
@@ -1737,7 +1744,7 @@ function MarketOpportunityCard({ currentRead }: { currentRead: IctCurrentRead })
         <AdvisorList label="Blockers" values={currentRead.opportunityBlockers} empty="No opportunity blocker reported." />
         <AdvisorReadout label="Next action" value={currentRead.opportunityNextAction} detail="research-only; no readiness promotion" />
       </div>
-      <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm leading-5 text-slate-300">
+      <p className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3 text-sm leading-5 text-slate-300">
         {approvedExplanation} {currentRead.selfImprovementHypothesisQueued ? "Research hypothesis queued - needs replay validation." : `Research hypothesis not queued: ${currentRead.selfImprovementHypothesisReason ?? "not eligible"}.`}
       </p>
     </section>
@@ -1787,10 +1794,10 @@ function RecognitionSummaryCard({ currentRead, packet }: { currentRead: IctCurre
           : "warning";
 
   return (
-    <section data-testid="ict-universal-recognition-card" className="rounded-[24px] border border-violet-300/15 bg-[radial-gradient(circle_at_12%_0%,rgba(167,139,250,0.14),transparent_36%),linear-gradient(135deg,rgba(15,23,42,0.93),rgba(2,6,23,0.95))] p-5 shadow-[0_0_55px_rgba(124,58,237,0.08)]">
+    <section data-testid="ict-universal-recognition-card" className={`${WORKSPACE_PRIMARY_PANEL} border-violet-300/15 bg-violet-300/[0.035]`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-violet-300">Recognition Summary</p>
+          <p className={WORKSPACE_SECTION_LABEL}>Recognition Summary</p>
           <h2 className="mt-1 text-xl font-semibold text-slate-50">{formatToken(currentRead.recognitionTier)}</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
             Universal fallback maps full models first, then forming models, PD arrays, scalp structure, and finally market-map-only context. It cannot approve readiness or execution.
@@ -2653,12 +2660,12 @@ function ResearchAdvisorChatCard({
   return (
     <section
       data-testid="research-advisor-chat-card"
-      className="order-1 overflow-hidden rounded-[28px] border border-cyan-300/15 bg-[radial-gradient(circle_at_18%_0%,rgba(34,211,238,0.16),transparent_34%),radial-gradient(circle_at_86%_0%,rgba(168,85,247,0.13),transparent_35%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(2,6,23,0.98))] shadow-[0_0_80px_rgba(8,145,178,0.12)] xl:order-2"
+      className="premium-surface premium-panel-grid order-1 overflow-hidden rounded-[24px] xl:order-2"
     >
       <div className="border-b border-white/10 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
+            <p className={`flex items-center gap-2 ${WORKSPACE_SECTION_LABEL}`}>
               <Sparkles className="h-4 w-4" aria-hidden="true" />
               Deterministic Research Helper
             </p>
@@ -2704,7 +2711,7 @@ function ResearchAdvisorChatCard({
             value={inputValue}
             onChange={(event) => onInputChange(event.target.value)}
             placeholder="Ask GoTrader about this setup, replay, risk, or market bias..."
-            className="min-w-0 flex-1 rounded-full border border-white/10 bg-black/30 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/15"
+            className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
           />
           <Button type="submit" size="icon" aria-label="Send advisor message">
             <Send className="h-4 w-4" aria-hidden="true" />
@@ -2759,8 +2766,8 @@ function AdvisorQuickActions({ actions, onAction }: { actions: string[]; onActio
 
 function CompactContextCard({ rows, title }: { rows: Array<[string, string]>; title: string }) {
   return (
-    <section className="rounded-2xl border border-white/10 bg-slate-950/75 p-4">
-      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{title}</p>
+    <section className={`${WORKSPACE_CARD} p-4`}>
+      <p className={WORKSPACE_SECTION_LABEL}>{title}</p>
       <div className="mt-3 space-y-2">
         {rows.map(([label, value]) => (
           <div key={label} className="flex items-start justify-between gap-3 border-b border-white/5 pb-2 last:border-0 last:pb-0">
@@ -2836,9 +2843,9 @@ function AdvisorMetricCard({
   title: string;
 }) {
   return (
-    <section className="rounded-2xl border border-white/10 bg-slate-950/75 p-4">
+    <section className={`${WORKSPACE_CARD} p-4`}>
       <div className="flex items-start justify-between gap-3">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{title}</p>
+        <p className={WORKSPACE_SECTION_LABEL}>{title}</p>
         <Badge variant={badgeVariant}>{badge}</Badge>
       </div>
       <div className="mt-3 space-y-2">
@@ -3457,19 +3464,19 @@ function SavedResearchReportsPanel({ reports }: { reports: IctResearchReport[] }
 
 function AdvisorReadout({ detail, label, value }: { detail?: string; label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-xl border border-white/10 bg-white/[0.04] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+    <div className="premium-surface-soft min-w-0 rounded-2xl p-3 shadow-none">
       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-1 break-words text-sm font-semibold text-slate-100">{value}</p>
-      {detail ? <p className="mt-1 line-clamp-2 text-xs text-slate-500">{detail}</p> : null}
+      <p className="mt-2 break-words text-sm font-semibold leading-5 text-slate-100 [overflow-wrap:anywhere]">{value}</p>
+      {detail ? <p className="mt-1 line-clamp-3 text-xs leading-5 text-slate-500">{detail}</p> : null}
     </div>
   );
 }
 
 function AdvisorList({ empty, label, values }: { empty: string; label: string; values: string[] }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+    <div className="premium-surface-soft rounded-2xl p-3">
       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold leading-5 text-slate-100">{values.length ? values.slice(0, 5).join("; ") : empty}</p>
+      <p className="mt-2 text-sm font-semibold leading-6 text-slate-100">{values.length ? values.slice(0, 5).join("; ") : empty}</p>
     </div>
   );
 }

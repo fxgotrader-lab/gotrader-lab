@@ -5,25 +5,25 @@
 @layer base {
   :root {
     color-scheme: dark;
-    --background: 218 24% 7%;
-    --foreground: 210 20% 96%;
-    --card: 218 21% 10%;
+    --background: 225 16% 5%;
+    --foreground: 210 22% 96%;
+    --card: 224 15% 10%;
     --card-foreground: 210 20% 96%;
-    --popover: 218 21% 10%;
+    --popover: 224 15% 10%;
     --popover-foreground: 210 20% 96%;
-    --primary: 174 64% 46%;
+    --primary: 158 78% 54%;
     --primary-foreground: 180 30% 6%;
-    --secondary: 216 16% 17%;
+    --secondary: 225 12% 16%;
     --secondary-foreground: 210 20% 92%;
-    --muted: 217 18% 15%;
+    --muted: 225 11% 15%;
     --muted-foreground: 215 12% 66%;
-    --accent: 44 92% 60%;
+    --accent: 220 88% 64%;
     --accent-foreground: 42 44% 8%;
     --destructive: 350 74% 57%;
     --destructive-foreground: 210 20% 96%;
-    --border: 216 16% 21%;
-    --input: 216 16% 21%;
-    --ring: 174 64% 46%;
+    --border: 225 11% 22%;
+    --input: 225 11% 22%;
+    --ring: 158 78% 54%;
     --radius: 0.5rem;
   }
 
@@ -34,8 +34,10 @@
   body {
     @apply min-h-screen bg-background text-foreground antialiased;
     background:
-      radial-gradient(circle at top left, rgba(45, 212, 191, 0.08), transparent 32rem),
-      linear-gradient(180deg, #07111f 0%, #0b1018 48%, #0d1117 100%);
+      radial-gradient(circle at 16% -12%, rgba(59, 130, 246, 0.22), transparent 34rem),
+      radial-gradient(circle at 86% 0%, rgba(16, 185, 129, 0.14), transparent 28rem),
+      radial-gradient(circle at 50% 120%, rgba(168, 85, 247, 0.08), transparent 34rem),
+      linear-gradient(180deg, #08090d 0%, #0d1017 46%, #080a0f 100%);
   }
 
   button,
@@ -49,9 +51,36 @@
 @layer utilities {
   .terminal-grid {
     background-image:
+      linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+
+  .premium-surface {
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.028)),
+      rgba(12, 14, 20, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.105);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 24px 70px rgba(0, 0, 0, 0.34);
+    backdrop-filter: blur(18px);
+  }
+
+  .premium-surface-soft {
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02)),
+      rgba(13, 15, 21, 0.74);
+    border: 1px solid rgba(255, 255, 255, 0.085);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  }
+
+  .premium-panel-grid {
+    background-image:
       linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
-    background-size: 28px 28px;
+      linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 44px 44px;
+    background-position: center;
   }
 
   .scrollbar-thin {
