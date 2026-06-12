@@ -74,6 +74,8 @@ const sourceFiles = [
   "ictMarketAnalysisContext.ts",
   "ictOpportunityDetectionTypes.ts",
   "ictOpportunityDetection.ts",
+  "ictUniversalRecognitionTypes.ts",
+  "ictUniversalRecognition.ts",
   "ictSelfImprovementTypes.ts",
   "ictSelfImprovement.ts",
   "ictHypothesisValidationTypes.ts",
