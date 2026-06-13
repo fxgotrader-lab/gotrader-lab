@@ -53,5 +53,7 @@ export * from "./ictPaperSignalSimulatorTypes";
 export * from "./ictPaperSignalSimulator";
 export * from "./ictCmdPaperTrackingTypes";
 export * from "./ictCmdPaperTracking";
+export * from "./ictSilverBulletTypes";
+export * from "./ictSilverBullet";
 export * from "./ictResearchReportTypes";
 export * from "./ictResearchReport";

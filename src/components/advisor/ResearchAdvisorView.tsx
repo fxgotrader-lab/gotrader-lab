@@ -137,6 +137,7 @@ import {
 } from "@/lib/validationChain";
 import {
   getStrategyDefinition,
+  listStrategyDefinitions,
   strategyStatusLabel,
   suggestStrategyIdForRecognition
 } from "@/lib/strategyLibrary";
@@ -1761,6 +1762,7 @@ function MarketOpportunityCard({ currentRead }: { currentRead: IctCurrentRead })
 }
 
 function AdvisorStrategyLibraryCard({ currentRead }: { currentRead: IctCurrentRead }) {
+  const strategyDefinitions = listStrategyDefinitions();
   const strategyId = suggestStrategyIdForRecognition({
     modelName: currentRead.modelName ?? currentRead.opportunityModelName ?? currentRead.knownModelName,
     setupName: currentRead.bestSetup ?? currentRead.opportunityType ?? currentRead.recognitionTier,
@@ -1798,10 +1800,17 @@ function AdvisorStrategyLibraryCard({ currentRead }: { currentRead: IctCurrentRe
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-4">
         <AdvisorReadout label="Strategy ID" value={strategy?.id ?? "unknown_strategy"} detail="human-maintained registry" />
-        <AdvisorReadout label="Family" value={formatToken(strategy?.family)} detail={strategy ? strategyStatusLabel(strategy.status) : "draft"} />
+        <AdvisorReadout
+          label="Family"
+          value={formatToken(strategy?.family)}
+          detail={strategy ? `${strategyStatusLabel(strategy.status)} / ${formatToken(strategy.detectorStatus ?? "definition only")}` : "draft"}
+        />
         <AdvisorReadout label="Current model" value={currentRead.modelDetected ? formatToken(currentRead.modelName) : formatToken(currentRead.opportunityType)} detail={formatToken(currentRead.modelState ?? currentRead.opportunityStage)} />
         <AdvisorReadout label="Paper gate" value={currentRead.paperWatchlistEligible ? "paper-watchlist" : "blocked"} detail={gateSummary} />
       </div>
+      <p className="mt-3 text-xs leading-5 text-slate-500">
+        {strategyDefinitions.length} registered strategies, including Silver Bullet executable research and seven ICT placeholder definitions. Placeholder definitions are intake-only until detectors are implemented.
+      </p>
       <p className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3 text-sm leading-6 text-slate-300">
         {gateSummary} Strategy definitions do not create evidence by themselves; replay, walk-forward, evidence,
         maturity, readiness, and Paper-Demo checklist gates remain authoritative.

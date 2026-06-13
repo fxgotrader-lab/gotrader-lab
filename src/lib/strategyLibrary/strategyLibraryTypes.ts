@@ -4,11 +4,24 @@ import type { ValidationChainEntry } from "@/lib/validationChain";
 
 export type StrategyFamily =
   | "ict_cmd"
+  | "silver_bullet"
+  | "camerons_model"
+  | "ifvg"
+  | "turtle_soup"
+  | "crt"
+  | "ote"
+  | "cisd"
+  | "amd"
   | "grinch"
   | "pd_array"
   | "scalp"
   | "market_map"
   | "diagnostic";
+
+export type StrategyDetectorStatus =
+  | "executable_research"
+  | "research_only_placeholder"
+  | "diagnostic_only";
 
 export type StrategyStatus =
   | "draft"
@@ -71,6 +84,7 @@ export interface StrategyDefinition {
   name: string;
   family: StrategyFamily;
   status: StrategyStatus;
+  detectorStatus?: StrategyDetectorStatus;
   description: string;
   side: StrategySide;
   supportedSymbols: string[];

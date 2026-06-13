@@ -72,6 +72,30 @@ const timestampToken = (value: string) => value.replace(/[^0-9a-z]/gi, "");
 const inferOpenClawPilotStrategyId = (input: { candidateFamilies: string[]; targetSubsystem: string }) => {
   const text = [input.targetSubsystem, ...input.candidateFamilies].join(" ").toLowerCase();
 
+  if (/silver[_\s-]*bullet/.test(text)) {
+    return "silver_bullet_v1";
+  }
+  if (/cameron/.test(text)) {
+    return "camerons_model_research_v1";
+  }
+  if (/\bifvg\b|inversion.*fvg|inversion fair value/.test(text)) {
+    return "ifvg_research_v1";
+  }
+  if (/turtle[_\s-]*soup/.test(text)) {
+    return "turtle_soup_research_v1";
+  }
+  if (/\bcrt\b|candle[_\s-]*range/.test(text)) {
+    return "crt_research_v1";
+  }
+  if (/\bote\b|optimal[_\s-]*trade/.test(text)) {
+    return "ote_research_v1";
+  }
+  if (/\bcisd\b|change in state/.test(text)) {
+    return "cisd_research_v1";
+  }
+  if (/\bamd\b|power of three|accumulation.*manipulation.*distribution/.test(text)) {
+    return "amd_power_of_three_research_v1";
+  }
   if (/cmd|consolidation[_\s-]*manipulation[_\s-]*distribution|independent[_\s-]*date/.test(text)) {
     return "ict_cmd_short_paper_watchlist_v1";
   }

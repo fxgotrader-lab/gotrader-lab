@@ -32,6 +32,7 @@ export {
 export type {
   StrategyAuthority,
   StrategyDefinition,
+  StrategyDetectorStatus,
   StrategyEligibilityResult,
   StrategyEvidenceSummary,
   StrategyFamily,

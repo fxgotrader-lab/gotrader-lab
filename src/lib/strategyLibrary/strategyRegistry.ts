@@ -1,4 +1,4 @@
-import type { StrategyDefinition, StrategyFamily, StrategyStatus } from "./strategyLibraryTypes";
+import type { StrategyDefinition, StrategyFamily, StrategySide, StrategyStatus } from "./strategyLibraryTypes";
 
 export const STRATEGY_LIBRARY_AUTHORITY = {
   executionAuthority: "none" as const,
@@ -39,7 +39,241 @@ const compactValidation = [
   }
 ];
 
+const researchOnlyPlaceholderStrategy = (config: {
+  id: string;
+  name: string;
+  family: StrategyFamily;
+  description: string;
+  side?: StrategySide;
+  supportedSymbols?: string[];
+  primaryTimeframes?: string[];
+  higherTimeframes?: string[];
+  requiredConditions: Array<{ id: string; label: string; description: string }>;
+  sessionRules?: string[];
+  regimeRules?: string[];
+  minimumRR?: number;
+  forbiddenPromotionReasons?: string[];
+}): StrategyDefinition => ({
+  id: config.id,
+  name: config.name,
+  family: config.family,
+  status: "research_only",
+  detectorStatus: "research_only_placeholder",
+  description: config.description,
+  side: config.side ?? "both",
+  supportedSymbols: config.supportedSymbols ?? ["MNQ", "NQ", "USTECH", "US30", "YM", "US500", "ES", "XAUUSD"],
+  primaryTimeframes: config.primaryTimeframes ?? ["1m", "5m", "15m"],
+  higherTimeframes: config.higherTimeframes ?? ["5m", "15m", "1h", "4h", "1d"],
+  sourceRequirements: mt5ResearchSource,
+  requiredConditions: config.requiredConditions.map((condition) => ({
+    ...condition,
+    requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+  })),
+  invalidationRules: [
+    "Research placeholder cannot define active invalidation until a deterministic detector contract is implemented.",
+    "No Paper-Demo progression is allowed from strategy definition alone."
+  ],
+  targetRules: [
+    "Research placeholder cannot define active targets until replay validates a deterministic detector.",
+    "Targets must remain compact and cannot imply execution."
+  ],
+  minimumRR: config.minimumRR ?? 2,
+  sessionRules: config.sessionRules ?? ["Session model must be explicit before replay."],
+  regimeRules: config.regimeRules ?? ["No regime or readiness override."],
+  validationRequirements: compactValidation,
+  paperDemoRequirements: [
+    {
+      id: "deterministic_detector_required",
+      label: "Deterministic detector required",
+      required: true,
+      detail: "This strategy is registered for research intake, but its executable detector is not implemented yet."
+    }
+  ],
+  forbiddenPromotionReasons: [
+    "deterministic detector not implemented",
+    "placeholder strategy",
+    "mock/sample source",
+    "missing replay",
+    "missing walk-forward",
+    ...(config.forbiddenPromotionReasons ?? [])
+  ],
+  authority: STRATEGY_LIBRARY_AUTHORITY
+});
+
 export const STRATEGY_DEFINITIONS: StrategyDefinition[] = [
+  {
+    id: "silver_bullet_v1",
+    name: "ICT Silver Bullet v1",
+    family: "silver_bullet",
+    status: "replay_required",
+    detectorStatus: "executable_research",
+    description:
+      "Research-only Silver Bullet detector for the 03:00, 10:00, and 14:00 New York one-hour windows. It requires a liquidity sweep, matching FVG, return to FVG, explicit target/invalidation, and at least 2R before replay validation.",
+    side: "both",
+    supportedSymbols: ["MNQ", "NQ", "USTECH", "US30", "YM", "US500", "ES", "XAUUSD", "EURUSD.pro", "BTCUSD"],
+    primaryTimeframes: ["1m"],
+    higherTimeframes: ["5m", "15m"],
+    sourceRequirements: mt5ResearchSource,
+    requiredConditions: [
+      {
+        id: "silver_bullet_killzone",
+        label: "Silver Bullet killzone",
+        description: "Latest one-minute context must be inside 03:00-04:00, 10:00-11:00, or 14:00-15:00 New York.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "liquidity_sweep",
+        label: "Liquidity sweep",
+        description: "Long requires sell-side sweep; short requires buy-side sweep.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "directional_fvg",
+        label: "Directional FVG",
+        description: "Bullish FVG after sell-side sweep or bearish FVG after buy-side sweep.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "return_to_fvg",
+        label: "Return to FVG",
+        description: "Price must return to the FVG entry zone before candidate creation.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "target_invalidation_rr",
+        label: "Target/invalidation/RR",
+        description: "Target, invalidation, and minimum 2R must be compactly defined.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      }
+    ],
+    invalidationRules: [
+      "Long invalidation below the FVG boundary or swept sell-side level.",
+      "Short invalidation above the FVG boundary or swept buy-side level."
+    ],
+    targetRules: [
+      "Target next liquidity pool or prior swing opposite the entry direction.",
+      "Minimum reward/risk is 2R before validation can be queued."
+    ],
+    minimumRR: 2,
+    sessionRules: [
+      "Use America/New_York timing for Silver Bullet windows.",
+      "Valid windows: 03:00-04:00, 10:00-11:00, 14:00-15:00 New York."
+    ],
+    regimeRules: [
+      "VWAP extension should be available or flagged for manual review.",
+      "High-impact news within 30 minutes blocks candidate creation."
+    ],
+    validationRequirements: compactValidation,
+    paperDemoRequirements: [
+      {
+        id: "silver_bullet_replay_oos",
+        label: "Silver Bullet replay/OOS",
+        required: true,
+        detail: "Silver Bullet can only progress after replay, walk-forward, evidence, maturity, and checklist gates."
+      }
+    ],
+    forbiddenPromotionReasons: [
+      "outside killzone",
+      "missing sweep",
+      "missing FVG",
+      "missing return to FVG",
+      "RR below 2",
+      "mock/sample source",
+      "high-impact news"
+    ],
+    authority: STRATEGY_LIBRARY_AUTHORITY
+  },
+  researchOnlyPlaceholderStrategy({
+    id: "camerons_model_research_v1",
+    name: "Cameron's Model Research v1",
+    family: "camerons_model",
+    description:
+      "Registered research definition for Cameron's model. It can receive compact intake and OpenClaw proposal references, but no executable detector is implemented yet.",
+    requiredConditions: [
+      { id: "camerons_session_context", label: "Session context", description: "Session context and model phase must be explicit." },
+      { id: "camerons_sweep_displacement", label: "Sweep/displacement", description: "Sweep and displacement evidence must be deterministic." },
+      { id: "camerons_entry_model", label: "Entry model", description: "Entry, invalidation, target, and RR must be generated by a detector." }
+    ],
+    forbiddenPromotionReasons: ["Cameron's model detector not implemented"]
+  }),
+  researchOnlyPlaceholderStrategy({
+    id: "ifvg_research_v1",
+    name: "Inversion FVG Research v1",
+    family: "ifvg",
+    description:
+      "Registered research definition for IFVG continuation/reversal review. It remains placeholder-only until inversion and retest rules are deterministic.",
+    requiredConditions: [
+      { id: "fvg_invalidated", label: "FVG invalidated", description: "Original FVG must be invalidated cleanly." },
+      { id: "inversion_retest", label: "Inversion retest", description: "Retest of the inverted FVG must be detected." },
+      { id: "ifvg_displacement", label: "Displacement follow-through", description: "Displacement away from the inversion must confirm direction." }
+    ],
+    forbiddenPromotionReasons: ["IFVG detector not implemented"]
+  }),
+  researchOnlyPlaceholderStrategy({
+    id: "turtle_soup_research_v1",
+    name: "Turtle Soup Research v1",
+    family: "turtle_soup",
+    description:
+      "Registered research definition for false-breakout reversal review. It remains placeholder-only until sweep, reclaim, and target logic are deterministic.",
+    requiredConditions: [
+      { id: "prior_high_low_sweep", label: "Prior high/low sweep", description: "A previous high or low must be swept." },
+      { id: "failed_breakout_reclaim", label: "Failed breakout reclaim", description: "Price must reclaim the swept level." },
+      { id: "opposing_liquidity_target", label: "Opposing liquidity target", description: "Target must be the next opposing liquidity pool." }
+    ],
+    forbiddenPromotionReasons: ["Turtle Soup detector not implemented"]
+  }),
+  researchOnlyPlaceholderStrategy({
+    id: "crt_research_v1",
+    name: "Candle Range Theory Research v1",
+    family: "crt",
+    description:
+      "Registered research definition for CRT range expansion and false-breakout context. It is research-only until candle range construction is deterministic.",
+    requiredConditions: [
+      { id: "crt_range_candle", label: "CRT range candle", description: "Reference range candle must be selected deterministically." },
+      { id: "crt_liquidity_run", label: "CRT liquidity run", description: "Liquidity run outside the reference candle must be detected." },
+      { id: "crt_reentry_expansion", label: "CRT re-entry/expansion", description: "Re-entry and expansion toward opposing range must confirm." }
+    ],
+    forbiddenPromotionReasons: ["CRT detector not implemented"]
+  }),
+  researchOnlyPlaceholderStrategy({
+    id: "ote_research_v1",
+    name: "Optimal Trade Entry Research v1",
+    family: "ote",
+    description:
+      "Registered research definition for OTE retracement into premium/discount arrays. It remains placeholder-only until swing selection and fib zone rules are deterministic.",
+    requiredConditions: [
+      { id: "impulse_swing_selected", label: "Impulse swing selected", description: "Impulse swing must be selected without hindsight." },
+      { id: "ote_retracement_zone", label: "OTE retracement zone", description: "Retracement must enter the deterministic OTE zone." },
+      { id: "pd_array_confluence", label: "PD-array confluence", description: "PD-array confluence must confirm entry logic." }
+    ],
+    forbiddenPromotionReasons: ["OTE detector not implemented"]
+  }),
+  researchOnlyPlaceholderStrategy({
+    id: "cisd_research_v1",
+    name: "CISD Research v1",
+    family: "cisd",
+    description:
+      "Registered research definition for Change in State of Delivery. It remains placeholder-only until displacement/state-change rules are deterministic.",
+    requiredConditions: [
+      { id: "delivery_state_shift", label: "Delivery state shift", description: "A clear shift in delivery state must be detected." },
+      { id: "cisd_displacement", label: "CISD displacement", description: "Displacement must confirm the state change." },
+      { id: "cisd_continuation_context", label: "Continuation context", description: "Continuation or reversal context must be compactly defined." }
+    ],
+    forbiddenPromotionReasons: ["CISD detector not implemented"]
+  }),
+  researchOnlyPlaceholderStrategy({
+    id: "amd_power_of_three_research_v1",
+    name: "AMD Power of Three Research v1",
+    family: "amd",
+    description:
+      "Registered research definition for accumulation-manipulation-distribution / Power of Three. It remains placeholder-only until phase boundaries are deterministic.",
+    requiredConditions: [
+      { id: "accumulation_phase", label: "Accumulation phase", description: "Accumulation range must be explicit." },
+      { id: "manipulation_phase", label: "Manipulation phase", description: "Manipulation outside the range must be detected." },
+      { id: "distribution_phase", label: "Distribution phase", description: "Distribution/expansion must confirm the model." }
+    ],
+    forbiddenPromotionReasons: ["AMD Power of Three detector not implemented", "phase labels not deterministic"]
+  }),
   {
     id: "ict_cmd_short_paper_watchlist_v1",
     name: "CMD Paper-Watchlist Short",
@@ -315,6 +549,30 @@ export const suggestStrategyIdForRecognition = (input: {
     input.targetSubsystem,
     ...(input.candidateFamilies ?? [])
   ].filter(Boolean).join(" ").toLowerCase();
+  if (input.family === "silver_bullet" || /silver[_\s-]*bullet/.test(text)) {
+    return "silver_bullet_v1";
+  }
+  if (input.family === "camerons_model" || /cameron/.test(text)) {
+    return "camerons_model_research_v1";
+  }
+  if (input.family === "ifvg" || /\bifvg\b|inversion.*fvg|inversion fair value/.test(text)) {
+    return "ifvg_research_v1";
+  }
+  if (input.family === "turtle_soup" || /turtle[_\s-]*soup/.test(text)) {
+    return "turtle_soup_research_v1";
+  }
+  if (input.family === "crt" || /\bcrt\b|candle[_\s-]*range/.test(text)) {
+    return "crt_research_v1";
+  }
+  if (input.family === "ote" || /\bote\b|optimal[_\s-]*trade/.test(text)) {
+    return "ote_research_v1";
+  }
+  if (input.family === "cisd" || /\bcisd\b|change in state/.test(text)) {
+    return "cisd_research_v1";
+  }
+  if (input.family === "amd" || /\bamd\b|power of three|accumulation.*manipulation.*distribution/.test(text)) {
+    return "amd_power_of_three_research_v1";
+  }
   if (input.family === "ict_cmd" || /cmd|consolidation[_\s-]*manipulation[_\s-]*distribution/.test(text)) {
     return "ict_cmd_short_paper_watchlist_v1";
   }

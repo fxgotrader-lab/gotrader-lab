@@ -271,9 +271,10 @@ function StrategyCard({
         </div>
         <Badge variant={statusVariant(eligibility.status)}>{strategyStatusLabel(eligibility.status)}</Badge>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid gap-3 sm:grid-cols-4">
         <Readout label="Side" value={formatToken(strategy.side)} />
         <Readout label="Minimum RR" value={`${strategy.minimumRR.toFixed(1)}R`} />
+        <Readout label="Detector" value={formatToken(strategy.detectorStatus ?? "definition_only")} />
         <Readout label="Source" value={record.sourceProvider ?? "pending"} detail={record.sourceFingerprint ?? "fingerprint missing"} />
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">

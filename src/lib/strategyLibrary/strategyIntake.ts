@@ -31,7 +31,22 @@ export function findStrategyForbiddenFields(value: unknown, path = "$", findings
 }
 
 const compactNotes = (notes?: string[]) => (notes ?? []).map((note) => String(note).trim()).filter(Boolean).slice(0, 8);
-const strategyFamilies = new Set<StrategyFamily>(["ict_cmd", "grinch", "pd_array", "scalp", "market_map", "diagnostic"]);
+const strategyFamilies = new Set<StrategyFamily>([
+  "ict_cmd",
+  "silver_bullet",
+  "camerons_model",
+  "ifvg",
+  "turtle_soup",
+  "crt",
+  "ote",
+  "cisd",
+  "amd",
+  "grinch",
+  "pd_array",
+  "scalp",
+  "market_map",
+  "diagnostic"
+]);
 const asStrategyFamily = (value?: string): StrategyFamily | undefined =>
   strategyFamilies.has(value as StrategyFamily) ? value as StrategyFamily : undefined;
 

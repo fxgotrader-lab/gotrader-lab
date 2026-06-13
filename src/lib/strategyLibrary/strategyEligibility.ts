@@ -59,6 +59,9 @@ export function evaluateStrategyEligibility(record: StrategyIntakeRecord): Strat
     blockers.push("Market-map-only diagnostic cannot become evidence or Paper-Demo.");
     return makeResult(record, "paper_demo_blocked", blockers, warnings, "Use market-map-only output as context; select a validated strategy before replay.");
   }
+  if (definition.detectorStatus === "research_only_placeholder") {
+    blockers.push("Deterministic detection contract is not implemented for this strategy.");
+  }
   if (definition.status === "research_only" || definition.status === "draft") {
     warnings.push("Strategy is research-only and cannot become Paper-Demo eligible yet.");
   }
