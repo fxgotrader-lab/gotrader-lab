@@ -127,6 +127,8 @@ export interface OpenClawPilotProposalDraft {
   timeframe?: string;
   sourceProvider?: string;
   validationChainId?: string;
+  strategyId?: string;
+  strategyFamily?: string;
   proposalTitle: string;
   targetSubsystem: string;
   candidateFamilies: string[];

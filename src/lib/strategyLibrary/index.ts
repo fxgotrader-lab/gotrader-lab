@@ -6,6 +6,44 @@ export { buildGrinchExpansionReplayDiagnostics } from "@/lib/strategyLibrary/gri
 export { buildGrinchProfileEvidenceDiagnostics } from "@/lib/strategyLibrary/grinchProfileDiagnostics";
 export { calculateGrinchStrategyScore, summarizeGrinchStrategyScore } from "@/lib/strategyLibrary/grinchStrategyScore";
 export { resolveGrinchActiveProfile } from "@/lib/strategyLibrary/grinchProfileSelection";
+export {
+  STRATEGY_DEFINITIONS,
+  STRATEGY_LIBRARY_AUTHORITY,
+  getStrategyDefinition,
+  listStrategyDefinitions,
+  listStrategyDefinitionsByFamily,
+  strategyStatusLabel,
+  suggestStrategyIdForRecognition
+} from "@/lib/strategyLibrary/strategyRegistry";
+export {
+  assertStrategyIntakeRecordIsCompact,
+  createStrategyIntakeRecord,
+  findStrategyForbiddenFields
+} from "@/lib/strategyLibrary/strategyIntake";
+export {
+  STRATEGY_CMD_INDEPENDENT_DATE_BLOCKER,
+  evaluateStrategyEligibility
+} from "@/lib/strategyLibrary/strategyEligibility";
+export {
+  assertStrategyEvidenceIsCompact,
+  strategyEvidenceStatus,
+  summarizeStrategyEvidence
+} from "@/lib/strategyLibrary/strategyEvidence";
+export type {
+  StrategyAuthority,
+  StrategyDefinition,
+  StrategyEligibilityResult,
+  StrategyEvidenceSummary,
+  StrategyFamily,
+  StrategyIntakeInput,
+  StrategyIntakeRecord,
+  StrategyRecognitionContext,
+  StrategyRequiredCondition,
+  StrategySide,
+  StrategySourceRequirements,
+  StrategyStatus,
+  StrategyValidationRequirement
+} from "@/lib/strategyLibrary/strategyLibraryTypes";
 export type {
   GrinchExpansionExpectedDirection,
   GrinchExpansionReplayDiagnostics,

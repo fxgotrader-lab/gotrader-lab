@@ -28,13 +28,14 @@ const advancedRoutes = [
   "/llm-agents",
   "/evidence-quality",
   "/research-maturity",
+  "/strategy-library",
   "/simulation-runbook",
   "/advisory-agents",
   "/agents",
   "/prompt-lab"
 ];
 
-// Expected coverage: all 28 routes from src/App.tsx, reachable through the
+// Expected coverage: all 29 routes from src/App.tsx, reachable through the
 // 8 sidebar hubs and their workspace tabs. Excluded: "/" and "*" redirects
 // and the "/agents/:id" detail route. Keep this list in sync with
 // scripts/smoke-routes.mjs.
@@ -52,7 +53,8 @@ const sourceStatusRoutes = [
   "/agent-debate",
   "/self-improvement",
   "/evidence-quality",
-  "/research-maturity"
+  "/research-maturity",
+  "/strategy-library"
 ];
 const unsafeExecutionControls = [
   "Place Order",
@@ -89,6 +91,7 @@ const expectedHeadings: Record<string, RegExp> = {
   "/llm-agents": /LLM/i,
   "/evidence-quality": /Evidence Quality/i,
   "/research-maturity": /Research Maturity/i,
+  "/strategy-library": /Strategy Library/i,
   "/simulation-runbook": /Verification Runbook|Simulation verification/i,
   "/advisory-agents": /OpenClaw \/ Hermes Planning/i,
   "/agents": /Research Agents/i,
@@ -193,6 +196,7 @@ test.describe("GoTrader browser route smoke", () => {
     }
     await expect(page.getByTestId("research-advisor-chat-card")).toBeVisible();
     await expect(page.getByTestId("advisor-workspace-summary")).toBeVisible();
+    await expect(page.getByTestId("advisor-strategy-library-section")).toContainText(/Strategy Library/i);
     await expect(page.getByTestId("research-advisor-chat-input")).toBeVisible();
     await expect(page.getByTestId("research-advisor-quick-actions")).toContainText(/Explain this cycle/i);
     await expect(page.getByRole("button", { name: "Activate Market" }).first()).toBeVisible();
@@ -312,6 +316,10 @@ test.describe("GoTrader browser route smoke", () => {
     await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Execution: Disabled/i);
     await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Phase 1 \/ Phase 2/i);
     await expect(page.getByTestId("dashboard-research-advisor-card")).toContainText(/Open Advisor/i);
+    await gotoRoute(page, "/strategy-library");
+    await expect(page.getByTestId("strategy-library-view")).toBeVisible();
+    await expect(page.getByTestId("strategy-library-cmd-card")).toContainText(/CMD/i);
+    await expect(page.getByTestId("strategy-library-current-intake")).toContainText(/Authority/i);
   });
 
   test("shared source status banner appears on key pages", async ({ page }) => {

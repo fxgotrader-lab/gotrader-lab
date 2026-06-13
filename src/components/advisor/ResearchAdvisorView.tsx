@@ -1,6 +1,6 @@
 import { Component, useEffect, useMemo, useRef, useState, type ErrorInfo, type FormEvent, type ReactNode, type SyntheticEvent } from "react";
 import { Link } from "react-router-dom";
-import { BarChart3, MessageSquareText, PlayCircle, Send, ShieldCheck, Sparkles } from "lucide-react";
+import { BarChart3, ExternalLink, MessageSquareText, PlayCircle, Send, ShieldCheck, Sparkles } from "lucide-react";
 
 import { ActivateMarketProgress } from "@/components/advisor/ActivateMarketProgress";
 import { AdvisorProviderStatusHeader } from "@/components/advisor/AdvisorProviderStatusHeader";
@@ -135,6 +135,11 @@ import {
   saveValidationChainEntry,
   type ValidationChainEntry
 } from "@/lib/validationChain";
+import {
+  getStrategyDefinition,
+  strategyStatusLabel,
+  suggestStrategyIdForRecognition
+} from "@/lib/strategyLibrary";
 import { ValidationChainCard } from "@/components/common/ValidationChainCard";
 import { WALK_FORWARD_UPDATED_EVENT } from "@/lib/walkForward";
 
@@ -1180,6 +1185,9 @@ export function ResearchAdvisorView() {
               <Link to="/paper-demo">Review Paper-Demo Operations</Link>
             </Button>
             <Button variant="secondary" size="sm">
+              <Link to="/strategy-library">Open Strategy Library</Link>
+            </Button>
+            <Button variant="secondary" size="sm">
               <Link to="/dashboard">Back to Dashboard</Link>
             </Button>
           </>
@@ -1329,6 +1337,7 @@ export function ResearchAdvisorView() {
       />
       <RecognitionSummaryCard currentRead={currentRead} packet={activeAdvisorPacket} />
       <MarketOpportunityCard currentRead={currentRead} />
+      <AdvisorStrategyLibraryCard currentRead={currentRead} />
       <ResearchSignalCard signal={researchSignal} />
       <LatestResearchStateStrip latestResearchState={latestResearchState} />
       </>
@@ -1747,6 +1756,64 @@ function MarketOpportunityCard({ currentRead }: { currentRead: IctCurrentRead })
       <p className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3 text-sm leading-5 text-slate-300">
         {approvedExplanation} {currentRead.selfImprovementHypothesisQueued ? "Research hypothesis queued - needs replay validation." : `Research hypothesis not queued: ${currentRead.selfImprovementHypothesisReason ?? "not eligible"}.`}
       </p>
+    </section>
+  );
+}
+
+function AdvisorStrategyLibraryCard({ currentRead }: { currentRead: IctCurrentRead }) {
+  const strategyId = suggestStrategyIdForRecognition({
+    modelName: currentRead.modelName ?? currentRead.opportunityModelName ?? currentRead.knownModelName,
+    setupName: currentRead.bestSetup ?? currentRead.opportunityType ?? currentRead.recognitionTier,
+    targetSubsystem: currentRead.opportunityLaneRecommendation
+  });
+  const strategy = getStrategyDefinition(strategyId) ?? getStrategyDefinition("market_map_only_diagnostic_v1");
+  const isCmd = strategy?.id === "ict_cmd_short_paper_watchlist_v1";
+  const gateSummary = isCmd
+    ? currentRead.cmdIndependentDateGateStatus === "passed"
+      ? "CMD independent-date gate passed; keep Paper-Demo behind normal checklist."
+      : currentRead.cmdIndependentDateGateReason ?? "CMD lane is promising but needs independent-date validation."
+    : currentRead.paperWatchlistReason ?? currentRead.topReasons[0] ?? "Strategy remains research-only until deterministic validation passes.";
+  const lane = isCmd && currentRead.modelQualityLane === "paper_watchlist"
+    ? "CMD paper-watchlist - paper-test only"
+    : `${formatToken(currentRead.modelQualityLane)} lane`;
+
+  return (
+    <section data-testid="advisor-strategy-library-section" className={`${WORKSPACE_PRIMARY_PANEL} border-cyan-300/15 bg-cyan-300/[0.035]`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className={WORKSPACE_SECTION_LABEL}>Strategy Library</p>
+          <h2 className="mt-1 text-xl font-semibold text-slate-50">
+            {strategy?.name ?? "Strategy definition required"}
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+            Current-read recognition is mapped to a registered strategy family before any Paper-Demo progression. The
+            registry keeps targets, invalidation, replay, walk-forward, and independent-date gates explicit.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant={isCmd ? "warning" : "secondary"}>{lane}</Badge>
+          <Badge variant="danger">Execution disabled</Badge>
+          <Badge variant="secondary">Authority none</Badge>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
+        <AdvisorReadout label="Strategy ID" value={strategy?.id ?? "unknown_strategy"} detail="human-maintained registry" />
+        <AdvisorReadout label="Family" value={formatToken(strategy?.family)} detail={strategy ? strategyStatusLabel(strategy.status) : "draft"} />
+        <AdvisorReadout label="Current model" value={currentRead.modelDetected ? formatToken(currentRead.modelName) : formatToken(currentRead.opportunityType)} detail={formatToken(currentRead.modelState ?? currentRead.opportunityStage)} />
+        <AdvisorReadout label="Paper gate" value={currentRead.paperWatchlistEligible ? "paper-watchlist" : "blocked"} detail={gateSummary} />
+      </div>
+      <p className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3 text-sm leading-6 text-slate-300">
+        {gateSummary} Strategy definitions do not create evidence by themselves; replay, walk-forward, evidence,
+        maturity, readiness, and Paper-Demo checklist gates remain authoritative.
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button size="sm" variant="secondary">
+          <Link to="/strategy-library" className="inline-flex items-center gap-2">Open Strategy Library <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" /></Link>
+        </Button>
+        <Button size="sm" variant="secondary">
+          <Link to="/validation" className="inline-flex items-center gap-2">Review validation chain <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" /></Link>
+        </Button>
+      </div>
     </section>
   );
 }

@@ -31,6 +31,7 @@ const ReplayView = lazy(() => import("@/components/replay/ReplayView").then((m) 
 const SettingsView = lazy(() => import("@/components/settings/SettingsView").then((m) => ({ default: m.SettingsView })));
 const SelfImprovementView = lazy(() => import("@/components/self-improvement/SelfImprovementView").then((m) => ({ default: m.SelfImprovementView })));
 const SimulationRunbookView = lazy(() => import("@/components/simulation-runbook/SimulationRunbookView").then((m) => ({ default: m.SimulationRunbookView })));
+const StrategyLibraryView = lazy(() => import("@/components/strategy-library/StrategyLibraryView").then((m) => ({ default: m.StrategyLibraryView })));
 const StrategyValidationView = lazy(() => import("@/components/validation/StrategyValidationView").then((m) => ({ default: m.StrategyValidationView })));
 const WalkForwardView = lazy(() => import("@/components/walk-forward/WalkForwardView").then((m) => ({ default: m.WalkForwardView })));
 
@@ -70,6 +71,7 @@ export default function App() {
           <Route path="/research-quality" element={<ResearchQualityView />} />
           <Route path="/paper-demo" element={<PaperDemoOperationsView />} />
           <Route path="/simulation-runbook" element={<SimulationRunbookView />} />
+          <Route path="/strategy-library" element={<StrategyLibraryView />} />
           <Route path="/readiness-gate" element={<ReadinessGateView />} />
           <Route path="/llm-agents" element={<LLMAgentsView state={state} />} />
           <Route path="/auto-research" element={<AutoResearchView />} />

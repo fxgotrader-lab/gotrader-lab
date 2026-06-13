@@ -37,6 +37,7 @@ import {
   type PaperDemoOperationsState
 } from "@/lib/paperDemoOperations";
 import { resolveSourceStatusSnapshot, type SourceStatusSnapshot } from "@/lib/sourceStatus";
+import { getStrategyDefinition, suggestStrategyIdForRecognition } from "@/lib/strategyLibrary";
 import { latestValidationChainEntry, readValidationChainState, type ValidationChainEntry } from "@/lib/validationChain";
 import { cn } from "@/lib/utils";
 
@@ -610,6 +611,15 @@ function PaperDemoCandidateDetail({
   onNoteChange: (value: string) => void;
   onStatus: (id: string, status: PaperDemoCandidateStatus) => void;
 }) {
+  const strategyId =
+    candidate.cmdPaperWatchlistProfile?.modelName === "consolidation_manipulation_distribution"
+      ? "ict_cmd_short_paper_watchlist_v1"
+      : suggestStrategyIdForRecognition({
+          modelName: candidate.setupName,
+          setupName: candidate.recognitionType
+        });
+  const strategy = getStrategyDefinition(strategyId);
+
   return (
     <section data-testid="paper-demo-candidate-detail" className={cn(WORKSPACE_CARD, "p-5")}>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -626,6 +636,9 @@ function PaperDemoCandidateDetail({
         <Readout label="Source" value={formatToken(candidate.sourceProvider)} detail={candidate.sourceFingerprint} />
         <Readout label="Validation chain" value={candidate.validationChainId ?? "missing"} />
         <Readout label="Authority" value={`${candidate.authority.executionAuthority}/${candidate.authority.brokerAuthority}/${candidate.authority.readinessOverrideAuthority}`} />
+        <Readout label="Strategy library" value={strategy?.name ?? "definition required"} detail={strategy?.id ?? "unknown_strategy"} />
+        <Readout label="Strategy status" value={formatToken(strategy?.status)} detail="definition is not approval" />
+        <Readout label="Paper-Demo gate" value={candidate.cmdIndependentDateGate?.paperDemoEligible ? "eligible by CMD gate" : "gated"} detail={candidate.cmdIndependentDateGate?.blockerReason ?? candidate.nextAction} />
       </div>
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <ListCard title="Blockers" values={candidate.blockers} empty="No blockers recorded." tone="danger" />
@@ -644,6 +657,9 @@ function PaperDemoCandidateDetail({
         </Button>
         <Button size="sm" variant="secondary">
           <Link to="/walk-forward">Open Walk-Forward</Link>
+        </Button>
+        <Button size="sm" variant="secondary">
+          <Link to="/strategy-library">Open Strategy Library</Link>
         </Button>
       </div>
     </section>

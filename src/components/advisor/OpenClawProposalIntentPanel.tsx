@@ -215,6 +215,8 @@ function DraftCard({
       <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
         <Readout label="Target subsystem" value={draft.targetSubsystem} />
         <Readout label="Candidate families" value={draft.candidateFamilies.join(", ") || "none"} />
+        <Readout label="Strategy ID" value={draft.strategyId ?? "not mapped"} />
+        <Readout label="Strategy family" value={draft.strategyFamily ?? "not supplied"} />
         <Readout label="Source" value={[draft.sourceProvider, draft.requestedSymbol, draft.brokerSymbol].filter(Boolean).join(" / ") || "unknown"} />
         <Readout label="Source fingerprint" value={draft.sourceFingerprint ?? "unknown"} />
         <Readout label="Created" value={formatDate(draft.timestamp)} />

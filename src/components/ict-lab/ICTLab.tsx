@@ -59,7 +59,9 @@ import {
   analyzeGrinchPhase3Consolidation,
   analyzeGrinchPhase4Smt,
   buildGrinchProfileEvidenceDiagnostics,
-  calculateGrinchStrategyScore
+  calculateGrinchStrategyScore,
+  getStrategyDefinition,
+  suggestStrategyIdForRecognition
 } from "@/lib/strategyLibrary";
 import { classifyMarketRegime } from "@/lib/regime";
 import type { Candle, MarketBias, MarketStructureEvent, SessionContext } from "@/lib/types";
@@ -179,7 +181,10 @@ export function ICTLab() {
       setRecognitionQueueMessages((prev) => ({ ...prev, [setupLabel]: result.reason }));
     }
   };
-  const recognitionCta = (setupLabel: string) => (
+  const recognitionCta = (setupLabel: string) => {
+    const strategyId = suggestStrategyIdForRecognition({ modelName: setupLabel, setupName: setupLabel });
+    const strategy = getStrategyDefinition(strategyId);
+    return (
     <div className="mt-2 flex flex-col gap-1" data-testid="ict-recognition-cta">
       <div className="flex flex-wrap items-center gap-2">
         {analysisUsesMockData ? (
@@ -197,12 +202,16 @@ export function ICTLab() {
         <Link to="/replay" className="text-xs font-medium text-sky-300 underline underline-offset-2">
           Open Replay
         </Link>
+        <Link to="/strategy-library" className="text-xs font-medium text-cyan-300 underline underline-offset-2">
+          Strategy: {strategy?.name ?? "definition required"}
+        </Link>
       </div>
       {recognitionQueueMessages[setupLabel] ? (
         <p className="text-xs leading-5 text-slate-300">{recognitionQueueMessages[setupLabel]}</p>
       ) : null}
     </div>
-  );
+    );
+  };
   const sessionTimeMapping = useMemo(
     () =>
       resolveSessionTimeMapping({

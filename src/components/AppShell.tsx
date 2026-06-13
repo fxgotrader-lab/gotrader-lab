@@ -91,6 +91,7 @@ const navigationHubs: NavigationHub[] = [
       { href: "/evidence-quality", label: "Evidence Quality" },
       { href: "/research-maturity", label: "Research Maturity" },
       { href: "/readiness-gate", label: "Readiness Gate" },
+      { href: "/strategy-library", label: "Strategy Library" },
       { href: "/agent-audit", label: "Agent Audit" },
       { href: "/simulation-runbook", label: "Simulation Runbook" }
     ]

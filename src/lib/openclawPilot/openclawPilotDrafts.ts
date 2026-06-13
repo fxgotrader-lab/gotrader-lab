@@ -69,6 +69,34 @@ const draftHash = (value: string) =>
 
 const timestampToken = (value: string) => value.replace(/[^0-9a-z]/gi, "");
 
+const inferOpenClawPilotStrategyId = (input: { candidateFamilies: string[]; targetSubsystem: string }) => {
+  const text = [input.targetSubsystem, ...input.candidateFamilies].join(" ").toLowerCase();
+
+  if (/cmd|consolidation[_\s-]*manipulation[_\s-]*distribution|independent[_\s-]*date/.test(text)) {
+    return "ict_cmd_short_paper_watchlist_v1";
+  }
+  if (/reversal[_\s-]*expansion|expansion[_\s-]*confirmation/.test(text)) {
+    return "grinch_reversal_expansion_confirmation_v1";
+  }
+  if (/model[_\s-]*1|model one/.test(text)) {
+    return "grinch_model_1_research_v1";
+  }
+  if (/grinch.*consolidation|consolidation[_\s-]*range[_\s-]*tightness/.test(text)) {
+    return "grinch_consolidation_research_v1";
+  }
+  if (/pd[_\s-]*array/.test(text)) {
+    return "pd_array_setup_research_v1";
+  }
+  if (/scalp/.test(text)) {
+    return "scalp_setup_research_v1";
+  }
+  if (/market[_\s-]*map|diagnostic/.test(text)) {
+    return "market_map_only_diagnostic_v1";
+  }
+
+  return undefined;
+};
+
 const emptyState = (timestamp = new Date().toISOString()): OpenClawPilotDraftState => ({
   updatedAt: timestamp,
   drafts: [],
@@ -174,6 +202,13 @@ export function buildOpenClawPilotProposalDraft(
     "GoTrader deterministic research"
   );
   const candidateFamilies = getStringArray(intent, ["candidateFamilies"]);
+  const strategyId =
+    getString(intent, ["strategyId"]) ??
+    inferOpenClawPilotStrategyId({
+      candidateFamilies,
+      targetSubsystem
+    });
+  const strategyFamily = getString(intent, ["strategyFamily"]);
   const unknownFamilies = candidateFamilies.filter((family) => !program.allowedProposalFamilies.includes(family));
   const validationStatus: OpenClawPilotDraftValidationStatus = !audit.validationResult?.valid
     ? "blocked"
@@ -207,6 +242,8 @@ export function buildOpenClawPilotProposalDraft(
       getString(packet, ["sourceContext", "timeframe"]),
     sourceProvider: audit.sourceProvider,
     validationChainId: options.validationChainId,
+    strategyId,
+    strategyFamily,
     proposalTitle: title,
     targetSubsystem,
     candidateFamilies,
