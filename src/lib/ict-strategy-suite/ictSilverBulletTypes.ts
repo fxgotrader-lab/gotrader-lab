@@ -2,7 +2,19 @@ import type { Candle } from "@/lib/types";
 
 export type IctSilverBulletSessionId = "london_open" | "new_york_am" | "new_york_pm";
 export type IctSilverBulletSide = "long" | "short" | "flat";
-export type IctSilverBulletStatus = "replay_required" | "no_trade" | "needs_more_data" | "blocked";
+export type IctSilverBulletStrategyId = "silver_bullet_v1" | "silver_bullet_v2_refined_research";
+export type IctSilverBulletStatus =
+  | "replay_required"
+  | "candidate"
+  | "no_trade"
+  | "needs_more_data"
+  | "blocked"
+  | "blocked_low_quality_sweep"
+  | "blocked_weak_displacement"
+  | "blocked_bad_fvg"
+  | "blocked_late_return"
+  | "blocked_unrealistic_rr"
+  | "blocked_no_context_alignment";
 export type IctSilverBulletFvgDirection = "bullish" | "bearish";
 export type IctSilverBulletSweepType = "sell_side" | "buy_side";
 
@@ -61,7 +73,7 @@ export interface IctSilverBulletFvg {
 }
 
 export interface IctSilverBulletCandidate {
-  strategyId: "silver_bullet_v1";
+  strategyId: IctSilverBulletStrategyId;
   generatedAt: string;
   status: IctSilverBulletStatus;
   requestedSymbol?: string;
@@ -88,7 +100,7 @@ export interface IctSilverBulletCandidate {
   canCreateValidationChainEntry: boolean;
   validationChainSeed?: {
     recognitionType: "full_model";
-    setupLabel: "silver_bullet_v1";
+    setupLabel: IctSilverBulletStrategyId;
     candidateFamily: "silver_bullet";
     requiredValidation: string;
   };

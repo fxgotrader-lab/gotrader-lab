@@ -72,6 +72,9 @@ const timestampToken = (value: string) => value.replace(/[^0-9a-z]/gi, "");
 const inferOpenClawPilotStrategyId = (input: { candidateFamilies: string[]; targetSubsystem: string }) => {
   const text = [input.targetSubsystem, ...input.candidateFamilies].join(" ").toLowerCase();
 
+  if (/silver[_\s-]*bullet.*v2|v2.*silver[_\s-]*bullet|refined.*silver[_\s-]*bullet|silver_bullet_v2/.test(text)) {
+    return "silver_bullet_v2_refined_research";
+  }
   if (/silver[_\s-]*bullet/.test(text)) {
     return "silver_bullet_v1";
   }
@@ -82,7 +85,7 @@ const inferOpenClawPilotStrategyId = (input: { candidateFamilies: string[]; targ
     return "ifvg_research_v1";
   }
   if (/turtle[_\s-]*soup/.test(text)) {
-    return "turtle_soup_research_v1";
+    return "turtle_soup_v1";
   }
   if (/\bcrt\b|candle[_\s-]*range/.test(text)) {
     return "crt_research_v1";

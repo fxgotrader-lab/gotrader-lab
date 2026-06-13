@@ -55,5 +55,7 @@ export * from "./ictCmdPaperTrackingTypes";
 export * from "./ictCmdPaperTracking";
 export * from "./ictSilverBulletTypes";
 export * from "./ictSilverBullet";
+export * from "./ictTurtleSoupTypes";
+export * from "./ictTurtleSoup";
 export * from "./ictResearchReportTypes";
 export * from "./ictResearchReport";

@@ -7,6 +7,7 @@ import type {
   IctSilverBulletSessionId,
   IctSilverBulletSessionWindow,
   IctSilverBulletSide,
+  IctSilverBulletStrategyId,
   IctSilverBulletStatus,
   IctSilverBulletSweep
 } from "./ictSilverBulletTypes";
@@ -240,6 +241,174 @@ const calculateRr = (
   return reward / risk;
 };
 
+const averageRange = (candles: NormalizedCandle[]) =>
+  candles.length
+    ? candles.reduce((total, candle) => total + Math.max(0, candle.high - candle.low), 0) / candles.length
+    : 0;
+
+const candleBody = (candle: Pick<Candle, "open" | "close">) => Math.abs(candle.close - candle.open);
+
+const directionFor = (candles: Candle[] | undefined) => {
+  if (!candles?.length || candles.length < 3) return "unknown" as const;
+  const sorted = normalizeCandles(candles);
+  const start = sorted.at(Math.max(0, sorted.length - 8)) ?? sorted[0];
+  const end = sorted.at(-1);
+  if (!start || !end) return "unknown" as const;
+  const move = end.close - start.close;
+  const range = Math.max(averageRange(sorted.slice(-12)), Math.abs(start.close) * 0.0001, 1);
+  if (move > range * 0.5) return "bullish" as const;
+  if (move < -range * 0.5) return "bearish" as const;
+  return "mixed" as const;
+};
+
+const hasContextAlignment = (
+  context: IctSilverBulletInput["contextCandles"],
+  side: Exclude<IctSilverBulletSide, "flat">
+) => {
+  const expected = side === "long" ? "bullish" : "bearish";
+  const directions = [directionFor(context?.["5m"]), directionFor(context?.["15m"])];
+  const available = directions.filter((direction) => direction !== "unknown");
+  if (!available.length) return { aligned: true, unavailable: true, directions };
+  return {
+    aligned: available.includes(expected),
+    unavailable: false,
+    directions
+  };
+};
+
+const findMeaningfulSweep = (
+  candles: NormalizedCandle[],
+  session: InternalSilverBulletSession,
+  sessionCandles: NormalizedCandle[]
+) => {
+  const firstHalfEnd = session.startMinute + Math.floor((session.endMinute - session.startMinute) / 2);
+  for (const candle of sessionCandles) {
+    if (candle.nyMinute > firstHalfEnd) continue;
+    const lookback = candles.slice(Math.max(0, candle.index - 40), candle.index);
+    if (lookback.length < 12) continue;
+    const range = Math.max(averageRange(lookback.slice(-20)), Math.abs(candle.close) * 0.0001, 1);
+    const priorLow = Math.min(...lookback.map((item) => item.low));
+    const priorHigh = Math.max(...lookback.map((item) => item.high));
+    const sellSideDepth = priorLow - candle.low;
+    const buySideDepth = candle.high - priorHigh;
+    const lowTouches = lookback.filter((item) => Math.abs(item.low - priorLow) <= range * 0.18).length;
+    const highTouches = lookback.filter((item) => Math.abs(item.high - priorHigh) <= range * 0.18).length;
+    const meaningfulSellSide = sellSideDepth >= range * 0.25 && lowTouches >= 1 && candle.close > priorLow;
+    const meaningfulBuySide = buySideDepth >= range * 0.25 && highTouches >= 1 && candle.close < priorHigh;
+    if (meaningfulSellSide) {
+      return {
+        side: "long" as const,
+        sweep: {
+          type: "sell_side" as const,
+          sweptLevel: priorLow,
+          candleTimestamp: candle.timestamp,
+          candleIndex: candle.index
+        }
+      };
+    }
+    if (meaningfulBuySide) {
+      return {
+        side: "short" as const,
+        sweep: {
+          type: "buy_side" as const,
+          sweptLevel: priorHigh,
+          candleTimestamp: candle.timestamp,
+          candleIndex: candle.index
+        }
+      };
+    }
+  }
+  return undefined;
+};
+
+const findRefinedFvgAfterSweep = (
+  candles: NormalizedCandle[],
+  sessionCandles: NormalizedCandle[],
+  side: Exclude<IctSilverBulletSide, "flat">,
+  sweep: IctSilverBulletSweep,
+  maxCandlesAfterSweep = 5
+): IctSilverBulletFvg | undefined => {
+  const sessionIndexes = new Set(sessionCandles.map((candle) => candle.index));
+  const upperBound = sweep.candleIndex + maxCandlesAfterSweep + 2;
+  for (let index = sweep.candleIndex + 2; index <= Math.min(upperBound, candles.length - 1); index += 1) {
+    if (!sessionIndexes.has(index)) continue;
+    const first = candles[index - 2];
+    const third = candles[index];
+    if (!first || !third) continue;
+    const recentRange = Math.max(averageRange(candles.slice(Math.max(0, index - 20), index)), Math.abs(third.close) * 0.0001, 1);
+    const body = candleBody(third);
+    const bodyShare = body / Math.max(third.high - third.low, 1);
+    if (body < recentRange * 0.8 || bodyShare < 0.55) continue;
+    if (side === "long" && first.high < third.low && third.close > third.open) {
+      const size = third.low - first.high;
+      if (size < recentRange * 0.15) continue;
+      return {
+        direction: "bullish",
+        low: first.high,
+        high: third.low,
+        midpoint: (first.high + third.low) / 2,
+        candleOpen: third.open,
+        createdAt: third.timestamp,
+        candleIndex: index
+      };
+    }
+    if (side === "short" && first.low > third.high && third.close < third.open) {
+      const size = first.low - third.high;
+      if (size < recentRange * 0.15) continue;
+      return {
+        direction: "bearish",
+        low: third.high,
+        high: first.low,
+        midpoint: (third.high + first.low) / 2,
+        candleOpen: third.open,
+        createdAt: third.timestamp,
+        candleIndex: index
+      };
+    }
+  }
+  return undefined;
+};
+
+const findRefinedReturnToFvg = (
+  sessionCandles: NormalizedCandle[],
+  side: Exclude<IctSilverBulletSide, "flat">,
+  fvg: IctSilverBulletFvg,
+  maxCandlesAfterFvg = 10
+) => {
+  const candidates = sessionCandles.filter((candle) => candle.index > fvg.candleIndex && candle.index <= fvg.candleIndex + maxCandlesAfterFvg);
+  for (const candle of candidates) {
+    const touchesFvg = candle.high >= fvg.low && candle.low <= fvg.high;
+    if (!touchesFvg) continue;
+    const fullyViolated = side === "long" ? candle.close < fvg.low : candle.close > fvg.high;
+    if (fullyViolated) return { returnCandle: undefined, violated: true };
+    return { returnCandle: candle, violated: false };
+  }
+  return { returnCandle: undefined, violated: false };
+};
+
+const nearestLogicalTarget = (
+  candles: NormalizedCandle[],
+  side: Exclude<IctSilverBulletSide, "flat">,
+  entry: number,
+  risk: number,
+  returnIndex: number
+) => {
+  const lookback = candles.slice(Math.max(0, returnIndex - 100), returnIndex);
+  if (!lookback.length || risk <= 0) return undefined;
+  const minimumReward = risk * 2;
+  const maximumReward = risk * 15;
+  if (side === "long") {
+    return lookback
+      .map((candle) => candle.high)
+      .filter((price) => price > entry + minimumReward && price <= entry + maximumReward)
+      .sort((left, right) => left - right)[0];
+  }
+  return lookback
+    .map((candle) => candle.low)
+    .filter((price) => price < entry - minimumReward && price >= entry - maximumReward)
+    .sort((left, right) => right - left)[0];
+};
+
 const highImpactNewsWithinMinutes = (
   latestTimestamp: string | undefined,
   newsEvents: IctSilverBulletNewsEvent[] | undefined,
@@ -258,6 +427,7 @@ const unique = (values: string[]) => [...new Set(values.filter(Boolean))];
 
 const buildCandidate = (input: {
   source: IctSilverBulletInput;
+  strategyId?: IctSilverBulletStrategyId;
   generatedAt: string;
   status: IctSilverBulletStatus;
   latestCandleTimestamp?: string;
@@ -283,7 +453,7 @@ const buildCandidate = (input: {
     : `Silver Bullet ${sideText} not tradable: ${input.blockers[0] ?? input.missingConditions[0] ?? "validation required"}.`;
 
   return {
-    strategyId: "silver_bullet_v1",
+    strategyId: input.strategyId ?? "silver_bullet_v1",
     generatedAt: input.generatedAt,
     status: input.status,
     requestedSymbol: input.source.requestedSymbol,
@@ -314,7 +484,7 @@ const buildCandidate = (input: {
     validationChainSeed: canCreateValidationChainEntry
       ? {
           recognitionType: "full_model",
-          setupLabel: "silver_bullet_v1",
+          setupLabel: input.strategyId ?? "silver_bullet_v1",
           candidateFamily: "silver_bullet",
           requiredValidation: "Replay, walk-forward, evidence, maturity, readiness checklist, and Research Committee review."
         }
@@ -468,6 +638,198 @@ export function evaluateIctSilverBullet(input: IctSilverBulletInput): IctSilverB
     source: { ...input, timeframe },
     generatedAt,
     status: blockers.length ? "no_trade" : "replay_required",
+    latestCandleTimestamp: latest.timestamp,
+    sessionWindow,
+    side: sweepResult.side,
+    sweep: sweepResult.sweep,
+    fvg,
+    returnToFvgTimestamp: returnCandle.timestamp,
+    entry,
+    alternateEntry,
+    stop,
+    target,
+    rr,
+    blockers,
+    warnings,
+    presentConditions,
+    missingConditions
+  });
+}
+
+export function evaluateIctSilverBulletV2(input: IctSilverBulletInput): IctSilverBulletCandidate {
+  const strategyId: IctSilverBulletStrategyId = "silver_bullet_v2_refined_research";
+  const generatedAt = input.generatedAt ?? new Date().toISOString();
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+  const presentConditions: string[] = [];
+  const missingConditions: string[] = [];
+  const candles = normalizeCandles(input.candles);
+  const timeframe = input.timeframe ?? candles.at(-1)?.timeframe ?? "1m";
+
+  if (/mock|sample/i.test(input.sourceProvider ?? "")) {
+    blockers.push("Mock/sample source cannot create a Silver Bullet v2 candidate.");
+  }
+  if (timeframe !== "1m") {
+    blockers.push("Silver Bullet v2 requires 1m entry candles.");
+  }
+  if (candles.length < 60) {
+    blockers.push("Insufficient 1m candles for refined Silver Bullet detection.");
+    return buildCandidate({
+      source: { ...input, timeframe },
+      strategyId,
+      generatedAt,
+      status: "needs_more_data",
+      blockers,
+      warnings,
+      presentConditions,
+      missingConditions: ["insufficient_candles"]
+    });
+  }
+
+  const latest = candles.at(-1);
+  const session = latest ? resolveSession(latest) : undefined;
+  if (!session || !latest) {
+    blockers.push("Outside Silver Bullet killzone.");
+    missingConditions.push("silver_bullet_killzone");
+    return buildCandidate({
+      source: { ...input, timeframe },
+      strategyId,
+      generatedAt,
+      status: "no_trade",
+      latestCandleTimestamp: latest?.timestamp,
+      blockers,
+      warnings,
+      presentConditions,
+      missingConditions
+    });
+  }
+
+  presentConditions.push("silver_bullet_killzone");
+  const sessionWindow = compactSession(session);
+  const sessionCandles = sessionCandlesFor(candles, session.id, latest.nyDayKey);
+  const sweepResult = findMeaningfulSweep(candles, session, sessionCandles);
+  if (!sweepResult) {
+    blockers.push("No meaningful prior swing/equal high-low sweep in the first half of the Silver Bullet window.");
+    missingConditions.push("meaningful_liquidity_sweep");
+    return buildCandidate({
+      source: { ...input, timeframe },
+      strategyId,
+      generatedAt,
+      status: "blocked_low_quality_sweep",
+      latestCandleTimestamp: latest.timestamp,
+      sessionWindow,
+      blockers,
+      warnings,
+      presentConditions,
+      missingConditions
+    });
+  }
+  presentConditions.push("meaningful_liquidity_sweep");
+
+  const contextAlignment = hasContextAlignment(input.contextCandles, sweepResult.side);
+  if (contextAlignment.unavailable) {
+    warnings.push("5m/15m context unavailable; context alignment requires manual review.");
+  } else if (!contextAlignment.aligned) {
+    blockers.push("5m/15m context does not align with Silver Bullet direction.");
+    missingConditions.push("context_alignment");
+    return buildCandidate({
+      source: { ...input, timeframe },
+      strategyId,
+      generatedAt,
+      status: "blocked_no_context_alignment",
+      latestCandleTimestamp: latest.timestamp,
+      sessionWindow,
+      side: sweepResult.side,
+      sweep: sweepResult.sweep,
+      blockers,
+      warnings,
+      presentConditions,
+      missingConditions
+    });
+  }
+  presentConditions.push("context_alignment");
+
+  const fvg = findRefinedFvgAfterSweep(candles, sessionCandles, sweepResult.side, sweepResult.sweep);
+  if (!fvg) {
+    blockers.push("No timely directional FVG with meaningful displacement formed within five candles after sweep.");
+    missingConditions.push("timely_displacement_fvg");
+    return buildCandidate({
+      source: { ...input, timeframe },
+      strategyId,
+      generatedAt,
+      status: "blocked_weak_displacement",
+      latestCandleTimestamp: latest.timestamp,
+      sessionWindow,
+      side: sweepResult.side,
+      sweep: sweepResult.sweep,
+      blockers,
+      warnings,
+      presentConditions,
+      missingConditions
+    });
+  }
+  presentConditions.push("timely_displacement_fvg");
+
+  const { returnCandle, violated } = findRefinedReturnToFvg(sessionCandles, sweepResult.side, fvg);
+  if (!returnCandle) {
+    blockers.push(
+      violated
+        ? "FVG was fully violated before a valid refined entry return."
+        : "Price did not return to the refined FVG entry zone within ten candles."
+    );
+    missingConditions.push("timely_return_to_fvg");
+    return buildCandidate({
+      source: { ...input, timeframe },
+      strategyId,
+      generatedAt,
+      status: violated ? "blocked_bad_fvg" : "blocked_late_return",
+      latestCandleTimestamp: latest.timestamp,
+      sessionWindow,
+      side: sweepResult.side,
+      sweep: sweepResult.sweep,
+      fvg,
+      blockers,
+      warnings,
+      presentConditions,
+      missingConditions
+    });
+  }
+  presentConditions.push("timely_return_to_fvg");
+
+  if (input.newsEvents === undefined) {
+    warnings.push("High-impact news state unknown; review manually before validation.");
+  } else if (highImpactNewsWithinMinutes(latest.timestamp, input.newsEvents, 30)) {
+    blockers.push("High-impact news is within 30 minutes of the active Silver Bullet window.");
+  }
+  if (input.vwap === undefined) {
+    warnings.push("VWAP unavailable; no VWAP filter applied.");
+  }
+
+  const entry = fvg.midpoint;
+  const alternateEntry = fvg.candleOpen;
+  const stop = sweepResult.side === "long"
+    ? Math.min(sweepResult.sweep.sweptLevel, fvg.low)
+    : Math.max(sweepResult.sweep.sweptLevel, fvg.high);
+  const risk = sweepResult.side === "long" ? entry - stop : stop - entry;
+  const recentRange = Math.max(averageRange(candles.slice(Math.max(0, returnCandle.index - 30), returnCandle.index)), 1);
+  if (risk <= recentRange * 0.25) {
+    blockers.push("Silver Bullet v2 stop distance is unrealistically tiny relative to recent range.");
+    missingConditions.push("realistic_stop_distance");
+  }
+  const target = blockers.length ? undefined : nearestLogicalTarget(candles, sweepResult.side, entry, risk, returnCandle.index);
+  const rr = calculateRr(sweepResult.side, entry, stop, target);
+  if (target === undefined || rr === undefined || rr < 2 || rr > 15) {
+    blockers.push(`Silver Bullet v2 target/RR is not realistic (${rr?.toFixed(2) ?? "n/a"}R).`);
+    missingConditions.push("realistic_target_rr");
+  } else {
+    presentConditions.push("realistic_target_rr");
+  }
+
+  return buildCandidate({
+    source: { ...input, timeframe },
+    strategyId,
+    generatedAt,
+    status: blockers.length ? "blocked_unrealistic_rr" : "replay_required",
     latestCandleTimestamp: latest.timestamp,
     sessionWindow,
     side: sweepResult.side,

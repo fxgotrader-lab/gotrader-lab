@@ -98,6 +98,8 @@ OpenClaw may suggest draft proposal intent for these research-only families:
 - `pd_array_alignment_review`
 - `cmd_paper_watchlist_tracking_review`
 - `ict_hypothesis_validation`
+- `silver_bullet_v2_refined_research`
+- `turtle_soup_v1`
 
 If a requested family is unknown, OpenClaw must mark it as planned or needs human review. Unknown families must not be treated as executable.
 

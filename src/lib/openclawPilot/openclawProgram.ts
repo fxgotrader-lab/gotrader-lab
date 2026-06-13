@@ -110,7 +110,9 @@ export const openClawPilotProgram: OpenClawPilotProgram = {
     "timing_window_sensitivity",
     "pd_array_alignment_review",
     "cmd_paper_watchlist_tracking_review",
-    "ict_hypothesis_validation"
+    "ict_hypothesis_validation",
+    "silver_bullet_v2_refined_research",
+    "turtle_soup_v1"
   ],
   permissions: openClawPilotPermissions,
   safetyBoundary: openClawPilotSafetyBoundary,

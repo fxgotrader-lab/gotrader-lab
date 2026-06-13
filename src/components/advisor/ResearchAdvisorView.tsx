@@ -1809,7 +1809,7 @@ function AdvisorStrategyLibraryCard({ currentRead }: { currentRead: IctCurrentRe
         <AdvisorReadout label="Paper gate" value={currentRead.paperWatchlistEligible ? "paper-watchlist" : "blocked"} detail={gateSummary} />
       </div>
       <p className="mt-3 text-xs leading-5 text-slate-500">
-        {strategyDefinitions.length} registered strategies, including Silver Bullet executable research and seven ICT placeholder definitions. Placeholder definitions are intake-only until detectors are implemented.
+        {strategyDefinitions.length} registered strategies, including Silver Bullet v1/v2 and Turtle Soup executable research. Placeholder definitions are intake-only until detectors are implemented.
       </p>
       <p className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3 text-sm leading-6 text-slate-300">
         {gateSummary} Strategy definitions do not create evidence by themselves; replay, walk-forward, evidence,

@@ -108,7 +108,7 @@ export const STRATEGY_DEFINITIONS: StrategyDefinition[] = [
     status: "replay_required",
     detectorStatus: "executable_research",
     description:
-      "Research-only Silver Bullet detector for the 03:00, 10:00, and 14:00 New York one-hour windows. It requires a liquidity sweep, matching FVG, return to FVG, explicit target/invalidation, and at least 2R before replay validation.",
+      "Rejected/research-only baseline Silver Bullet detector for comparison. The 90-day audit showed weak target-first behavior and OOS degradation, so v1 cannot be promoted.",
     side: "both",
     supportedSymbols: ["MNQ", "NQ", "USTECH", "US30", "YM", "US500", "ES", "XAUUSD", "EURUSD.pro", "BTCUSD"],
     primaryTimeframes: ["1m"],
@@ -173,6 +173,9 @@ export const STRATEGY_DEFINITIONS: StrategyDefinition[] = [
       }
     ],
     forbiddenPromotionReasons: [
+      "90-day audit rejected v1",
+      "OOS degraded",
+      "target-first rate too low",
       "outside killzone",
       "missing sweep",
       "missing FVG",
@@ -180,6 +183,99 @@ export const STRATEGY_DEFINITIONS: StrategyDefinition[] = [
       "RR below 2",
       "mock/sample source",
       "high-impact news"
+    ],
+    authority: STRATEGY_LIBRARY_AUTHORITY
+  },
+  {
+    id: "silver_bullet_v2_refined_research",
+    name: "ICT Silver Bullet v2 Refined Research",
+    family: "silver_bullet",
+    status: "replay_required",
+    detectorStatus: "executable_research",
+    description:
+      "Refined research-only Silver Bullet detector with stricter sweep quality, displacement/FVG timing, return timing, context alignment, realistic target, and RR caps. No promotion without replay/OOS evidence.",
+    side: "both",
+    supportedSymbols: ["MNQ", "NQ", "USTECH", "US30", "YM", "US500", "ES", "XAUUSD", "EURUSD.pro", "BTCUSD"],
+    primaryTimeframes: ["1m"],
+    higherTimeframes: ["5m", "15m"],
+    sourceRequirements: mt5ResearchSource,
+    requiredConditions: [
+      {
+        id: "silver_bullet_killzone",
+        label: "Silver Bullet killzone",
+        description: "Candidate must form inside 03:00-04:00, 10:00-11:00, or 14:00-15:00 New York.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "meaningful_liquidity_sweep",
+        label: "Meaningful liquidity sweep",
+        description: "Sweep must take a meaningful prior swing/equal high-low inside the first half of the window.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "timely_displacement_fvg",
+        label: "Timely displacement FVG",
+        description: "Directional 1m FVG must form within five candles and have meaningful displacement/body size.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "timely_return_to_fvg",
+        label: "Timely return to FVG",
+        description: "Return must happen within ten candles and cannot fully violate the FVG first.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "context_alignment",
+        label: "5m/15m context alignment",
+        description: "Available 5m/15m context should align with candidate direction.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "realistic_target_rr",
+        label: "Realistic target/RR",
+        description: "Stop cannot be unrealistically tiny; target must be nearest logical liquidity and RR must be 2R-15R.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      }
+    ],
+    invalidationRules: [
+      "Long invalidation below swept sell-side wick/FVG boundary.",
+      "Short invalidation above swept buy-side wick/FVG boundary.",
+      "Unrealistically tiny stop distance blocks the candidate."
+    ],
+    targetRules: [
+      "Target nearest logical liquidity pool, not a far historical extreme.",
+      "Diagnostic scoring caps RR at realistic research range; excessive RR blocks v2."
+    ],
+    minimumRR: 2,
+    sessionRules: [
+      "Use America/New_York timing for Silver Bullet windows.",
+      "Sweep must occur early enough to leave time for delivery."
+    ],
+    regimeRules: [
+      "Chop/range without directional displacement blocks v2.",
+      "High-impact news within 30 minutes blocks candidate creation when known.",
+      "Unknown VWAP/news state is warning-only, not fabricated."
+    ],
+    validationRequirements: compactValidation,
+    paperDemoRequirements: [
+      {
+        id: "silver_bullet_v2_replay_oos",
+        label: "Silver Bullet v2 replay/OOS",
+        required: true,
+        detail: "V2 can only progress after 90-day replay, walk-forward/OOS, evidence, maturity, readiness checklist, and committee review."
+      }
+    ],
+    forbiddenPromotionReasons: [
+      "weak sweep",
+      "late FVG",
+      "weak displacement",
+      "late return",
+      "bad FVG violation",
+      "unrealistic RR",
+      "no context alignment",
+      "mock/sample source",
+      "high-impact news",
+      "missing replay/OOS"
     ],
     authority: STRATEGY_LIBRARY_AUTHORITY
   },
@@ -209,19 +305,92 @@ export const STRATEGY_DEFINITIONS: StrategyDefinition[] = [
     ],
     forbiddenPromotionReasons: ["IFVG detector not implemented"]
   }),
-  researchOnlyPlaceholderStrategy({
-    id: "turtle_soup_research_v1",
-    name: "Turtle Soup Research v1",
+  {
+    id: "turtle_soup_v1",
+    name: "Turtle Soup v1",
     family: "turtle_soup",
+    status: "replay_required",
+    detectorStatus: "executable_research",
     description:
-      "Registered research definition for false-breakout reversal review. It remains placeholder-only until sweep, reclaim, and target logic are deterministic.",
+      "Executable research detector for Turtle Soup false-breakout reversal. It uses 15m/1h setup range, 5m sweep/rejection/MSS/retest, and minimum 2.5R before replay validation.",
+    side: "both",
+    supportedSymbols: ["MNQ", "NQ", "USTECH", "US30", "YM", "US500", "ES", "XAUUSD", "EURUSD.pro", "BTCUSD"],
+    primaryTimeframes: ["5m"],
+    higherTimeframes: ["15m", "1h"],
+    sourceRequirements: mt5ResearchSource,
     requiredConditions: [
-      { id: "prior_high_low_sweep", label: "Prior high/low sweep", description: "A previous high or low must be swept." },
-      { id: "failed_breakout_reclaim", label: "Failed breakout reclaim", description: "Price must reclaim the swept level." },
-      { id: "opposing_liquidity_target", label: "Opposing liquidity target", description: "Target must be the next opposing liquidity pool." }
+      {
+        id: "setup_range",
+        label: "15m/1h setup range",
+        description: "A clear setup range must exist; trending/middle-of-range conditions block.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "range_liquidity_sweep",
+        label: "Range liquidity sweep",
+        description: "Sweep highs for short or sweep lows for long.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "immediate_rejection",
+        label: "Immediate rejection",
+        description: "Price must reject the sweep within one to three 5m candles.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "market_structure_shift",
+        label: "5m MSS",
+        description: "5m market structure shift must confirm reversal direction.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "target_invalidation_rr",
+        label: "Target/invalidation/RR",
+        description: "Stop beyond sweep wick, target opposing liquidity/range side, minimum 2.5R.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      }
     ],
-    forbiddenPromotionReasons: ["Turtle Soup detector not implemented"]
-  }),
+    invalidationRules: [
+      "Short invalidation beyond swept high wick.",
+      "Long invalidation beyond swept low wick.",
+      "Stale sweep beyond ten 5m candles blocks candidate."
+    ],
+    targetRules: [
+      "Short target is opposing range low or sell-side liquidity.",
+      "Long target is opposing range high or buy-side liquidity.",
+      "Minimum reward/risk is 2.5R before validation can be queued."
+    ],
+    minimumRR: 2.5,
+    sessionRules: [
+      "Best sessions: London Open and New York Open.",
+      "Use America/New_York timing."
+    ],
+    regimeRules: [
+      "Trending market with no range blocks Turtle Soup.",
+      "Middle-of-range candidates block.",
+      "High-impact news within 15 minutes blocks when known."
+    ],
+    validationRequirements: compactValidation,
+    paperDemoRequirements: [
+      {
+        id: "turtle_soup_replay_oos",
+        label: "Turtle Soup replay/OOS",
+        required: true,
+        detail: "Turtle Soup requires 90-day replay, walk-forward/OOS, evidence, maturity, readiness checklist, and committee review."
+      }
+    ],
+    forbiddenPromotionReasons: [
+      "stale sweep",
+      "no rejection",
+      "no MSS",
+      "middle of range",
+      "RR below 2.5",
+      "mock/sample source",
+      "high-impact news",
+      "missing replay/OOS"
+    ],
+    authority: STRATEGY_LIBRARY_AUTHORITY
+  },
   researchOnlyPlaceholderStrategy({
     id: "crt_research_v1",
     name: "Candle Range Theory Research v1",
@@ -549,6 +718,9 @@ export const suggestStrategyIdForRecognition = (input: {
     input.targetSubsystem,
     ...(input.candidateFamilies ?? [])
   ].filter(Boolean).join(" ").toLowerCase();
+  if (/silver[_\s-]*bullet.*v2|v2.*silver[_\s-]*bullet|refined.*silver[_\s-]*bullet|silver_bullet_v2/.test(text)) {
+    return "silver_bullet_v2_refined_research";
+  }
   if (input.family === "silver_bullet" || /silver[_\s-]*bullet/.test(text)) {
     return "silver_bullet_v1";
   }
@@ -559,7 +731,7 @@ export const suggestStrategyIdForRecognition = (input: {
     return "ifvg_research_v1";
   }
   if (input.family === "turtle_soup" || /turtle[_\s-]*soup/.test(text)) {
-    return "turtle_soup_research_v1";
+    return "turtle_soup_v1";
   }
   if (input.family === "crt" || /\bcrt\b|candle[_\s-]*range/.test(text)) {
     return "crt_research_v1";
