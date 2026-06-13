@@ -39,6 +39,7 @@
     "test:cmd-independent-date-gate": "node scripts/test-cmd-independent-date-gate.mjs",
     "test:strategy-library": "node scripts/test-strategy-library.mjs",
     "test:ict-silver-bullet": "node scripts/test-ict-silver-bullet.mjs",
+    "test:silver-bullet-performance": "node scripts/test-silver-bullet-performance.mjs",
     "test:ict-cmd-paper-tracking": "node scripts/test-ict-cmd-paper-tracking.mjs",
     "test:ict-multi-timeframe-context": "node scripts/test-ict-multi-timeframe-context.mjs",
     "test:ict-activate-market-pipeline": "node scripts/test-ict-activate-market-pipeline.mjs",
