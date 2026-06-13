@@ -46,7 +46,7 @@ Primary source:
 | `silver_bullet_v1` | `no_edge` | 11,640 | 152 | 10.53% | 86.84% | 63 | 4 | `degraded` |
 | `silver_bullet_v2_refined_research` | `insufficient_data` | 11,640 | 3 | 33.33% | 66.67% | 3 | 3 | `insufficient_data` |
 | `turtle_soup_v1` | `too_strict` | 2,730 | 0 | 0.00% | 0.00% | 0 | 0 | `insufficient_data` |
-| `cisd_research_v1` | `insufficient_data` | 0 | 0 | 0.00% | 0.00% | 0 | 0 | detector not implemented |
+| `cisd_v1` | `ready_for_more_validation` | 0 | 0 | 0.00% | 0.00% | 0 | 0 | dedicated CISD diagnostic now available |
 | `ifvg_research_v1` | `insufficient_data` | 0 | 0 | 0.00% | 0.00% | 0 | 0 | detector not implemented |
 | `ote_research_v1` | `insufficient_data` | 0 | 0 | 0.00% | 0.00% | 0 | 0 | detector not implemented |
 | `market_map_only_diagnostic_v1` | `no_edge` | 0 | 0 | 0.00% | 0.00% | 0 | 0 | diagnostic only |
@@ -183,11 +183,11 @@ Decision: keep Turtle Soup research-only/replay-required.
 
 ## Placeholder And Diagnostic Strategies
 
-`cisd_research_v1`, `ifvg_research_v1`, and `ote_research_v1` are registered, but they do not yet have deterministic executable detectors. Their current “zero candidates” result is not strategy failure; it is missing implementation.
+`ifvg_research_v1` and `ote_research_v1` are registered, but they do not yet have deterministic executable detectors. Their current “zero candidates” result is not strategy failure; it is missing implementation. `cisd_v1` has since been implemented as an executable research detector and should be reviewed through `docs/cisd-performance-audit.md`.
 
 Required next implementation before performance measurement:
 
-- CISD: define deterministic delivery-state shift and displacement rules.
+- CISD: use `test:cisd-performance` as the baseline; v1 is executable research but rejected by current 90-day replay/OOS outcomes.
 - IFVG: define deterministic invalidated-FVG, inversion retest, and displacement rules.
 - OTE: define no-hindsight swing selection, retracement zone, and PD-array confluence.
 

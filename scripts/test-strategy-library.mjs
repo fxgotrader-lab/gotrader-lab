@@ -170,7 +170,7 @@ async function main() {
     "turtle_soup_v1",
     "crt_research_v1",
     "ote_research_v1",
-    "cisd_research_v1",
+    "cisd_v1",
     "amd_power_of_three_research_v1"
   ];
   for (const strategyId of newStrategyIds) {
@@ -182,7 +182,13 @@ async function main() {
   assert.equal(registry.getStrategyDefinition("silver_bullet_v2_refined_research").status, "replay_required");
   assert.equal(registry.getStrategyDefinition("turtle_soup_v1").detectorStatus, "executable_research");
   assert.equal(registry.getStrategyDefinition("turtle_soup_v1").status, "replay_required");
-  for (const strategyId of newStrategyIds.filter((id) => !["silver_bullet_v1", "silver_bullet_v2_refined_research", "turtle_soup_v1"].includes(id))) {
+  assert.equal(registry.getStrategyDefinition("cisd_v1").detectorStatus, "executable_research");
+  assert.equal(registry.getStrategyDefinition("cisd_v1").status, "replay_required");
+  assert.equal(
+    registry.suggestStrategyIdForRecognition({ modelName: "CISD state shift" }),
+    "cisd_v1"
+  );
+  for (const strategyId of newStrategyIds.filter((id) => !["silver_bullet_v1", "silver_bullet_v2_refined_research", "turtle_soup_v1", "cisd_v1"].includes(id))) {
     assert.equal(registry.getStrategyDefinition(strategyId).detectorStatus, "research_only_placeholder");
   }
   assert.ok(registry.getStrategyDefinition("ict_cmd_short_paper_watchlist_v1"));

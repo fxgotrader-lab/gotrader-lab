@@ -94,7 +94,7 @@ const inferOpenClawPilotStrategyId = (input: { candidateFamilies: string[]; targ
     return "ote_research_v1";
   }
   if (/\bcisd\b|change in state/.test(text)) {
-    return "cisd_research_v1";
+    return "cisd_v1";
   }
   if (/\bamd\b|power of three|accumulation.*manipulation.*distribution/.test(text)) {
     return "amd_power_of_three_research_v1";

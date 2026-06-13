@@ -45,6 +45,8 @@
     "test:silver-bullet-v2-performance": "node scripts/test-silver-bullet-v2-performance.mjs",
     "test:ict-turtle-soup": "node scripts/test-ict-turtle-soup.mjs",
     "test:turtle-soup-performance": "node scripts/test-turtle-soup-performance.mjs",
+    "test:ict-cisd": "node scripts/test-ict-cisd.mjs",
+    "test:cisd-performance": "node scripts/test-cisd-performance.mjs",
     "test:ict-cmd-paper-tracking": "node scripts/test-ict-cmd-paper-tracking.mjs",
     "test:ict-multi-timeframe-context": "node scripts/test-ict-multi-timeframe-context.mjs",
     "test:ict-activate-market-pipeline": "node scripts/test-ict-activate-market-pipeline.mjs",

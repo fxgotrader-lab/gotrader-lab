@@ -66,6 +66,8 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictSilverBullet.ts" },
   { root: sourceRoot, file: "ictTurtleSoupTypes.ts" },
   { root: sourceRoot, file: "ictTurtleSoup.ts" },
+  { root: sourceRoot, file: "ictCisdTypes.ts" },
+  { root: sourceRoot, file: "ictCisd.ts" },
   { root: sourceRoot, file: "ictResearchReportTypes.ts" },
   { root: sourceRoot, file: "ictRealReplayRunner.ts" },
   { root: sourceRoot, file: "ictManualReplayReview.ts" },

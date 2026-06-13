@@ -112,7 +112,8 @@ export const openClawPilotProgram: OpenClawPilotProgram = {
     "cmd_paper_watchlist_tracking_review",
     "ict_hypothesis_validation",
     "silver_bullet_v2_refined_research",
-    "turtle_soup_v1"
+    "turtle_soup_v1",
+    "cisd_v1"
   ],
   permissions: openClawPilotPermissions,
   safetyBoundary: openClawPilotSafetyBoundary,

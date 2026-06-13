@@ -218,7 +218,7 @@ const cmdAudit = (report) => {
   };
 };
 
-const placeholderAudit = ({ strategyId, source, reason, status = "insufficient_data", nextAction }) => ({
+const placeholderAudit = ({ strategyId, source, reason, status = "insufficient_data", issueCategory, nextAction }) => ({
   strategyId,
   source,
   totalEvaluatedWindows: 0,
@@ -233,7 +233,7 @@ const placeholderAudit = ({ strategyId, source, reason, status = "insufficient_d
   oosVerdict: "not_available",
   status,
   diagnosis: reason,
-  issueCategory: status === "no_edge" ? "diagnostic_only" : "detector_not_implemented",
+  issueCategory: issueCategory ?? (status === "no_edge" ? "diagnostic_only" : "detector_not_implemented"),
   nextAction
 });
 
@@ -292,10 +292,12 @@ async function main() {
     silverV2Audit(silverV2),
     turtleSoupAudit(turtleSoup),
     placeholderAudit({
-      strategyId: "cisd_research_v1",
+      strategyId: "cisd_v1",
       source: defaultSource,
-      reason: "CISD is registered as a research-only placeholder; no deterministic detector/replay contract exists yet.",
-      nextAction: "Implement first-class CISD state-change/displacement detector before measuring edge."
+      reason: "CISD now has a dedicated executable research detector and 90-day performance diagnostic; use test:cisd-performance for current edge assessment.",
+      status: "ready_for_more_validation",
+      issueCategory: "dedicated_diagnostic_available",
+      nextAction: "Review docs/cisd-performance-audit.md and refine only if replay/OOS evidence justifies it."
     }),
     placeholderAudit({
       strategyId: "ifvg_research_v1",

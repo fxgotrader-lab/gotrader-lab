@@ -417,19 +417,98 @@ export const STRATEGY_DEFINITIONS: StrategyDefinition[] = [
     ],
     forbiddenPromotionReasons: ["OTE detector not implemented"]
   }),
-  researchOnlyPlaceholderStrategy({
-    id: "cisd_research_v1",
-    name: "CISD Research v1",
+  {
+    id: "cisd_v1",
+    name: "CISD v1",
     family: "cisd",
+    status: "replay_required",
+    detectorStatus: "executable_research",
     description:
-      "Registered research definition for Change in State of Delivery. It remains placeholder-only until displacement/state-change rules are deterministic.",
+      "Executable research detector for Change in State of Delivery. It requires clear prior delivery, an opposite body close beyond a significant prior body, body-zone retest, structural stop, liquidity target, and minimum 2R before replay validation.",
+    side: "both",
+    supportedSymbols: ["MNQ", "NQ", "USTECH", "US30", "YM", "US500", "ES", "XAUUSD", "EURUSD.pro", "BTCUSD"],
+    primaryTimeframes: ["5m", "15m"],
+    higherTimeframes: ["15m", "1h", "4h", "1d"],
+    sourceRequirements: mt5ResearchSource,
     requiredConditions: [
-      { id: "delivery_state_shift", label: "Delivery state shift", description: "A clear shift in delivery state must be detected." },
-      { id: "cisd_displacement", label: "CISD displacement", description: "Displacement must confirm the state change." },
-      { id: "cisd_continuation_context", label: "Continuation context", description: "Continuation or reversal context must be compactly defined." }
+      {
+        id: "prior_delivery",
+        label: "Prior delivery",
+        description: "Price must be delivering clearly in one direction before the shift.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "opposite_body_close",
+        label: "Opposite body close",
+        description: "Bullish CISD closes beyond a bearish delivery body; bearish CISD closes beyond a bullish delivery body.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "strong_cisd_candle",
+        label: "Strong CISD candle",
+        description: "The delivery-shift candle must not be doji/minimal body.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "body_retest_entry",
+        label: "Body-zone retest",
+        description: "Entry is the retest of the CISD candle open-to-close body zone.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "opposing_liquidity_target",
+        label: "Opposing liquidity target",
+        description: "Target must be the next opposing liquidity pool in the new delivery direction.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "target_invalidation_rr",
+        label: "Target/invalidation/RR",
+        description: "Stop beyond full CISD candle including wick and minimum 2R are required before replay validation.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      }
     ],
-    forbiddenPromotionReasons: ["CISD detector not implemented"]
-  }),
+    invalidationRules: [
+      "Long invalidation below the full bullish CISD candle wick.",
+      "Short invalidation above the full bearish CISD candle wick.",
+      "Multiple opposite CISD signals in chop block the candidate."
+    ],
+    targetRules: [
+      "Long target is the next buy-side liquidity pool above the body retest entry.",
+      "Short target is the next sell-side liquidity pool below the body retest entry.",
+      "Minimum reward/risk is 2R before validation can be queued."
+    ],
+    minimumRR: 2,
+    sessionRules: [
+      "Primary use is RTH, with highest probability near the RTH open.",
+      "Use America/New_York session timing for classification."
+    ],
+    regimeRules: [
+      "Clear delivery must precede the state change.",
+      "Chop and repeated opposite shifts block candidate creation.",
+      "High-impact news within 30 minutes blocks when known."
+    ],
+    validationRequirements: compactValidation,
+    paperDemoRequirements: [
+      {
+        id: "cisd_replay_oos",
+        label: "CISD replay/OOS",
+        required: true,
+        detail: "CISD can only progress after replay, OOS/walk-forward, evidence, maturity, readiness checklist, and committee review."
+      }
+    ],
+    forbiddenPromotionReasons: [
+      "no prior delivery",
+      "weak CISD candle",
+      "chop",
+      "no body-zone retest",
+      "RR below 2",
+      "mock/sample source",
+      "high-impact news",
+      "missing replay/OOS"
+    ],
+    authority: STRATEGY_LIBRARY_AUTHORITY
+  },
   researchOnlyPlaceholderStrategy({
     id: "amd_power_of_three_research_v1",
     name: "AMD Power of Three Research v1",
@@ -740,7 +819,7 @@ export const suggestStrategyIdForRecognition = (input: {
     return "ote_research_v1";
   }
   if (input.family === "cisd" || /\bcisd\b|change in state/.test(text)) {
-    return "cisd_research_v1";
+    return "cisd_v1";
   }
   if (input.family === "amd" || /\bamd\b|power of three|accumulation.*manipulation.*distribution/.test(text)) {
     return "amd_power_of_three_research_v1";
