@@ -367,6 +367,7 @@ export async function runAutoPaperDemoCycle(config: AutoPaperDemoCycleConfig = {
   const candidate = validationEntry
     ? buildPaperDemoCandidateFromContext({
         checklist,
+        cmdIndependentDateEvidence: config.cmdIndependentDateEvidence,
         source: resolvedSource as SourceStatusSnapshot,
         timestamp: nowIso(),
         validationChain: validationEntry
@@ -389,6 +390,14 @@ export async function runAutoPaperDemoCycle(config: AutoPaperDemoCycleConfig = {
   } else if (candidate && eligibility && !eligibility.eligible) {
     status = blockers.length ? status : "paper_demo_blocked";
     blockers.push(...eligibility.blockers);
+    if (candidate.cmdIndependentDateGate && !candidate.cmdIndependentDateGate.paperDemoEligible) {
+      decisions.push({
+        stage: "paper_demo_blocked",
+        status: "blocked",
+        reason: candidate.cmdIndependentDateGate.blockerReason ?? "CMD independent-date gate blocked Paper-Demo eligibility.",
+        nextAction: candidate.cmdIndependentDateGate.nextAction
+      });
+    }
     eventFor(events, "paper_demo_blocked", "Paper-Demo blocked", eligibility.nextAction, "warning");
   }
 

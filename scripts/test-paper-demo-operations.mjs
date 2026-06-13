@@ -27,6 +27,11 @@ const modules = [
     sourceRoot: path.join(projectRoot, "src", "lib", "validationChain"),
     targetRoot: path.join(outRoot, "validationChain"),
     sourceFiles: ["validationChainTypes.ts", "buildValidationChain.ts", "validationChainStore.ts"]
+  },
+  {
+    sourceRoot: path.join(projectRoot, "src", "lib", "ict-strategy-suite"),
+    targetRoot: path.join(outRoot, "ict-strategy-suite"),
+    sourceFiles: ["ictCmdIndependentDateGateTypes.ts", "ictCmdIndependentDateGate.ts"]
   }
 ];
 
@@ -49,6 +54,8 @@ function compileForNode() {
       const rewritten = transpiled
         .replace(/from\s+"\.\/([^"]+)"/g, 'from "./$1.mjs"')
         .replace(/from\s+'\.\/([^']+)'/g, "from './$1.mjs'")
+        .replace(/from\s+"\.\.\/ict-strategy-suite\/([^"]+)"/g, 'from "./ict-strategy-suite/$1.mjs"')
+        .replace(/from\s+'\.\.\/ict-strategy-suite\/([^']+)'/g, "from './ict-strategy-suite/$1.mjs'")
         .replace(/from\s+"\.\.\/validationChain\/([^"]+)"/g, 'from "./validationChain/$1.mjs"')
         .replace(/from\s+'\.\.\/validationChain\/([^']+)'/g, "from './validationChain/$1.mjs'");
       fs.writeFileSync(path.join(moduleConfig.targetRoot, file.replace(/\.ts$/, ".mjs")), rewritten, "utf8");
@@ -96,7 +103,7 @@ const validationChain = {
   researchOnly: true,
   recognitionId: "recognition_cmd_1",
   recognitionType: "full_model",
-  setupLabel: "CMD paper watchlist",
+  setupLabel: "Validated research setup",
   candidateFamily: "known_model",
   requiredValidation: "replay_walk_forward_evidence_maturity",
   symbol: "MNQ",
@@ -145,6 +152,22 @@ const validationChain = {
   }
 };
 
+const cmdIndependentDateEvidence = {
+  modelName: "consolidation_manipulation_distribution",
+  side: "short",
+  sourceProvider: "mt5_read_only",
+  sourceFingerprint: source.sourceFingerprint,
+  timeframe: "5m",
+  candidateCount: 24,
+  uniqueTradingDates: 3,
+  activeRollingWindows: 2,
+  targetFirstRate: 0.72,
+  invalidationFirstRate: 0.12,
+  averageRr: 2.1,
+  robustnessClassification: "promising_but_small_sample",
+  oosVerdict: "promising"
+};
+
 async function main() {
   compileForNode();
   installLocalStorage();
@@ -176,6 +199,26 @@ async function main() {
   });
   assert.equal(mod.buildPaperDemoEligibility(missingChainCandidate).eligible, false, "missing validation chain blocks candidate");
   assert.match(mod.buildPaperDemoEligibility(missingChainCandidate).blockers.join(" "), /Validation chain/i);
+
+  const cmdBlockedCandidate = mod.buildPaperDemoCandidateFromContext({
+    source,
+    validationChain: { ...validationChain, setupLabel: "CMD paper watchlist" },
+    checklist: { paperDemoCandidate: false }
+  });
+  const cmdBlockedEligibility = mod.buildPaperDemoEligibility(cmdBlockedCandidate);
+  assert.equal(cmdBlockedEligibility.eligible, false, "CMD without independent-date evidence must be blocked");
+  assert.match(cmdBlockedEligibility.blockers.join(" "), /date-concentrated|independent-date/i);
+  assert.match(cmdBlockedEligibility.nextAction, /independent-date CMD validation/i);
+
+  const cmdGatePassedCandidate = mod.buildPaperDemoCandidateFromContext({
+    source,
+    validationChain: { ...validationChain, setupLabel: "CMD paper watchlist" },
+    checklist: { paperDemoCandidate: false },
+    cmdIndependentDateEvidence
+  });
+  const cmdGatePassedEligibility = mod.buildPaperDemoEligibility(cmdGatePassedCandidate);
+  assert.equal(cmdGatePassedEligibility.eligible, true, "CMD with independent-date evidence can continue normal Paper-Demo checks");
+  assert.equal(cmdGatePassedCandidate.cmdIndependentDateGate.status, "passed");
 
   const unsafeCandidate = { ...eligibleCandidate, authority: { ...authorityNone, executionAuthority: "trade" } };
   assert.equal(mod.buildPaperDemoEligibility(unsafeCandidate).eligible, false, "unsafe authority blocks candidate");

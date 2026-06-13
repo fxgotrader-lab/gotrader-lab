@@ -32,6 +32,12 @@ const safety = {
   secretsExcluded: true as const
 };
 
+const CMD_MODEL_NAME = "consolidation_manipulation_distribution";
+const CMD_INDEPENDENT_DATE_BLOCKER =
+  "CMD lane is promising but date-concentrated; needs independent-date validation.";
+const CMD_INDEPENDENT_DATE_NEXT_ACTION =
+  "Run independent-date CMD validation over 90-day history.";
+
 const statusWeight = (status?: string) =>
   status === "approved_research_candidate"
     ? 4
@@ -163,8 +169,8 @@ const modelLabelFor = (packet: IctAdvisorPacket) =>
 
 const paperWatchlistReasonFor = (packet: IctAdvisorPacket, lane: IctModelQualityLane, reasons: string[]) => {
   const modelName = primaryModelNameFor(packet);
-  if (lane === "paper_watchlist" && modelName === "consolidation_manipulation_distribution") {
-    return "CMD paper-watchlist - paper-test only.";
+  if (lane === "paper_watchlist" && modelName === CMD_MODEL_NAME) {
+    return `CMD paper-watchlist - paper-test only. ${CMD_INDEPENDENT_DATE_BLOCKER}`;
   }
   if (lane === "paper_watchlist") return `${modelLabelFor(packet)} paper-watchlist - paper-test only.`;
   if (lane === "watchlist" && modelName === "accumulation_manipulation_expansion") {
@@ -312,9 +318,11 @@ const readinessSummaryFor = (input: {
 
 const nextActionFor = (packet: IctAdvisorPacket, reasons: string[]) => {
   const status = packet.approvedProfileDecision.status;
+  const modelName = primaryModelNameFor(packet);
   if (!packet.activeSource.candleCount) return "Check MT5 Read Only or activate a canonical research source.";
   if (!packet.htfTimeframes.length) return "Fetch 15m and 1h MT5 context before trusting the current read.";
   if (status === "approved_research_candidate") return "Run replay and walk-forward before any readiness review.";
+  if (status === "paper_watchlist_candidate" && modelName === CMD_MODEL_NAME) return CMD_INDEPENDENT_DATE_NEXT_ACTION;
   if (status === "paper_watchlist_candidate") return "Paper-watchlist only: run explicit paper simulation and collect replay evidence; no readiness promotion.";
   if (status === "watchlist_candidate") return "Keep on watchlist and test the blocking evidence with replay.";
   if (reasons.some((reason) => /rr|target/i.test(reason))) return "Wait for a cleaner target and RR profile.";
@@ -698,6 +706,11 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
   const paperWatchlistReason = paperWatchlistReasonFor(packet, modelQualityLane, reasons);
   const paperWatchlistEvidenceSummary = paperWatchlistEvidenceSummaryFor(packet, modelQualityLane);
   const paperWatchlistModelName = primaryModelNameFor(packet);
+  const cmdIndependentDateGateRequired =
+    modelQualityLane === "paper_watchlist" && paperWatchlistModelName === CMD_MODEL_NAME;
+  const cmdIndependentDateGateStatus = cmdIndependentDateGateRequired ? "overfit_risk" as const : undefined;
+  const cmdIndependentDateGateReason = cmdIndependentDateGateRequired ? CMD_INDEPENDENT_DATE_BLOCKER : undefined;
+  const cmdIndependentDateGateNextAction = cmdIndependentDateGateRequired ? CMD_INDEPENDENT_DATE_NEXT_ACTION : undefined;
   const analysisTimeframesUsed = analysisTimeframesFor(packet);
   const missingTimeframes = missingTimeframesFor(packet);
   const analysisTimeframesRequested = packet.marketAnalysisContext?.analysisTimeframesRequested ?? ["W1", "D1", "H4", "H1", "M15", "M5"];
@@ -808,6 +821,10 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     paperWatchlistModelName: paperWatchlistEligible ? paperWatchlistModelName : undefined,
     paperWatchlistReason,
     paperWatchlistEvidenceSummary,
+    cmdIndependentDateGateRequired,
+    cmdIndependentDateGateStatus,
+    cmdIndependentDateGateReason,
+    cmdIndependentDateGateNextAction,
     paperSimEligibilityStatus: paperSim.paperSimEligibilityStatus,
     paperSimEligibilityReason: paperSim.paperSimEligibilityReason,
     paperSimAllowed: paperSim.paperSimAllowed,
@@ -859,10 +876,10 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     smtReason,
     riskReason,
     topReasons: reasons.length
-      ? uniqueReasons([universalRecognition.opportunitySummary, opportunityApprovalNote, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, ...reasons])
+      ? uniqueReasons([universalRecognition.opportunitySummary, opportunityApprovalNote, cmdIndependentDateGateReason, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, ...reasons])
       : recommended.decision === "research_only"
-        ? uniqueReasons([universalRecognition.opportunitySummary, opportunityApprovalNote, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, "Research candidate generated; validation is still required before any readiness review."])
-        : uniqueReasons([universalRecognition.opportunitySummary, opportunityApprovalNote, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, "No explicit blocker was provided by the compact advisor packet."]),
+        ? uniqueReasons([universalRecognition.opportunitySummary, opportunityApprovalNote, cmdIndependentDateGateReason, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, "Research candidate generated; validation is still required before any readiness review."])
+        : uniqueReasons([universalRecognition.opportunitySummary, opportunityApprovalNote, cmdIndependentDateGateReason, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, "No explicit blocker was provided by the compact advisor packet."]),
     nextAction: opportunityDetected && modelQualityLane !== "approved"
       ? selfImprovementHypothesis?.nextAction ?? recognizedOpportunity.nextAction
       : universalRecognition.tier === "pd_array_setup" || universalRecognition.tier === "scalp_setup"
@@ -898,6 +915,8 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
       opportunityLaneRecommendation: recognizedOpportunity.laneRecommendation,
       selfImprovementHypothesisStatus: selfImprovementHypothesis?.status,
       selfImprovementHypothesisReason: selfImprovementNote,
+      cmdIndependentDateGateStatus,
+      cmdIndependentDateGateReason,
       fvgTargetStatus,
       targetConstructionStatus,
       invalidationConstructionStatus,

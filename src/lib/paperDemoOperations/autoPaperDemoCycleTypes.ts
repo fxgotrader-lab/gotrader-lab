@@ -1,5 +1,6 @@
 import type { PaperDemoAuthority, PaperDemoEligibilityResult, PaperDemoReport } from "./paperDemoTypes";
 import type { PaperDemoChecklistSummary } from "../readiness";
+import type { IctCmdIndependentDateEvidence } from "../ict-strategy-suite/ictCmdIndependentDateGateTypes";
 import type {
   ValidationChainEvidenceSummary,
   ValidationChainRecognitionType,
@@ -103,6 +104,7 @@ export interface AutoPaperDemoCycleConfig {
   replaySummary?: ValidationChainReplaySummary;
   walkForwardSummary?: ValidationChainWalkForwardSummary;
   evidenceSummary?: ValidationChainEvidenceSummary;
+  cmdIndependentDateEvidence?: IctCmdIndependentDateEvidence;
   checklistSummary?: PaperDemoChecklistSummary;
   deterministicReplayRunner?: () => Promise<ValidationChainReplaySummary | undefined>;
   deterministicWalkForwardRunner?: () => Promise<ValidationChainWalkForwardSummary | undefined>;

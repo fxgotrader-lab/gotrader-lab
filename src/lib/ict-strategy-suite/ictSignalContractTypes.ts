@@ -1,5 +1,6 @@
 import type { IctBias, IctLocation, IctSide } from "./ictAdvisorTypes";
 import type { IctApprovedCandidateStatus, IctHtfAlignmentBreakdown } from "./ictApprovedSetupProfileTypes";
+import type { IctCmdIndependentDateGateStatus } from "./ictCmdIndependentDateGateTypes";
 import type { IctModelQualityLane } from "./ictCurrentReadTypes";
 import type { IctPaperSimEligibilityStatus, IctReadinessSummary } from "./ictCurrentReadTypes";
 import type { IctAnalysisDepthStatus, IctAnalysisTimeframe } from "./ictMarketAnalysisContextTypes";
@@ -94,6 +95,10 @@ export interface IctResearchSignal {
   paperWatchlistEligible: boolean;
   paperWatchlistReason?: string;
   paperWatchlistEvidenceSummary?: string;
+  cmdIndependentDateGateRequired?: boolean;
+  cmdIndependentDateGateStatus?: IctCmdIndependentDateGateStatus;
+  cmdIndependentDateGateReason?: string;
+  cmdIndependentDateGateNextAction?: string;
   paperSimEligibilityStatus?: IctPaperSimEligibilityStatus;
   paperSimEligibilityReason?: string;
   paperSimAllowed: boolean;

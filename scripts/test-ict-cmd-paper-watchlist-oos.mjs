@@ -17,8 +17,8 @@ const primaryTimeframe = process.env.MT5_READONLY_TIMEFRAME || "5m";
 const requestedLookbackDays = Number(process.env.ICT_CMD_OOS_DAYS || 90);
 const chunkDays = Number(process.env.ICT_CMD_OOS_CHUNK_DAYS || 10);
 const limitPerChunk = Math.max(1, Math.min(5000, Number(process.env.ICT_CMD_OOS_LIMIT || 5000)));
-const maxReplayWindows = Math.max(1, Number(process.env.ICT_CMD_OOS_MAX_WINDOWS || 300));
-const currentEvidenceReplayWindows = Math.max(maxReplayWindows, Number(process.env.ICT_CMD_OOS_CURRENT_EVIDENCE_WINDOWS || 1000));
+const maxReplayWindows = Math.max(1, Number(process.env.ICT_CMD_OOS_MAX_WINDOWS || 240));
+const currentEvidenceReplayWindows = Math.max(maxReplayWindows, Number(process.env.ICT_CMD_OOS_CURRENT_EVIDENCE_WINDOWS || maxReplayWindows));
 const timeoutMs = Number(process.env.MT5_READONLY_TEST_TIMEOUT_MS || 10000);
 const rollingWindowDays = Number(process.env.ICT_CMD_OOS_ROLLING_WINDOW_DAYS || 30);
 const rollingStepDays = Number(process.env.ICT_CMD_OOS_ROLLING_STEP_DAYS || 15);
@@ -622,6 +622,50 @@ const classifyCmdRobustness = ({ overallMetrics, rollingReports }) => {
   return "unstable";
 };
 
+const independentDateGateFor = ({ overallMetrics, robustness, activeRollingWindows }) => {
+  const candidateCount = overallMetrics.count;
+  const uniqueTradingDates = Object.keys(overallMetrics.countByTradingDate).filter((date) => date !== "unknown").length;
+  const activeRollingWindowCount = activeRollingWindows.length;
+  const options = {
+    minUniqueTradingDates: 3,
+    minActiveRollingWindows: 2,
+    minCandidateCount: 20
+  };
+  const sourceStatus =
+    robustness === "overfit_risk" || uniqueTradingDates < options.minUniqueTradingDates
+        ? "overfit_risk"
+        : candidateCount < options.minCandidateCount
+          ? "insufficient_sample"
+        : activeRollingWindowCount < options.minActiveRollingWindows
+          ? "needs_more_independent_dates"
+          : robustness === "unstable"
+            ? "oos_degraded"
+            : "passed";
+  return {
+    gateId: "cmd_independent_date_gate_v1",
+    status: sourceStatus,
+    paperDemoEligible: sourceStatus === "passed",
+    blockerReason:
+      sourceStatus === "passed"
+        ? undefined
+        : "CMD lane is promising but date-concentrated; needs independent-date validation.",
+    nextAction:
+      sourceStatus === "passed"
+        ? "Continue normal deterministic Paper-Demo checklist review."
+        : "Run independent-date CMD validation over 90-day history.",
+    metrics: {
+      candidateCount,
+      uniqueTradingDates,
+      activeRollingWindowCount,
+      robustnessClassification: robustness,
+      targetFirstRate: overallMetrics.targetFirstRate,
+      invalidationFirstRate: overallMetrics.invalidationFirstRate,
+      averageRr: overallMetrics.averageRr
+    },
+    options
+  };
+};
+
 const assertSafeReport = (report) => {
   const serialized = JSON.stringify(report);
   assert.doesNotMatch(serialized, /"candles"\s*:|"rawCandles"\s*:|"rawSnapshot"\s*:|"snapshot"\s*:/i);
@@ -646,21 +690,12 @@ async function main() {
 
   const rollingWindows = buildRollingWindows(depth.firstTimestamp, depth.lastTimestamp);
   const halfWindows = buildHalfWindows(depth.firstTimestamp, depth.lastTimestamp);
-  const rollingPairSets = rollingWindows.map((window, index) => ({
-    window,
-    pairs: runReplayPairsForWindow(
-      suite,
-      depth,
-      htfDepths,
-      window,
-      index === rollingWindows.length - 1 ? currentEvidenceReplayWindows : maxReplayWindows
-    )
-  }));
-  const halfPairSets = halfWindows.map((window) => ({
-    window,
-    pairs: runReplayPairsForWindow(suite, depth, htfDepths, window, window.id === "second_half" ? currentEvidenceReplayWindows : maxReplayWindows)
-  }));
-  const pairs = uniquePairs([...halfPairSets.flatMap((item) => item.pairs), ...rollingPairSets.flatMap((item) => item.pairs)]);
+  const fullWindow = {
+    id: "full_lookback",
+    from: depth.firstTimestamp,
+    to: new Date(Date.parse(depth.lastTimestamp) + 1).toISOString()
+  };
+  const pairs = uniquePairs(runReplayPairsForWindow(suite, depth, htfDepths, fullWindow, currentEvidenceReplayWindows));
   const cmdPairs = pairs.filter((pair) => isCmd(pair.result));
   const cmdResearchPairs = cmdPairs.filter((pair) => pair.result.decision === "research_only");
   const cmdPaperResults = cmdResearchPairs.filter((pair) => pair.decision?.status === "paper_watchlist_candidate").map((pair) => pair.result);
@@ -669,16 +704,13 @@ async function main() {
   const cmdRejectedResults = cmdResearchPairs.filter((pair) => pair.decision?.status === "rejected_candidate").map((pair) => pair.result);
   const cmdNoTradeResults = cmdPairs.filter((pair) => pair.decision?.status === "no_trade" || pair.result.decision === "no_trade").map((pair) => pair.result);
 
-  const rollingReports = rollingPairSets.map(({ pairs, window }, index) =>
-    windowReportFor(suite, pairs, window, 1200 + index * 17, true)
-  );
-  const halfReports = halfPairSets.map(({ pairs, window }, index) =>
-    windowReportFor(suite, pairs, window, 2400 + index * 29, true)
-  );
+  const rollingReports = rollingWindows.map((window, index) => windowReportFor(suite, pairs, window, 1200 + index * 17));
+  const halfReports = halfWindows.map((window, index) => windowReportFor(suite, pairs, window, 2400 + index * 29));
   const overallMetrics = metricsFor(cmdPaperResults);
   const overallMonteCarlo = monteCarloFor(suite, cmdPaperResults, 909);
   const robustness = classifyCmdRobustness({ overallMetrics, rollingReports });
   const activeRollingWindows = rollingReports.filter((report) => report.cmdPaperWatchlistCandidates > 0);
+  const independentDateGate = independentDateGateFor({ overallMetrics, robustness, activeRollingWindows });
   const stableHighTargetFirst =
     activeRollingWindows.length >= 2 &&
     activeRollingWindows.every((report) => report.targetFirstRate >= 0.65) &&
@@ -702,12 +734,12 @@ async function main() {
       cfdProxyWarning: "USTECH is MT5 read-only CFD/proxy data for requested MNQ, not CME futures truth."
     },
     scanMode: {
-      mode: "bounded_per_window_replay",
+      mode: "bounded_aggregate_replay_filtered_oos",
       rollingWindowDays,
       rollingStepDays,
-      maxReplayWindowsPerWindow: maxReplayWindows,
+      maxReplayWindows,
       currentEvidenceReplayWindows,
-      note: "Each rolling and half-period segment is evaluated directly from its own candle slice; raw candles remain internal."
+      note: "One bounded 90-day replay scan is filtered into rolling and half-period reports; raw candles remain internal. Increase ICT_CMD_OOS_CURRENT_EVIDENCE_WINDOWS for deeper CLI-only scans."
     },
     counts: {
       totalReplaySignals: pairs.length,
@@ -748,6 +780,7 @@ async function main() {
         activeRollingWindowCount: activeRollingWindows.length
       }
     },
+    independentDateGate,
     answers: {
       wasPriorTargetFirstStable: stableHighTargetFirst
         ? "The 88.89% target-first result appears directionally stable across active rolling windows, but remains research-only."

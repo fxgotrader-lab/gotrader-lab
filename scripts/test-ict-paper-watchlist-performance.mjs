@@ -458,6 +458,45 @@ const modelRecommendation = ({ approvedResults, paperResults, watchlistResults, 
   };
 };
 
+const paperWatchlistIndependentDateGate = (paperResults) => {
+  const metrics = metricsFor(paperResults);
+  const uniqueTradingDates = Object.keys(metrics.countByTradingDate).filter((date) => date !== "unknown").length;
+  const status =
+    uniqueTradingDates < 3
+        ? "overfit_risk"
+        : metrics.totalCount < 20
+          ? "insufficient_sample"
+        : metrics.targetFirstRate < 0.55 || metrics.invalidationFirstRate > 0.25
+          ? "oos_degraded"
+          : "passed";
+  return {
+    gateId: "cmd_independent_date_gate_v1",
+    appliesTo: "consolidation_manipulation_distribution paper-watchlist",
+    status,
+    paperDemoEligible: status === "passed",
+    blockerReason:
+      status === "passed"
+        ? undefined
+        : "CMD lane is promising but date-concentrated; needs independent-date validation.",
+    nextAction:
+      status === "passed"
+        ? "Continue normal deterministic Paper-Demo checklist review."
+        : "Run independent-date CMD validation over 90-day history.",
+    metrics: {
+      candidateCount: metrics.totalCount,
+      uniqueTradingDates,
+      targetFirstRate: metrics.targetFirstRate,
+      invalidationFirstRate: metrics.invalidationFirstRate,
+      averageRr: metrics.averageRr
+    },
+    options: {
+      minUniqueTradingDates: 3,
+      minActiveRollingWindows: 2,
+      minCandidateCount: 20
+    }
+  };
+};
+
 const researchSignalFromReplayResult = (result) => ({
   signalId: `paper_watchlist_perf_${result.strategyId}_${result.tradePath?.signalTime ?? "sample"}`,
   generatedAt: result.tradePath?.signalTime ?? new Date().toISOString(),
@@ -663,6 +702,9 @@ async function main() {
       compareLane("rejected_candidates", rejectedResults)
     ],
     profileEvaluation,
+    independentDateGate: paperWatchlistIndependentDateGate(
+      paperWatchlistResults.filter((result) => result.sessionNarrativeProfile === "consolidation_manipulation_distribution")
+    ),
     recommendation: modelRecommendation({
       approvedResults,
       paperResults: paperWatchlistResults,

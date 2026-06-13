@@ -10,6 +10,7 @@ const projectRoot = process.cwd();
 const outRoot = path.join(projectRoot, ".gotrader", "auto-paper-demo-cycle-test");
 const modules = [
   ["src/lib/validationChain", ["validationChainTypes.ts", "buildValidationChain.ts", "validationChainStore.ts"]],
+  ["src/lib/ict-strategy-suite", ["ictCmdIndependentDateGateTypes.ts", "ictCmdIndependentDateGate.ts"]],
   [
     "src/lib/paperDemoOperations",
     [
@@ -170,6 +171,22 @@ const checklistPassed = {
   safetyNotice: "Checklist is reporting-only. It cannot promote readiness, place orders, or override authority."
 };
 
+const cmdIndependentDateEvidence = {
+  modelName: "consolidation_manipulation_distribution",
+  side: "short",
+  sourceProvider: "mt5_read_only",
+  sourceFingerprint: validSource.sourceFingerprint,
+  timeframe: "5m",
+  candidateCount: 24,
+  uniqueTradingDates: 3,
+  activeRollingWindows: 2,
+  targetFirstRate: 0.72,
+  invalidationFirstRate: 0.12,
+  averageRr: 2.1,
+  robustnessClassification: "promising_but_small_sample",
+  oosVerdict: "promising"
+};
+
 async function main() {
   compileForNode();
   installLocalStorage();
@@ -216,12 +233,27 @@ async function main() {
   assert.equal(replayOnly.status, "replay_passed");
   assert.match(replayOnly.blockers.join(" "), /walk-forward runner not wired/i);
 
+  const cmdWithoutIndependentDates = await mod.runAutoPaperDemoCycle({
+    sourceSnapshot: validSource,
+    recognition: { recognitionType: "full_model", setupLabel: "CMD eligible paper demo" },
+    replaySummary: replayPassed,
+    walkForwardSummary: walkForwardPassed,
+    evidenceSummary: evidenceUpdated,
+    checklistSummary: checklistPassed,
+    createWatchlistCandidate: true,
+    now: "2026-06-12T11:04:30.000Z"
+  });
+  assert.equal(cmdWithoutIndependentDates.status, "paper_demo_blocked");
+  assert.match(cmdWithoutIndependentDates.blockers.join(" "), /date-concentrated|independent-date/i);
+  assert.equal(Boolean(cmdWithoutIndependentDates.watchlistCandidateId), false);
+
   const eligible = await mod.runAutoPaperDemoCycle({
     sourceSnapshot: validSource,
     recognition: { recognitionType: "full_model", setupLabel: "CMD eligible paper demo" },
     replaySummary: replayPassed,
     walkForwardSummary: walkForwardPassed,
     evidenceSummary: evidenceUpdated,
+    cmdIndependentDateEvidence,
     checklistSummary: checklistPassed,
     persist: true,
     createWatchlistCandidate: true,

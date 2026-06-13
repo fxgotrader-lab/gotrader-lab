@@ -143,6 +143,9 @@ const nextActionFor = (status: IctResearchSignalStatus, currentRead: IctCurrentR
   if (status === "approved_research_signal") {
     return "Treat as an approved research signal only; run replay, Monte Carlo, evidence, maturity, and paper-demo checklist review before any future readiness work.";
   }
+  if (currentRead.cmdIndependentDateGateRequired && currentRead.cmdIndependentDateGateStatus !== "passed") {
+    return currentRead.cmdIndependentDateGateNextAction ?? "Run independent-date CMD validation over 90-day history.";
+  }
   if (currentRead.modelQualityLane === "paper_watchlist") {
     return "Paper-only eligible: run explicit paper simulation and collect replay evidence; no readiness promotion.";
   }
@@ -207,6 +210,7 @@ export const buildIctResearchSignalFromCurrentRead = (
     currentRead.approvedStatus === "paper_watchlist_candidate"
       ? currentRead.paperWatchlistReason ?? "Current read is complete enough for paper-watchlist simulation only; approval remains blocked."
       : undefined,
+    currentRead.cmdIndependentDateGateReason,
     currentRead.modelQualityLane === "watchlist" ? currentRead.paperWatchlistReason ?? "Watchlist only - not paper eligible." : undefined,
     status === "watchlist_signal" ? "Current read is watchlist or needs more non-execution validation evidence." : undefined
   ]).slice(0, 10);
@@ -252,6 +256,10 @@ export const buildIctResearchSignalFromCurrentRead = (
     paperWatchlistEligible: currentRead.paperWatchlistEligible,
     paperWatchlistReason: currentRead.paperWatchlistReason,
     paperWatchlistEvidenceSummary: currentRead.paperWatchlistEvidenceSummary,
+    cmdIndependentDateGateRequired: currentRead.cmdIndependentDateGateRequired,
+    cmdIndependentDateGateStatus: currentRead.cmdIndependentDateGateStatus,
+    cmdIndependentDateGateReason: currentRead.cmdIndependentDateGateReason,
+    cmdIndependentDateGateNextAction: currentRead.cmdIndependentDateGateNextAction,
     paperSimEligibilityStatus: currentRead.paperSimEligibilityStatus,
     paperSimEligibilityReason: currentRead.paperSimEligibilityReason,
     paperSimAllowed: currentRead.paperSimAllowed,

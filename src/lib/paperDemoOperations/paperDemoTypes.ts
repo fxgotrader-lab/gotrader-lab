@@ -1,6 +1,11 @@
 import type { PaperDemoChecklistItemStatus } from "@/lib/readiness";
 import type { SourceStatusLevel } from "@/lib/sourceStatus";
 import type {
+  IctCmdIndependentDateEvidence,
+  IctCmdIndependentDateGateResult,
+  IctCmdPaperWatchlistNarrowProfile
+} from "@/lib/ict-strategy-suite/ictCmdIndependentDateGateTypes";
+import type {
   ValidationChainHypothesisStatus,
   ValidationChainRecognitionType,
   ValidationChainStepVerdict
@@ -54,6 +59,9 @@ export interface PaperDemoCandidate {
   nextAction: string;
   executionIntent: "none";
   authority: PaperDemoAuthority;
+  cmdPaperWatchlistProfile?: IctCmdPaperWatchlistNarrowProfile;
+  cmdIndependentDateEvidence?: IctCmdIndependentDateEvidence;
+  cmdIndependentDateGate?: IctCmdIndependentDateGateResult;
 }
 
 export interface PaperDemoEligibilityResult {

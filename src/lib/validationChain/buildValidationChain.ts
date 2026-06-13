@@ -37,6 +37,12 @@ const candidateFamilyFor = (type: ValidationChainRecognitionType): ValidationCha
   }
 };
 
+const CMD_INDEPENDENT_DATE_NEXT_ACTION =
+  "Run independent-date CMD validation over 90-day history.";
+
+const isCmdSetup = (label?: string) =>
+  /(^|[^a-z])(cmd|consolidation[\s_-]*manipulation[\s_-]*distribution)([^a-z]|$)/i.test(label ?? "");
+
 const requiredValidationFor = (type: ValidationChainRecognitionType): string =>
   type === "market_map_only" || type === "insufficient_data"
     ? "More structure required before replay validation can be meaningful."
@@ -102,9 +108,13 @@ export const queueValidationChainEntry = (input: ValidationChainRecognitionInput
     entry: {
       ...base,
       hypothesisStatus: "replay_required",
-      nextAction: "Run replay validation for this recognition.",
+      nextAction: isCmdSetup(input.setupLabel)
+        ? "Run replay validation for this CMD recognition; independent-date validation is required before Paper-Demo consideration."
+        : "Run replay validation for this recognition.",
       paperDemoChecklistImpact:
-        "Blocked for Paper-Demo: replay validation and walk-forward/OOS validation have not run yet."
+        isCmdSetup(input.setupLabel)
+          ? "Blocked for Paper-Demo: CMD requires replay, walk-forward/OOS, and independent-date validation before consideration."
+          : "Blocked for Paper-Demo: replay validation and walk-forward/OOS validation have not run yet."
     }
   };
 };
@@ -172,12 +182,16 @@ export const applyValidationChainWalkForwardResult = (
     walkForwardResult: walkForward,
     hypothesisStatus: passed ? "walk_forward_passed" : failed ? "walk_forward_failed" : "needs_more_data",
     nextAction: passed
-      ? "Walk-forward passed. Review evidence quality, maturity, and Paper-Demo checklist gates."
+      ? isCmdSetup(entry.setupLabel)
+        ? CMD_INDEPENDENT_DATE_NEXT_ACTION
+        : "Walk-forward passed. Review evidence quality, maturity, and Paper-Demo checklist gates."
       : failed
         ? "Walk-forward failed out-of-sample. Treat this recognition as rejected research, not evidence."
         : "Walk-forward needs more data/windows. Extend history before drawing conclusions.",
     paperDemoChecklistImpact: passed
-      ? "Stronger evidence recorded. Paper-Demo progression still requires deterministic evidence/maturity/readiness gates."
+      ? isCmdSetup(entry.setupLabel)
+        ? "Stronger evidence recorded, but CMD Paper-Demo progression remains blocked until independent-date validation passes."
+        : "Stronger evidence recorded. Paper-Demo progression still requires deterministic evidence/maturity/readiness gates."
       : "Blocked for Paper-Demo: walk-forward/OOS validation has not passed.",
     updatedAt: walkForward.generatedAt
   };

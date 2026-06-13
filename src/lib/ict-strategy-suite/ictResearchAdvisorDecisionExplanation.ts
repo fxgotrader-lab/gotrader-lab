@@ -95,7 +95,10 @@ const cmdPaperReasonFor = ({ currentRead, researchSignal, cmdPaperTracking }: Ic
       "Strict CMD paper-watchlist gates did not pass."
     )}`;
   }
-  return `CMD Paper eligible because CMD is a paper-watchlist candidate. ${currentRead.paperWatchlistReason ?? "Paper-only tracking can be created manually."}`;
+  if (currentRead.cmdIndependentDateGateRequired && currentRead.cmdIndependentDateGateStatus !== "passed") {
+    return `CMD is promising as paper-only research, but Paper-Demo promotion is blocked: ${currentRead.cmdIndependentDateGateReason ?? "independent-date validation is required."}`;
+  }
+  return `CMD Paper eligible for research-only tracking because CMD is a paper-watchlist candidate. ${currentRead.paperWatchlistReason ?? "Paper-only tracking can be created manually."}`;
 };
 
 const htfAlignmentStatusFor = ({ currentRead }: IctResearchAdvisorDecisionExplanationInput): IctResearchAdvisorDecisionStatus => {
@@ -287,12 +290,18 @@ export const buildResearchAdvisorDecisionExplanation = (
       "CMD Paper eligibility",
       cmdStatus,
       cmdPaperReasonFor(input),
-      cmdStatus === "eligible" ? "Create CMD paper tracking manually if the operator wants to monitor this candidate." : "Wait for a strict CMD paper-watchlist candidate; do not track AME/watchlist/rejected/no-trade states as CMD Paper.",
+      currentRead.cmdIndependentDateGateRequired && currentRead.cmdIndependentDateGateStatus !== "passed"
+        ? currentRead.cmdIndependentDateGateNextAction ?? "Run independent-date CMD validation over 90-day history."
+        : cmdStatus === "eligible"
+          ? "Create CMD paper tracking manually if the operator wants to monitor this candidate."
+          : "Wait for a strict CMD paper-watchlist candidate; do not track AME/watchlist/rejected/no-trade states as CMD Paper.",
       [
         `CMD detected ${compact(isCmd(currentRead.modelName ?? researchSignal.modelName))}`,
         `Model ${token(currentRead.modelName ?? researchSignal.modelName)}`,
         `Lane ${token(currentRead.modelQualityLane)}`,
         `Profile ${token(currentRead.approvedStatus)}`,
+        currentRead.cmdIndependentDateGateStatus ? `Independent-date gate ${token(currentRead.cmdIndependentDateGateStatus)}` : undefined,
+        currentRead.cmdIndependentDateGateReason,
         currentRead.paperWatchlistReason
       ]
     ),
@@ -328,7 +337,9 @@ export const buildResearchAdvisorDecisionExplanation = (
       "Walk-forward status",
       walkForwardStatus,
       walkForwardReasonFor(input),
-      "Run replay/walk-forward validation across independent windows before treating any lane as paper-demo mature.",
+      currentRead.cmdIndependentDateGateRequired
+        ? currentRead.cmdIndependentDateGateNextAction ?? "Run independent-date CMD validation over 90-day history."
+        : "Run replay/walk-forward validation across independent windows before treating any lane as paper-demo mature.",
       [
         `Replay ${token(currentRead.latestReplayStatus ?? (latestResearchState?.latestReplay ? "saved" : "none saved"))}`,
         `Signals ${compact(latestResearchState?.latestReplay?.totalSignals)}`,

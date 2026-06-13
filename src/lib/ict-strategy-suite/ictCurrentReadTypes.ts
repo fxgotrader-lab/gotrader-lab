@@ -1,5 +1,6 @@
 import type { IctBias, IctLocation, IctSide } from "./ictAdvisorTypes";
 import type { IctApprovedCandidateStatus, IctHtfAlignmentBreakdown } from "./ictApprovedSetupProfileTypes";
+import type { IctCmdIndependentDateGateStatus } from "./ictCmdIndependentDateGateTypes";
 import type {
   IctAnalysisDepthStatus,
   IctAnalysisTimeframe,
@@ -93,6 +94,10 @@ export interface IctCurrentRead {
   paperWatchlistModelName?: IctSessionModelName;
   paperWatchlistReason?: string;
   paperWatchlistEvidenceSummary?: string;
+  cmdIndependentDateGateRequired?: boolean;
+  cmdIndependentDateGateStatus?: IctCmdIndependentDateGateStatus;
+  cmdIndependentDateGateReason?: string;
+  cmdIndependentDateGateNextAction?: string;
   paperSimEligibilityStatus?: IctPaperSimEligibilityStatus;
   paperSimEligibilityReason?: string;
   paperSimAllowed: boolean;
@@ -215,6 +220,8 @@ export interface IctCurrentRead {
     opportunityLaneRecommendation?: IctOpportunityLaneRecommendation;
     selfImprovementHypothesisStatus?: IctResearchHypothesisStatus;
     selfImprovementHypothesisReason?: string;
+    cmdIndependentDateGateStatus?: IctCmdIndependentDateGateStatus;
+    cmdIndependentDateGateReason?: string;
     fvgTargetStatus?: string;
     targetConstructionStatus?: string;
     invalidationConstructionStatus?: string;

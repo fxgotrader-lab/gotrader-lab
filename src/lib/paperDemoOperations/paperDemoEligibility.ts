@@ -2,6 +2,16 @@ import type { PaperDemoChecklistSummary } from "@/lib/readiness";
 import type { SourceStatusSnapshot } from "@/lib/sourceStatus";
 import type { ValidationChainEntry } from "@/lib/validationChain";
 import {
+  buildCmdPaperWatchlistNarrowProfile,
+  buildMissingCmdIndependentDateGate,
+  CMD_INDEPENDENT_DATE_BLOCKER,
+  CMD_INDEPENDENT_DATE_NEXT_ACTION,
+  evaluateCmdIndependentDateGate,
+  isCmdPaperWatchlistLabel,
+  summarizeCmdIndependentDateGate
+} from "../ict-strategy-suite/ictCmdIndependentDateGate";
+import type { IctCmdIndependentDateEvidence } from "../ict-strategy-suite/ictCmdIndependentDateGateTypes";
+import {
   PAPER_DEMO_AUTHORITY,
   type PaperDemoCandidate,
   type PaperDemoEligibilityResult
@@ -28,9 +38,35 @@ const walkForwardIsAllowed = (candidate: PaperDemoCandidate) =>
 const summaryExists = (value?: string) =>
   Boolean(value && !["missing", "pending", "unavailable", "not_available", "none"].includes(value));
 
+const isCmdCandidate = (candidate: PaperDemoCandidate) =>
+  isCmdPaperWatchlistLabel(
+    [
+      candidate.setupName,
+      candidate.recognitionType,
+      candidate.cmdPaperWatchlistProfile?.modelName,
+      candidate.cmdIndependentDateEvidence?.modelName
+    ].filter(Boolean).join(" ")
+  );
+
+const cmdGateFor = (candidate: PaperDemoCandidate) =>
+  candidate.cmdIndependentDateGate ??
+  (candidate.cmdIndependentDateEvidence
+    ? evaluateCmdIndependentDateGate({
+        ...candidate.cmdIndependentDateEvidence,
+        sourceProvider: candidate.cmdIndependentDateEvidence.sourceProvider ?? candidate.sourceProvider,
+        sourceFingerprint: candidate.cmdIndependentDateEvidence.sourceFingerprint ?? candidate.sourceFingerprint,
+        timeframe: candidate.cmdIndependentDateEvidence.timeframe ?? candidate.timeframe
+      })
+    : buildMissingCmdIndependentDateGate({
+        sourceProvider: candidate.sourceProvider,
+        sourceFingerprint: candidate.sourceFingerprint,
+        timeframe: candidate.timeframe
+      }));
+
 export function buildPaperDemoEligibility(candidate: PaperDemoCandidate): PaperDemoEligibilityResult {
   const blockers: string[] = [];
   const warnings: string[] = [...candidate.warnings];
+  const cmdGate = isCmdCandidate(candidate) ? cmdGateFor(candidate) : undefined;
 
   if (candidate.sourceStatus === "mock_sample" || candidate.sourceProvider === "mock") {
     blockers.push("Source is mock/sample and cannot enter Paper-Demo Operations watchlist.");
@@ -64,6 +100,14 @@ export function buildPaperDemoEligibility(candidate: PaperDemoCandidate): PaperD
   if (candidate.executionIntent !== "none") {
     blockers.push("Execution intent is not allowed in Paper-Demo Operations.");
   }
+  if (cmdGate) {
+    if (!cmdGate.paperDemoEligible) {
+      blockers.push(cmdGate.blockerReason ?? CMD_INDEPENDENT_DATE_BLOCKER);
+      warnings.push(summarizeCmdIndependentDateGate(cmdGate));
+    } else {
+      warnings.push("CMD independent-date validation passed; continue normal Paper-Demo checklist review.");
+    }
+  }
 
   const eligible = blockers.length === 0;
   return {
@@ -74,7 +118,9 @@ export function buildPaperDemoEligibility(candidate: PaperDemoCandidate): PaperD
     warnings,
     nextAction: eligible
       ? "Add to watchlist, complete daily checklist, and monitor manually."
-      : blockers[0] ?? "Resolve Paper-Demo Operations blockers.",
+      : cmdGate && !cmdGate.paperDemoEligible
+        ? CMD_INDEPENDENT_DATE_NEXT_ACTION
+        : blockers[0] ?? "Resolve Paper-Demo Operations blockers.",
     authority: PAPER_DEMO_AUTHORITY
   };
 }
@@ -83,15 +129,41 @@ export function buildPaperDemoCandidateFromContext({
   checklist,
   source,
   timestamp = new Date().toISOString(),
-  validationChain
+  validationChain,
+  cmdIndependentDateEvidence
 }: {
   checklist?: PaperDemoChecklistSummary;
+  cmdIndependentDateEvidence?: IctCmdIndependentDateEvidence;
   source?: SourceStatusSnapshot;
   timestamp?: string;
   validationChain?: ValidationChainEntry;
 }): PaperDemoCandidate {
   const idSeed = validationChain?.recognitionId ?? source?.sourceFingerprint ?? timestamp;
   const sourceStatus = source?.sourceStatus ?? validationChain?.sourceStatus.statusLabel ?? "unavailable";
+  const cmdProfileNeeded = isCmdPaperWatchlistLabel(
+    [validationChain?.setupLabel, validationChain?.recognitionType, cmdIndependentDateEvidence?.modelName].filter(Boolean).join(" ")
+  );
+  const cmdPaperWatchlistProfile = cmdProfileNeeded
+    ? buildCmdPaperWatchlistNarrowProfile({
+        sourceProvider: source?.sourceProvider ?? validationChain?.sourceStatus.sourceProvider,
+        sourceFingerprint: source?.sourceFingerprint ?? validationChain?.sourceFingerprint,
+        timeframe: source?.primaryTimeframe ?? validationChain?.timeframe
+      })
+    : undefined;
+  const cmdIndependentDateGate = cmdProfileNeeded
+    ? cmdIndependentDateEvidence
+      ? evaluateCmdIndependentDateGate({
+          ...cmdIndependentDateEvidence,
+          sourceProvider: cmdIndependentDateEvidence.sourceProvider ?? source?.sourceProvider ?? validationChain?.sourceStatus.sourceProvider,
+          sourceFingerprint: cmdIndependentDateEvidence.sourceFingerprint ?? source?.sourceFingerprint ?? validationChain?.sourceFingerprint,
+          timeframe: cmdIndependentDateEvidence.timeframe ?? source?.primaryTimeframe ?? validationChain?.timeframe
+        })
+      : buildMissingCmdIndependentDateGate({
+          sourceProvider: source?.sourceProvider ?? validationChain?.sourceStatus.sourceProvider,
+          sourceFingerprint: source?.sourceFingerprint ?? validationChain?.sourceFingerprint,
+          timeframe: source?.primaryTimeframe ?? validationChain?.timeframe
+        })
+    : undefined;
   const candidate: PaperDemoCandidate = {
     id: `paper_demo_candidate_${timestampToken(timestamp)}_${Math.abs(
       Array.from(idSeed).reduce((hash, char) => ((hash << 5) - hash + char.charCodeAt(0)) | 0, 0)
@@ -119,7 +191,10 @@ export function buildPaperDemoCandidateFromContext({
     status: "draft",
     nextAction: validationChain?.nextAction ?? "Review validation chain before Paper-Demo Operations.",
     executionIntent: "none",
-    authority: PAPER_DEMO_AUTHORITY
+    authority: PAPER_DEMO_AUTHORITY,
+    cmdPaperWatchlistProfile,
+    cmdIndependentDateEvidence,
+    cmdIndependentDateGate
   };
   const eligibility = buildPaperDemoEligibility(candidate);
   return {
