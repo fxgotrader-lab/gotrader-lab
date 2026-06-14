@@ -360,6 +360,7 @@ const safeTelemetrySample = (items, limit = 10) =>
     rr: item.rr,
     htfAlignment: item.htfAlignment,
     displacementScore: item.displacementScore,
+    manipulationDepthBucket: item.manipulationDepthBucket,
     fvgRespected: item.fvgRespected,
     externalLiquidityTargetPresent: item.externalLiquidityTargetPresent,
     sweepQuality: item.sweepQuality,
@@ -369,6 +370,13 @@ const safeTelemetrySample = (items, limit = 10) =>
 const targetFirstRate = (items) => (items.length ? round(items.filter((item) => item.outcome === "target_first").length / items.length, 4) : 0);
 const invalidationFirstRate = (items) => (items.length ? round(items.filter((item) => item.outcome === "invalidation_first").length / items.length, 4) : 0);
 const uniqueDates = (items) => new Set(items.map((item) => item.tradingDate).filter((value) => value !== "unknown")).size;
+const classifyRepeatability = ({ candidateCount, uniqueTradingDates, activeRollingWindows, targetFirstRate, invalidationFirstRate }) => {
+  if (candidateCount <= 0) return "no_edge";
+  if (uniqueTradingDates < 3) return "overfit_risk";
+  if (activeRollingWindows < 2 || candidateCount < 20) return "insufficient_independent_dates";
+  if (targetFirstRate <= invalidationFirstRate) return "no_edge";
+  return "repeatable_variant_candidate";
+};
 
 const similarSignatureToWinners = (item, winners) => {
   if (!winners.length) return false;
@@ -388,7 +396,7 @@ const writeReport = ({ depth, report }) => {
   const variantRows = report.variantDiscovery
     .map(
       (variant) =>
-        `| \`${variant.variantId}\` | ${variant.candidateCount} | ${(variant.targetFirstRate * 100).toFixed(2)}% | ${(variant.invalidationFirstRate * 100).toFixed(2)}% | ${variant.uniqueTradingDates} | ${variant.activeRollingWindows} | ${variant.overfitRisk ? "blocked" : "research"} |`
+        `| \`${variant.variantId}\` | ${variant.candidateCount} | ${(variant.targetFirstRate * 100).toFixed(2)}% | ${(variant.invalidationFirstRate * 100).toFixed(2)}% | ${variant.averageRr.toFixed(4)} | ${variant.medianRr.toFixed(4)} | ${variant.uniqueTradingDates} | ${variant.activeRollingWindows} | ${variant.repeatabilityClassification} | ${variant.nextAction} |`
     )
     .join("\n");
   const differentiatorRows = report.featureComparison.differentiators
@@ -422,6 +430,8 @@ const writeReport = ({ depth, report }) => {
     `- Compact candles evaluated internally: ${depth.candleCount}`,
     `- Available lookback: ${depth.availableLookbackDays} days`,
     `- Completed chunks: ${depth.chunks.length}`,
+    `- Replay windows evaluated: ${report.replayBudget.maxReplayWindows}`,
+    `- Replay budget note: ${report.replayBudget.note}`,
     "",
     "## Winning CMD Cluster Summary",
     "",
@@ -431,10 +441,12 @@ const writeReport = ({ depth, report }) => {
     `- Invalidation-first: ${(report.paperWatchlistMetrics.invalidationFirstRate * 100).toFixed(2)}%`,
     `- Unique dates: ${report.paperWatchlistMetrics.uniqueTradingDates}`,
     `- Active rolling windows: ${report.paperWatchlistMetrics.activeRollingWindows}`,
+    `- Repeatability classification: \`${report.repeatabilityClassification}\``,
     `- Top sessions: \`${JSON.stringify(report.paperWatchlistSummary.countBySession)}\``,
     `- HTF alignment: \`${JSON.stringify(report.paperWatchlistSummary.countByHtfAlignment)}\``,
     `- FVG respected: \`${JSON.stringify(report.paperWatchlistSummary.countByFvgRespected)}\``,
     `- Sweep quality: \`${JSON.stringify(report.paperWatchlistSummary.countBySweepQuality)}\``,
+    `- Manipulation depth: \`${JSON.stringify(report.paperWatchlistSummary.countByManipulationDepthBucket)}\``,
     "",
     "## Losing CMD Comparison",
     "",
@@ -448,13 +460,13 @@ const writeReport = ({ depth, report }) => {
     "",
     "## Variant Discovery",
     "",
-    "| Variant | Candidates | Target-first | Invalidation-first | Dates | Windows | Status |",
-    "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
+    "| Variant | Candidates | Target-first | Invalidation-first | Avg RR | Median RR | Dates | Windows | Classification | Next action |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |",
     variantRows,
     "",
     "## Independent-Date Availability",
     "",
-    `Similar-feature candidates found on ${report.independentDateSearch.uniqueDates} independent date(s).`,
+    `Similar-feature candidates found on ${report.independentDateSearch.uniqueDates} trading date(s).`,
     "",
     report.independentDateSearch.uniqueDates < 3
       ? "CMD remains blocked because the strongest feature signature is still date-concentrated."
@@ -466,7 +478,29 @@ const writeReport = ({ depth, report }) => {
       ? `Best next variant candidate: \`${bestVariant.variantId}\`. Keep it research-only and run a dedicated executable-variant diagnostic with independent-date gates.`
       : "No CMD variant should be promoted. Keep CMD blocked and collect more independent dates before adding a narrower executable family.",
     "",
-    "Do not promote CMD to Paper-Demo or approved status from this audit."
+    "Do not promote CMD to Paper-Demo or approved status from this audit.",
+    "",
+    "## Next Standalone Detector Recommendation: IFVG",
+    "",
+    report.repeatabilityClassification === "overfit_risk" || report.repeatabilityClassification === "insufficient_independent_dates"
+      ? "CMD remains date-concentrated, so the next standalone detector should be IFVG v1 rather than another CMD promotion attempt."
+      : "IFVG remains the next standalone detector candidate after CMD-specific validation completes.",
+    "",
+    "IFVG v1 plan:",
+    "",
+    "- Timeframe: `5m` or `15m`.",
+    "- Identify a fair value gap that is fully traded through.",
+    "- Former bearish FVG becomes bullish support for a long candidate.",
+    "- Former bullish FVG becomes bearish resistance for a short candidate.",
+    "- Entry: 50% of the inverted FVG zone.",
+    "- Stop: beyond the IFVG boundary.",
+    "- Target: next draw on liquidity.",
+    "- Minimum RR: `2R`.",
+    "- Block reused IFVG zones.",
+    "- Block against HTF trend.",
+    "- Block low-volume sessions.",
+    "- Block mock/sample sources.",
+    "- Require replay, walk-forward, independent-date, and OOS validation before any Paper-Demo progression."
   ];
   fs.writeFileSync(reportPath, `${lines.join("\n")}\n`, "utf8");
 };
@@ -603,6 +637,7 @@ async function main() {
     activeRollingWindows: suite.countActiveRollingWindows(paperTelemetry),
     averageRr: average(paperTelemetry.map((item) => item.rr).filter(Number.isFinite))
   };
+  const repeatabilityClassification = classifyRepeatability(paperMetrics);
   const losingMetrics = {
     candidateCount: losingOrFiltered.length,
     targetFirstRate: targetFirstRate(losingOrFiltered),
@@ -626,6 +661,13 @@ async function main() {
       chunkCount: depth.chunks.length,
       cfdProxyWarning: "USTECH is MT5 CFD/proxy research data for requested MNQ, not CME futures truth."
     },
+    replayBudget: {
+      maxReplayWindows,
+      replayWindowSize: 80,
+      lookaheadCandles: 24,
+      note:
+        "The diagnostic fetches explicit 90-day MT5 range history, then evaluates the capped latest replay-window budget for interactive safety. Increase ICT_CMD_TELEMETRY_MAX_WINDOWS for a slower deeper sweep."
+    },
     counts: {
       allReplayResults: pairs.length,
       allCmdCandidates: cmdTelemetry.length,
@@ -638,6 +680,7 @@ async function main() {
     allCmdSummary: allSummary,
     paperWatchlistSummary: paperSummary,
     paperWatchlistMetrics: paperMetrics,
+    repeatabilityClassification,
     losingMetrics,
     featureComparison,
     independentDateSearch: {

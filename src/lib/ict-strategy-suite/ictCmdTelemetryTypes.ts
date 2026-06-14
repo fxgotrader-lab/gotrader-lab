@@ -44,6 +44,7 @@ export interface IctCmdCandidateTelemetry {
   consolidationDuration?: number;
   manipulationSide?: "buy_side" | "sell_side" | "unknown";
   manipulationDepth?: number;
+  manipulationDepthBucket: IctCmdTelemetryBucket;
   sweepType?: string;
   sweepQuality: IctCmdTelemetryQuality;
   expansionDistance?: number;
@@ -94,10 +95,21 @@ export interface IctCmdVariantDiscoveryResult {
   candidateCount: number;
   targetFirstRate: number;
   invalidationFirstRate: number;
+  averageRr: number;
+  medianRr: number;
   uniqueTradingDates: number;
   activeRollingWindows: number;
+  oosVerdict: string;
+  repeatabilityClassification:
+    | "repeatable_variant_candidate"
+    | "promising_but_unstable"
+    | "overfit_risk"
+    | "insufficient_independent_dates"
+    | "no_edge";
   overfitRisk: boolean;
   deservesFutureExecutableVariantTest: boolean;
+  blockerReasons: string[];
+  nextAction: string;
   blocker?: string;
 }
 
@@ -114,6 +126,7 @@ export interface IctCmdTelemetrySummary {
   countByDisplacementScoreBucket: Record<string, number>;
   countByFvgRespected: Record<string, number>;
   countBySweepQuality: Record<string, number>;
+  countByManipulationDepthBucket: Record<string, number>;
   countByRrBucket: Record<string, number>;
   countByExternalLiquidityTarget: Record<string, number>;
   countByConsolidationRangeSizeBucket: Record<string, number>;

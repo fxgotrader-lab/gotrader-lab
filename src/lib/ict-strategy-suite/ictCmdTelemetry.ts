@@ -95,6 +95,7 @@ const bucket = (value: number | undefined, thresholds: [number, number, number, 
 const rrBucket = (rr?: number) => bucket(rr, [1.5, 2.5, 4, 6]);
 const displacementBucket = (score?: number) => bucket(score, [0.75, 1.25, 2, 3.5]);
 const rangeBucket = (value?: number) => bucket(value, [50, 125, 250, 500]);
+const manipulationDepthBucket = (value?: number) => bucket(value, [25, 75, 150, 300]);
 
 const mapOutcome = (outcome: IctReplayOutcome): IctCmdTelemetryOutcome => {
   if (outcome === "target_first") return "target_first";
@@ -184,6 +185,7 @@ export const buildIctCmdCandidateTelemetry = (input: IctCmdTelemetryBuildInput):
     consolidationDuration: result.tradePath?.candlesToTarget ?? result.tradePath?.candlesToInvalidation,
     manipulationSide: result.side === "short" ? "buy_side" : result.side === "long" ? "sell_side" : "unknown",
     manipulationDepth: round(manipulationDepth, 4),
+    manipulationDepthBucket: manipulationDepthBucket(manipulationDepth),
     sweepType: result.liquidityTargetType ?? (result.fvgTargetDetected ? `${result.fvgTargetDirection ?? "unknown"}_fvg_draw` : "none"),
     sweepQuality: sweepQualityFor(result),
     expansionDistance: round(expansionDistance, 4),
@@ -221,6 +223,14 @@ const countBy = <T>(values: T[], selector: (value: T) => string | number | boole
 };
 
 const uniqueCount = (values: string[]) => new Set(values.filter((value) => value && value !== "unknown")).size;
+const average = (values: number[]) => (values.length ? safeRound(values.reduce((total, value) => total + value, 0) / values.length, 4) : 0);
+const median = (values: number[]) => {
+  const sorted = values.filter(finite).sort((left, right) => left - right);
+  if (!sorted.length) return 0;
+  const midpoint = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? safeRound((sorted[midpoint - 1] + sorted[midpoint]) / 2, 4) : safeRound(sorted[midpoint], 4);
+};
+const isNySession = (session?: string) => /^(ny_|new_york_)/.test(session ?? "");
 
 export const summarizeIctCmdTelemetry = (telemetry: IctCmdCandidateTelemetry[]): IctCmdTelemetrySummary => {
   const paper = telemetry.filter((item) => item.candidateLane === "paper_watchlist_candidate");
@@ -239,6 +249,7 @@ export const summarizeIctCmdTelemetry = (telemetry: IctCmdCandidateTelemetry[]):
     countByDisplacementScoreBucket: countBy(telemetry, (item) => item.displacementScoreBucket),
     countByFvgRespected: countBy(telemetry, (item) => item.fvgRespected),
     countBySweepQuality: countBy(telemetry, (item) => item.sweepQuality),
+    countByManipulationDepthBucket: countBy(telemetry, (item) => item.manipulationDepthBucket),
     countByRrBucket: countBy(telemetry, (item) => item.rrBucket),
     countByExternalLiquidityTarget: countBy(telemetry, (item) => item.externalLiquidityTargetPresent),
     countByConsolidationRangeSizeBucket: countBy(telemetry, (item) => rangeBucket(item.consolidationRangeSize)),
@@ -271,7 +282,7 @@ export const compareIctCmdTelemetryFeatures = (
         feature: "fvg_respected",
         winnerValue: share(winners, (item) => item.fvgRespected),
         loserValue: share(losers, (item) => item.fvgRespected),
-        note: "Higher winner share suggests the FVG return/respect condition deserves isolated testing."
+        note: "Compares whether FVG return/respect is actually differentiating winners from filtered or losing CMD candidates."
       },
       {
         feature: "external_liquidity_target_present",
@@ -328,20 +339,53 @@ const metricsForVariant = (
   const invalidationFirst = telemetry.filter((item) => item.outcome === "invalidation_first").length;
   const uniqueTradingDates = uniqueCount(telemetry.map((item) => item.tradingDate));
   const activeRollingWindows = countActiveRollingWindows(telemetry);
+  const rrValues = telemetry.map((item) => item.rr).filter(finite);
   const overfitRisk = telemetry.length > 0 && (uniqueTradingDates < 3 || activeRollingWindows < 2 || telemetry.length < 20);
+  const targetFirstRate = telemetry.length ? safeRound(targetFirst / telemetry.length, 4) : 0;
+  const invalidationFirstRate = telemetry.length ? safeRound(invalidationFirst / telemetry.length, 4) : 0;
+  const noEdge = telemetry.length > 0 && targetFirst <= invalidationFirst;
+  const repeatabilityClassification: IctCmdVariantDiscoveryResult["repeatabilityClassification"] = !telemetry.length
+    ? "insufficient_independent_dates"
+    : noEdge
+      ? "no_edge"
+      : overfitRisk && uniqueTradingDates < 3
+        ? "overfit_risk"
+        : overfitRisk
+          ? "promising_but_unstable"
+          : "repeatable_variant_candidate";
+  const blockerCounts = countBy(
+    telemetry.flatMap((item) => item.blockerReasons),
+    (reason) => reason
+  );
+  const blockerReasons = Object.entries(blockerCounts)
+    .map(([reason, count]) => `${reason} (${count})`)
+    .slice(0, 5);
+  const blocker = overfitRisk
+    ? "variant remains blocked until it appears across at least 3 dates, 2 rolling windows, and 20 candidates"
+    : noEdge
+      ? "variant target-first behavior does not exceed invalidation-first behavior"
+      : undefined;
   return {
     variantId,
     description,
     candidateCount: telemetry.length,
-    targetFirstRate: telemetry.length ? safeRound(targetFirst / telemetry.length, 4) : 0,
-    invalidationFirstRate: telemetry.length ? safeRound(invalidationFirst / telemetry.length, 4) : 0,
+    targetFirstRate,
+    invalidationFirstRate,
+    averageRr: average(rrValues),
+    medianRr: median(rrValues),
     uniqueTradingDates,
     activeRollingWindows,
+    oosVerdict: overfitRisk ? "blocked_independent_date_gate" : noEdge ? "degraded" : "eligible_for_dedicated_oos_test",
+    repeatabilityClassification,
     overfitRisk,
     deservesFutureExecutableVariantTest: telemetry.length >= 3 && targetFirst > invalidationFirst,
-    blocker: overfitRisk
-      ? "variant remains blocked until it appears across at least 3 dates, 2 rolling windows, and 20 candidates"
-      : undefined
+    blockerReasons,
+    nextAction: overfitRisk
+      ? "Search for the same compact signature on independent dates before adding an executable variant."
+      : noEdge
+        ? "Keep diagnostic-only; do not create an executable variant from this feature set."
+        : "Run a dedicated executable-variant diagnostic with replay and walk-forward gates.",
+    blocker
   };
 };
 
@@ -368,12 +412,27 @@ export const discoverIctCmdVariantCandidates = (
     metricsForVariant(
       "cmd_short_ny_session_only",
       "Short CMD in NY AM, NY lunch, or NY PM session windows.",
-      short.filter((item) => item.session === "ny_am" || item.session === "ny_lunch" || item.session === "ny_pm")
+      short.filter((item) => isNySession(item.session))
     ),
     metricsForVariant(
       "cmd_short_htf_aligned",
       "Short CMD with aligned or partially aligned HTF context.",
       short.filter((item) => item.htfAlignment === "aligned" || item.htfAlignment === "partially_aligned")
+    ),
+    metricsForVariant(
+      "cmd_short_clean_expansion",
+      "Short CMD with high displacement, strong sweep quality, and an external liquidity objective.",
+      short.filter(
+        (item) =>
+          (item.displacementScoreBucket === "high" || item.displacementScoreBucket === "extreme") &&
+          item.sweepQuality === "strong" &&
+          item.externalLiquidityTargetPresent
+      )
+    ),
+    metricsForVariant(
+      "cmd_short_strong_sweep_quality",
+      "Short CMD with strong sweep quality before distribution.",
+      short.filter((item) => item.sweepQuality === "strong")
     )
   ].sort((left, right) => right.targetFirstRate - left.targetFirstRate || right.candidateCount - left.candidateCount);
 };
