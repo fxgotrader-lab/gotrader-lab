@@ -27,50 +27,51 @@ USTECH is MT5 read-only CFD/proxy data for requested MNQ, not CME futures truth.
 |---|---:|
 | Evaluated windows | 4,878 |
 | Setup-condition hits | 4,878 |
-| Blocked candidates | 516 |
+| Blocked candidates | 661 |
 | No-trade windows | 0 |
 | Insufficient-data windows | 0 |
-| Valid replay candidates | 676 |
+| Valid replay candidates | 613 |
 
 Top blockers:
 
 | Blocker | Count |
 |---|---:|
-| IFVG zone was already used before inversion. | 372 |
-| IFVG direction is against available HTF context. | 144 |
+| IFVG zone was already used before inversion. | 473 |
+| IFVG direction is against available HTF context. | 166 |
+| unrealistic_rr | 22 |
 
 ## Performance Summary
 
 | Segment | Candidates | Target-first | Invalidation-first | Stalled | Avg RR | Median RR |
 |---|---:|---:|---:|---:|---:|---:|
-| All IFVG | 676 | 56.21% | 43.79% | 0 | 53.3633 | 12.1925 |
-| 5m | 501 | 56.69% | 43.31% | 0 | 58.4925 | 11.7564 |
-| 15m | 175 | 54.86% | 45.14% | 0 | 38.6789 | 13.0123 |
-| long | 336 | 55.65% | 44.35% | 0 | 65.234 | 12.1925 |
-| short | 340 | 56.76% | 43.24% | 0 | 41.6322 | 12.1979 |
-| london_open | 50 | 52.00% | 48.00% | 0 | 38.9954 | 13.4609 |
-| new_york_open | 41 | 58.54% | 41.46% | 0 | 42.7352 | 10.728 |
-| other_rth | 177 | 57.63% | 42.37% | 0 | 75.7818 | 12.2159 |
-| outside_rth | 408 | 55.88% | 44.12% | 0 | 46.4664 | 12.2003 |
+| All IFVG | 613 | 56.93% | 43.07% | 0 | 8.6703 | 7.8832 |
+| 5m | 452 | 57.08% | 42.92% | 0 | 8.5661 | 7.7609 |
+| 15m | 161 | 56.52% | 43.48% | 0 | 8.9629 | 8.2368 |
+| long | 302 | 54.97% | 45.03% | 0 | 8.5059 | 7.8214 |
+| short | 311 | 58.84% | 41.16% | 0 | 8.8299 | 7.902 |
+| london_open | 42 | 57.14% | 42.86% | 0 | 8.5591 | 7.3589 |
+| new_york_open | 36 | 61.11% | 38.89% | 0 | 8.1623 | 6.1773 |
+| other_rth | 160 | 56.87% | 43.13% | 0 | 8.6312 | 7.8329 |
+| outside_rth | 375 | 56.53% | 43.47% | 0 | 8.7482 | 8.0294 |
 
 ## Rolling / OOS
 
 | Window | Dates | Candidates | Target-first | Invalidation-first |
 |---|---|---:|---:|---:|
-| 1 | 2026-03-16 to 2026-04-15 | 200 | 62.00% | 38.00% |
-| 2 | 2026-03-31 to 2026-04-30 | 203 | 58.13% | 41.87% |
-| 3 | 2026-04-15 to 2026-05-15 | 229 | 51.09% | 48.91% |
-| 4 | 2026-04-30 to 2026-05-30 | 244 | 52.46% | 47.54% |
+| 1 | 2026-03-16 to 2026-04-15 | 182 | 62.64% | 37.36% |
+| 2 | 2026-03-31 to 2026-04-30 | 188 | 59.04% | 40.96% |
+| 3 | 2026-04-15 to 2026-05-15 | 209 | 50.24% | 49.76% |
+| 4 | 2026-04-30 to 2026-05-30 | 222 | 51.80% | 48.20% |
 
 First half:
-- Candidates: 338
-- Target-first: 58.88%
-- Invalidation-first: 41.12%
+- Candidates: 306
+- Target-first: 59.80%
+- Invalidation-first: 40.20%
 
 Second half:
-- Candidates: 338
-- Target-first: 53.55%
-- Invalidation-first: 46.45%
+- Candidates: 307
+- Target-first: 54.07%
+- Invalidation-first: 45.93%
 
 OOS verdict: `passed`.
 

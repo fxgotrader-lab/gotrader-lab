@@ -1,4 +1,6 @@
 import type { Candle } from "@/lib/types";
+import { buildIctTradeConstruction } from "./ictTradeConstruction";
+import type { IctTradeConstructionBlocker, IctTradeConstructionResult } from "./ictTradeConstructionTypes";
 import type {
   IctIfvgBounds,
   IctIfvgCandidate,
@@ -51,6 +53,7 @@ interface InternalIfvgCandidate {
   stop?: number;
   target?: number;
   rr?: number;
+  tradeConstruction?: IctTradeConstructionResult;
   liquidityTarget?: IctIfvgLiquidityTarget;
   htfAlignment: IctIfvgHtfAlignment;
   htfDirections: string[];
@@ -290,17 +293,37 @@ const findLiquidityTarget = (
     : undefined;
 };
 
-const calculateRr = (
-  side: Exclude<IctIfvgSide, "flat">,
-  entry: number | undefined,
-  stop: number | undefined,
-  target: number | undefined
-) => {
-  if (entry === undefined || stop === undefined || target === undefined) return undefined;
-  const risk = side === "long" ? entry - stop : stop - entry;
-  const reward = side === "long" ? target - entry : entry - target;
-  if (risk <= 0 || reward <= 0) return undefined;
-  return reward / risk;
+const rounded = (value: number, decimals = 4) => Number(value.toFixed(decimals));
+
+const stopBufferFor = (candles: NormalizedCandle[], index: number, bounds: IctIfvgBounds) => {
+  const recentRange = averageRange(candles.slice(Math.max(0, index - 24), index + 1));
+  const gapSize = Math.max(0, bounds.high - bounds.low);
+  return Math.max(recentRange * 0.03, gapSize * 0.02, 0.01);
+};
+
+const messageForTradeConstructionBlocker = (blocker: IctTradeConstructionBlocker) => {
+  if (blocker === "entry_missing") return "entry_missing";
+  if (blocker === "target_missing") return "target_missing";
+  if (blocker === "invalidation_missing") return "invalidation_missing";
+  if (blocker === "rr_unavailable") return "rr_unavailable";
+  if (blocker === "rr_below_minimum") return "rr_below_minimum";
+  if (blocker === "target_too_close") return "target_too_close";
+  if (blocker === "stop_too_wide") return "stop_too_wide";
+  if (blocker === "stop_not_beyond_structure") return "stop_not_beyond_structure";
+  if (blocker === "invalid_price_order") return "invalid_price_order";
+  if (blocker === "structure_bounds_missing") return "structure_bounds_missing";
+  if (blocker === "unrealistic_rr") return "unrealistic_rr";
+  if (blocker === "source_missing") return "source_missing";
+  return "authority_not_none";
+};
+
+const missingConditionForTradeConstructionBlocker = (blocker: IctTradeConstructionBlocker) => {
+  if (blocker === "target_missing") return "target_missing";
+  if (blocker === "invalidation_missing") return "invalidation_missing";
+  if (blocker === "entry_missing") return "entry_missing";
+  if (blocker === "rr_unavailable") return "rr_unavailable";
+  if (blocker === "rr_below_minimum" || blocker === "target_too_close") return "minimum_2r";
+  return blocker;
 };
 
 const isLowVolumeContext = (candles: NormalizedCandle[], candle: NormalizedCandle) => {
@@ -313,7 +336,7 @@ const isLowVolumeContext = (candles: NormalizedCandle[], candle: NormalizedCandl
 
 const findInternalCandidate = (
   candles: NormalizedCandle[],
-  contextCandles: IctIfvgInput["contextCandles"]
+  input: IctIfvgInput
 ): InternalIfvgCandidate | undefined => {
   const scanStart = Math.max(2, candles.length - 120);
   const scanEnd = candles.length - 3;
@@ -344,7 +367,7 @@ const findInternalCandidate = (
       presentConditions.push("unused_ifvg_zone");
     }
 
-    const { alignment, directions } = resolveHtfAlignment(contextCandles, side);
+    const { alignment, directions } = resolveHtfAlignment(input.contextCandles, side);
     if (alignment === "against_htf") {
       blockers.push("IFVG direction is against available HTF context.");
       missingConditions.push("htf_alignment");
@@ -372,22 +395,50 @@ const findInternalCandidate = (
       presentConditions.push("sufficient_volume");
     }
 
-    const entry = retestCandle ? fvg.bounds.midpoint : undefined;
-    const stop = entry === undefined ? undefined : side === "long" ? fvg.bounds.low : fvg.bounds.high;
+    const entry = retestCandle ? rounded(fvg.bounds.midpoint) : undefined;
+    const stopBuffer = retestCandle ? stopBufferFor(candles, retestCandle.index, fvg.bounds) : undefined;
+    const stop =
+      entry === undefined || stopBuffer === undefined
+        ? undefined
+        : side === "long"
+          ? rounded(fvg.bounds.low - stopBuffer)
+          : rounded(fvg.bounds.high + stopBuffer);
     const liquidityTarget = entry === undefined || !retestCandle
       ? undefined
       : findLiquidityTarget(candles, side, entry, retestCandle.index);
     const target = liquidityTarget?.price;
-    const rr = calculateRr(side, entry, stop, target);
+    const tradeConstruction = buildIctTradeConstruction({
+      side,
+      entry,
+      stop,
+      target,
+      entryModelType: "ifvg",
+      structureBounds: {
+        ifvgLow: fvg.bounds.low,
+        ifvgHigh: fvg.bounds.high,
+        fvgLow: fvg.bounds.low,
+        fvgHigh: fvg.bounds.high
+      },
+      strategyId: "ifvg_v1",
+      symbol: input.requestedSymbol,
+      brokerSymbol: input.brokerSymbol,
+      timeframe: input.timeframe,
+      sourceFingerprint: input.sourceFingerprint,
+      minimumRR: 2,
+      preferredRR: 3,
+      authority: authorityNone
+    });
+    const rr = tradeConstruction.rr;
     if (!liquidityTarget || target === undefined) {
       blockers.push("No next draw-on-liquidity target in IFVG direction.");
       missingConditions.push("liquidity_target");
     } else {
       presentConditions.push("liquidity_target");
     }
-    if (rr === undefined || rr < 2) {
-      blockers.push(`IFVG RR is below 2R (${rr?.toFixed(2) ?? "n/a"}R).`);
-      missingConditions.push("minimum_2r");
+    const constructionBlockers = tradeConstruction.blockers.filter((blocker) => blocker !== "source_missing");
+    if (constructionBlockers.length > 0) {
+      blockers.push(...constructionBlockers.map(messageForTradeConstructionBlocker));
+      missingConditions.push(...constructionBlockers.map(missingConditionForTradeConstructionBlocker));
     } else {
       presentConditions.push("minimum_2r");
     }
@@ -402,6 +453,7 @@ const findInternalCandidate = (
       stop,
       target,
       rr,
+      tradeConstruction,
       liquidityTarget,
       htfAlignment: alignment,
       htfDirections: directions,
@@ -431,6 +483,23 @@ const statusForBlocker = (blocker: string | undefined): IctIfvgStatus => {
   if (/low-volume/i.test(blocker)) return "blocked_low_volume";
   if (/retest/i.test(blocker)) return "blocked_no_retest";
   if (/RR|liquidity target/i.test(blocker)) return "blocked_rr";
+  if (
+    [
+      "entry_missing",
+      "target_missing",
+      "invalidation_missing",
+      "rr_unavailable",
+      "rr_below_minimum",
+      "target_too_close",
+      "stop_too_wide",
+      "stop_not_beyond_structure",
+      "invalid_price_order",
+      "structure_bounds_missing",
+      "unrealistic_rr"
+    ].includes(blocker)
+  ) {
+    return "blocked_rr";
+  }
   return "no_trade";
 };
 
@@ -450,6 +519,7 @@ const buildCandidate = (input: {
   const canCreateValidationChainEntry =
     input.status === "replay_required" &&
     input.blockers.length === 0 &&
+    input.internal?.tradeConstruction?.valid === true &&
     input.source.sourceProvider !== "mock" &&
     input.source.sourceProvider !== "sample";
   const sideText = input.internal?.side ?? "flat";
@@ -485,6 +555,7 @@ const buildCandidate = (input: {
     stop: input.internal?.stop,
     target: input.internal?.target,
     rr: input.internal?.rr,
+    tradeConstruction: input.internal?.tradeConstruction,
     htfAlignment: input.htfAlignment ?? input.internal?.htfAlignment ?? "unavailable",
     htfDirections: input.htfDirections ?? input.internal?.htfDirections ?? [],
     liquidityTarget: input.internal?.liquidityTarget,
@@ -546,7 +617,7 @@ export const evaluateIctIfvg = (input: IctIfvgInput): IctIfvgCandidate => {
     });
   }
 
-  const internal = findInternalCandidate(normalized, input.contextCandles);
+  const internal = findInternalCandidate(normalized, input);
   if (!internal) {
     return buildCandidate({
       source: input,

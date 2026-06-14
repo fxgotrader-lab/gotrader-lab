@@ -9,7 +9,7 @@ import ts from "typescript";
 const projectRoot = process.cwd();
 const sourceRoot = path.join(projectRoot, "src", "lib", "ict-strategy-suite");
 const outRoot = path.join(projectRoot, ".gotrader", "ifvg-performance-test");
-const sourceFiles = ["ictIfvgTypes.ts", "ictIfvg.ts"];
+const sourceFiles = ["ictTradeConstructionTypes.ts", "ictTradeConstruction.ts", "ictIfvgTypes.ts", "ictIfvg.ts"];
 const reportPath = path.join(projectRoot, "docs", "ifvg-performance-audit.md");
 
 const bridgeUrl = (process.env.MT5_READONLY_BRIDGE_URL || "http://127.0.0.1:7341").replace(/\/$/, "");

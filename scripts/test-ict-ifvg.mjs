@@ -9,7 +9,7 @@ import ts from "typescript";
 const projectRoot = process.cwd();
 const sourceRoot = path.join(projectRoot, "src", "lib", "ict-strategy-suite");
 const outRoot = path.join(projectRoot, ".gotrader", "ict-ifvg-test");
-const sourceFiles = ["ictIfvgTypes.ts", "ictIfvg.ts"];
+const sourceFiles = ["ictTradeConstructionTypes.ts", "ictTradeConstruction.ts", "ictIfvgTypes.ts", "ictIfvg.ts"];
 
 function compileForNode() {
   fs.rmSync(outRoot, { recursive: true, force: true });
@@ -65,6 +65,14 @@ function overlapFiller(startMinute, count, base = 98) {
     const open = base + (index % 3) * 0.12;
     const close = base + ((index + 1) % 3) * 0.12;
     return candle(startMinute + index * 5, open, base + 1.2, base - 1.2, close, 150 + index);
+  });
+}
+
+function wideOverlapFiller(startMinute, count, base = 100) {
+  return Array.from({ length: count }, (_, index) => {
+    const open = base + (index % 2 ? 0.4 : -0.4);
+    const close = base + (index % 2 ? -0.4 : 0.4);
+    return candle(startMinute + index * 5, open, base + 20, base - 80, close, 180 + index);
   });
 }
 
@@ -146,6 +154,20 @@ function lowRr() {
   ];
 }
 
+function missingTarget() {
+  return [
+    ...wideOverlapFiller(0, 10, 100),
+    candle(50, 101, 104, 96, 97),
+    candle(55, 97, 99, 95.5, 96.8),
+    candle(60, 93, 94, 90, 91),
+    candle(65, 91, 93.4, 90.5, 92.2),
+    candle(70, 92.5, 98.6, 92.2, 98),
+    candle(75, 97.8, 98.2, 94.8, 95.6),
+    candle(80, 95.7, 99, 95.2, 98.5),
+    ...overlapFiller(85, 10, 96)
+  ];
+}
+
 function lowVolume() {
   const candles = validLongIfvg();
   return candles.map((item, index) => index === 14 ? { ...item, volume: 5 } : { ...item, volume: 1000 });
@@ -186,6 +208,9 @@ async function main() {
   assert.ok(long.stop);
   assert.ok(long.target);
   assert.ok(long.rr >= 2);
+  assert.equal(long.tradeConstruction.valid, true);
+  assert.equal(long.tradeConstruction.entryModelType, "ifvg");
+  assert.ok(long.stop < long.ifvgBounds.low, "long IFVG stop must be below IFVG bottom");
   assert.equal(long.canCreateValidationChainEntry, true);
   assert.equal(ifvg.ictIfvgCanQueueValidation(long), true);
   assertSafe(long);
@@ -195,6 +220,8 @@ async function main() {
   assert.equal(short.side, "short");
   assert.equal(short.originalFvgDirection, "bullish");
   assert.ok(short.rr >= 2);
+  assert.equal(short.tradeConstruction.valid, true);
+  assert.ok(short.stop > short.ifvgBounds.high, "short IFVG stop must be above IFVG top");
   assertSafe(short);
 
   const blockedHtf = ifvg.evaluateIctIfvg({ ...base, candles: validLongIfvg(), contextCandles: contextBearish });
@@ -221,11 +248,20 @@ async function main() {
   const missingRetest = ifvg.evaluateIctIfvg({ ...base, candles: noRetest(), contextCandles: contextBullish });
   assert.equal(missingRetest.status, "blocked_no_retest");
   assert.match(missingRetest.blockers.join(" "), /retest/i);
+  assert.ok(missingRetest.blockers.includes("entry_missing"));
+  assert.ok(missingRetest.blockers.includes("invalidation_missing"));
   assertSafe(missingRetest);
+
+  const noTarget = ifvg.evaluateIctIfvg({ ...base, candles: missingTarget(), contextCandles: contextBullish });
+  assert.equal(noTarget.status, "blocked_rr");
+  assert.ok(noTarget.blockers.includes("target_missing"));
+  assert.ok(noTarget.blockers.includes("rr_unavailable"));
+  assert.ok(!noTarget.blockers.includes("target_too_close"));
+  assertSafe(noTarget);
 
   const rr = ifvg.evaluateIctIfvg({ ...base, candles: lowRr(), contextCandles: contextBullish });
   assert.equal(rr.status, "blocked_rr");
-  assert.match(rr.blockers.join(" "), /2R|liquidity/i);
+  assert.match(rr.blockers.join(" "), /2R|liquidity|rr_below_minimum|target_too_close/i);
   assertSafe(rr);
 
   const lowVol = ifvg.evaluateIctIfvg({ ...base, candles: lowVolume(), contextCandles: contextBullish });
@@ -252,6 +288,7 @@ async function main() {
     notInvertedStatus: notFullyInverted.status,
     reusedStatus: reused.status,
     noRetestStatus: missingRetest.status,
+    missingTargetStatus: noTarget.status,
     lowRrStatus: rr.status,
     lowVolumeStatus: lowVol.status,
     mockStatus: mock.status,
