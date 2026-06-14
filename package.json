@@ -39,6 +39,7 @@
     "test:cmd-independent-date-gate": "node scripts/test-cmd-independent-date-gate.mjs",
     "test:strategy-library": "node scripts/test-strategy-library.mjs",
     "test:strategy-detector-blocker-audit": "node scripts/test-strategy-detector-blocker-audit.mjs",
+    "test:strategy-confluence-edge": "node scripts/test-strategy-confluence-edge.mjs",
     "test:ict-silver-bullet": "node scripts/test-ict-silver-bullet.mjs",
     "test:ict-silver-bullet-v2": "node scripts/test-ict-silver-bullet-v2.mjs",
     "test:silver-bullet-performance": "node scripts/test-silver-bullet-performance.mjs",
