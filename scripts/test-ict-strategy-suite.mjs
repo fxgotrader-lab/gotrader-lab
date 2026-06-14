@@ -62,6 +62,8 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictPaperSignalSimulator.ts" },
   { root: sourceRoot, file: "ictCmdPaperTrackingTypes.ts" },
   { root: sourceRoot, file: "ictCmdPaperTracking.ts" },
+  { root: sourceRoot, file: "ictCmdTelemetryTypes.ts" },
+  { root: sourceRoot, file: "ictCmdTelemetry.ts" },
   { root: sourceRoot, file: "ictSilverBulletTypes.ts" },
   { root: sourceRoot, file: "ictSilverBullet.ts" },
   { root: sourceRoot, file: "ictTurtleSoupTypes.ts" },

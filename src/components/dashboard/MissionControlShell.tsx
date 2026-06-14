@@ -9,6 +9,7 @@ import { SourceStatusBanner } from "@/components/common/SourceStatusBanner";
 import { ValidationChainCard } from "@/components/common/ValidationChainCard";
 import { WORKSPACE_HERO, WORKSPACE_PRIMARY_PANEL, WORKSPACE_SECTION_LABEL } from "@/components/common/workspaceStyles";
 import { DashboardCommandOverview } from "@/components/dashboard/DashboardCommandOverview";
+import { Mt5PushFeedStatusCard } from "@/components/dashboard/Mt5PushFeedStatusCard";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import {
   TradingChart,
@@ -2155,6 +2156,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
           primaryBlocker={primaryBlocker}
           validationNextAction={paperDemoChecklist?.nextAction}
         />
+        <Mt5PushFeedStatusCard className="mt-3" />
         <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
           {statusChips.map((chip) => (
             <StatusChip key={chip.label} label={chip.label} value={chip.value} tone={chip.tone} />
