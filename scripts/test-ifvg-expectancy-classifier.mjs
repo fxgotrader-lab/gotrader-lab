@@ -325,7 +325,54 @@ const ifvgSizeBucket = (bounds) => {
   return "large";
 };
 
-const compactCandidate = ({ candidate, timeframe, signalIndex, outcome, tradingDate, session }) => ({
+const rrDetailedBucket = (rr) => {
+  if (!Number.isFinite(rr)) return "unknown";
+  if (rr < 2) return "below_2";
+  if (rr < 3) return "2_to_3";
+  if (rr < 5) return "3_to_5";
+  return "5_plus";
+};
+
+const hasStrongBody = (candle, minimumBodyRatio = 0.55) => {
+  if (!candle) return false;
+  const range = Math.abs(Number(candle.high) - Number(candle.low));
+  const body = Math.abs(Number(candle.close) - Number(candle.open));
+  return range > 0 && body / range >= minimumBodyRatio;
+};
+
+const cleanRetest = (candidate) => {
+  const retest = candidate.retestCandle;
+  const bounds = candidate.ifvgBounds;
+  if (!retest || !bounds || candidate.side === "flat") return false;
+  if (candidate.side === "long") {
+    return retest.low <= bounds.midpoint && retest.low >= bounds.low && retest.close >= bounds.midpoint;
+  }
+  return retest.high >= bounds.midpoint && retest.high <= bounds.high && retest.close <= bounds.midpoint;
+};
+
+const postInversionDeliveryConfirmed = ({ candidate, candles, sliceStartIndex }) => {
+  const inversionIndex = candidate.inversionCandle?.candleIndex;
+  if (!Number.isFinite(inversionIndex) || candidate.side === "flat") return false;
+  const absoluteIndex = sliceStartIndex + inversionIndex;
+  const future = candles.slice(absoluteIndex + 1, absoluteIndex + 4);
+  if (future.length < 2) return false;
+  if (candidate.side === "long") {
+    return future.at(-1).close > candidate.inversionCandle.close && future.filter((candle) => candle.close >= candle.open).length >= 2;
+  }
+  return future.at(-1).close < candidate.inversionCandle.close && future.filter((candle) => candle.close <= candle.open).length >= 2;
+};
+
+const premiumDiscountAlignment = ({ candidate, slice }) => {
+  if (!Number.isFinite(candidate.entry) || candidate.side === "flat" || slice.length < 20) return "not_measured";
+  const range = slice.slice(-80);
+  const high = Math.max(...range.map((candle) => candle.high));
+  const low = Math.min(...range.map((candle) => candle.low));
+  const midpoint = low + (high - low) / 2;
+  if (candidate.side === "long") return candidate.entry <= midpoint ? "aligned" : "misaligned";
+  return candidate.entry >= midpoint ? "aligned" : "misaligned";
+};
+
+const compactCandidate = ({ candidate, timeframe, signalIndex, outcome, tradingDate, session, candles, slice, sliceStartIndex }) => ({
   key: [timeframe, candidate.originalFvgCandle?.timestamp, candidate.inversionCandle?.timestamp, candidate.retestCandle?.timestamp, candidate.side].join("|"),
   tradingDate,
   timeframe,
@@ -334,13 +381,18 @@ const compactCandidate = ({ candidate, timeframe, signalIndex, outcome, tradingD
   outcome,
   rr: Number(candidate.rr ?? 0),
   rrBucket: rrBucket(candidate.rr),
+  rrDetailedBucket: rrDetailedBucket(candidate.rr),
   signalIndex,
   originalFvgDirection: candidate.originalFvgDirection,
   htfAlignment: candidate.htfAlignment,
   ifvgSizeBucket: ifvgSizeBucket(candidate.ifvgBounds),
   retestTimestamp: candidate.retestCandle?.timestamp,
   hasExternalLiquidityTarget: Boolean(candidate.liquidityTarget),
-  premiumDiscountAligned: "not_measured",
+  premiumDiscountAligned: premiumDiscountAlignment({ candidate, slice }),
+  cleanRetest: cleanRetest(candidate),
+  inversionStrongBody: hasStrongBody(candidate.inversionCandle),
+  postInversionDeliveryConfirmed: postInversionDeliveryConfirmed({ candidate, candles, sliceStartIndex }),
+  displacementConfirmed: hasStrongBody(candidate.inversionCandle) && postInversionDeliveryConfirmed({ candidate, candles, sliceStartIndex }),
   firstIfvgUse: candidate.presentConditions.includes("unused_ifvg_zone"),
   blocker: candidate.blockers[0],
   canCreateValidationChainEntry: candidate.canCreateValidationChainEntry,
@@ -804,7 +856,8 @@ async function collectCandidates() {
       const parts = nyParts(candle.timestamp);
       const session = sessionBucket(parts.minuteOfDay);
       totalEvaluatedWindows += 1;
-      const slice = depth.candles.slice(Math.max(0, index - sliceSize), index + 1);
+      const sliceStartIndex = Math.max(0, index - sliceSize);
+      const slice = depth.candles.slice(sliceStartIndex, index + 1);
       const contextCandles = contextFor({ depthsByTimeframe, entryTimeframe: timeframe, timestamp: candle.timestamp });
       const candidate = evaluateIctIfvg({
         candles: slice,
@@ -824,7 +877,17 @@ async function collectCandidates() {
         continue;
       }
       const outcome = simulateOutcome({ candles: depth.candles, candidate, signalIndex: index, timeframe });
-      const compact = compactCandidate({ candidate, timeframe, signalIndex: index, outcome, tradingDate: parts.dayKey, session });
+      const compact = compactCandidate({
+        candidate,
+        timeframe,
+        signalIndex: index,
+        outcome,
+        tradingDate: parts.dayKey,
+        session,
+        candles: depth.candles,
+        slice,
+        sliceStartIndex
+      });
       if (!candidatesByKey.has(compact.key)) candidatesByKey.set(compact.key, compact);
     }
   }
@@ -940,15 +1003,31 @@ async function main() {
   console.log(JSON.stringify(report, null, 2));
 }
 
-main().catch((error) => {
-  const report = {
-    status: "failed",
-    diagnostic: "ifvg_expectancy_classifier_audit",
-    error: error instanceof Error ? error.message : String(error),
-    promotionDecision: "Do not promote IFVG; diagnostic did not complete.",
-    safety,
-    authority
-  };
-  console.log(JSON.stringify(report, null, 2));
-  process.exitCode = 1;
-});
+export {
+  authority,
+  classifyIfvg,
+  collectCandidates,
+  costLevels,
+  gateRequirements,
+  oosSummary,
+  pct,
+  rollingExpectancy,
+  runClassifierUnitChecks,
+  safety,
+  summarizeExpectancy
+};
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    const report = {
+      status: "failed",
+      diagnostic: "ifvg_expectancy_classifier_audit",
+      error: error instanceof Error ? error.message : String(error),
+      promotionDecision: "Do not promote IFVG; diagnostic did not complete.",
+      safety,
+      authority
+    };
+    console.log(JSON.stringify(report, null, 2));
+    process.exitCode = 1;
+  });
+}

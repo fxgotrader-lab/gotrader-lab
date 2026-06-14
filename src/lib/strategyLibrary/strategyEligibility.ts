@@ -116,11 +116,13 @@ export function evaluateStrategyEligibility(record: StrategyIntakeRecord): Strat
 
   return makeResult(
     record,
-    definition.id === "ict_cmd_short_paper_watchlist_v1" ? "paper_watchlist_candidate" : "evidence_building",
+    definition.status === "paper_watchlist_candidate" ? "paper_watchlist_candidate" : "evidence_building",
     [],
     warnings,
     definition.id === "ict_cmd_short_paper_watchlist_v1"
       ? "Keep CMD in paper-watchlist evidence building; Paper-Demo still requires the normal checklist."
+      : definition.status === "paper_watchlist_candidate"
+        ? "Keep this strategy in paper-watchlist evidence building; Paper-Demo still requires the normal checklist."
       : "Continue deterministic validation and evidence review."
   );
 }

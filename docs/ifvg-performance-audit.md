@@ -15,9 +15,9 @@ Generated from `npm.cmd run test:ifvg-performance` on explicit MT5 read-only his
 
 | Timeframe | Candles | Chunks | Lookback | Status |
 |---|---:|---:|---:|---|
-| 5m | 17,799 | 7 | 88.95 days | sufficient |
-| 15m | 5,933 | 7 | 88.95 days | sufficient |
-| 1h | 1,484 | 7 | 88.92 days | sufficient |
+| 5m | 17,524 | 7 | 90 days | sufficient |
+| 15m | 5,841 | 7 | 89.99 days | sufficient |
+| 1h | 1,461 | 7 | 89.96 days | sufficient |
 
 USTECH is MT5 read-only CFD/proxy data for requested MNQ, not CME futures truth.
 
@@ -25,53 +25,54 @@ USTECH is MT5 read-only CFD/proxy data for requested MNQ, not CME futures truth.
 
 | Metric | Count |
 |---|---:|
-| Evaluated windows | 4,878 |
-| Setup-condition hits | 4,878 |
-| Blocked candidates | 661 |
+| Evaluated windows | 4,803 |
+| Setup-condition hits | 4,803 |
+| Blocked candidates | 651 |
 | No-trade windows | 0 |
 | Insufficient-data windows | 0 |
-| Valid replay candidates | 613 |
+| Valid replay candidates | 599 |
 
 Top blockers:
 
 | Blocker | Count |
 |---|---:|
-| IFVG zone was already used before inversion. | 473 |
+| IFVG zone was already used before inversion. | 462 |
 | IFVG direction is against available HTF context. | 166 |
-| unrealistic_rr | 22 |
+| unrealistic_rr | 23 |
 
 ## Performance Summary
 
 | Segment | Candidates | Target-first | Invalidation-first | Stalled | Avg RR | Median RR |
 |---|---:|---:|---:|---:|---:|---:|
-| All IFVG | 613 | 56.93% | 43.07% | 0 | 8.6703 | 7.8832 |
-| 5m | 452 | 57.08% | 42.92% | 0 | 8.5661 | 7.7609 |
-| 15m | 161 | 56.52% | 43.48% | 0 | 8.9629 | 8.2368 |
-| long | 302 | 54.97% | 45.03% | 0 | 8.5059 | 7.8214 |
-| short | 311 | 58.84% | 41.16% | 0 | 8.8299 | 7.902 |
-| london_open | 42 | 57.14% | 42.86% | 0 | 8.5591 | 7.3589 |
-| new_york_open | 36 | 61.11% | 38.89% | 0 | 8.1623 | 6.1773 |
-| other_rth | 160 | 56.87% | 43.13% | 0 | 8.6312 | 7.8329 |
-| outside_rth | 375 | 56.53% | 43.47% | 0 | 8.7482 | 8.0294 |
+| All IFVG | 599 | 56.43% | 43.57% | 0 | 8.7597 | 7.9194 |
+| 5m | 442 | 56.79% | 43.21% | 0 | 8.6682 | 7.8897 |
+| 15m | 157 | 55.41% | 44.59% | 0 | 9.017 | 8.29 |
+| long | 298 | 57.38% | 42.62% | 0 | 8.6555 | 7.9265 |
+| short | 301 | 55.48% | 44.52% | 0 | 8.8627 | 7.9194 |
+| london_open | 49 | 51.02% | 48.98% | 0 | 9.1128 | 7.7546 |
+| new_york_open | 41 | 53.66% | 46.34% | 0 | 8.1403 | 6.0185 |
+| other_rth | 155 | 54.19% | 45.81% | 0 | 8.6636 | 7.9025 |
+| outside_rth | 354 | 58.47% | 41.53% | 0 | 8.8246 | 8.2456 |
 
 ## Rolling / OOS
 
 | Window | Dates | Candidates | Target-first | Invalidation-first |
 |---|---|---:|---:|---:|
-| 1 | 2026-03-16 to 2026-04-15 | 182 | 62.64% | 37.36% |
-| 2 | 2026-03-31 to 2026-04-30 | 188 | 59.04% | 40.96% |
-| 3 | 2026-04-15 to 2026-05-15 | 209 | 50.24% | 49.76% |
-| 4 | 2026-04-30 to 2026-05-30 | 222 | 51.80% | 48.20% |
+| 1 | 2026-03-17 to 2026-04-16 | 179 | 64.25% | 35.75% |
+| 2 | 2026-04-01 to 2026-05-01 | 190 | 57.89% | 42.11% |
+| 3 | 2026-04-16 to 2026-05-16 | 204 | 52.94% | 47.06% |
+| 4 | 2026-05-01 to 2026-05-31 | 209 | 51.67% | 48.33% |
+| 5 | 2026-05-16 to 2026-06-15 | 216 | 53.24% | 46.76% |
 
 First half:
-- Candidates: 306
-- Target-first: 59.80%
-- Invalidation-first: 40.20%
+- Candidates: 299
+- Target-first: 59.20%
+- Invalidation-first: 40.80%
 
 Second half:
-- Candidates: 307
-- Target-first: 54.07%
-- Invalidation-first: 45.93%
+- Candidates: 300
+- Target-first: 53.67%
+- Invalidation-first: 46.33%
 
 OOS verdict: `passed`.
 

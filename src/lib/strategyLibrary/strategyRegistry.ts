@@ -390,6 +390,110 @@ export const STRATEGY_DEFINITIONS: StrategyDefinition[] = [
     authority: STRATEGY_LIBRARY_AUTHORITY
   },
   {
+    id: "ifvg_filtered_v2_research",
+    name: "IFVG Filtered v2 Research",
+    family: "ifvg",
+    status: "paper_watchlist_candidate",
+    detectorStatus: "executable_research",
+    description:
+      "Research-only filtered IFVG profile discovered from the 90-day variant audit. It requires clean retest plus displacement confirmation and remains paper-watchlist only until replay, walk-forward, evidence, maturity, and Paper-Demo checklist gates pass.",
+    side: "both",
+    supportedSymbols: ["MNQ", "NQ", "USTECH", "US30", "YM", "US500", "ES", "XAUUSD", "EURUSD.pro", "BTCUSD"],
+    primaryTimeframes: ["5m", "15m"],
+    higherTimeframes: ["15m", "1h", "4h", "1d"],
+    sourceRequirements: mt5ResearchSource,
+    requiredConditions: [
+      {
+        id: "fair_value_gap",
+        label: "Fair value gap",
+        description: "Original bullish or bearish FVG must be identified deterministically.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "full_inversion",
+        label: "Full inversion",
+        description: "Price must fully trade through the original FVG boundary.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "unused_ifvg_zone",
+        label: "Unused IFVG zone",
+        description: "The IFVG zone cannot already be used before inversion.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "clean_retest",
+        label: "Clean retest",
+        description: "Retest must respect the inverted gap without fully violating the opposite boundary.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "displacement_confirmation",
+        label: "Displacement confirmation",
+        description: "Inversion candle body and post-inversion delivery must confirm direction.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "liquidity_target",
+        label: "Liquidity target",
+        description: "Target must be the next draw on liquidity in the IFVG direction.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "minimum_2r",
+        label: "Minimum 2R",
+        description: "Target, invalidation, and entry must produce at least 2R after compact validation.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      }
+    ],
+    invalidationRules: [
+      "Long invalidation below the inverted FVG bottom or clean-retest violation level.",
+      "Short invalidation above the inverted FVG top or clean-retest violation level.",
+      "A reused IFVG zone blocks the candidate."
+    ],
+    targetRules: [
+      "Long target is next buy-side liquidity above the IFVG midpoint.",
+      "Short target is next sell-side liquidity below the IFVG midpoint.",
+      "Minimum reward/risk is 2R and cost sensitivity must remain positive before paper-watchlist review."
+    ],
+    minimumRR: 2,
+    sessionRules: [
+      "Use America/New_York timing for session classification.",
+      "Clean retest plus displacement can appear in London or New York contexts; session result must remain compactly reported."
+    ],
+    regimeRules: [
+      "HTF conflict remains a blocker unless replay explicitly marks the setup as a lower-timeframe research case.",
+      "Mock/sample data cannot create evidence or Paper-Demo eligibility."
+    ],
+    validationRequirements: compactValidation,
+    paperDemoRequirements: [
+      {
+        id: "ifvg_filtered_v2_replay_oos",
+        label: "IFVG filtered v2 replay/OOS",
+        required: true,
+        detail: "The filtered v2 profile can only progress after replay, walk-forward/OOS, evidence, maturity, readiness checklist, and committee review."
+      },
+      {
+        id: "paper_demo_checklist",
+        label: "Paper-Demo checklist",
+        required: true,
+        detail: "Paper-Demo is not automatic; the normal checklist must pass independently."
+      }
+    ],
+    forbiddenPromotionReasons: [
+      "missing clean retest",
+      "missing displacement confirmation",
+      "reused IFVG",
+      "against HTF context",
+      "RR below 2",
+      "negative cost sensitivity",
+      "mock/sample source",
+      "missing replay/OOS",
+      "Paper-Demo checklist incomplete"
+    ],
+    authority: STRATEGY_LIBRARY_AUTHORITY
+  },
+  {
     id: "turtle_soup_v1",
     name: "Turtle Soup v1",
     family: "turtle_soup",
@@ -889,6 +993,9 @@ export const suggestStrategyIdForRecognition = (input: {
   }
   if (input.family === "camerons_model" || /cameron/.test(text)) {
     return "camerons_model_research_v1";
+  }
+  if (/ifvg[_\s-]*filtered[_\s-]*v2|filtered.*ifvg|ifvg.*v2|clean.*retest.*displacement|clean_retest_displacement/.test(text)) {
+    return "ifvg_filtered_v2_research";
   }
   if (input.family === "ifvg" || /\bifvg\b|inversion.*fvg|inversion fair value/.test(text)) {
     return "ifvg_v1";

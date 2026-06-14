@@ -161,12 +161,13 @@ async function main() {
   const evidence = await import(pathToFileURL(path.join(outRoot, "strategyEvidence.mjs")).href);
 
   const definitions = registry.listStrategyDefinitions();
-  assert.equal(definitions.length, 16);
+  assert.equal(definitions.length, 17);
   const newStrategyIds = [
     "silver_bullet_v1",
     "silver_bullet_v2_refined_research",
     "camerons_model_research_v1",
     "ifvg_v1",
+    "ifvg_filtered_v2_research",
     "turtle_soup_v1",
     "crt_research_v1",
     "ote_research_v1",
@@ -190,7 +191,9 @@ async function main() {
   );
   assert.equal(registry.getStrategyDefinition("ifvg_v1").detectorStatus, "executable_research");
   assert.equal(registry.getStrategyDefinition("ifvg_v1").status, "replay_required");
-  for (const strategyId of newStrategyIds.filter((id) => !["silver_bullet_v1", "silver_bullet_v2_refined_research", "turtle_soup_v1", "cisd_v1", "ifvg_v1"].includes(id))) {
+  assert.equal(registry.getStrategyDefinition("ifvg_filtered_v2_research").detectorStatus, "executable_research");
+  assert.equal(registry.getStrategyDefinition("ifvg_filtered_v2_research").status, "paper_watchlist_candidate");
+  for (const strategyId of newStrategyIds.filter((id) => !["silver_bullet_v1", "silver_bullet_v2_refined_research", "turtle_soup_v1", "cisd_v1", "ifvg_v1", "ifvg_filtered_v2_research"].includes(id))) {
     assert.equal(registry.getStrategyDefinition(strategyId).detectorStatus, "research_only_placeholder");
   }
   assert.ok(registry.getStrategyDefinition("ict_cmd_short_paper_watchlist_v1"));
@@ -206,6 +209,14 @@ async function main() {
   assert.equal(
     registry.suggestStrategyIdForRecognition({ setupName: "Turtle Soup false breakout" }),
     "turtle_soup_v1"
+  );
+  assert.equal(
+    registry.suggestStrategyIdForRecognition({ candidateFamilies: ["clean_retest_displacement"] }),
+    "ifvg_filtered_v2_research"
+  );
+  assert.equal(
+    registry.suggestStrategyIdForRecognition({ setupName: "filtered IFVG v2" }),
+    "ifvg_filtered_v2_research"
   );
   assert.equal(
     registry.suggestStrategyIdForRecognition({ candidateFamilies: ["optimal_trade_entry"] }),
@@ -335,6 +346,37 @@ async function main() {
   assertSafeRecord(ifvgRecord);
   assertSafeRecord(ifvgEligibility);
 
+  const ifvgFilteredDefinition = registry.getStrategyDefinition("ifvg_filtered_v2_research");
+  const ifvgFilteredRecord = intake.createStrategyIntakeRecord({
+    strategyId: "ifvg_filtered_v2_research",
+    sourceStatus: mt5Source,
+    validationChainEntry: passedChain,
+    recognition: {
+      modelName: "IFVG filtered v2",
+      family: "ifvg",
+      side: "both",
+      presentConditions: ifvgFilteredDefinition.requiredConditions.map((condition) => condition.id)
+    },
+    evidenceSummary: {
+      sampleCount: 27,
+      uniqueTradingDates: 20,
+      activeRollingWindows: 5,
+      targetFirstRate: 0.8148,
+      invalidationFirstRate: 0.1852,
+      averageRr: 5.866,
+      evidenceScore: 72,
+      maturityScore: 68,
+      oosVerdict: "passed",
+      robustnessClassification: "paper_watchlist_candidate",
+      sourceFingerprint: mt5Source.sourceFingerprint
+    }
+  });
+  const ifvgFilteredEligibility = eligibility.evaluateStrategyEligibility(ifvgFilteredRecord);
+  assert.equal(ifvgFilteredEligibility.eligible, true);
+  assert.equal(ifvgFilteredEligibility.status, "paper_watchlist_candidate");
+  assertSafeRecord(ifvgFilteredRecord);
+  assertSafeRecord(ifvgFilteredEligibility);
+
   const unsafe = intake.createStrategyIntakeRecord({
     strategyId: "ict_cmd_short_paper_watchlist_v1",
     sourceStatus: mt5Source,
@@ -384,6 +426,7 @@ async function main() {
     mockBlocked: mockEligibility.blockers[0],
     marketMapStatus: marketMapEligibility.status,
     ifvgStatus: ifvgEligibility.status,
+    ifvgFilteredStatus: ifvgFilteredEligibility.status,
     unknownStatus: eligibility.evaluateStrategyEligibility(unknown).status,
     openClawStrategyId: openClawExplicit.strategyId,
     authority: authorityNone,
