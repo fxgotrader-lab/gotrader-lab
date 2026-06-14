@@ -126,6 +126,7 @@ const analysisTimeframeLabel = (currentRead: IctCurrentRead) =>
 
 const missingStructureFor = (currentRead: IctCurrentRead) =>
   [
+    currentRead.entryConstructionStatus === "missing" ? "entry" : undefined,
     currentRead.targetConstructionStatus === "missing" ? "target" : undefined,
     currentRead.invalidationConstructionStatus === "missing" ? "invalidation" : undefined,
     currentRead.rrConstructionStatus === "missing" ? "RR" : undefined
@@ -176,7 +177,7 @@ const buildStrategyCalibrationSummary = (
   ) ?? "no blocking reason supplied";
   const nextRecommendation =
     missingStructure.length
-      ? "Calibrate target, invalidation, and RR construction before changing model thresholds."
+      ? "Calibrate entry, target, invalidation, and RR construction before changing model thresholds."
       : currentRead.selfImprovementHypothesisQueued
         ? "Replay-test the queued research hypothesis; keep it research-only until evidence improves."
         : currentRead.htfAlignment && currentRead.htfAlignment.alignmentStatus !== "aligned" && currentRead.htfAlignment.alignmentStatus !== "not_required_for_model"
@@ -290,11 +291,12 @@ export function IctAdvisorSummaryPanel({
   const missingTradeFields = useMemo(
     () =>
       [
+        currentRead.entryConstructionStatus === "missing" ? "entry" : undefined,
         typeof recommended?.target === "number" ? undefined : "target",
         typeof recommended?.invalidation === "number" ? undefined : "invalidation",
         typeof recommended?.rrEstimate === "number" ? undefined : "RR"
       ].filter((field): field is string => Boolean(field)),
-    [recommended?.target, recommended?.invalidation, recommended?.rrEstimate]
+    [currentRead.entryConstructionStatus, recommended?.target, recommended?.invalidation, recommended?.rrEstimate]
   );
   const missingTradeFieldsLabel = missingTradeFields.length ? missingTradeFields.join(", ") : "none";
   const paperWatchlistEligible = currentRead.paperWatchlistEligible;
@@ -470,7 +472,7 @@ export function IctAdvisorSummaryPanel({
               <AdvisorMini
                 label="Trade field status"
                 value={missingTradeFieldsLabel === "none" ? "complete" : missingTradeFieldsLabel}
-                detail={`T ${formatToken(currentRead.targetConstructionStatus)} / I ${formatToken(currentRead.invalidationConstructionStatus)} / RR ${formatToken(currentRead.rrConstructionStatus)}`}
+                detail={`E ${formatToken(currentRead.entryConstructionStatus)} / T ${formatToken(currentRead.targetConstructionStatus)} / I ${formatToken(currentRead.invalidationConstructionStatus)} / RR ${formatToken(currentRead.rrConstructionStatus)}`}
               />
               <AdvisorMini label="Confidence" value={pct(currentRead.confidence)} />
               <AdvisorMini label="Signal RR" value={typeof researchSignal.rrEstimate === "number" ? `${researchSignal.rrEstimate.toFixed(2)}R` : "n/a"} detail={typeof researchSignal.confidence === "number" ? pct(researchSignal.confidence) : "n/a"} />
@@ -658,7 +660,7 @@ export function IctAdvisorSummaryPanel({
             <AdvisorMini
               label="Trade field status"
               value={missingTradeFieldsLabel === "none" ? "complete" : missingTradeFieldsLabel}
-              detail={`T ${formatToken(currentRead.targetConstructionStatus)} / I ${formatToken(currentRead.invalidationConstructionStatus)} / RR ${formatToken(currentRead.rrConstructionStatus)}`}
+              detail={`E ${formatToken(currentRead.entryConstructionStatus)} / T ${formatToken(currentRead.targetConstructionStatus)} / I ${formatToken(currentRead.invalidationConstructionStatus)} / RR ${formatToken(currentRead.rrConstructionStatus)}`}
             />
             <AdvisorMini label="Paper watchlist" value={paperWatchlistEligible ? "eligible" : "not eligible"} detail={paperWatchlistEligible ? "paper simulation only" : decisionSection("paper_sim")?.reason ?? currentRead.paperSimEligibilityReason ?? paperSimEligibility.reasons[0] ?? "approval or structure pending"} />
             <AdvisorMini label="CMD Paper" value={cmdPaperLabel} detail={cmdPaperTracking ? `${cmdPaperTracking.side} / ${formatToken(cmdPaperTracking.outcome)}` : decisionSection("cmd_paper")?.reason ?? "inactive"} />

@@ -2374,6 +2374,7 @@ function CurrentReadPanel({
             ? "Rejected"
             : "No Trade";
   const missingTradeFields = [
+    currentRead.entryConstructionStatus === "missing" ? "entry" : undefined,
     typeof currentRead.target === "number" ? undefined : "target",
     typeof currentRead.invalidation === "number" ? undefined : "invalidation",
     typeof currentRead.rrEstimate === "number" ? undefined : "RR"
@@ -2405,7 +2406,7 @@ function CurrentReadPanel({
   ) ?? "no blocking reason supplied";
   const nextCalibrationRecommendation =
     missingTradeFields.length
-      ? "Calibrate target, invalidation, and RR construction before changing model thresholds."
+      ? "Calibrate entry, target, invalidation, and RR construction before changing model thresholds."
       : currentRead.selfImprovementHypothesisQueued
         ? "Replay-test the queued research hypothesis; keep it research-only until evidence improves."
         : currentRead.htfAlignment && currentRead.htfAlignment.alignmentStatus !== "aligned" && currentRead.htfAlignment.alignmentStatus !== "not_required_for_model"
@@ -2500,10 +2501,11 @@ function CurrentReadPanel({
         />
         <AdvisorReadout label="SMT" value={formatToken(currentRead.smtStatus)} detail={currentRead.smtReason} />
         <AdvisorReadout label="Risk" value={formatToken(currentRead.riskStatus)} detail={currentRead.riskReason} />
+        <AdvisorReadout label="Entry" value={currentRead.entryZone ?? "n/a"} detail={currentRead.entryConstructionReason} />
         <AdvisorReadout label="Target" value={compactPrice(currentRead.target)} detail={currentRead.targetConstructionReason} />
         <AdvisorReadout label="Invalidation" value={compactPrice(currentRead.invalidation)} detail={currentRead.invalidationConstructionReason} />
         <AdvisorReadout label="RR / location" value={rr(currentRead.rrEstimate)} detail={`${formatToken(currentRead.rrConstructionStatus)} / ${formatToken(currentRead.dealingRangeLocation)}`} />
-        <AdvisorReadout label="Trade field status" value={missingTradeFields.length ? missingTradeFields.join(", ") : "complete"} detail={`T ${formatToken(currentRead.targetConstructionStatus)} / I ${formatToken(currentRead.invalidationConstructionStatus)} / RR ${formatToken(currentRead.rrConstructionStatus)}`} />
+        <AdvisorReadout label="Trade field status" value={missingTradeFields.length ? missingTradeFields.join(", ") : "complete"} detail={`E ${formatToken(currentRead.entryConstructionStatus)} / T ${formatToken(currentRead.targetConstructionStatus)} / I ${formatToken(currentRead.invalidationConstructionStatus)} / RR ${formatToken(currentRead.rrConstructionStatus)}`} />
         <AdvisorReadout label="Paper watchlist" value={currentRead.paperWatchlistEligible ? "eligible" : "not eligible"} detail="paper simulation only; no readiness promotion" />
         <AdvisorReadout label="Latest replay" value={currentRead.latestReplayStatus ?? "none saved"} detail="manual result" />
         <AdvisorReadout
@@ -2639,6 +2641,7 @@ function CurrentReadDataFlowPanel({ currentRead }: { currentRead: IctCurrentRead
     ["Model detector", currentRead.debug.modelDetectorUsed ?? "none"],
     ["Session mitigation", currentRead.sessionMitigationDetected ? "detected" : "missing"],
     ["FVG target", currentRead.fvgTargetDetected ? currentRead.fvgTargetDirection ?? "detected" : currentRead.fvgTargetReason ?? "missing"],
+    ["Entry construction", `${currentRead.entryConstructionStatus ?? "unknown"} / ${currentRead.entryConstructionReason ?? "none"}`],
     ["Target construction", `${currentRead.targetConstructionStatus ?? "unknown"} / ${currentRead.targetConstructionReason ?? "none"}`],
     ["Invalidation construction", `${currentRead.invalidationConstructionStatus ?? "unknown"} / ${currentRead.invalidationConstructionReason ?? "none"}`],
     ["RR construction", `${currentRead.rrConstructionStatus ?? "unknown"} / ${currentRead.rrConstructionReason ?? "none"}`],

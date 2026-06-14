@@ -14,6 +14,8 @@ const outRoot = path.join(projectRoot, ".gotrader", "ict-strategy-suite-test");
 const sourceFiles = [
   { root: currentOpportunityRoot, file: "currentOpportunityTypes.ts" },
   { root: currentOpportunityRoot, file: "buildCurrentOpportunityContext.ts" },
+  { root: sourceRoot, file: "ictTradeConstructionTypes.ts" },
+  { root: sourceRoot, file: "ictTradeConstruction.ts" },
   { root: currentOpportunityRoot, file: "detectCurrentOpportunities.ts" },
   { root: currentOpportunityRoot, file: "currentOpportunityStore.ts" },
   { root: sourceRoot, file: "ictStrategySuiteTypes.ts" },
@@ -114,6 +116,8 @@ function compileSuiteForNode() {
       .replace(/from\s+'..\/integrations\/mt5\/([^']+)'/g, "from './$1.mjs'")
       .replace(/from\s+"..\/currentOpportunity"/g, 'from "./currentOpportunity.mjs"')
       .replace(/from\s+'..\/currentOpportunity'/g, "from './currentOpportunity.mjs'")
+      .replace(/from\s+"..\/ict-strategy-suite\/([^"]+)"/g, 'from "./$1.mjs"')
+      .replace(/from\s+'..\/ict-strategy-suite\/([^']+)'/g, "from './$1.mjs'")
       .replace(/from\s+"@\/lib\/integrations\/mt5\/([^"]+)"/g, 'from "./$1.mjs"')
       .replace(/from\s+'@\/lib\/integrations\/mt5\/([^']+)'/g, "from './$1.mjs'")
       .replace(/from\s+"..\/candleSources"/g, 'from "./candleSourcesStub.mjs"')

@@ -83,6 +83,7 @@ const phaseFor = (currentRead: IctCurrentRead): IctResearchSignal["phase"] => {
 const buildBlockingReasons = (currentRead: IctCurrentRead) =>
   unique([
     !isDirectionalSide(currentRead.side) ? "Signal is flat or non-directional." : undefined,
+    !parseEntryZone(currentRead.entryZone) ? "Missing entry." : undefined,
     !finite(currentRead.target) ? "Missing target." : undefined,
     !finite(currentRead.invalidation) ? "Missing invalidation." : undefined,
     !finite(currentRead.rrEstimate) ? "Missing RR estimate." : undefined,
@@ -110,12 +111,13 @@ export const classifyResearchSignalStatus = (
   if (currentRead.approvedStatus === "no_trade" || currentRead.side === "flat") return "no_signal";
   const blockers = buildBlockingReasons(currentRead);
   const hasCriticalBlocker = blockers.some((reason) =>
-    /Missing target|Missing invalidation|Risk governor|SMT\/relative strength rejects|rejected|data is missing|data is unavailable/i.test(reason)
+    /Missing entry|Missing target|Missing invalidation|Risk governor|SMT\/relative strength rejects|rejected|data is missing|data is unavailable/i.test(reason)
   );
   if (currentRead.approvedStatus === "rejected_candidate" || hasCriticalBlocker) return "rejected_signal";
   if (
     currentRead.approvedStatus === "approved_research_candidate" &&
     isDirectionalSide(currentRead.side) &&
+    Boolean(parseEntryZone(currentRead.entryZone)) &&
     finite(currentRead.target) &&
     finite(currentRead.invalidation) &&
     finite(currentRead.rrEstimate) &&
@@ -127,6 +129,7 @@ export const classifyResearchSignalStatus = (
   if (
     currentRead.approvedStatus === "paper_watchlist_candidate" &&
     isDirectionalSide(currentRead.side) &&
+    Boolean(parseEntryZone(currentRead.entryZone)) &&
     finite(currentRead.target) &&
     finite(currentRead.invalidation) &&
     finite(currentRead.rrEstimate) &&

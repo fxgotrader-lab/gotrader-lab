@@ -449,7 +449,7 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
     : Boolean(input.liquiditySwept || input.orderBlock?.liquiditySweepConfirmed);
   const mixedBias = replay ? input.htfAligned === false : mixedBiasForSignal({ ...input, htfAlignment });
   const missingHtfContext = replay ? input.htfAligned === undefined : htfAlignment.alignmentStatus === "missing" || htfTimeframes.length === 0;
-  const targetTooClose = hasText(noTradeReasons, /target (is )?too close|too close to target/i);
+  const rawTargetTooClose = hasText(noTradeReasons, /target (is )?too close|too close to target/i);
   const sessionNarrativeProfile = input.sessionNarrativeProfile;
   const sessionDirectionalRead = input.sessionDirectionalRead;
   const sessionNarrativeConfidence = input.sessionNarrativeConfidence;
@@ -471,6 +471,8 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
         : undefined;
   const hasTarget = replay ? typeof input.tradePath.target === "number" : typeof input.target === "number";
   const hasInvalidation = replay ? typeof input.tradePath.invalidation === "number" : typeof input.invalidation === "number";
+  const rrEstimate = input.rrEstimate ?? (replay ? input.tradePath.rrAchieved : undefined);
+  const targetTooClose = rawTargetTooClose && hasTarget && hasInvalidation && typeof rrEstimate === "number" && Number.isFinite(rrEstimate);
   return {
     brokerSymbol: input.brokerSymbol,
     compositeBias: replay ? undefined : input.bias.composite,
@@ -496,7 +498,7 @@ const normalizeInput = (input: IctApprovedSetupProfileInput) => {
     primaryTimeframe: input.primaryTimeframe,
     researchOnly,
     requestedSymbol: input.requestedSymbol,
-    rrEstimate: input.rrEstimate ?? (replay ? input.tradePath.rrAchieved : undefined),
+    rrEstimate,
     session: replay ? sessionForTimestamp(input.tradePath.signalTime) : "current",
     setup: input.setup,
     side: input.side,
@@ -623,9 +625,11 @@ export const evaluateApprovedSetupProfile = (
   const hardRejects: string[] = [];
   const watchlistReasons: string[] = [];
   const approvedReasons: string[] = [];
-  const rr = normalized.rrEstimate ?? 0;
+  const normalizedRr = normalized.rrEstimate;
+  const hasRr = typeof normalizedRr === "number" && Number.isFinite(normalizedRr);
+  const rr = hasRr ? normalizedRr : 0;
   const nearConfidence = normalized.confidence >= profile.minConfidence - 5;
-  const nearRr = rr >= profile.minRr - 0.25;
+  const nearRr = hasRr && rr >= profile.minRr - 0.25;
   const sessionCalibrated = isSessionCalibratedProfile(profile);
   const sessionModel = normalized.sessionNarrativeProfile;
   const sessionConfirmsSide = directionConfirmsSide(normalized.sessionDirectionalRead, normalized.side);
@@ -711,7 +715,9 @@ export const evaluateApprovedSetupProfile = (
     approvedReasons.push(`Confidence ${Math.round(normalized.confidence)} meets ${profile.minConfidence}.`);
   }
 
-  if (rr < profile.minRr) {
+  if (!hasRr) {
+    hardRejects.push("RR is unavailable because entry, target, or invalidation is missing.");
+  } else if (rr < profile.minRr) {
     if (nearRr) {
       watchlistReasons.push(`RR ${rr.toFixed(2)}R is near but below ${profile.minRr.toFixed(2)}R.`);
     } else {

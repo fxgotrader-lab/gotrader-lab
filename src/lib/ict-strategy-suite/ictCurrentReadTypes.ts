@@ -185,6 +185,8 @@ export interface IctCurrentRead {
   modelDetectionStatus?: "detected" | "not_detected" | "not_run";
   fvgTargetStatus?: "detected" | "missing";
   fvgTargetReason?: string;
+  entryConstructionStatus?: "constructed" | "missing";
+  entryConstructionReason?: string;
   targetConstructionStatus?: "constructed" | "missing";
   targetConstructionReason?: string;
   invalidationConstructionStatus?: "constructed" | "missing";
@@ -226,6 +228,7 @@ export interface IctCurrentRead {
     cmdIndependentDateGateStatus?: IctCmdIndependentDateGateStatus;
     cmdIndependentDateGateReason?: string;
     fvgTargetStatus?: string;
+    entryConstructionStatus?: string;
     targetConstructionStatus?: string;
     invalidationConstructionStatus?: string;
     rrConstructionStatus?: string;

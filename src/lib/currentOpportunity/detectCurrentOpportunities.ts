@@ -2,10 +2,12 @@ import type {
   CurrentOpportunity,
   CurrentOpportunityContext,
   CurrentOpportunityScan,
+  CurrentOpportunitySide,
   CurrentOpportunityStatus,
   CurrentOpportunityStrategyId,
   CurrentOpportunitySummary
 } from "./currentOpportunityTypes";
+import { buildIctTradeConstruction } from "../ict-strategy-suite/ictTradeConstruction";
 
 const authority = {
   executionAuthority: "none" as const,
@@ -52,6 +54,43 @@ const statusForPrimaryContext = (context: CurrentOpportunityContext): CurrentOpp
   return "no_trade";
 };
 
+const tradeConstructionMissingBlockers = new Set([
+  "entry_missing",
+  "target_missing",
+  "invalidation_missing",
+  "structure_bounds_missing",
+  "rr_unavailable"
+]);
+
+const tradeConstructionFor = (
+  context: CurrentOpportunityContext,
+  patch: {
+    side?: CurrentOpportunitySide;
+    entry?: number;
+    invalidation?: number;
+    target?: number;
+    rrEstimate?: number;
+    strategyId: CurrentOpportunityStrategyId;
+    status: CurrentOpportunityStatus;
+  }
+) => {
+  if (patch.status === "no_trade") return undefined;
+  const side = patch.side ?? context.side ?? "flat";
+  return buildIctTradeConstruction({
+    side,
+    entry: patch.entry ?? context.entry,
+    stop: patch.invalidation ?? context.invalidation,
+    target: patch.target ?? context.target,
+    entryModelType: "generic",
+    symbol: context.requestedSymbol,
+    brokerSymbol: context.brokerSymbol,
+    timeframe: context.primaryTimeframe,
+    sourceFingerprint: context.sourceFingerprint,
+    strategyId: patch.strategyId,
+    authority
+  });
+};
+
 const validationFor = (status: CurrentOpportunityStatus) =>
   status === "valid_candidate"
     ? ["replay_required", "walk_forward_required", "evidence_required"] as const
@@ -70,32 +109,40 @@ const opportunity = (
     blockers?: Array<string | undefined>;
     missingConditions?: Array<string | undefined>;
   }
-): CurrentOpportunity => ({
-  id: createId("current_opp", `${patch.strategyId}:${patch.setupName}:${context.generatedAt}:${patch.status}`),
-  strategyId: patch.strategyId,
-  model: patch.model,
-  symbol: context.requestedSymbol,
-  brokerSymbol: context.brokerSymbol,
-  side: patch.side ?? context.side ?? "flat",
-  timeframe: patch.timeframe ?? context.primaryTimeframe,
-  contextTimeframes: context.contextTimeframes,
-  status: patch.status,
-  setupName: patch.setupName,
-  thesis: patch.thesis,
-  entry: patch.entry ?? context.entry,
-  invalidation: patch.invalidation ?? context.invalidation,
-  target: patch.target ?? context.target,
-  rrEstimate: patch.rrEstimate ?? context.rrEstimate,
-  confidence: patch.confidence ?? context.confidence ?? 0,
-  requiredValidation: patch.requiredValidation ?? [...validationFor(patch.status)],
-  blockers: unique(patch.blockers ?? []),
-  missingConditions: unique(patch.missingConditions ?? []),
-  nextAction: patch.nextAction ?? context.opportunityNextAction ?? "Keep monitoring; no approved research candidate is available.",
-  sourceDepth: context.sourceDepth,
-  researchOnly: true,
-  executionIntentCreated: false,
-  authority
-});
+): CurrentOpportunity => {
+  const construction = tradeConstructionFor(context, patch);
+  const constructionMissing = construction?.blockers.filter((blocker) => tradeConstructionMissingBlockers.has(blocker)) ?? [];
+  const constructionBlockers = construction?.blockers.filter((blocker) => !tradeConstructionMissingBlockers.has(blocker)) ?? [];
+  const finalStatus = patch.status === "valid_candidate" && construction && !construction.valid ? "near_miss" : patch.status;
+  return {
+    id: createId("current_opp", `${patch.strategyId}:${patch.setupName}:${context.generatedAt}:${finalStatus}`),
+    strategyId: patch.strategyId,
+    model: patch.model,
+    symbol: context.requestedSymbol,
+    brokerSymbol: context.brokerSymbol,
+    side: patch.side ?? context.side ?? "flat",
+    timeframe: patch.timeframe ?? context.primaryTimeframe,
+    contextTimeframes: context.contextTimeframes,
+    status: finalStatus,
+    setupName: patch.setupName,
+    thesis: patch.thesis,
+    entry: patch.entry ?? context.entry,
+    invalidation: patch.invalidation ?? context.invalidation,
+    target: patch.target ?? context.target,
+    rrEstimate: construction?.rr ?? patch.rrEstimate ?? context.rrEstimate,
+    confidence: patch.confidence ?? context.confidence ?? 0,
+    requiredValidation: patch.requiredValidation ?? [...validationFor(finalStatus)],
+    blockers: unique([...(patch.blockers ?? []), ...constructionBlockers]),
+    missingConditions: unique([...(patch.missingConditions ?? []), ...constructionMissing]),
+    nextAction: construction && !construction.valid
+      ? construction.nextAction
+      : patch.nextAction ?? context.opportunityNextAction ?? "Keep monitoring; no approved research candidate is available.",
+    sourceDepth: context.sourceDepth,
+    researchOnly: true,
+    executionIntentCreated: false,
+    authority
+  };
+};
 
 const baseBlockersFor = (context: CurrentOpportunityContext) =>
   unique([
@@ -122,9 +169,10 @@ const primaryOpportunity = (context: CurrentOpportunityContext) => {
     ],
     missingConditions: [
       ...context.opportunityMissingEvidence,
-      !finite(context.target) ? "target" : undefined,
-      !finite(context.invalidation) ? "invalidation" : undefined,
-      !finite(context.rrEstimate) ? "rr_estimate" : undefined
+      !finite(context.entry) ? "entry_missing" : undefined,
+      !finite(context.target) ? "target_missing" : undefined,
+      !finite(context.invalidation) ? "invalidation_missing" : undefined,
+      !finite(context.rrEstimate) ? "rr_unavailable" : undefined
     ],
     nextAction: cmdBlocked
       ? "Run independent-date CMD validation over 90-day history."

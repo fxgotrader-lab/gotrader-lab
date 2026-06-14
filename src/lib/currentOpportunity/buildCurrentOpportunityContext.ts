@@ -13,6 +13,13 @@ const normalizeList = (values?: Array<string | undefined>) =>
 const clampDays = (value?: number) =>
   typeof value === "number" && Number.isFinite(value) ? Math.max(0, Number(value.toFixed(2))) : 0;
 
+const parseEntryMidpoint = (entryZone?: string) => {
+  if (!entryZone) return undefined;
+  const numbers = entryZone.match(/-?\d+(?:\.\d+)?/g)?.map(Number).filter(Number.isFinite) ?? [];
+  if (numbers.length >= 2) return Number(((Math.min(numbers[0], numbers[1]) + Math.max(numbers[0], numbers[1])) / 2).toFixed(4));
+  return numbers[0];
+};
+
 const depthPolicyFor = (depth: Pick<CurrentOpportunitySourceDepth, "tacticalLatestCandleCount" | "swingContextDays" | "validationLookbackDays" | "rangeHistoryAvailable">): CurrentOpportunitySourceDepth["depthPolicyStatus"] => {
   if (depth.rangeHistoryAvailable && depth.validationLookbackDays >= 60) return "validation_context_ready";
   if (depth.swingContextDays >= 5) return "swing_context_ready";
@@ -194,7 +201,7 @@ export const buildCurrentOpportunityContext = ({
     side: currentRead?.side,
     setupName: currentRead?.bestSetup ?? packet?.recommendedSignal?.setup,
     thesis: currentRead?.opportunitySummary ?? packet?.recommendedSignal?.summary,
-    entry: packet?.recommendedSignal?.entryZone?.midpoint,
+    entry: packet?.recommendedSignal?.entryZone?.midpoint ?? parseEntryMidpoint(currentRead?.entryZone),
     invalidation: currentRead?.invalidation ?? packet?.recommendedSignal?.invalidation,
     target: currentRead?.target ?? packet?.recommendedSignal?.target,
     rrEstimate: currentRead?.rrEstimate ?? packet?.recommendedSignal?.rrEstimate,

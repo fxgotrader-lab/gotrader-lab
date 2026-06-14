@@ -8,19 +8,22 @@ import ts from "typescript";
 
 const projectRoot = process.cwd();
 const sourceRoot = path.join(projectRoot, "src", "lib", "currentOpportunity");
+const ictSourceRoot = path.join(projectRoot, "src", "lib", "ict-strategy-suite");
 const outRoot = path.join(projectRoot, ".gotrader", "current-opportunity-scanner-test");
 const sourceFiles = [
-  "currentOpportunityTypes.ts",
-  "buildCurrentOpportunityContext.ts",
-  "detectCurrentOpportunities.ts",
-  "currentOpportunityStore.ts",
-  "index.ts"
+  { root: sourceRoot, file: "currentOpportunityTypes.ts" },
+  { root: sourceRoot, file: "buildCurrentOpportunityContext.ts" },
+  { root: ictSourceRoot, file: "ictTradeConstructionTypes.ts" },
+  { root: ictSourceRoot, file: "ictTradeConstruction.ts" },
+  { root: sourceRoot, file: "detectCurrentOpportunities.ts" },
+  { root: sourceRoot, file: "currentOpportunityStore.ts" },
+  { root: sourceRoot, file: "index.ts" }
 ];
 
 function compileForNode() {
   fs.mkdirSync(outRoot, { recursive: true });
-  for (const file of sourceFiles) {
-    const sourcePath = path.join(sourceRoot, file);
+  for (const { root, file } of sourceFiles) {
+    const sourcePath = path.join(root, file);
     const source = fs.readFileSync(sourcePath, "utf8");
     const transpiled = ts.transpileModule(source, {
       compilerOptions: {
@@ -33,7 +36,9 @@ function compileForNode() {
     }).outputText;
     const rewritten = transpiled
       .replace(/from\s+"\.\/([^"]+)"/g, 'from "./$1.mjs"')
-      .replace(/from\s+'\.\/([^']+)'/g, "from './$1.mjs'");
+      .replace(/from\s+'\.\/([^']+)'/g, "from './$1.mjs'")
+      .replace(/from\s+"..\/ict-strategy-suite\/([^"]+)"/g, 'from "./$1.mjs"')
+      .replace(/from\s+'..\/ict-strategy-suite\/([^']+)'/g, "from './$1.mjs'");
     fs.writeFileSync(path.join(outRoot, file.replace(/\.ts$/, ".mjs")), rewritten, "utf8");
   }
 }
@@ -150,8 +155,9 @@ async function main() {
     ...baseRead,
     modelQualityLane: "approved",
     opportunityMissingEvidence: [],
+    entryZone: "30500-30520",
     target: 30200,
-    invalidation: 30600,
+    invalidation: 30560,
     rrEstimate: 2.4,
     confidence: 0.71,
     sessionNarrativeProfile: "consolidation_manipulation_distribution",
@@ -163,6 +169,15 @@ async function main() {
   };
   const deepPacket = {
     ...basePacket,
+    recommendedSignal: {
+      ...basePacket.recommendedSignal,
+      entryZone: {
+        low: 30500,
+        high: 30520,
+        midpoint: 30510,
+        type: "compact_test_entry"
+      }
+    },
     marketAnalysisContext: {
       analysisDepthStatus: "sufficient",
       analysisTimeframesUsed: ["W1", "D1", "H4", "H1", "M15", "M5"],
@@ -178,6 +193,19 @@ async function main() {
   assert.equal(deepScan.summary.depthStatus, "validation_context_ready");
   assert.ok(deepScan.summary.validCandidateCount >= 1, "approved compact candidate with full structure should become valid_candidate");
   assertSafe(suite, deepScan);
+
+  const missingTargetRead = {
+    ...deepRead,
+    target: undefined,
+    rrEstimate: undefined
+  };
+  const missingTargetScan = suite.detectCurrentOpportunities(suite.buildCurrentOpportunityContext({ packet: deepPacket, currentRead: missingTargetRead }));
+  const missingTargetPrimary = missingTargetScan.opportunities.find((item) => item.strategyId === "ict_cmd_short_paper_watchlist_v1");
+  assert.ok(missingTargetPrimary, "missing-target CMD opportunity should still be diagnosable");
+  assert.ok(missingTargetPrimary.missingConditions.includes("target_missing"), "missing target should be explicit");
+  assert.ok(missingTargetPrimary.missingConditions.includes("rr_unavailable"), "RR should be unavailable until entry/target/invalidation exist");
+  assert.equal(missingTargetPrimary.blockers.includes("target_too_close"), false, "target_too_close must not appear without a target");
+  assertSafe(suite, missingTargetScan);
 
   const mockPacket = {
     ...basePacket,

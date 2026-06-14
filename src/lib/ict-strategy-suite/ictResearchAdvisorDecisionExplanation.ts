@@ -273,7 +273,7 @@ export const buildResearchAdvisorDecisionExplanation = (
       "Paper Sim eligibility",
       paperStatus,
       paperSimReasonFor(input),
-      paperStatus === "eligible" ? "Use the paper-only simulator manually; execution remains disabled." : "First produce an approved research signal or explicit paper-watchlist candidate with target, invalidation, and RR.",
+      paperStatus === "eligible" ? "Use the paper-only simulator manually; execution remains disabled." : "First produce an approved research signal or explicit paper-watchlist candidate with entry, target, invalidation, and RR.",
       [
         `Signal status ${token(researchSignal.status)}`,
         `Paper allowed ${compact(currentRead.paperSimAllowed || researchSignal.paperSimAllowed)}`,

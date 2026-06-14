@@ -38,6 +38,7 @@
     "test:ict-cmd-paper-watchlist-oos": "node scripts/test-ict-cmd-paper-watchlist-oos.mjs",
     "test:cmd-independent-date-gate": "node scripts/test-cmd-independent-date-gate.mjs",
     "test:cmd-deep-telemetry": "node scripts/test-cmd-deep-telemetry.mjs",
+    "test:ict-trade-construction": "node scripts/test-ict-trade-construction.mjs",
     "test:strategy-library": "node scripts/test-strategy-library.mjs",
     "test:strategy-detector-blocker-audit": "node scripts/test-strategy-detector-blocker-audit.mjs",
     "test:strategy-confluence-edge": "node scripts/test-strategy-confluence-edge.mjs",

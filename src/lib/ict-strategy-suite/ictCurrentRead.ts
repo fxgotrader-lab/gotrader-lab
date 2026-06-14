@@ -236,6 +236,7 @@ const paperSimEligibilityFor = (input: {
   approvedStatus?: string;
   modelQualityLane?: IctModelQualityLane;
   side?: string;
+  entry?: number;
   target?: number;
   invalidation?: number;
   rrEstimate?: number;
@@ -252,6 +253,7 @@ const paperSimEligibilityFor = (input: {
   const blockers = [
     !isApproved && !isPaperWatchlist ? "Only approved research signals or explicit paper-watchlist candidates are eligible." : undefined,
     !isDirectionalSide(input.side) ? "Signal side must be long or short." : undefined,
+    !finite(input.entry) ? "Missing entry." : undefined,
     !finite(input.target) ? "Missing target." : undefined,
     !finite(input.invalidation) ? "Missing invalidation." : undefined,
     !finite(input.rrEstimate) ? "Missing RR estimate." : undefined,
@@ -362,6 +364,12 @@ const targetReasonFor = (signal: IctAdvisorSignal, packet: IctAdvisorPacket) => 
   return signal.noTradeReasons.find((reason) => /target|liquidity|fvg/i.test(reason)) ?? "No valid compact target was produced for this candidate.";
 };
 
+const entryReasonFor = (signal: IctAdvisorSignal, packet: IctAdvisorPacket) => {
+  if (finite(signal.entryZone?.midpoint)) return "Entry constructed from compact FVG/OB/mitigation context.";
+  if (!packet.sessionNarrative) return packet.compactSummary.hydrationWarning ?? "No hydrated session candles were available for entry construction.";
+  return signal.noTradeReasons.find((reason) => /entry|retest|mitigation|fvg|order block/i.test(reason)) ?? "No compact entry reference was produced for this candidate.";
+};
+
 const invalidationReasonFor = (signal: IctAdvisorSignal, packet: IctAdvisorPacket) => {
   if (finite(signal.invalidation)) return "Invalidation constructed from compact structure/session range context.";
   if (!packet.sessionNarrative) return packet.compactSummary.hydrationWarning ?? "No hydrated session candles were available for invalidation construction.";
@@ -372,8 +380,8 @@ const invalidationReasonFor = (signal: IctAdvisorSignal, packet: IctAdvisorPacke
 };
 
 const rrReasonFor = (signal: IctAdvisorSignal) => {
-  if (finite(signal.rrEstimate)) return "RR estimate constructed from target and invalidation.";
-  if (!finite(signal.target) || !finite(signal.invalidation)) return "RR unavailable because target or invalidation is missing.";
+  if (finite(signal.rrEstimate)) return "RR estimate constructed from entry, target, and invalidation.";
+  if (!finite(signal.entryZone?.midpoint) || !finite(signal.target) || !finite(signal.invalidation)) return "RR unavailable because entry, target, or invalidation is missing.";
   return signal.noTradeReasons.find((reason) => /rr|reward|risk/i.test(reason)) ?? "RR estimate was not available for this candidate.";
 };
 
@@ -551,6 +559,16 @@ export const buildUnavailableIctCurrentRead = (
     reasons: [reason, "Execution readiness is disabled by design."]
   },
   executionAllowed: false,
+  fvgTargetStatus: "missing",
+  fvgTargetReason: reason,
+  entryConstructionStatus: "missing",
+  entryConstructionReason: reason,
+  targetConstructionStatus: "missing",
+  targetConstructionReason: reason,
+  invalidationConstructionStatus: "missing",
+  invalidationConstructionReason: reason,
+  rrConstructionStatus: "missing",
+  rrConstructionReason: "RR unavailable because entry, target, or invalidation is missing.",
   topReasons: [reason],
   nextAction: "Activate Market or check the canonical research source.",
   debug: {
@@ -579,6 +597,7 @@ export const buildUnavailableIctCurrentRead = (
     selfImprovementHypothesisStatus: undefined,
     selfImprovementHypothesisReason: "Data is insufficient for a research hypothesis.",
     fvgTargetStatus: "missing",
+    entryConstructionStatus: "missing",
     targetConstructionStatus: "missing",
     invalidationConstructionStatus: "missing",
     rrConstructionStatus: "missing",
@@ -624,6 +643,8 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
   const fvgTargetDirection = packet.sessionNarrative?.fvgTarget?.direction ?? packet.compactSummary.fvgTargetDirection ?? "unknown";
   const fvgTargetStatus = fvgTargetDetected ? "detected" as const : "missing" as const;
   const fvgTargetReason = fvgTargetReasonFor(packet);
+  const entryConstructionStatus = finite(recommended.entryZone?.midpoint) ? "constructed" as const : "missing" as const;
+  const entryConstructionReason = entryReasonFor(recommended, packet);
   const targetConstructionStatus = finite(recommended.target) ? "constructed" as const : "missing" as const;
   const targetConstructionReason = targetReasonFor(recommended, packet);
   const invalidationConstructionStatus = finite(recommended.invalidation) ? "constructed" as const : "missing" as const;
@@ -655,6 +676,7 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     ...(packet.sessionNarrative?.primaryModelDetection?.modelReasons ?? []),
     ...(packet.sessionNarrative?.primaryModelDetection?.missingEvidence?.map((reason) => `Model missing evidence: ${reason}.`) ?? []),
     fvgTargetDetected ? packet.sessionNarrative?.fvgTarget?.note : fvgTargetReason,
+    entryConstructionStatus === "missing" ? entryConstructionReason : undefined,
     targetConstructionStatus === "missing" ? targetConstructionReason : undefined,
     invalidationConstructionStatus === "missing" ? invalidationConstructionReason : undefined,
     rrConstructionStatus === "missing" ? rrConstructionReason : undefined,
@@ -735,6 +757,7 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
   const paperSim = paperSimEligibilityFor({
     approvedStatus: packet.approvedProfileDecision.status,
     confidence: recommended.confidence,
+    entry: recommended.entryZone?.midpoint,
     invalidation: recommended.invalidation,
     modelQualityLane,
     riskStatus,
@@ -940,6 +963,8 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     modelDetectionStatus,
     fvgTargetStatus,
     fvgTargetReason,
+    entryConstructionStatus,
+    entryConstructionReason,
     targetConstructionStatus,
     targetConstructionReason,
     invalidationConstructionStatus,
@@ -983,6 +1008,7 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
       cmdIndependentDateGateStatus,
       cmdIndependentDateGateReason,
       fvgTargetStatus,
+      entryConstructionStatus,
       targetConstructionStatus,
       invalidationConstructionStatus,
       rrConstructionStatus,

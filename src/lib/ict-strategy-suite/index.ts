@@ -18,6 +18,8 @@ export * from "./ictHypothesisValidationTypes";
 export * from "./ictHypothesisValidation";
 export * from "./ictCurrentReadTypes";
 export * from "./ictCurrentRead";
+export * from "./ictTradeConstructionTypes";
+export * from "./ictTradeConstruction";
 export * from "./ictSessionNarrativeTypes";
 export * from "./ictSessionNarrative";
 export * from "./ictGrinchModelTypes";
