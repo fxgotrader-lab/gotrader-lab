@@ -1,4 +1,9 @@
 import type { ResearchRuntimeSnapshot } from "../runtime";
+import {
+  buildCurrentOpportunityContext,
+  detectCurrentOpportunities,
+  saveCurrentOpportunityScan
+} from "../currentOpportunity";
 import { buildIctAdvisorPacketFromRuntime } from "./ictAdvisorEngine";
 import type { IctAdvisorPacket } from "./ictAdvisorTypes";
 import { evaluateCmdPaperTrackingEligibility } from "./ictCmdPaperTracking";
@@ -177,6 +182,7 @@ export const readLatestActivateMarketSummary = (): IctActivateMarketLatestSummar
       opportunityStage: typeof parsed.opportunityStage === "string" ? parsed.opportunityStage : undefined,
       opportunityQuality: typeof parsed.opportunityQuality === "string" ? parsed.opportunityQuality : undefined,
       opportunityLaneRecommendation: typeof parsed.opportunityLaneRecommendation === "string" ? parsed.opportunityLaneRecommendation : undefined,
+      currentOpportunitySummary: parsed.currentOpportunitySummary && typeof parsed.currentOpportunitySummary === "object" ? parsed.currentOpportunitySummary : undefined,
       recognitionTier: typeof parsed.recognitionTier === "string" ? parsed.recognitionTier as IctActivateMarketLatestSummary["recognitionTier"] : undefined,
       scalpStatus: typeof parsed.scalpStatus === "string" ? parsed.scalpStatus as IctActivateMarketLatestSummary["scalpStatus"] : undefined,
       pdArrayFocus: typeof parsed.pdArrayFocus === "string" ? parsed.pdArrayFocus : undefined,
@@ -424,6 +430,7 @@ const buildLatestSummary = (result: IctActivateMarketResult): IctActivateMarketL
   opportunityStage: result.summary.opportunityStage,
   opportunityQuality: result.summary.opportunityQuality,
   opportunityLaneRecommendation: result.summary.opportunityLaneRecommendation,
+  currentOpportunitySummary: result.summary.currentOpportunitySummary,
   recognitionTier: result.summary.recognitionTier,
   scalpStatus: result.summary.scalpStatus,
   pdArrayFocus: result.summary.pdArrayFocus,
@@ -663,6 +670,14 @@ export async function runIctActivateMarketPipeline(
     const bundle = await buildOrReadMarketContext();
     advisorPacket = await buildPacket(snapshot, { marketAnalysisContextBundle: bundle });
     currentRead = buildRead(advisorPacket, config.latestResearchState);
+    const currentOpportunityScan = detectCurrentOpportunities(buildCurrentOpportunityContext({ packet: advisorPacket, currentRead }));
+    currentRead = {
+      ...currentRead,
+      currentOpportunitySummary: currentOpportunityScan.summary,
+      currentOpportunities: currentOpportunityScan.opportunities.slice(0, 8)
+    };
+    advisorPacket.compactSummary.currentOpportunitySummary = currentOpportunityScan.summary;
+    saveCurrentOpportunityScan(currentOpportunityScan);
     return currentRead.dataStatus === "ready"
       ? "Current read ready."
       : { message: `Current read built with data status ${currentRead.dataStatus}.`, warning: `Current read data status is ${currentRead.dataStatus}.` };
@@ -829,6 +844,7 @@ export async function runIctActivateMarketPipeline(
         opportunityQuality: currentRead?.opportunityQuality,
         opportunityLaneRecommendation: currentRead?.opportunityLaneRecommendation,
         opportunityNextAction: currentRead?.opportunityNextAction,
+        currentOpportunitySummary: currentRead?.currentOpportunitySummary,
         recognitionTier: currentRead?.recognitionTier,
         scalpStatus: currentRead?.scalpStatus,
         pdArrayFocus: currentRead?.pdArrayFocus,

@@ -8,9 +8,14 @@ import ts from "typescript";
 
 const projectRoot = process.cwd();
 const sourceRoot = path.join(projectRoot, "src", "lib", "ict-strategy-suite");
+const currentOpportunityRoot = path.join(projectRoot, "src", "lib", "currentOpportunity");
 const mt5Root = path.join(projectRoot, "src", "lib", "integrations", "mt5");
 const outRoot = path.join(projectRoot, ".gotrader", "ict-strategy-suite-test");
 const sourceFiles = [
+  { root: currentOpportunityRoot, file: "currentOpportunityTypes.ts" },
+  { root: currentOpportunityRoot, file: "buildCurrentOpportunityContext.ts" },
+  { root: currentOpportunityRoot, file: "detectCurrentOpportunities.ts" },
+  { root: currentOpportunityRoot, file: "currentOpportunityStore.ts" },
   { root: sourceRoot, file: "ictStrategySuiteTypes.ts" },
   { root: sourceRoot, file: "ictAdvisorTypes.ts" },
   { root: sourceRoot, file: "ictSessionNarrativeTypes.ts" },
@@ -105,12 +110,23 @@ function compileSuiteForNode() {
       .replace(/from\s+'\.\/([^']+)'/g, "from './$1.mjs'")
       .replace(/from\s+"..\/integrations\/mt5\/([^"]+)"/g, 'from "./$1.mjs"')
       .replace(/from\s+'..\/integrations\/mt5\/([^']+)'/g, "from './$1.mjs'")
+      .replace(/from\s+"..\/currentOpportunity"/g, 'from "./currentOpportunity.mjs"')
+      .replace(/from\s+'..\/currentOpportunity'/g, "from './currentOpportunity.mjs'")
       .replace(/from\s+"@\/lib\/integrations\/mt5\/([^"]+)"/g, 'from "./$1.mjs"')
       .replace(/from\s+'@\/lib\/integrations\/mt5\/([^']+)'/g, "from './$1.mjs'")
       .replace(/from\s+"..\/candleSources"/g, 'from "./candleSourcesStub.mjs"')
       .replace(/from\s+'..\/candleSources'/g, "from './candleSourcesStub.mjs'");
     fs.writeFileSync(path.join(outRoot, file.replace(/\.ts$/, ".mjs")), rewritten, "utf8");
   }
+  fs.writeFileSync(
+    path.join(outRoot, "currentOpportunity.mjs"),
+    `export * from "./currentOpportunityTypes.mjs";
+export * from "./buildCurrentOpportunityContext.mjs";
+export * from "./detectCurrentOpportunities.mjs";
+export * from "./currentOpportunityStore.mjs";
+`,
+    "utf8"
+  );
   fs.writeFileSync(
     path.join(outRoot, "candleSourcesStub.mjs"),
     `export async function loadCanonicalCandleSource(sourceId) {

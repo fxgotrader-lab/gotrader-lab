@@ -68,6 +68,11 @@ import type { Candle, MarketBias, MarketStructureEvent, SessionContext } from "@
 import { queueValidationChainEntry, saveValidationChainEntry } from "@/lib/validationChain";
 import { ValidationChainCard } from "@/components/common/ValidationChainCard";
 import { Button } from "@/components/ui/button";
+import {
+  CURRENT_OPPORTUNITY_SCAN_UPDATED_EVENT,
+  readLatestCurrentOpportunityScan,
+  type CurrentOpportunityScan
+} from "@/lib/currentOpportunity";
 
 const formatTime = (timestamp: string) => timestamp.slice(11, 16);
 
@@ -112,6 +117,7 @@ export function ICTLab() {
   const [tradingViewFeed, setTradingViewFeed] = useState(() => loadActiveTradingViewMcpChartFeed());
   const [mt5Runtime, setMt5Runtime] = useState(() => resolveMt5ReadOnlyRuntimeState());
   const [mt5Feed, setMt5Feed] = useState(() => loadActiveMt5ReadOnlyCandleFeed());
+  const [currentOpportunityScan, setCurrentOpportunityScan] = useState<CurrentOpportunityScan | undefined>(() => readLatestCurrentOpportunityScan());
   const fallbackPreparedSource = useMemo(
     () => ({
       mode: "mock" as const,
@@ -154,6 +160,15 @@ export function ICTLab() {
     ? mt5Runtime.higherTimeframeSources.map((source) => `${source.timeframe}:${source.candleCount.toLocaleString()}`).join(", ")
     : "HTF context missing";
   const [recognitionQueueMessages, setRecognitionQueueMessages] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const refresh = () => setCurrentOpportunityScan(readLatestCurrentOpportunityScan());
+    window.addEventListener(CURRENT_OPPORTUNITY_SCAN_UPDATED_EVENT, refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener(CURRENT_OPPORTUNITY_SCAN_UPDATED_EVENT, refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
   const queueRecognitionValidation = (setupLabel: string) => {
     const result = queueValidationChainEntry({
       recognitionId: `ictlab_${setupLabel.toLowerCase().replace(/\W+/g, "_")}_${Date.now().toString(36)}`,
@@ -556,6 +571,56 @@ export function ICTLab() {
 
       <SourceStatusBanner />
       <ValidationChainCard />
+      <Card data-testid="ict-lab-current-opportunities" className="border-emerald-300/20 bg-emerald-300/5">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Current Opportunities</CardTitle>
+              <CardDescription>
+                Latest compact scanner output from Activate Market. This page does not auto-fetch 90-day history or create execution intent.
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={currentOpportunityScan?.summary.validCandidateCount ? "success" : currentOpportunityScan?.summary.formingCount || currentOpportunityScan?.summary.nearMissCount ? "warning" : "secondary"}>
+                {currentOpportunityScan ? `${currentOpportunityScan.summary.validCandidateCount} valid / ${currentOpportunityScan.summary.formingCount} forming` : "scanner pending"}
+              </Badge>
+              <Badge variant="muted">authority none</Badge>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {currentOpportunityScan ? (
+            <>
+              <div className="grid gap-3 md:grid-cols-4">
+                <StatusTile label="Top setup" value={currentOpportunityScan.summary.topOpportunity?.model ?? currentOpportunityScan.summary.topNearMiss?.model ?? "none"} detail={currentOpportunityScan.summary.topOpportunity?.status ?? currentOpportunityScan.summary.topNearMiss?.status ?? "no trade"} />
+                <StatusTile label="Depth" value={currentOpportunityScan.summary.depthStatus.replace(/_/g, " ")} detail={currentOpportunityScan.summary.rangeHistoryAvailable ? `${currentOpportunityScan.summary.validationLookbackDays.toFixed(1)} days` : "range history not ready"} />
+                <StatusTile label="Rejected" value={String(currentOpportunityScan.summary.rejectedCount)} detail={currentOpportunityScan.summary.topRejected?.blockers[0] ?? "none"} />
+                <StatusTile label="Next action" value={currentOpportunityScan.summary.nextAction} detail={currentOpportunityScan.summary.topBlocker ?? "no blocker"} />
+              </div>
+              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {currentOpportunityScan.opportunities.slice(0, 6).map((item) => (
+                  <div key={item.id} className="rounded-lg border border-emerald-300/15 bg-background/45 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-foreground">{item.model.replace(/_/g, " ")}</p>
+                      <Badge variant={item.status === "valid_candidate" ? "success" : item.status === "forming" || item.status === "near_miss" ? "warning" : "secondary"}>
+                        {item.status.replace(/_/g, " ")}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{item.setupName.replace(/_/g, " ")} / {item.side}</p>
+                    <p className="mt-2 text-xs leading-5 text-emerald-100/85">
+                      {item.missingConditions[0] ?? item.blockers[0] ?? item.nextAction}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
+              No current opportunity scan has been saved yet. Open Advisor or Dashboard and run Activate Market to build explicit M5/M15/H1/H4/D1/W1 context.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       {analysisUsesMockData ? (
         <div

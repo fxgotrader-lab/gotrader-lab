@@ -8,6 +8,10 @@ import { hydrateActiveMt5ReadOnlyCandleFeed } from "../integrations/mt5/mt5ReadO
 import { mt5ReadOnlyCandlesToGoTraderCandles } from "../integrations/mt5/mt5ReadOnlyNormalizer";
 import type { ResearchRuntimeSnapshot } from "../runtime";
 import type { Candle } from "../types";
+import {
+  buildCurrentOpportunityContext,
+  detectCurrentOpportunities
+} from "../currentOpportunity";
 import { buildIctMarketAnalysisContextFromSnapshot } from "./ictMarketAnalysisContext";
 import type { IctMarketAnalysisContextBundle } from "./ictMarketAnalysisContextTypes";
 import { buildIctUniversalRecognition } from "./ictUniversalRecognition";
@@ -1031,7 +1035,7 @@ export async function buildIctAdvisorPacketFromRuntime(
     approvedStatus: finalApprovedProfileDecision.status,
     generatedAt: new Date().toISOString()
   });
-  return {
+  const packet: IctAdvisorPacket = {
     packetId: createId("ict_advisor_packet"),
     source: "gotrader_ict_strategy_suite",
     mode: "advisory_only",
@@ -1140,6 +1144,9 @@ export async function buildIctAdvisorPacketFromRuntime(
       readinessOverrideAuthority: "none"
     }
   };
+  const currentOpportunityScan = detectCurrentOpportunities(buildCurrentOpportunityContext({ packet }));
+  packet.compactSummary.currentOpportunitySummary = currentOpportunityScan.summary;
+  return packet;
 }
 
 export function assertIctAdvisorPacketIsCompact(packet: IctAdvisorPacket) {

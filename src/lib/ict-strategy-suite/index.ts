@@ -65,3 +65,4 @@ export * from "./ictIfvgTypes";
 export * from "./ictIfvg";
 export * from "./ictResearchReportTypes";
 export * from "./ictResearchReport";
+export * from "../currentOpportunity";

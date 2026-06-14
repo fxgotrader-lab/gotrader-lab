@@ -18,6 +18,7 @@ import type {
 } from "./ictOpportunityDetectionTypes";
 import type { IctResearchHypothesis, IctResearchHypothesisStatus } from "./ictSelfImprovementTypes";
 import type { IctResearchSignal } from "./ictSignalContractTypes";
+import type { CurrentOpportunitySummary } from "../currentOpportunity/currentOpportunityTypes";
 
 export type IctActivateMarketStepId =
   | "resolve_symbol"
@@ -98,6 +99,7 @@ export interface IctActivateMarketLatestSummary {
   opportunityStage?: IctOpportunityStage;
   opportunityQuality?: IctOpportunityQuality;
   opportunityLaneRecommendation?: IctOpportunityLaneRecommendation;
+  currentOpportunitySummary?: CurrentOpportunitySummary;
   recognitionTier?: IctCurrentRead["recognitionTier"];
   scalpStatus?: IctCurrentRead["scalpStatus"];
   pdArrayFocus?: string;
@@ -171,6 +173,7 @@ export interface IctActivateMarketResult {
     opportunityQuality?: IctOpportunityQuality;
     opportunityLaneRecommendation?: IctOpportunityLaneRecommendation;
     opportunityNextAction?: string;
+    currentOpportunitySummary?: CurrentOpportunitySummary;
     recognitionTier?: IctCurrentRead["recognitionTier"];
     scalpStatus?: IctCurrentRead["scalpStatus"];
     pdArrayFocus?: string;

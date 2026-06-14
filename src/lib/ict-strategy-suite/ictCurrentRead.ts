@@ -5,6 +5,10 @@ import { detectIctOpportunities } from "./ictOpportunityDetection";
 import type { IctDetectedOpportunity } from "./ictOpportunityDetectionTypes";
 import { buildIctResearchHypothesisFromOpportunity } from "./ictSelfImprovement";
 import { buildIctUniversalRecognition } from "./ictUniversalRecognition";
+import {
+  buildCurrentOpportunityContext,
+  detectCurrentOpportunities
+} from "../currentOpportunity";
 import type { IctUniversalRecognitionResult } from "./ictUniversalRecognitionTypes";
 import type { IctLatestResearchState } from "./ictLatestResearchStateTypes";
 import type {
@@ -755,6 +759,73 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     missingTimeframes.length ? `Missing analysis timeframes: ${missingTimeframes.join(", ")}.` : undefined,
     analysisDepthStatus && analysisDepthStatus !== "sufficient" ? `Analysis depth is ${analysisDepthStatus}.` : undefined
   ]);
+  const currentReadTopReasons = reasons.length
+    ? uniqueReasons([universalRecognition.opportunitySummary, opportunityApprovalNote, cmdIndependentDateGateReason, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, ...reasons])
+    : recommended.decision === "research_only"
+      ? uniqueReasons([universalRecognition.opportunitySummary, opportunityApprovalNote, cmdIndependentDateGateReason, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, "Research candidate generated; validation is still required before any readiness review."])
+      : uniqueReasons([universalRecognition.opportunitySummary, opportunityApprovalNote, cmdIndependentDateGateReason, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, "No explicit blocker was provided by the compact advisor packet."]);
+  const currentReadNextAction = opportunityDetected && modelQualityLane !== "approved"
+    ? selfImprovementHypothesis?.nextAction ?? recognizedOpportunity.nextAction
+    : universalRecognition.tier === "pd_array_setup" || universalRecognition.tier === "scalp_setup"
+      ? universalRecognition.nextAction
+      : nextActionFor(packet, reasons);
+  const currentOpportunityScan = detectCurrentOpportunities(
+    buildCurrentOpportunityContext({
+      packet,
+      currentRead: {
+        requestedSymbol: packet.requestedSymbol,
+        brokerSymbol: packet.brokerSymbol,
+        primaryTimeframe: packet.primaryTimeframe,
+        displayTimeframe,
+        analysisTimeframesUsed,
+        analysisDepthStatus,
+        missingTimeframes,
+        weeklyBiasDirection,
+        htfTimeframes: packet.htfTimeframes,
+        htfAlignment,
+        dataStatus,
+        candleCount: packet.activeSource.candleCount,
+        bestSetup: recommended.setup,
+        side: recommended.side,
+        modelQualityLane,
+        confidence: adjustedConfidence,
+        rrEstimate: recommended.rrEstimate,
+        target: recommended.target,
+        invalidation: recommended.invalidation,
+        drawOnLiquidity: liquidityLabel(recommended.drawOnLiquidity),
+        liquiditySwept: liquidityLabel(recommended.liquiditySwept),
+        fvgStatus: fvgStatusFor(recommended),
+        displacementStatus: displacementStatusFor(recommended),
+        opportunitySummary: universalRecognition.opportunitySummary,
+        opportunityDetected,
+        opportunity: recognizedOpportunity,
+        opportunityType: recognizedOpportunity.type,
+        opportunityStage: recognizedOpportunity.stage,
+        opportunityQuality: recognizedOpportunity.quality,
+        opportunityDirection: recognizedOpportunity.direction,
+        opportunityModelName: recognizedOpportunity.modelName,
+        opportunityNextAction: recognizedOpportunity.nextAction,
+        opportunityMissingEvidence: recognizedOpportunity.missingEvidence,
+        opportunityBlockers: recognizedOpportunity.blockers,
+        paperWatchlistEligible,
+        cmdIndependentDateGateStatus,
+        cmdIndependentDateGateReason,
+        sessionNarrativeProfile,
+        sessionDirectionalRead: packet.sessionNarrative?.directionalRead ?? packet.compactSummary.sessionDirectionalRead,
+        modelName: packet.sessionNarrative?.primaryModelDetection?.modelName ?? packet.compactSummary.primaryModelDetection?.modelName,
+        modelState: packet.sessionNarrative?.primaryModelDetection?.modelState ?? packet.compactSummary.primaryModelDetection?.modelState,
+        dataDepthStatus: packet.sessionNarrative?.dataDepth.status ?? packet.compactSummary.dataDepthStatus,
+        availableLookbackDays: packet.sessionNarrative?.dataDepth.availableLookbackDays ?? packet.compactSummary.availableLookbackDays,
+        topReasons: currentReadTopReasons,
+        nextAction: currentReadNextAction,
+        debug: {
+          lastEvaluationAt: packet.generatedAt,
+          packetSource,
+          sourceFingerprint: packet.activeSource.sourceFingerprint
+        } as IctCurrentRead["debug"]
+      }
+    })
+  );
 
   return {
     researchOnly: true,
@@ -800,6 +871,8 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     pdArrayFocus: universalRecognition.pdArrays[0] ? `${universalRecognition.pdArrays[0].type} / ${universalRecognition.pdArrays[0].role}` : undefined,
     recognitionOpportunitySummary: universalRecognition.opportunitySummary,
     opportunitySummary: universalRecognition.opportunitySummary,
+    currentOpportunitySummary: currentOpportunityScan.summary,
+    currentOpportunities: currentOpportunityScan.opportunities.slice(0, 8),
     opportunityDetected,
     opportunity: recognizedOpportunity,
     opportunityType: recognizedOpportunity.type,
@@ -875,16 +948,8 @@ export const buildIctCurrentReadFromPacket = (packet?: IctAdvisorPacket, latestS
     rrConstructionReason,
     smtReason,
     riskReason,
-    topReasons: reasons.length
-      ? uniqueReasons([universalRecognition.opportunitySummary, opportunityApprovalNote, cmdIndependentDateGateReason, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, ...reasons])
-      : recommended.decision === "research_only"
-        ? uniqueReasons([universalRecognition.opportunitySummary, opportunityApprovalNote, cmdIndependentDateGateReason, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, "Research candidate generated; validation is still required before any readiness review."])
-        : uniqueReasons([universalRecognition.opportunitySummary, opportunityApprovalNote, cmdIndependentDateGateReason, selfImprovementHypothesis ? selfImprovementNote : undefined, ...multiTimeframeReasons, "No explicit blocker was provided by the compact advisor packet."]),
-    nextAction: opportunityDetected && modelQualityLane !== "approved"
-      ? selfImprovementHypothesis?.nextAction ?? recognizedOpportunity.nextAction
-      : universalRecognition.tier === "pd_array_setup" || universalRecognition.tier === "scalp_setup"
-        ? universalRecognition.nextAction
-        : nextActionFor(packet, reasons),
+    topReasons: currentReadTopReasons,
+    nextAction: currentReadNextAction,
     debug: {
       candleCount: packet.activeSource.candleCount,
       primaryTimeframeAvailable: packet.activeSource.candleCount > 0,

@@ -329,6 +329,11 @@ export function IctAdvisorSummaryPanel({
         status === "approved_research_candidate" ? 4 : status === "paper_watchlist_candidate" ? 3 : status === "watchlist_candidate" ? 2 : status === "rejected_candidate" ? 1 : 0;
       return statusWeight(right.approvedProfileDecision?.status) - statusWeight(left.approvedProfileDecision?.status) || right.confidence - left.confidence;
     })[0];
+  const currentOpportunitySummary = currentRead.currentOpportunitySummary ?? packet?.compactSummary.currentOpportunitySummary;
+  const topCurrentOpportunity =
+    currentOpportunitySummary?.topOpportunity ??
+    currentOpportunitySummary?.topNearMiss ??
+    currentOpportunitySummary?.topRejected;
 
   if (mode === "compact") {
     return (
@@ -360,6 +365,11 @@ export function IctAdvisorSummaryPanel({
                 label="Recognition"
                 value={formatToken(currentRead.recognitionTier)}
                 detail={currentRead.recognitionOpportunitySummary}
+              />
+              <AdvisorMini
+                label="Current opportunities"
+                value={topCurrentOpportunity ? `${formatToken(topCurrentOpportunity.model)} / ${formatToken(topCurrentOpportunity.status)}` : "scanner pending"}
+                detail={currentOpportunitySummary ? `${currentOpportunitySummary.formingCount} forming / ${currentOpportunitySummary.nearMissCount} near-miss / ${formatToken(currentOpportunitySummary.depthStatus)}` : "run Activate Market"}
               />
               <AdvisorMini
                 label="Direction"
@@ -496,6 +506,24 @@ export function IctAdvisorSummaryPanel({
             </div>
             <StrategyCalibrationPanel summary={strategyCalibrationSummary} compact />
             <DecisionExplanationPanel explanation={decisionExplanation} compact />
+            {currentOpportunitySummary ? (
+              <div data-testid="dashboard-current-opportunities-card" className="mt-3 rounded-xl border border-emerald-300/15 bg-emerald-300/10 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-200">Current Opportunities</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-50">
+                      {topCurrentOpportunity ? `${formatToken(topCurrentOpportunity.model)} / ${formatToken(topCurrentOpportunity.status)}` : "No current opportunity"}
+                    </p>
+                  </div>
+                  <Badge variant={currentOpportunitySummary.validCandidateCount ? "success" : currentOpportunitySummary.formingCount || currentOpportunitySummary.nearMissCount ? "warning" : "secondary"}>
+                    {currentOpportunitySummary.validCandidateCount} valid / {currentOpportunitySummary.formingCount} forming
+                  </Badge>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-emerald-50">
+                  Depth {formatToken(currentOpportunitySummary.depthStatus)}; range history {currentOpportunitySummary.rangeHistoryAvailable ? `${currentOpportunitySummary.validationLookbackDays.toFixed(1)} days` : "not ready"}. Blocker: {currentOpportunitySummary.topBlocker ?? "none"}. Next: {currentOpportunitySummary.nextAction}
+                </p>
+              </div>
+            ) : null}
             <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3">
               <p className="line-clamp-2 text-xs leading-5 text-slate-300">
                 Recognition: {formatToken(currentRead.recognitionTier)}. Session: {formatToken(currentRead.sessionNarrativeStatus ?? currentRead.sessionNarrativeProfile)}. Model: {currentRead.modelDetected ? `${formatToken(currentRead.modelName)} / ${formatToken(currentRead.modelState)} / ${formatToken(currentRead.modelDirection)}` : "not detected"}. Lane: {modelLane}. Paper Sim: {currentRead.paperSimAllowed ? "Eligible" : "Not Eligible"} ({currentRead.paperSimEligibilityReason ?? "reason pending"}). Readiness: Research {formatToken(currentRead.readinessSummary.researchReadiness)}, Paper {formatToken(currentRead.readinessSummary.paperReadiness)}, Execution Disabled. Trade fields: target {formatToken(currentRead.targetConstructionStatus)}, invalidation {formatToken(currentRead.invalidationConstructionStatus)}, RR {formatToken(currentRead.rrConstructionStatus)}. {currentRead.topReasons[0] ?? currentRead.paperWatchlistReason ?? recommended?.summary ?? "ICT advisor summary unavailable."} Next: {researchSignal.nextAction} Approval score {packet.compactSummary.approvalScore}/100.
@@ -677,6 +705,38 @@ export function IctAdvisorSummaryPanel({
           </div>
           <StrategyCalibrationPanel summary={strategyCalibrationSummary} />
           <DecisionExplanationPanel explanation={decisionExplanation} />
+          {currentOpportunitySummary ? (
+            <div data-testid="advisor-current-opportunities-panel" className="mt-4 rounded-2xl border border-emerald-300/15 bg-[radial-gradient(circle_at_12%_0%,rgba(16,185,129,0.12),transparent_34%),linear-gradient(135deg,rgba(2,6,23,0.64),rgba(15,23,42,0.68))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200">Current Opportunities</p>
+                  <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">
+                    Scanner output from compact current read plus explicit depth metadata. It can surface valid, forming, rejected, and no-trade reasons, but it cannot create execution intent.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant={currentOpportunitySummary.validCandidateCount ? "success" : currentOpportunitySummary.formingCount || currentOpportunitySummary.nearMissCount ? "warning" : "secondary"}>
+                    {currentOpportunitySummary.validCandidateCount} valid / {currentOpportunitySummary.formingCount} forming / {currentOpportunitySummary.nearMissCount} near-miss
+                  </Badge>
+                  <Badge variant={currentOpportunitySummary.rangeHistoryAvailable ? "success" : "warning"}>{formatToken(currentOpportunitySummary.depthStatus)}</Badge>
+                  <Badge variant="danger">authority none</Badge>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {(currentRead.currentOpportunities ?? []).slice(0, 6).map((item) => (
+                  <AdvisorMini
+                    key={item.id}
+                    label={item.strategyId}
+                    value={`${formatToken(item.status)} / ${formatToken(item.side)}`}
+                    detail={`${item.missingConditions[0] ?? item.blockers[0] ?? item.nextAction}`}
+                  />
+                ))}
+              </div>
+              <p className="mt-3 rounded-xl border border-emerald-300/15 bg-emerald-300/10 p-3 text-xs leading-5 text-emerald-50">
+                Top: {topCurrentOpportunity ? `${formatToken(topCurrentOpportunity.model)} / ${formatToken(topCurrentOpportunity.setupName)}` : "none"}. Blocker: {currentOpportunitySummary.topBlocker ?? "none"}. Next: {currentOpportunitySummary.nextAction}. Range history: {currentOpportunitySummary.rangeHistoryAvailable ? `${currentOpportunitySummary.validationLookbackDays.toFixed(1)} days` : "not ready"}.
+              </p>
+            </div>
+          ) : null}
           <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3">
             <div data-testid="ict-universal-recognition-summary" className="mb-4 rounded-lg border border-violet-300/15 bg-violet-300/10 p-3">
               <div className="flex flex-wrap items-start justify-between gap-3">

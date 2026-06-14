@@ -31,6 +31,7 @@ import type {
   IctSessionModelState,
   IctSessionNarrativeProfile
 } from "./ictSessionNarrativeTypes";
+import type { CurrentOpportunity, CurrentOpportunitySummary } from "../currentOpportunity/currentOpportunityTypes";
 
 export type IctCurrentReadPacketSource =
   | "live_mt5"
@@ -155,6 +156,8 @@ export interface IctCurrentRead {
   pdArrayFocus?: string;
   recognitionOpportunitySummary: string;
   opportunitySummary: string;
+  currentOpportunitySummary?: CurrentOpportunitySummary;
+  currentOpportunities?: CurrentOpportunity[];
   opportunityDetected: boolean;
   opportunityType: IctOpportunityType;
   opportunityStage: IctOpportunityStage;
