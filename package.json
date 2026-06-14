@@ -52,6 +52,7 @@
     "test:cisd-performance": "node scripts/test-cisd-performance.mjs",
     "test:ict-ifvg": "node scripts/test-ict-ifvg.mjs",
     "test:ifvg-performance": "node scripts/test-ifvg-performance.mjs",
+    "test:ifvg-expectancy-classifier": "node scripts/test-ifvg-expectancy-classifier.mjs",
     "test:ict-cmd-paper-tracking": "node scripts/test-ict-cmd-paper-tracking.mjs",
     "test:ict-multi-timeframe-context": "node scripts/test-ict-multi-timeframe-context.mjs",
     "test:ict-activate-market-pipeline": "node scripts/test-ict-activate-market-pipeline.mjs",

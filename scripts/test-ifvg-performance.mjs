@@ -376,6 +376,10 @@ const classifyRobustness = ({ summary, rolling, oos, blockerCounts, totalEvaluat
   if (summary.averageRR < 2 || summary.medianRR < 2) return "no_edge";
   if (oos.verdict === "degraded" || oos.verdict === "failed") return "rejected";
   if (summary.targetFirstRate >= 0.55 && summary.invalidationFirstRate <= 0.35) return "paper_watchlist_candidate";
+  const estimatedExpectancyR = summary.targetFirstRate * summary.averageRR - summary.invalidationFirstRate;
+  if (summary.targetFirstRate >= 0.55 && estimatedExpectancyR > 0 && summary.invalidationFirstRate > 0.35) {
+    return "needs_filtering";
+  }
   const validRate = totalEvaluated ? summary.count / totalEvaluated : 0;
   if (validRate > 0.08 && summary.targetFirstRate < 0.45) return "too_broad";
   if ((blockerCounts["FVG was never fully inverted."] ?? 0) > summary.count * 10) return "too_strict";

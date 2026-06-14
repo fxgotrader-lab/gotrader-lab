@@ -77,7 +77,7 @@ OOS verdict: `passed`.
 
 ## Robustness Classification
 
-`no_edge`
+`needs_filtering`
 
 ## Promotion Decision
 
