@@ -97,6 +97,7 @@
     "test:tradingview-mcp": "node scripts/test-tradingview-mcp-bridge.mjs",
     "test:mt5-readonly": "node scripts/test-mt5-readonly-bridge.mjs",
     "test:mt5-readonly-depth": "node scripts/test-mt5-readonly-depth.mjs",
+    "test:mt5-range-endpoint": "node scripts/test-mt5-range-endpoint.mjs",
     "test:mt5-readonly-safety": "node scripts/test-mt5-readonly-safety.mjs",
     "test:openclaw-advisory": "node scripts/test-openclaw-advisory.mjs",
     "test:openclaw-phone-bridge": "node scripts/test-openclaw-phone-bridge-routing.mjs",

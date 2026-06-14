@@ -328,7 +328,7 @@ const fetchUpstreamJson = async (kind, params, validator = () => true) => {
         discoveredUpstreamPaths[kind] = candidate;
         return { payload, path: candidate };
       }
-      errors.push(`${candidate}: response shape did not satisfy ${kind} validator`);
+      errors.push(`${candidate}: response shape did not satisfy ${kind} validator (${payloadShapeSummary(payload)})`);
     } catch (error) {
       errors.push(`${candidate}: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -361,23 +361,38 @@ const updateEndpointAvailability = async () => {
       range: { available: false, error: rangeEndpointError }
     };
   }
-  const mt5Timeframe = mt5TimeframeFor("5m");
-  const now = new Date();
-  const from = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
-  const to = now.toISOString();
-  const latest = await probeUpstream("candles", {
+  const timeframe = "5m";
+  const mt5Timeframe = mt5TimeframeFor(timeframe);
+  const latestParams = {
     symbol_name: defaultBrokerSymbol,
     symbol: defaultBrokerSymbol,
-    timeframe: "5m",
+    timeframe,
     mt5_timeframe: mt5Timeframe,
     mt5Timeframe,
-    count: 1,
-    limit: 1
-  }, candleLikePayload);
+    count: 2,
+    limit: 2
+  };
+  let latest;
+  let latestPayload;
+  try {
+    const upstreamLatest = await fetchUpstreamJson("candles", latestParams, candleLikePayload);
+    latestPayload = upstreamLatest.payload;
+    latest = { available: true, path: upstreamLatest.path };
+  } catch (error) {
+    latest = { available: false, error: compactProbeError(error) };
+  }
+  const normalizedLatest = latestPayload
+    ? normalizeCandles({ payload: latestPayload, brokerSymbol: defaultBrokerSymbol, timeframe, limit: 2 })
+    : [];
+  const latestCandleTime = normalizedLatest.at(-1)?.timestamp;
+  const latestMillis = latestCandleTime ? Date.parse(latestCandleTime) : Number.NaN;
+  const rangeAnchor = Number.isFinite(latestMillis) ? latestMillis : Date.now();
+  const from = new Date(rangeAnchor - 12 * 60 * 60 * 1000).toISOString();
+  const to = new Date(rangeAnchor + 60 * 60 * 1000).toISOString();
   const range = await probeUpstream("candleRange", {
     symbol_name: defaultBrokerSymbol,
     symbol: defaultBrokerSymbol,
-    timeframe: "5m",
+    timeframe,
     mt5_timeframe: mt5Timeframe,
     mt5Timeframe,
     date_from: from,
@@ -414,7 +429,39 @@ const payloadArray = (payload) => {
   if (Array.isArray(payload?.items)) {
     return payload.items;
   }
+  if (Array.isArray(payload?.result)) {
+    return payload.result;
+  }
+  if (Array.isArray(payload?.data?.candles)) {
+    return payload.data.candles;
+  }
+  if (Array.isArray(payload?.data?.rates)) {
+    return payload.data.rates;
+  }
+  if (Array.isArray(payload?.data?.items)) {
+    return payload.data.items;
+  }
+  if (Array.isArray(payload?.result?.candles)) {
+    return payload.result.candles;
+  }
+  if (Array.isArray(payload?.result?.data)) {
+    return payload.result.data;
+  }
   return [];
+};
+const payloadShapeSummary = (payload) => {
+  const array = payloadArray(payload);
+  const sample = array[0];
+  const topLevelKeys = payload && typeof payload === "object" && !Array.isArray(payload)
+    ? Object.keys(payload).slice(0, 16)
+    : [];
+  const sampleKeys = sample && typeof sample === "object" ? Object.keys(sample).slice(0, 16) : [];
+  return [
+    `topLevel=${Array.isArray(payload) ? "array" : typeof payload}`,
+    topLevelKeys.length ? `keys=${topLevelKeys.join(",")}` : undefined,
+    `candidateCount=${array.length}`,
+    sampleKeys.length ? `sampleKeys=${sampleKeys.join(",")}` : undefined
+  ].filter(Boolean).join("; ");
 };
 const discoverBrokerSymbolSuggestions = async () => {
   if (!upstreamBaseUrl) {
