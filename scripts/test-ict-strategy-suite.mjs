@@ -70,6 +70,8 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictTurtleSoup.ts" },
   { root: sourceRoot, file: "ictCisdTypes.ts" },
   { root: sourceRoot, file: "ictCisd.ts" },
+  { root: sourceRoot, file: "ictIfvgTypes.ts" },
+  { root: sourceRoot, file: "ictIfvg.ts" },
   { root: sourceRoot, file: "ictResearchReportTypes.ts" },
   { root: sourceRoot, file: "ictRealReplayRunner.ts" },
   { root: sourceRoot, file: "ictManualReplayReview.ts" },

@@ -300,10 +300,12 @@ async function main() {
       nextAction: "Review docs/cisd-performance-audit.md and refine only if replay/OOS evidence justifies it."
     }),
     placeholderAudit({
-      strategyId: "ifvg_research_v1",
+      strategyId: "ifvg_v1",
       source: defaultSource,
-      reason: "IFVG is registered as a research-only placeholder; inversion/retest/displacement detector is not implemented yet.",
-      nextAction: "Add deterministic IFVG inversion and retest detector, then replay on 90-day MT5 history."
+      reason: "IFVG now has a dedicated executable research detector and 90-day performance diagnostic; use test:ifvg-performance for current edge assessment.",
+      status: "ready_for_more_validation",
+      issueCategory: "dedicated_diagnostic_available",
+      nextAction: "Review docs/ifvg-performance-audit.md and refine only if replay/OOS evidence justifies it."
     }),
     placeholderAudit({
       strategyId: "ote_research_v1",

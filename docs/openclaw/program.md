@@ -101,6 +101,7 @@ OpenClaw may suggest draft proposal intent for these research-only families:
 - `silver_bullet_v2_refined_research`
 - `turtle_soup_v1`
 - `cisd_v1`
+- `ifvg_v1`
 
 If a requested family is unknown, OpenClaw must mark it as planned or needs human review. Unknown families must not be treated as executable.
 

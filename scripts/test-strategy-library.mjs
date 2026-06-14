@@ -166,7 +166,7 @@ async function main() {
     "silver_bullet_v1",
     "silver_bullet_v2_refined_research",
     "camerons_model_research_v1",
-    "ifvg_research_v1",
+    "ifvg_v1",
     "turtle_soup_v1",
     "crt_research_v1",
     "ote_research_v1",
@@ -188,7 +188,9 @@ async function main() {
     registry.suggestStrategyIdForRecognition({ modelName: "CISD state shift" }),
     "cisd_v1"
   );
-  for (const strategyId of newStrategyIds.filter((id) => !["silver_bullet_v1", "silver_bullet_v2_refined_research", "turtle_soup_v1", "cisd_v1"].includes(id))) {
+  assert.equal(registry.getStrategyDefinition("ifvg_v1").detectorStatus, "executable_research");
+  assert.equal(registry.getStrategyDefinition("ifvg_v1").status, "replay_required");
+  for (const strategyId of newStrategyIds.filter((id) => !["silver_bullet_v1", "silver_bullet_v2_refined_research", "turtle_soup_v1", "cisd_v1", "ifvg_v1"].includes(id))) {
     assert.equal(registry.getStrategyDefinition(strategyId).detectorStatus, "research_only_placeholder");
   }
   assert.ok(registry.getStrategyDefinition("ict_cmd_short_paper_watchlist_v1"));
@@ -314,25 +316,24 @@ async function main() {
   assert.equal(marketMapEligibility.status, "paper_demo_blocked");
   assert.match(marketMapEligibility.blockers.join(" "), /diagnostic/i);
 
-  const placeholderDefinition = registry.getStrategyDefinition("ifvg_research_v1");
-  const placeholderRecord = intake.createStrategyIntakeRecord({
-    strategyId: "ifvg_research_v1",
+  const ifvgDefinition = registry.getStrategyDefinition("ifvg_v1");
+  const ifvgRecord = intake.createStrategyIntakeRecord({
+    strategyId: "ifvg_v1",
     sourceStatus: mt5Source,
     validationChainEntry: passedChain,
     recognition: {
       modelName: "IFVG",
       family: "ifvg",
       side: "both",
-      presentConditions: placeholderDefinition.requiredConditions.map((condition) => condition.id)
+      presentConditions: ifvgDefinition.requiredConditions.map((condition) => condition.id)
     },
     evidenceSummary: threeDateCmd.evidenceSummary
   });
-  const placeholderEligibility = eligibility.evaluateStrategyEligibility(placeholderRecord);
-  assert.equal(placeholderEligibility.eligible, false);
-  assert.equal(placeholderEligibility.status, "paper_demo_blocked");
-  assert.match(placeholderEligibility.blockers.join(" "), /detection contract/i);
-  assertSafeRecord(placeholderRecord);
-  assertSafeRecord(placeholderEligibility);
+  const ifvgEligibility = eligibility.evaluateStrategyEligibility(ifvgRecord);
+  assert.equal(ifvgEligibility.eligible, true);
+  assert.equal(ifvgEligibility.status, "evidence_building");
+  assertSafeRecord(ifvgRecord);
+  assertSafeRecord(ifvgEligibility);
 
   const unsafe = intake.createStrategyIntakeRecord({
     strategyId: "ict_cmd_short_paper_watchlist_v1",
@@ -382,7 +383,7 @@ async function main() {
     cmdThreeDateStatus: threeDateEligibility.status,
     mockBlocked: mockEligibility.blockers[0],
     marketMapStatus: marketMapEligibility.status,
-    placeholderStatus: placeholderEligibility.status,
+    ifvgStatus: ifvgEligibility.status,
     unknownStatus: eligibility.evaluateStrategyEligibility(unknown).status,
     openClawStrategyId: openClawExplicit.strategyId,
     authority: authorityNone,

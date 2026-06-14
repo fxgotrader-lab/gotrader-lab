@@ -113,7 +113,8 @@ export const openClawPilotProgram: OpenClawPilotProgram = {
     "ict_hypothesis_validation",
     "silver_bullet_v2_refined_research",
     "turtle_soup_v1",
-    "cisd_v1"
+    "cisd_v1",
+    "ifvg_v1"
   ],
   permissions: openClawPilotPermissions,
   safetyBoundary: openClawPilotSafetyBoundary,

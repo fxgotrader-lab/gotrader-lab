@@ -292,19 +292,103 @@ export const STRATEGY_DEFINITIONS: StrategyDefinition[] = [
     ],
     forbiddenPromotionReasons: ["Cameron's model detector not implemented"]
   }),
-  researchOnlyPlaceholderStrategy({
-    id: "ifvg_research_v1",
-    name: "Inversion FVG Research v1",
+  {
+    id: "ifvg_v1",
+    name: "Inversion FVG v1",
     family: "ifvg",
+    status: "replay_required",
+    detectorStatus: "executable_research",
     description:
-      "Registered research definition for IFVG continuation/reversal review. It remains placeholder-only until inversion and retest rules are deterministic.",
+      "Executable research detector for Inversion Fair Value Gap. It requires a fully inverted FVG, unused inversion zone, retest/respect, HTF context review, liquidity target, and minimum 2R before replay validation.",
+    side: "both",
+    supportedSymbols: ["MNQ", "NQ", "USTECH", "US30", "YM", "US500", "ES", "XAUUSD", "EURUSD.pro", "BTCUSD"],
+    primaryTimeframes: ["5m", "15m"],
+    higherTimeframes: ["15m", "1h", "4h", "1d"],
+    sourceRequirements: mt5ResearchSource,
     requiredConditions: [
-      { id: "fvg_invalidated", label: "FVG invalidated", description: "Original FVG must be invalidated cleanly." },
-      { id: "inversion_retest", label: "Inversion retest", description: "Retest of the inverted FVG must be detected." },
-      { id: "ifvg_displacement", label: "Displacement follow-through", description: "Displacement away from the inversion must confirm direction." }
+      {
+        id: "fair_value_gap",
+        label: "Fair value gap",
+        description: "Original bullish or bearish FVG must be identified deterministically.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "full_inversion",
+        label: "Full inversion",
+        description: "Price must fully trade through the original FVG boundary.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "unused_ifvg_zone",
+        label: "Unused IFVG zone",
+        description: "The gap cannot already be used before inversion.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "ifvg_retest",
+        label: "IFVG retest",
+        description: "Price must return to the inverted FVG and respect it as support/resistance.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "htf_context_reviewed",
+        label: "HTF context reviewed",
+        description: "Available HTF context must not hard-conflict with IFVG direction.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "liquidity_target",
+        label: "Liquidity target",
+        description: "Target must be the next draw on liquidity in the IFVG direction.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "minimum_2r",
+        label: "Minimum 2R",
+        description: "Target, invalidation, and entry must produce at least 2R.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      }
     ],
-    forbiddenPromotionReasons: ["IFVG detector not implemented"]
-  }),
+    invalidationRules: [
+      "Long invalidation below the inverted FVG bottom.",
+      "Short invalidation above the inverted FVG top.",
+      "A reused IFVG zone blocks the candidate."
+    ],
+    targetRules: [
+      "Long target is next buy-side liquidity above the IFVG midpoint.",
+      "Short target is next sell-side liquidity below the IFVG midpoint.",
+      "Minimum reward/risk is 2R before validation can be queued."
+    ],
+    minimumRR: 2,
+    sessionRules: [
+      "Primary use is RTH, with strongest review during London open and New York open.",
+      "Use America/New_York timing for session classification."
+    ],
+    regimeRules: [
+      "Low-volume/Globex/holiday context blocks or warns depending available source metadata.",
+      "HTF conflict blocks v1; missing HTF context is warning-only and remains replay-required."
+    ],
+    validationRequirements: compactValidation,
+    paperDemoRequirements: [
+      {
+        id: "ifvg_replay_oos",
+        label: "IFVG replay/OOS",
+        required: true,
+        detail: "IFVG can only progress after 90-day replay, walk-forward/OOS, evidence, maturity, readiness checklist, and committee review."
+      }
+    ],
+    forbiddenPromotionReasons: [
+      "FVG not inverted",
+      "reused IFVG",
+      "no retest",
+      "against HTF context",
+      "low volume",
+      "RR below 2",
+      "mock/sample source",
+      "missing replay/OOS"
+    ],
+    authority: STRATEGY_LIBRARY_AUTHORITY
+  },
   {
     id: "turtle_soup_v1",
     name: "Turtle Soup v1",
@@ -807,7 +891,7 @@ export const suggestStrategyIdForRecognition = (input: {
     return "camerons_model_research_v1";
   }
   if (input.family === "ifvg" || /\bifvg\b|inversion.*fvg|inversion fair value/.test(text)) {
-    return "ifvg_research_v1";
+    return "ifvg_v1";
   }
   if (input.family === "turtle_soup" || /turtle[_\s-]*soup/.test(text)) {
     return "turtle_soup_v1";

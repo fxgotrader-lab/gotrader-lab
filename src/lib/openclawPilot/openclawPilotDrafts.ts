@@ -82,7 +82,7 @@ const inferOpenClawPilotStrategyId = (input: { candidateFamilies: string[]; targ
     return "camerons_model_research_v1";
   }
   if (/\bifvg\b|inversion.*fvg|inversion fair value/.test(text)) {
-    return "ifvg_research_v1";
+    return "ifvg_v1";
   }
   if (/turtle[_\s-]*soup/.test(text)) {
     return "turtle_soup_v1";

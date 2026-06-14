@@ -61,5 +61,7 @@ export * from "./ictTurtleSoupTypes";
 export * from "./ictTurtleSoup";
 export * from "./ictCisdTypes";
 export * from "./ictCisd";
+export * from "./ictIfvgTypes";
+export * from "./ictIfvg";
 export * from "./ictResearchReportTypes";
 export * from "./ictResearchReport";
