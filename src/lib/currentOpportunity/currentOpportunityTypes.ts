@@ -29,6 +29,19 @@ export type CurrentOpportunityDepthPolicyStatus =
   | "tactical_only"
   | "insufficient";
 
+export type CurrentOpportunityTopDownBiasStatus =
+  | "aligned"
+  | "mixed"
+  | "conflicted"
+  | "insufficient_data"
+  | "unavailable";
+
+export interface CurrentOpportunityTimeframeRole {
+  timeframe: string;
+  role: string;
+  status: "loaded" | "missing";
+}
+
 export interface CurrentOpportunityAuthority {
   executionAuthority: "none";
   brokerAuthority: "none";
@@ -81,6 +94,8 @@ export interface CurrentOpportunityContext {
   confidence?: number;
   htfAlignmentStatus?: string;
   htfConflictReason?: string;
+  topDownBiasStatus?: CurrentOpportunityTopDownBiasStatus;
+  timeframeRoleSummary: CurrentOpportunityTimeframeRole[];
   weeklyBiasDirection?: string;
   sessionNarrativeProfile?: string;
   sessionDirectionalRead?: string;
@@ -132,6 +147,8 @@ export interface CurrentOpportunitySummary {
   sourceProvider: string;
   sourceFingerprint?: string;
   depthStatus: CurrentOpportunityDepthPolicyStatus;
+  topDownBiasStatus?: CurrentOpportunityTopDownBiasStatus;
+  timeframeRoleSummary: CurrentOpportunityTimeframeRole[];
   validCandidateCount: number;
   formingCount: number;
   nearMissCount: number;

@@ -173,6 +173,14 @@ const compactNumber = (value?: number) =>
     : "n/a";
 
 const formatToken = (value?: string) => (value ?? "idle").replace(/_/g, " ");
+const yieldToBrowserPaint = () =>
+  new Promise<void>((resolve) => {
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => resolve());
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
 const executableStatusVariant = (status?: string) =>
   status === "executable" ? "success" : status === "diagnostic_only" ? "secondary" : "warning";
 const replayReviewVariant = (status?: string) =>
@@ -1286,6 +1294,7 @@ export function MissionControlShell({ state }: { state: LabState }) {
     setMt5Busy(true);
     setActivateMarketSteps(createActivateMarketInitialSteps());
     setActivateMarketResult(undefined);
+    await yieldToBrowserPaint();
     try {
       const loadedSettings = loadMt5ReadOnlySettings();
       const requestedSymbol = (mt5RequestedSymbol || loadedSettings.requestedSymbol || commandCenterSymbol || "MNQ").trim();

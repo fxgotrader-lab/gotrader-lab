@@ -144,6 +144,15 @@ import {
 import { ValidationChainCard } from "@/components/common/ValidationChainCard";
 import { WALK_FORWARD_UPDATED_EVENT } from "@/lib/walkForward";
 
+const yieldToBrowserPaint = () =>
+  new Promise<void>((resolve) => {
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => resolve());
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
+
 const formatDate = (value?: string) => (value ? new Date(value).toLocaleString() : "n/a");
 const formatToken = (value?: string) => (value?.trim() ? value : "unknown").replace(/_/g, " ");
 const pct = (value?: number) => (typeof value === "number" ? `${Math.round(value * 100)}%` : "n/a");
@@ -692,6 +701,7 @@ export function ResearchAdvisorView() {
     setActivateMarketStatus("running");
     setActivateMarketSteps(createActivateMarketInitialSteps());
     setActivateMarketResult(undefined);
+    await yieldToBrowserPaint();
     try {
       const candleLimit = Math.max(1, Number(advisorCandleLimit) || 1000);
       const higherTimeframes = advisorHigherTimeframes.filter((item) => item !== advisorPrimaryTimeframe);

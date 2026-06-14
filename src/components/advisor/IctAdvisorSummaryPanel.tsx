@@ -520,7 +520,7 @@ export function IctAdvisorSummaryPanel({
                   </Badge>
                 </div>
                 <p className="mt-2 text-xs leading-5 text-emerald-50">
-                  Depth {formatToken(currentOpportunitySummary.depthStatus)}; range history {currentOpportunitySummary.rangeHistoryAvailable ? `${currentOpportunitySummary.validationLookbackDays.toFixed(1)} days` : "not ready"}. Blocker: {currentOpportunitySummary.topBlocker ?? "none"}. Next: {currentOpportunitySummary.nextAction}
+                  Depth {formatToken(currentOpportunitySummary.depthStatus)}; range history {currentOpportunitySummary.rangeHistoryAvailable ? `${currentOpportunitySummary.validationLookbackDays.toFixed(1)} days` : "not ready"}. Top-down {formatToken(currentOpportunitySummary.topDownBiasStatus)}; roles {currentOpportunitySummary.timeframeRoleSummary?.length ? currentOpportunitySummary.timeframeRoleSummary.map((item) => `${item.timeframe}:${item.status}`).join(" / ") : "pending"}. Blocker: {currentOpportunitySummary.topBlocker ?? "none"}. Next: {currentOpportunitySummary.nextAction}
                 </p>
               </div>
             ) : null}
@@ -733,7 +733,7 @@ export function IctAdvisorSummaryPanel({
                 ))}
               </div>
               <p className="mt-3 rounded-xl border border-emerald-300/15 bg-emerald-300/10 p-3 text-xs leading-5 text-emerald-50">
-                Top: {topCurrentOpportunity ? `${formatToken(topCurrentOpportunity.model)} / ${formatToken(topCurrentOpportunity.setupName)}` : "none"}. Blocker: {currentOpportunitySummary.topBlocker ?? "none"}. Next: {currentOpportunitySummary.nextAction}. Range history: {currentOpportunitySummary.rangeHistoryAvailable ? `${currentOpportunitySummary.validationLookbackDays.toFixed(1)} days` : "not ready"}.
+                Top: {topCurrentOpportunity ? `${formatToken(topCurrentOpportunity.model)} / ${formatToken(topCurrentOpportunity.setupName)}` : "none"}. Top-down: {formatToken(currentOpportunitySummary.topDownBiasStatus)} ({currentOpportunitySummary.timeframeRoleSummary?.length ? currentOpportunitySummary.timeframeRoleSummary.map((item) => `${item.timeframe}:${item.status}`).join(" / ") : "pending"}). Blocker: {currentOpportunitySummary.topBlocker ?? "none"}. Next: {currentOpportunitySummary.nextAction}. Range history: {currentOpportunitySummary.rangeHistoryAvailable ? `${currentOpportunitySummary.validationLookbackDays.toFixed(1)} days` : "not ready"}.
               </p>
             </div>
           ) : null}

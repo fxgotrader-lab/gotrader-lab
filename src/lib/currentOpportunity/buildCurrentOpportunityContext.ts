@@ -1,6 +1,11 @@
 import type { IctAdvisorPacket } from "../ict-strategy-suite/ictAdvisorTypes";
 import type { IctCurrentRead } from "../ict-strategy-suite/ictCurrentReadTypes";
-import type { CurrentOpportunityContext, CurrentOpportunitySourceDepth } from "./currentOpportunityTypes";
+import type {
+  CurrentOpportunityContext,
+  CurrentOpportunitySourceDepth,
+  CurrentOpportunityTimeframeRole,
+  CurrentOpportunityTopDownBiasStatus
+} from "./currentOpportunityTypes";
 
 const normalizeList = (values?: Array<string | undefined>) =>
   Array.from(new Set((values ?? []).filter((value): value is string => Boolean(value?.trim()))));
@@ -13,6 +18,59 @@ const depthPolicyFor = (depth: Pick<CurrentOpportunitySourceDepth, "tacticalLate
   if (depth.swingContextDays >= 5) return "swing_context_ready";
   if (depth.tacticalLatestCandleCount >= 400) return "tactical_only";
   return "insufficient";
+};
+
+const timeframeRoles: Record<string, string> = {
+  W1: "weekly bias",
+  D1: "daily bias",
+  H4: "HTF bias",
+  H1: "dealing range",
+  M15: "session model",
+  M5: "confirmation/refinement",
+  M1: "entry refinement"
+};
+
+export const buildCurrentOpportunityTimeframeRoleSummary = ({
+  loaded,
+  missing
+}: {
+  loaded?: string[];
+  missing?: string[];
+}): CurrentOpportunityTimeframeRole[] => {
+  const loadedSet = new Set(normalizeList(loaded));
+  const missingSet = new Set(normalizeList(missing));
+  return Object.entries(timeframeRoles)
+    .filter(([timeframe]) => loadedSet.has(timeframe) || missingSet.has(timeframe))
+    .map(([timeframe, role]) => ({
+      timeframe,
+      role,
+      status: loadedSet.has(timeframe) ? "loaded" as const : "missing" as const
+    }));
+};
+
+export const classifyCurrentOpportunityTopDownBias = ({
+  htfAlignmentStatus,
+  missingTimeframes,
+  weeklyBiasDirection,
+  timeframeRoleSummary
+}: {
+  htfAlignmentStatus?: string;
+  missingTimeframes?: string[];
+  weeklyBiasDirection?: string;
+  timeframeRoleSummary?: CurrentOpportunityTimeframeRole[];
+}): CurrentOpportunityTopDownBiasStatus => {
+  const roles = timeframeRoleSummary ?? [];
+  if (!roles.length) return "unavailable";
+  const requiredMissing = new Set(missingTimeframes ?? []);
+  if (requiredMissing.has("M5") || requiredMissing.has("M15")) return "insufficient_data";
+  if (!weeklyBiasDirection || weeklyBiasDirection === "unavailable" || weeklyBiasDirection === "missing") {
+    return requiredMissing.size ? "insufficient_data" : "mixed";
+  }
+  const normalized = htfAlignmentStatus?.toLowerCase() ?? "";
+  if (/aligned/.test(normalized) && !/partial|mixed|conflict/.test(normalized)) return "aligned";
+  if (/conflict/.test(normalized)) return "conflicted";
+  if (/mixed|partial/.test(normalized)) return "mixed";
+  return requiredMissing.size ? "insufficient_data" : "mixed";
 };
 
 export const buildCurrentOpportunitySourceDepth = ({
@@ -97,6 +155,19 @@ export const buildCurrentOpportunityContext = ({
     ...((currentRead?.analysisTimeframesUsed ?? packet?.marketAnalysisContext?.analysisTimeframesUsed ?? packet?.compactSummary?.analysisTimeframesUsed ?? []) as string[]),
     ...(currentRead?.htfTimeframes ?? packet?.htfTimeframes ?? [])
   ]);
+  const missingTimeframes = currentRead?.missingTimeframes ?? packet?.marketAnalysisContext?.missingTimeframes ?? [];
+  const htfAlignmentStatus = currentRead?.htfAlignment?.alignmentStatus ?? packet?.compactSummary?.htfAlignment?.alignmentStatus;
+  const weeklyBiasDirection = currentRead?.weeklyBiasDirection ?? packet?.compactSummary?.weeklyBiasDirection;
+  const timeframeRoleSummary = buildCurrentOpportunityTimeframeRoleSummary({
+    loaded: contextTimeframes,
+    missing: missingTimeframes
+  });
+  const topDownBiasStatus = classifyCurrentOpportunityTopDownBias({
+    htfAlignmentStatus,
+    missingTimeframes,
+    weeklyBiasDirection,
+    timeframeRoleSummary
+  });
   return {
     generatedAt,
     requestedSymbol,
@@ -128,9 +199,11 @@ export const buildCurrentOpportunityContext = ({
     target: currentRead?.target ?? packet?.recommendedSignal?.target,
     rrEstimate: currentRead?.rrEstimate ?? packet?.recommendedSignal?.rrEstimate,
     confidence: currentRead?.confidence ?? packet?.recommendedSignal?.confidence,
-    htfAlignmentStatus: currentRead?.htfAlignment?.alignmentStatus ?? packet?.compactSummary?.htfAlignment?.alignmentStatus,
+    htfAlignmentStatus,
     htfConflictReason: currentRead?.htfAlignment?.conflictReason ?? packet?.compactSummary?.htfAlignment?.conflictReason,
-    weeklyBiasDirection: currentRead?.weeklyBiasDirection ?? packet?.compactSummary?.weeklyBiasDirection,
+    topDownBiasStatus,
+    timeframeRoleSummary,
+    weeklyBiasDirection,
     sessionNarrativeProfile: currentRead?.sessionNarrativeProfile ?? packet?.compactSummary?.sessionNarrativeProfile,
     sessionDirectionalRead: currentRead?.sessionDirectionalRead ?? packet?.compactSummary?.sessionDirectionalRead,
     fvgStatus: currentRead?.fvgStatus,
@@ -142,7 +215,7 @@ export const buildCurrentOpportunityContext = ({
     cmdIndependentDateGateStatus: currentRead?.cmdIndependentDateGateStatus,
     cmdIndependentDateGateReason: currentRead?.cmdIndependentDateGateReason,
     analysisTimeframesUsed: currentRead?.analysisTimeframesUsed ?? packet?.marketAnalysisContext?.analysisTimeframesUsed ?? [],
-    missingTimeframes: currentRead?.missingTimeframes ?? packet?.marketAnalysisContext?.missingTimeframes ?? [],
+    missingTimeframes,
     sourceDepth
   };
 };

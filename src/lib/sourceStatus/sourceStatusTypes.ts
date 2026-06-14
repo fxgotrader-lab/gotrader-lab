@@ -17,6 +17,26 @@ export interface SourceStatusHigherTimeframe {
   candleCount: number;
 }
 
+export type SourceDepthMode =
+  | "validation_context"
+  | "swing_context"
+  | "tactical_only"
+  | "unavailable";
+
+export interface SourceStatusDepth {
+  chartCandleCount: number;
+  chartTimeframe: string;
+  analysisCandleCount?: number;
+  analysisTimeframes: string[];
+  missingAnalysisTimeframes: string[];
+  availableLookbackDays?: number;
+  requestedLookbackDays?: number;
+  rangeHistoryAvailable: boolean;
+  depthMode: SourceDepthMode;
+  depthLabel: string;
+  warning?: string;
+}
+
 /**
  * Shared page-level source status snapshot. Every major page reads this model
  * so source provenance, mock/sample state, and proxy warnings stay consistent.
@@ -36,6 +56,7 @@ export interface SourceStatusSnapshot {
   isMockOrSample: boolean;
   isProxyInstrument: boolean;
   warningLabel?: string;
+  sourceDepth: SourceStatusDepth;
   authority: SourceStatusAuthority;
 }
 
@@ -51,6 +72,10 @@ export interface SourceStatusInputs {
   fingerprint?: string;
   lastUpdated?: string;
   warnings?: string[];
+  sourceDepth?: Partial<Omit<SourceStatusDepth, "depthMode" | "depthLabel">> & {
+    depthMode?: SourceDepthMode;
+    depthLabel?: string;
+  };
 }
 
 export const SOURCE_STATUS_AUTHORITY: SourceStatusAuthority = {

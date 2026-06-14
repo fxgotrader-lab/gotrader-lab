@@ -66,6 +66,9 @@ async function main() {
   assert.equal(mt5Active.primaryTimeframe, "5m");
   assert.deepEqual(mt5Active.higherTimeframes, ["15m:400", "1h:200"]);
   assert.equal(mt5Active.sourceFingerprint, "mt5_fp_abc");
+  assert.equal(mt5Active.sourceDepth.chartCandleCount, 1000);
+  assert.equal(mt5Active.sourceDepth.depthMode, "tactical_only");
+  assert.match(mt5Active.sourceDepth.depthLabel, /tactical chart window only/i);
   assert.equal(sourceStatusLabel(mt5Active.sourceStatus), "MT5 read-only research active");
 
   const mt5VisualOnly = buildSourceStatusSnapshot({

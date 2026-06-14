@@ -107,12 +107,25 @@ export function GlobalSourceBar({ className = "" }: { className?: string }) {
       <Field label="TF" value={snapshot.primaryTimeframe} />
       <span className="hidden sm:inline-flex">
         <Field
+          label="Chart"
+          value={`${snapshot.sourceDepth.chartCandleCount.toLocaleString()} x ${snapshot.sourceDepth.chartTimeframe}`}
+        />
+      </span>
+      <span className="hidden sm:inline-flex">
+        <Field
           label="HTF"
           value={snapshot.higherTimeframes.length ? snapshot.higherTimeframes.join(", ") : "none"}
         />
       </span>
       <span className="hidden md:inline-flex">
-        <Field label="Candles" value={snapshot.candleCount.toLocaleString()} />
+        <Field
+          label="Depth"
+          value={
+            snapshot.sourceDepth.availableLookbackDays
+              ? `${snapshot.sourceDepth.availableLookbackDays.toFixed(1)}d ${snapshot.sourceDepth.depthMode.replace(/_/g, " ")}`
+              : snapshot.sourceDepth.depthMode.replace(/_/g, " ")
+          }
+        />
       </span>
       {snapshot.isProxyInstrument ? <Badge variant="warning">CFD proxy</Badge> : null}
       {snapshot.isMockOrSample ? <Badge variant="danger">Not research evidence</Badge> : null}
@@ -163,13 +176,33 @@ export function SourceStatusBanner({ className = "" }: { className?: string }) {
         <Field label="Broker" value={snapshot.brokerSymbol ?? "n/a"} />
         <Field label="TF" value={snapshot.primaryTimeframe} />
         <Field
+          label="Chart Window"
+          value={`${snapshot.sourceDepth.chartCandleCount.toLocaleString()} x ${snapshot.sourceDepth.chartTimeframe}`}
+        />
+        <Field
+          label="Analysis Depth"
+          value={
+            snapshot.sourceDepth.availableLookbackDays
+              ? `${snapshot.sourceDepth.availableLookbackDays.toFixed(2)}d`
+              : snapshot.sourceDepth.depthMode.replace(/_/g, " ")
+          }
+        />
+        <Field
           label="HTF"
           value={snapshot.higherTimeframes.length ? snapshot.higherTimeframes.join(", ") : "none"}
         />
-        <Field label="Candles" value={snapshot.candleCount.toLocaleString()} />
+        <Field
+          label="90d Range"
+          value={snapshot.sourceDepth.rangeHistoryAvailable ? "ready" : "not loaded"}
+        />
         <Field label="Fingerprint" value={compactFingerprint(snapshot.sourceFingerprint)} />
         <Badge variant="muted">Authority: none</Badge>
       </div>
+      <p className="mt-2 text-xs leading-5 text-slate-300/85" data-testid="source-depth-note">
+        {snapshot.sourceDepth.depthLabel}
+        {snapshot.sourceDepth.analysisTimeframes.length ? ` Analysis timeframes: ${snapshot.sourceDepth.analysisTimeframes.join(", ")}.` : ""}
+        {snapshot.sourceDepth.missingAnalysisTimeframes.length ? ` Missing: ${snapshot.sourceDepth.missingAnalysisTimeframes.join(", ")}.` : ""}
+      </p>
       {snapshot.warningLabel ? (
         <p
           className={`mt-2 flex items-start gap-2 text-xs leading-5 ${snapshot.isMockOrSample ? "text-rose-100/90" : "text-amber-100/90"}`}

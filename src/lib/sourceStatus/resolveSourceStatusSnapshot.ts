@@ -4,6 +4,7 @@ import {
   resolveMt5ReadOnlyRuntimeState
 } from "@/lib/integrations/mt5";
 import { loadActiveTradingViewMcpChartFeed } from "@/lib/integrations/tradingview";
+import { readLatestActivateMarketSummary } from "@/lib/ict-strategy-suite/ictActivateMarketPipeline";
 import { loadPreparedCandleSource, resolveChartDisplayCandleSource } from "@/lib/marketData";
 import { buildSourceStatusSnapshot } from "./buildSourceStatusSnapshot";
 import type { SourceStatusSnapshot } from "./sourceStatusTypes";
@@ -35,6 +36,17 @@ export async function resolveSourceStatusSnapshot(): Promise<SourceStatusSnapsho
   const research = display.activeResearchSource;
   const researchUsesMt5 = display.researchUsesMt5ReadOnly;
   const lastCandle = display.activeResearchCandleSource[display.activeResearchCandleSource.length - 1];
+  const latestActivateSummary = readLatestActivateMarketSummary();
+  const latestSummaryMatchesSource =
+    Boolean(latestActivateSummary) &&
+    latestActivateSummary?.requestedSymbol === (researchUsesMt5 ? mt5Feed?.requestedSymbol ?? research.symbol : research.symbol) &&
+    latestActivateSummary?.brokerSymbol === (researchUsesMt5 ? mt5Runtime.brokerSymbol : research.provenance.providerSymbol ?? research.symbol) &&
+    latestActivateSummary?.primaryTimeframe === research.timeframe;
+  const currentOpportunityDepth = latestSummaryMatchesSource
+    ? latestActivateSummary?.currentOpportunitySummary?.topOpportunity?.sourceDepth ??
+      latestActivateSummary?.currentOpportunitySummary?.topNearMiss?.sourceDepth ??
+      latestActivateSummary?.currentOpportunitySummary?.topRejected?.sourceDepth
+    : undefined;
 
   return buildSourceStatusSnapshot({
     provider: research.provider,
@@ -52,6 +64,33 @@ export async function resolveSourceStatusSnapshot(): Promise<SourceStatusSnapsho
     candleCount: research.candleCount,
     fingerprint: research.fingerprint,
     lastUpdated: lastCandle?.timestamp ?? research.lastTimestamp ?? research.lastUpdatedAt,
-    warnings: [...research.warnings, ...display.canonicalWarnings]
+    warnings: [...research.warnings, ...display.canonicalWarnings],
+    sourceDepth: latestSummaryMatchesSource
+      ? {
+          chartCandleCount: research.candleCount,
+          chartTimeframe: research.timeframe,
+          analysisCandleCount: currentOpportunityDepth?.rangeHistoryCandleCount,
+          analysisTimeframes: latestActivateSummary?.analysisTimeframesUsed ?? [],
+          missingAnalysisTimeframes: latestActivateSummary?.missingTimeframes ?? [],
+          availableLookbackDays: latestActivateSummary?.currentOpportunitySummary?.validationLookbackDays,
+          requestedLookbackDays: 90,
+          rangeHistoryAvailable: latestActivateSummary?.currentOpportunitySummary?.rangeHistoryAvailable ?? false,
+          depthMode:
+            latestActivateSummary?.currentOpportunitySummary?.depthStatus === "validation_context_ready"
+              ? "validation_context"
+              : latestActivateSummary?.currentOpportunitySummary?.depthStatus === "swing_context_ready"
+                ? "swing_context"
+                : latestActivateSummary?.currentOpportunitySummary?.depthStatus === "tactical_only"
+                  ? "tactical_only"
+                  : "unavailable",
+          warning: currentOpportunityDepth?.depthWarnings?.[0]
+        }
+      : {
+          chartCandleCount: research.candleCount,
+          chartTimeframe: research.timeframe,
+          analysisTimeframes: [],
+          missingAnalysisTimeframes: [],
+          rangeHistoryAvailable: false
+        }
   });
 }

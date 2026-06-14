@@ -244,6 +244,8 @@ const summarize = (context: CurrentOpportunityContext, opportunities: CurrentOpp
     sourceProvider: context.sourceProvider,
     sourceFingerprint: context.sourceFingerprint,
     depthStatus: context.sourceDepth.depthPolicyStatus,
+    topDownBiasStatus: context.topDownBiasStatus,
+    timeframeRoleSummary: context.timeframeRoleSummary,
     validCandidateCount: count("valid_candidate"),
     formingCount: count("forming"),
     nearMissCount: count("near_miss"),
