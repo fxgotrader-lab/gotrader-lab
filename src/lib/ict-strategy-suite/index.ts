@@ -53,6 +53,8 @@ export * from "./ictPaperSignalSimulatorTypes";
 export * from "./ictPaperSignalSimulator";
 export * from "./ictCmdPaperTrackingTypes";
 export * from "./ictCmdPaperTracking";
+export * from "./ictCmdTelemetryTypes";
+export * from "./ictCmdTelemetry";
 export * from "./ictSilverBulletTypes";
 export * from "./ictSilverBullet";
 export * from "./ictTurtleSoupTypes";

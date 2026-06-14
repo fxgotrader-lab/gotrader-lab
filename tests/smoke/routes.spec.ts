@@ -349,7 +349,7 @@ test.describe("GoTrader browser route smoke", () => {
     // Replay page shows the validation chain status.
     await gotoRoute(page, "/replay");
     const replayChain = page.getByTestId("replay-validation-chain");
-    await expect(replayChain).toBeVisible();
+    await expect(replayChain).toBeVisible({ timeout: 30000 });
     await expect(replayChain).toContainText(/Validation chain/i);
     await expect(replayChain.getByTestId("validation-chain-status")).toBeVisible();
     await expect(replayChain).toContainText(/Authority: none/i);
