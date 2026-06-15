@@ -78,6 +78,12 @@ import {
 const formatTime = (timestamp: string) => timestamp.slice(11, 16);
 
 const directionVariant = (direction: "bullish" | "bearish") => (direction === "bullish" ? "success" : "danger");
+const isDiagnosticOpportunity = (item: CurrentOpportunity) =>
+  item.classification === "diagnostic" ||
+  item.status === "diagnostic_context" ||
+  item.status === "market_map_only" ||
+  item.status === "regime_context" ||
+  item.status === "no_trade_context";
 
 const useActiveResearchCandles = () => {
   const [preparedSource, setPreparedSource] = useState<Awaited<ReturnType<typeof loadPreparedCandleSource>>>();
@@ -609,7 +615,7 @@ export function ICTLab() {
             </div>
             <div className="flex flex-wrap gap-2">
               <Badge variant={currentOpportunityScan?.summary.validCandidateCount ? "success" : currentOpportunityScan?.summary.formingCount || currentOpportunityScan?.summary.nearMissCount ? "warning" : "secondary"}>
-                {currentOpportunityScan ? `${currentOpportunityScan.summary.validCandidateCount} valid / ${currentOpportunityScan.summary.formingCount} forming` : "scanner pending"}
+                {currentOpportunityScan ? `${currentOpportunityScan.summary.validCandidateCount} valid / ${currentOpportunityScan.summary.formingCount} forming / ${currentOpportunityScan.summary.diagnosticCount} context` : "scanner pending"}
               </Badge>
               <Badge variant="muted">authority none</Badge>
             </div>
@@ -625,7 +631,12 @@ export function ICTLab() {
                 <StatusTile label="Next action" value={currentOpportunityScan.summary.nextAction} detail={currentOpportunityScan.summary.topBlocker ?? "no blocker"} />
               </div>
               <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                {currentOpportunityScan.opportunities.slice(0, 6).map((item) => (
+                {currentOpportunityScan.opportunities.slice(0, 6).map((item) => {
+                  const diagnostic = isDiagnosticOpportunity(item);
+                  const detail = diagnostic
+                    ? "Context only - not a trade candidate"
+                    : item.missingConditions[0] ?? item.blockers[0] ?? item.nextAction;
+                  return (
                   <div key={item.id} className="rounded-lg border border-emerald-300/15 bg-background/45 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-sm font-semibold text-foreground">{item.model.replace(/_/g, " ")}</p>
@@ -635,26 +646,31 @@ export function ICTLab() {
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">{item.setupName.replace(/_/g, " ")} / {item.side}</p>
                     <p className="mt-2 text-xs leading-5 text-emerald-100/85">
-                      {item.missingConditions[0] ?? item.blockers[0] ?? item.nextAction}
+                      {detail}
                     </p>
                     <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
                       <div className="rounded-md border border-border/70 bg-background/35 px-2 py-1.5">
                         <span className="block uppercase tracking-wide text-muted-foreground/80">Entry model</span>
-                        <span className="font-medium text-foreground">{item.strategyId === "ifvg_filtered_v2_research" ? "IFVG" : "research"}</span>
+                        <span className="font-medium text-foreground">{diagnostic ? "not expected" : item.strategyId === "ifvg_filtered_v2_research" ? "IFVG" : "research"}</span>
                       </div>
                       <div className="rounded-md border border-border/70 bg-background/35 px-2 py-1.5">
                         <span className="block uppercase tracking-wide text-muted-foreground/80">RR</span>
-                        <span className="font-medium text-foreground">{item.rrEstimate ? `${item.rrEstimate.toFixed(2)}R` : "missing"}</span>
+                        <span className="font-medium text-foreground">{diagnostic ? "not expected" : item.rrEstimate ? `${item.rrEstimate.toFixed(2)}R` : "missing"}</span>
                       </div>
                       <div className="rounded-md border border-border/70 bg-background/35 px-2 py-1.5">
                         <span className="block uppercase tracking-wide text-muted-foreground/80">Entry</span>
-                        <span className="font-medium text-foreground">{item.entry ?? "missing"}</span>
+                        <span className="font-medium text-foreground">{diagnostic ? "context only" : item.entry ?? "missing"}</span>
                       </div>
                       <div className="rounded-md border border-border/70 bg-background/35 px-2 py-1.5">
                         <span className="block uppercase tracking-wide text-muted-foreground/80">Invalidation / target</span>
-                        <span className="font-medium text-foreground">{item.invalidation ?? "missing"} / {item.target ?? "missing"}</span>
+                        <span className="font-medium text-foreground">{diagnostic ? "not expected / not expected" : `${item.invalidation ?? "missing"} / ${item.target ?? "missing"}`}</span>
                       </div>
                     </div>
+                    {diagnostic ? (
+                      <p className="mt-3 rounded-md border border-slate-500/25 bg-slate-500/10 px-2 py-1.5 text-xs text-slate-200">
+                        Use this as bias/context only. It cannot create evidence, validation-chain entries, or Paper-Demo eligibility without a registered trade setup.
+                      </p>
+                    ) : null}
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       {item.status === "valid_candidate" && !analysisUsesMockData ? (
                         <Button variant="outline" size="sm" onClick={() => queueCurrentOpportunityValidation(item)}>
@@ -672,7 +688,8 @@ export function ICTLab() {
                       <p className="mt-2 text-xs leading-5 text-slate-300">{recognitionQueueMessages[item.setupName]}</p>
                     ) : null}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </>
           ) : (

@@ -123,6 +123,34 @@ function assertSafe(suite, scan) {
   assert.doesNotMatch(JSON.stringify(scan), /"candles"\s*:|"rawSnapshot"\s*:|"snapshot"\s*:|"password"\s*:|"secret"\s*:|"api[_-]?key"\s*:|"account(Data|Number|Id)?"\s*:|"position(Data|s|Id)?"\s*:|"order(Data|s|Id)?"\s*:/i);
 }
 
+const tradeCandidateOnlyBlockers = [
+  "entry_missing",
+  "target_missing",
+  "invalidation_missing",
+  "rr_unavailable",
+  "invalid_price_order",
+  "target_too_close",
+  "rr_below_minimum"
+];
+
+function assertDiagnosticContextOnly(item) {
+  assert.equal(item.classification, "diagnostic", "diagnostic row should be classified separately from trade candidates");
+  assert.ok(
+    ["diagnostic_context", "market_map_only", "regime_context", "no_trade_context"].includes(item.status),
+    `diagnostic row should use a context-only status, got ${item.status}`
+  );
+  const labels = [...item.blockers, ...item.missingConditions];
+  for (const blocker of tradeCandidateOnlyBlockers) {
+    assert.equal(labels.includes(blocker), false, `diagnostic row must not show trade-construction blocker ${blocker}`);
+  }
+  assert.match(item.nextAction, /context only|registered trade setup|bias\/context/i);
+  assert.equal(item.requiredValidation.length, 0, "diagnostic rows should not require replay validation by themselves");
+  assert.equal(item.entry, undefined, "diagnostic rows should not expose an entry");
+  assert.equal(item.target, undefined, "diagnostic rows should not expose a target");
+  assert.equal(item.invalidation, undefined, "diagnostic rows should not expose an invalidation");
+  assert.equal(item.rrEstimate, undefined, "diagnostic rows should not expose RR");
+}
+
 async function main() {
   compileForNode();
   const suite = await import(pathToFileURL(path.join(outRoot, "index.mjs")));
@@ -132,6 +160,10 @@ async function main() {
   assert.equal(tacticalScan.summary.depthStatus, "swing_context_ready", "limited context should not pretend full 90-day validation is ready");
   assert.ok(tacticalScan.opportunities.some((item) => item.status === "near_miss" || item.status === "forming"), "one missing condition should surface forming/near-miss opportunity");
   assert.match(tacticalScan.summary.topBlocker ?? tacticalScan.summary.nextAction, /fvg|history|context|validation/i);
+  const marketMapDiagnostic = tacticalScan.opportunities.find((item) => item.strategyId === "market_map_only_diagnostic_v1");
+  assert.ok(marketMapDiagnostic, "scanner should still include a market-map diagnostic row");
+  assertDiagnosticContextOnly(marketMapDiagnostic);
+  assert.equal(tacticalScan.summary.diagnosticCount >= 1, true, "summary should count diagnostic rows");
   assertSafe(suite, tacticalScan);
 
   const shallowPacket = {
@@ -149,6 +181,7 @@ async function main() {
   const shallowScan = suite.detectCurrentOpportunities(suite.buildCurrentOpportunityContext({ packet: shallowPacket, currentRead: shallowRead }));
   assert.ok(["tactical_only", "insufficient"].includes(shallowScan.summary.depthStatus), "latest 1000 only should be called tactical/insufficient");
   assert.equal(shallowScan.summary.rangeHistoryAvailable, false, "shallow latest window should not be labeled range history");
+  assertDiagnosticContextOnly(shallowScan.opportunities.find((item) => item.strategyId === "market_map_only_diagnostic_v1"));
   assertSafe(suite, shallowScan);
 
   const deepRead = {
@@ -202,6 +235,7 @@ async function main() {
   const missingTargetScan = suite.detectCurrentOpportunities(suite.buildCurrentOpportunityContext({ packet: deepPacket, currentRead: missingTargetRead }));
   const missingTargetPrimary = missingTargetScan.opportunities.find((item) => item.strategyId === "ict_cmd_short_paper_watchlist_v1");
   assert.ok(missingTargetPrimary, "missing-target CMD opportunity should still be diagnosable");
+  assert.notEqual(missingTargetPrimary.classification, "diagnostic", "real CMD candidate should still use trade-candidate classification");
   assert.ok(missingTargetPrimary.missingConditions.includes("target_missing"), "missing target should be explicit");
   assert.ok(missingTargetPrimary.missingConditions.includes("rr_unavailable"), "RR should be unavailable until entry/target/invalidation exist");
   assert.equal(missingTargetPrimary.blockers.includes("target_too_close"), false, "target_too_close must not appear without a target");

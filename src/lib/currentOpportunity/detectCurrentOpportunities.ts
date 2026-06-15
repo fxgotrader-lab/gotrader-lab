@@ -1,5 +1,6 @@
 import type {
   CurrentOpportunity,
+  CurrentOpportunityClassification,
   CurrentOpportunityContext,
   CurrentOpportunityScan,
   CurrentOpportunitySide,
@@ -33,11 +34,15 @@ const unique = (values: Array<string | undefined>) =>
   Array.from(new Set(values.filter((value): value is string => Boolean(value?.trim())))).slice(0, 8);
 
 const statusRank: Record<CurrentOpportunityStatus, number> = {
-  valid_candidate: 6,
-  forming: 5,
-  near_miss: 4,
-  rejected: 3,
-  needs_more_data: 2,
+  valid_candidate: 8,
+  forming: 7,
+  near_miss: 6,
+  rejected: 5,
+  needs_more_data: 4,
+  diagnostic_context: 3,
+  market_map_only: 3,
+  regime_context: 3,
+  no_trade_context: 2,
   no_trade: 1
 };
 
@@ -62,6 +67,50 @@ const tradeConstructionMissingBlockers = new Set([
   "rr_unavailable"
 ]);
 
+const tradeConstructionBlockerLabels = new Set([
+  ...tradeConstructionMissingBlockers,
+  "entry",
+  "target",
+  "invalidation",
+  "stop",
+  "rr",
+  "risk_reward",
+  "rr_below_minimum",
+  "target_too_close",
+  "stop_too_wide",
+  "stop_not_beyond_structure",
+  "invalid_price_order",
+  "unrealistic_rr",
+  "source_missing",
+  "authority_not_none"
+]);
+
+const diagnosticStatuses = new Set<CurrentOpportunityStatus>([
+  "diagnostic_context",
+  "market_map_only",
+  "regime_context",
+  "no_trade_context"
+]);
+
+const diagnosticStrategyIds = new Set<CurrentOpportunityStrategyId>(["market_map_only_diagnostic_v1"]);
+
+const isDiagnosticOpportunity = (status: CurrentOpportunityStatus, strategyId: CurrentOpportunityStrategyId) =>
+  diagnosticStatuses.has(status) || diagnosticStrategyIds.has(strategyId);
+
+const classificationFor = (
+  status: CurrentOpportunityStatus,
+  strategyId: CurrentOpportunityStrategyId
+): CurrentOpportunityClassification => {
+  if (isDiagnosticOpportunity(status, strategyId)) return "diagnostic";
+  if (status === "valid_candidate") return "trade_candidate";
+  if (status === "forming" || status === "near_miss" || status === "needs_more_data") return "forming_candidate";
+  if (status === "rejected") return "rejected_trade_candidate";
+  return "no_trade";
+};
+
+const filterDiagnosticTradeLabels = (values: Array<string | undefined>, classification: CurrentOpportunityClassification) =>
+  classification === "diagnostic" ? values.filter((value) => !tradeConstructionBlockerLabels.has(value ?? "")) : values;
+
 const tradeConstructionFor = (
   context: CurrentOpportunityContext,
   patch: {
@@ -72,9 +121,11 @@ const tradeConstructionFor = (
     rrEstimate?: number;
     strategyId: CurrentOpportunityStrategyId;
     status: CurrentOpportunityStatus;
+    classification?: CurrentOpportunityClassification;
   }
 ) => {
-  if (patch.status === "no_trade") return undefined;
+  const classification = patch.classification ?? classificationFor(patch.status, patch.strategyId);
+  if (classification === "diagnostic" || classification === "no_trade" || patch.status === "no_trade") return undefined;
   const side = patch.side ?? context.side ?? "flat";
   return buildIctTradeConstruction({
     side,
@@ -104,16 +155,21 @@ const opportunity = (
     strategyId: CurrentOpportunityStrategyId;
     model: string;
     status: CurrentOpportunityStatus;
+    classification?: CurrentOpportunityClassification;
     setupName: string;
     thesis: string;
     blockers?: Array<string | undefined>;
     missingConditions?: Array<string | undefined>;
   }
 ): CurrentOpportunity => {
-  const construction = tradeConstructionFor(context, patch);
+  const initialClassification = patch.classification ?? classificationFor(patch.status, patch.strategyId);
+  const construction = tradeConstructionFor(context, { ...patch, classification: initialClassification });
   const constructionMissing = construction?.blockers.filter((blocker) => tradeConstructionMissingBlockers.has(blocker)) ?? [];
   const constructionBlockers = construction?.blockers.filter((blocker) => !tradeConstructionMissingBlockers.has(blocker)) ?? [];
   const finalStatus = patch.status === "valid_candidate" && construction && !construction.valid ? "near_miss" : patch.status;
+  const finalClassification = patch.classification ?? classificationFor(finalStatus, patch.strategyId);
+  const missingConditions = filterDiagnosticTradeLabels([...(patch.missingConditions ?? []), ...constructionMissing], finalClassification);
+  const blockers = filterDiagnosticTradeLabels([...(patch.blockers ?? []), ...constructionBlockers], finalClassification);
   return {
     id: createId("current_opp", `${patch.strategyId}:${patch.setupName}:${context.generatedAt}:${finalStatus}`),
     strategyId: patch.strategyId,
@@ -124,17 +180,20 @@ const opportunity = (
     timeframe: patch.timeframe ?? context.primaryTimeframe,
     contextTimeframes: context.contextTimeframes,
     status: finalStatus,
+    classification: finalClassification,
     setupName: patch.setupName,
     thesis: patch.thesis,
-    entry: patch.entry ?? context.entry,
-    invalidation: patch.invalidation ?? context.invalidation,
-    target: patch.target ?? context.target,
-    rrEstimate: construction?.rr ?? patch.rrEstimate ?? context.rrEstimate,
+    entry: finalClassification === "diagnostic" ? undefined : patch.entry ?? context.entry,
+    invalidation: finalClassification === "diagnostic" ? undefined : patch.invalidation ?? context.invalidation,
+    target: finalClassification === "diagnostic" ? undefined : patch.target ?? context.target,
+    rrEstimate: finalClassification === "diagnostic" ? undefined : construction?.rr ?? patch.rrEstimate ?? context.rrEstimate,
     confidence: patch.confidence ?? context.confidence ?? 0,
     requiredValidation: patch.requiredValidation ?? [...validationFor(finalStatus)],
-    blockers: unique([...(patch.blockers ?? []), ...constructionBlockers]),
-    missingConditions: unique([...(patch.missingConditions ?? []), ...constructionMissing]),
-    nextAction: construction && !construction.valid
+    blockers: unique(blockers),
+    missingConditions: unique(missingConditions),
+    nextAction: finalClassification === "diagnostic"
+      ? patch.nextAction ?? "Context only - not a trade candidate. Wait for a registered trade setup before validation."
+      : construction && !construction.valid
       ? construction.nextAction
       : patch.nextAction ?? context.opportunityNextAction ?? "Keep monitoring; no approved research candidate is available.",
     sourceDepth: context.sourceDepth,
@@ -283,12 +342,16 @@ const primaryOpportunity = (context: CurrentOpportunityContext) => {
   const status = statusForPrimaryContext(context);
   const isCmd = /consolidation|cmd/i.test(`${context.modelName ?? ""} ${context.sessionNarrativeProfile ?? ""} ${context.opportunityType ?? ""}`);
   const cmdBlocked = isCmd && context.cmdIndependentDateGateStatus && context.cmdIndependentDateGateStatus !== "passed";
+  const isDiagnostic = !isCmd;
   return opportunity(context, {
     strategyId: isCmd ? "ict_cmd_short_paper_watchlist_v1" : "market_map_only_diagnostic_v1",
     model: context.modelName ?? context.opportunityType ?? "current_market_read",
-    status: cmdBlocked ? "near_miss" : status,
+    status: isDiagnostic ? (context.currentOpportunityDetected ? "diagnostic_context" : "no_trade_context") : cmdBlocked ? "near_miss" : status,
+    classification: isDiagnostic ? "diagnostic" : undefined,
     setupName: context.setupName ?? context.opportunityType ?? "current_market_context",
-    thesis: context.thesis ?? "Current market read is waiting for a structured ICT setup.",
+    thesis: isDiagnostic
+      ? "Context only - not a trade candidate. Use this as bias/context only until a registered trade setup appears."
+      : context.thesis ?? "Current market read is waiting for a structured ICT setup.",
     blockers: [
       ...baseBlockersFor(context),
       cmdBlocked ? context.cmdIndependentDateGateReason ?? "CMD needs independent-date validation." : undefined,
@@ -296,14 +359,16 @@ const primaryOpportunity = (context: CurrentOpportunityContext) => {
     ],
     missingConditions: [
       ...context.opportunityMissingEvidence,
-      !finite(context.entry) ? "entry_missing" : undefined,
-      !finite(context.target) ? "target_missing" : undefined,
-      !finite(context.invalidation) ? "invalidation_missing" : undefined,
-      !finite(context.rrEstimate) ? "rr_unavailable" : undefined
+      isDiagnostic ? "registered_trade_setup_required" : !finite(context.entry) ? "entry_missing" : undefined,
+      isDiagnostic ? undefined : !finite(context.target) ? "target_missing" : undefined,
+      isDiagnostic ? undefined : !finite(context.invalidation) ? "invalidation_missing" : undefined,
+      isDiagnostic ? undefined : !finite(context.rrEstimate) ? "rr_unavailable" : undefined
     ],
     nextAction: cmdBlocked
       ? "Run independent-date CMD validation over 90-day history."
-      : context.opportunityNextAction ?? "Run Activate Market with explicit MT5 90-day context."
+      : isDiagnostic
+        ? "Use this as bias/context only. Requires a registered trade setup before replay validation."
+        : context.opportunityNextAction ?? "Run Activate Market with explicit MT5 90-day context."
   });
 };
 
@@ -390,12 +455,15 @@ const strategyDiagnostics = (context: CurrentOpportunityContext): CurrentOpportu
     opportunity(context, {
       strategyId: "market_map_only_diagnostic_v1",
       model: "Market map diagnostic",
-      status: context.currentOpportunityDetected ? "forming" : "no_trade",
+      status: context.currentOpportunityDetected ? "market_map_only" : "no_trade_context",
+      classification: "diagnostic",
       setupName: "market_map_only",
       thesis: "Market-map context can explain bias, liquidity, and session state but cannot become a standalone trade idea.",
       blockers: sharedBlockers,
-      missingConditions: context.currentOpportunityDetected ? [] : ["full_model_confirmation"],
-      nextAction: "Use the market map to wait for a detector-backed model, not to create an entry."
+      missingConditions: context.currentOpportunityDetected ? ["registered_trade_setup_required"] : ["no_registered_trade_setup"],
+      nextAction: context.currentOpportunityDetected
+        ? "Context only - not a trade candidate. Use this as bias/context only; wait for a detector-backed model before validation."
+        : "No entry model expected. Requires a registered trade setup before validation."
     })
   ];
 };
@@ -403,13 +471,16 @@ const strategyDiagnostics = (context: CurrentOpportunityContext): CurrentOpportu
 const summarize = (context: CurrentOpportunityContext, opportunities: CurrentOpportunity[]): CurrentOpportunitySummary => {
   const sorted = opportunities.slice().sort((left, right) => statusRank[right.status] - statusRank[left.status] || right.confidence - left.confidence);
   const count = (status: CurrentOpportunityStatus) => opportunities.filter((item) => item.status === status).length;
-  const topOpportunity = sorted.find((item) => item.status === "valid_candidate" || item.status === "forming");
+  const topOpportunity = sorted.find((item) => item.classification !== "diagnostic" && (item.status === "valid_candidate" || item.status === "forming"));
   const topNearMiss = sorted.find((item) => item.status === "near_miss");
   const topRejected = sorted.find((item) => item.status === "rejected");
+  const topDiagnostic = sorted.find((item) => item.classification === "diagnostic");
   const topBlocker =
     topOpportunity?.blockers[0] ??
     topNearMiss?.missingConditions[0] ??
     topNearMiss?.blockers[0] ??
+    topDiagnostic?.missingConditions[0] ??
+    topDiagnostic?.blockers[0] ??
     context.sourceDepth.depthWarnings[0] ??
     context.topReasons[0];
   return {
@@ -428,11 +499,15 @@ const summarize = (context: CurrentOpportunityContext, opportunities: CurrentOpp
     rejectedCount: count("rejected"),
     noTradeCount: count("no_trade"),
     needsMoreDataCount: count("needs_more_data"),
+    diagnosticCount: opportunities.filter((item) => item.classification === "diagnostic").length,
+    marketMapOnlyCount: count("market_map_only"),
+    regimeContextCount: count("regime_context"),
+    noTradeContextCount: count("no_trade_context"),
     topOpportunity,
     topNearMiss,
     topRejected,
     topBlocker,
-    nextAction: topOpportunity?.nextAction ?? topNearMiss?.nextAction ?? "Run Activate Market with explicit MT5 90-day context.",
+    nextAction: topOpportunity?.nextAction ?? topNearMiss?.nextAction ?? topDiagnostic?.nextAction ?? "Run Activate Market with explicit MT5 90-day context.",
     rangeHistoryAvailable: context.sourceDepth.rangeHistoryAvailable,
     validationLookbackDays: context.sourceDepth.validationLookbackDays,
     authority,
@@ -480,7 +555,11 @@ export const assertCurrentOpportunityScanIsCompact = (scan: CurrentOpportunitySc
 
 export const summarizeCurrentOpportunityScan = (scan?: CurrentOpportunityScan) => {
   if (!scan) return "Current opportunity scanner has not run.";
-  const top = scan.summary.topOpportunity ?? scan.summary.topNearMiss ?? scan.summary.topRejected;
+  const top =
+    scan.summary.topOpportunity ??
+    scan.summary.topNearMiss ??
+    scan.summary.topRejected ??
+    scan.opportunities.find((item) => item.classification === "diagnostic");
   return top
     ? `${token(top.model)} / ${token(top.status)} / ${token(top.side)}. Next: ${top.nextAction}`
     : `No current opportunity. Next: ${scan.summary.nextAction}`;

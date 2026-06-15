@@ -107,6 +107,22 @@ export const queueValidationChainEntry = (input: ValidationChainRecognitionInput
     };
   }
 
+  if (input.recognitionType === "market_map_only" || input.recognitionType === "insufficient_data") {
+    return {
+      ok: false,
+      reason:
+        "Context-only recognition cannot create a validation-chain entry. Wait for a registered trade setup before replay validation.",
+      entry: {
+        ...base,
+        hypothesisStatus: "not_queued",
+        blockers: ["Context only - not a trade candidate."],
+        nextAction: "Use this as bias/context only; wait for a registered trade setup before validation.",
+        paperDemoChecklistImpact:
+          "No Paper-Demo impact: diagnostic context is not evidence and cannot become a candidate by itself."
+      }
+    };
+  }
+
   return {
     ok: true,
     entry: {

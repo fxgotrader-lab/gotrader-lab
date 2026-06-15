@@ -4,7 +4,18 @@ export type CurrentOpportunityStatus =
   | "near_miss"
   | "rejected"
   | "no_trade"
-  | "needs_more_data";
+  | "needs_more_data"
+  | "diagnostic_context"
+  | "market_map_only"
+  | "regime_context"
+  | "no_trade_context";
+
+export type CurrentOpportunityClassification =
+  | "diagnostic"
+  | "forming_candidate"
+  | "trade_candidate"
+  | "rejected_trade_candidate"
+  | "no_trade";
 
 export type CurrentOpportunitySide = "long" | "short" | "flat";
 
@@ -124,6 +135,7 @@ export interface CurrentOpportunity {
   timeframe: string;
   contextTimeframes: string[];
   status: CurrentOpportunityStatus;
+  classification: CurrentOpportunityClassification;
   setupName: string;
   thesis: string;
   entry?: number;
@@ -157,6 +169,10 @@ export interface CurrentOpportunitySummary {
   rejectedCount: number;
   noTradeCount: number;
   needsMoreDataCount: number;
+  diagnosticCount: number;
+  marketMapOnlyCount: number;
+  regimeContextCount: number;
+  noTradeContextCount: number;
   topOpportunity?: CurrentOpportunity;
   topNearMiss?: CurrentOpportunity;
   topRejected?: CurrentOpportunity;

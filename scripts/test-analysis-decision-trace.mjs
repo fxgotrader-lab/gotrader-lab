@@ -303,6 +303,29 @@ function assertNoForbiddenPayload(value) {
   );
 }
 
+function assertDiagnosticRowsStayContextOnly(scan) {
+  const tradeCandidateOnlyBlockers = new Set([
+    "entry_missing",
+    "target_missing",
+    "invalidation_missing",
+    "rr_unavailable",
+    "invalid_price_order",
+    "target_too_close",
+    "rr_below_minimum"
+  ]);
+  const diagnosticRows = scan.opportunities.filter((item) => item.strategyId === "market_map_only_diagnostic_v1" || item.classification === "diagnostic");
+  assert.ok(diagnosticRows.length >= 1, "trace should include at least one compact context diagnostic row");
+  for (const row of diagnosticRows) {
+    assert.equal(row.classification, "diagnostic");
+    assert.equal(row.requiredValidation.length, 0);
+    const labels = [...row.blockers, ...row.missingConditions];
+    for (const blocker of tradeCandidateOnlyBlockers) {
+      assert.equal(labels.includes(blocker), false, `diagnostic trace row must not show ${blocker}`);
+    }
+    assert.match(row.nextAction, /context only|registered trade setup|bias\/context/i);
+  }
+}
+
 function buildPacket({ candles, statusPayload, referenceSummary, fingerprint }) {
   const candleCount = candles.length;
   const isAvailable = candleCount > 0;
@@ -419,6 +442,7 @@ async function main() {
   const compactCheck = suite.assertCurrentOpportunityScanIsCompact(scan);
   assert.equal(compactCheck.ok, true, "current opportunity scan must remain compact");
   assert.deepEqual(scan.authority, authority);
+  assertDiagnosticRowsStayContextOnly(scan);
 
   const output = {
     ok: true,

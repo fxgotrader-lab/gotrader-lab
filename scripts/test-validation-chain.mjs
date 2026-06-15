@@ -86,6 +86,19 @@ async function main() {
   assert.equal(entry.executionIntent, "none");
   assert.match(describeValidationChainStage(entry), /not evidence/i);
 
+  const marketMapQueue = queueValidationChainEntry(
+    recognitionInput({
+      recognitionId: "recognition_market_map_only",
+      recognitionType: "market_map_only",
+      setupLabel: "Market map context only"
+    })
+  );
+  assert.equal(marketMapQueue.ok, false, "market-map diagnostics must not queue validation-chain evidence");
+  assert.match(marketMapQueue.reason, /Context-only|registered trade setup/i);
+  assert.equal(marketMapQueue.entry.hypothesisStatus, "not_queued");
+  assert.equal(marketMapQueue.entry.candidateFamily, "market_map");
+  assert.match(marketMapQueue.entry.paperDemoChecklistImpact, /No Paper-Demo impact/i);
+
   const ifvgQueued = queueValidationChainEntry(
     recognitionInput({
       recognitionId: "recognition_ifvg_filtered_v2",

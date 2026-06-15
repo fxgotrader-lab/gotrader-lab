@@ -200,6 +200,26 @@ async function main() {
   assert.equal(mod.buildPaperDemoEligibility(missingChainCandidate).eligible, false, "missing validation chain blocks candidate");
   assert.match(mod.buildPaperDemoEligibility(missingChainCandidate).blockers.join(" "), /Validation chain/i);
 
+  const marketMapCandidate = mod.buildPaperDemoCandidateFromContext({
+    source,
+    validationChain: {
+      ...validationChain,
+      recognitionId: "recognition_market_map_only",
+      recognitionType: "market_map_only",
+      setupLabel: "Market map context only",
+      candidateFamily: "market_map",
+      hypothesisStatus: "not_queued",
+      requiredValidation: "More structure required before replay validation can be meaningful.",
+      blockers: ["Context only - not a trade candidate."],
+      paperDemoChecklistImpact:
+        "No Paper-Demo impact: diagnostic context is not evidence and cannot become a candidate by itself."
+    },
+    checklist: { paperDemoCandidate: false }
+  });
+  const marketMapEligibility = mod.buildPaperDemoEligibility(marketMapCandidate);
+  assert.equal(marketMapEligibility.eligible, false, "diagnostic market-map context cannot become Paper-Demo eligible");
+  assert.match(marketMapEligibility.blockers.join(" "), /Diagnostic context|Validation chain|Replay|Context only|not evidence/i);
+
   const cmdBlockedCandidate = mod.buildPaperDemoCandidateFromContext({
     source,
     validationChain: { ...validationChain, setupLabel: "CMD paper watchlist" },

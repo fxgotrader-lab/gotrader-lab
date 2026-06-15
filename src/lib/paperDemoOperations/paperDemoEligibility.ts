@@ -48,6 +48,9 @@ const isCmdCandidate = (candidate: PaperDemoCandidate) =>
     ].filter(Boolean).join(" ")
   );
 
+const isDiagnosticContextCandidate = (candidate: PaperDemoCandidate) =>
+  candidate.recognitionType === "market_map_only" || candidate.recognitionType === "insufficient_data";
+
 const cmdGateFor = (candidate: PaperDemoCandidate) =>
   candidate.cmdIndependentDateGate ??
   (candidate.cmdIndependentDateEvidence
@@ -76,6 +79,9 @@ export function buildPaperDemoEligibility(candidate: PaperDemoCandidate): PaperD
   }
   if (!candidate.validationChainId) {
     blockers.push("Validation chain is missing.");
+  }
+  if (isDiagnosticContextCandidate(candidate)) {
+    blockers.push("Diagnostic context is not a trade candidate and cannot become Paper-Demo eligible.");
   }
   if (!replayIsSufficient(candidate)) {
     blockers.push("Replay validation has not passed or been marked sufficient.");

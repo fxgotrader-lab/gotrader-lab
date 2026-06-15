@@ -1740,8 +1740,12 @@ function MarketOpportunityCard({ currentRead }: { currentRead: IctCurrentRead })
         />
         <AdvisorReadout
           label="Trade idea"
-          value={tradeIdea ? `${formatToken(tradeIdea.side)} / ${rr(tradeIdea.rrEstimate)}` : "pending"}
-          detail={`Target ${compactPrice(tradeIdea?.target)} / invalidation ${compactPrice(tradeIdea?.invalidation)}`}
+          value={tradeIdea ? `${formatToken(tradeIdea.side)} / ${rr(tradeIdea.rrEstimate)}` : "No entry model expected"}
+          detail={
+            tradeIdea
+              ? `Target ${compactPrice(tradeIdea.target)} / invalidation ${compactPrice(tradeIdea.invalidation)}`
+              : "Context only until a registered setup defines entry, invalidation, target, and RR."
+          }
         />
         <AdvisorReadout
           label="Confirmation needed"
@@ -1762,7 +1766,11 @@ function MarketOpportunityCard({ currentRead }: { currentRead: IctCurrentRead })
       <div className="mt-4 grid gap-3 lg:grid-cols-3">
         <AdvisorList label="Missing evidence" values={currentRead.opportunityMissingEvidence} empty="No missing opportunity evidence reported." />
         <AdvisorList label="Blockers" values={currentRead.opportunityBlockers} empty="No opportunity blocker reported." />
-        <AdvisorReadout label="Next action" value={currentRead.opportunityNextAction} detail="research-only; no readiness promotion" />
+        <AdvisorReadout
+          label="Next action"
+          value={tradeIdea ? currentRead.opportunityNextAction : "Requires a registered trade setup before validation"}
+          detail="research-only; no readiness promotion"
+        />
       </div>
       <p className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3 text-sm leading-5 text-slate-300">
         {approvedExplanation} {currentRead.selfImprovementHypothesisQueued ? "Research hypothesis queued - needs replay validation." : `Research hypothesis not queued: ${currentRead.selfImprovementHypothesisReason ?? "not eligible"}.`}
