@@ -54,6 +54,7 @@
     "test:ifvg-performance": "node scripts/test-ifvg-performance.mjs",
     "test:ifvg-expectancy-classifier": "node scripts/test-ifvg-expectancy-classifier.mjs",
     "test:ifvg-filter-variants": "node scripts/test-ifvg-filter-variants.mjs",
+    "test:ifvg-live-opportunity": "node scripts/test-ifvg-live-opportunity.mjs",
     "test:ict-cmd-paper-tracking": "node scripts/test-ict-cmd-paper-tracking.mjs",
     "test:ict-multi-timeframe-context": "node scripts/test-ict-multi-timeframe-context.mjs",
     "test:ict-activate-market-pipeline": "node scripts/test-ict-activate-market-pipeline.mjs",

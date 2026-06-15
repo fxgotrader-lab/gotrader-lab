@@ -11,7 +11,8 @@ export type CurrentOpportunitySide = "long" | "short" | "flat";
 export type CurrentOpportunityRequiredValidation =
   | "replay_required"
   | "walk_forward_required"
-  | "evidence_required";
+  | "evidence_required"
+  | "paper_demo_gate_required";
 
 export type CurrentOpportunityStrategyId =
   | "ict_cmd_short_paper_watchlist_v1"
@@ -21,6 +22,7 @@ export type CurrentOpportunityStrategyId =
   | "turtle_soup_v1"
   | "cisd_v1"
   | "ifvg_v1"
+  | "ifvg_filtered_v2_research"
   | "market_map_only_diagnostic_v1";
 
 export type CurrentOpportunityDepthPolicyStatus =

@@ -220,6 +220,33 @@ async function main() {
   assert.equal(cmdGatePassedEligibility.eligible, true, "CMD with independent-date evidence can continue normal Paper-Demo checks");
   assert.equal(cmdGatePassedCandidate.cmdIndependentDateGate.status, "passed");
 
+  const ifvgReplayRequiredCandidate = mod.buildPaperDemoCandidateFromContext({
+    source,
+    validationChain: {
+      ...validationChain,
+      recognitionId: "recognition_ifvg_filtered_v2",
+      setupLabel: "IFVG filtered v2 - clean retest displacement",
+      candidateFamily: "ifvg",
+      hypothesisStatus: "replay_required",
+      replayResult: undefined,
+      walkForwardResult: undefined,
+      evidenceQuality: undefined,
+      paperDemoChecklistImpact:
+        "Blocked for Paper-Demo: IFVG filtered v2 is candidate consideration only until replay, walk-forward/OOS, evidence, maturity, and checklist gates pass.",
+      nextAction:
+        "Run replay validation for IFVG filtered v2; walk-forward/OOS, evidence, maturity, and Paper-Demo gates are still required."
+    },
+    checklist: { paperDemoCandidate: false },
+    timestamp: "2026-06-11T12:35:00.000Z"
+  });
+  const ifvgReplayRequiredEligibility = mod.buildPaperDemoEligibility(ifvgReplayRequiredCandidate);
+  assert.equal(ifvgReplayRequiredEligibility.eligible, false, "IFVG filtered v2 must not auto-promote to Paper-Demo");
+  assert.equal(ifvgReplayRequiredCandidate.status, "blocked");
+  assert.match(ifvgReplayRequiredEligibility.blockers.join(" "), /Replay validation/i);
+  assert.match(ifvgReplayRequiredCandidate.nextAction, /Replay validation/i);
+  assert.equal(ifvgReplayRequiredCandidate.executionIntent, "none");
+  assert.deepEqual(ifvgReplayRequiredCandidate.authority, authorityNone);
+
   const unsafeCandidate = { ...eligibleCandidate, authority: { ...authorityNone, executionAuthority: "trade" } };
   assert.equal(mod.buildPaperDemoEligibility(unsafeCandidate).eligible, false, "unsafe authority blocks candidate");
 

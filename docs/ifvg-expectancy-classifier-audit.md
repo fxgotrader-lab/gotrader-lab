@@ -19,58 +19,57 @@ Exact gate audit:
 
 | Gate | Actual | Required | Severity |
 |---|---:|---:|---|
-| invalidation_first_rate | 39.80% | <= 35.00% | hard |
-| rolling_window_stability | 1 weak active window(s) | 0 weak active windows | soft |
+| invalidation_first_rate | 40.57% | <= 35.00% | hard |
 
 ## Expectancy Summary
 
 | Segment | Candidates | Target-first | Invalidation-first | Avg R | Median R | Profit Factor | Avg RR | Max DD R |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| all_ifvg | 598 | 60.20% | 39.80% | 4.7803 | 4.0763 | 13.0109 | 8.7056 | 5 |
-| 5m | 441 | 61.90% | 38.10% | 4.7252 | 4.1143 | 13.4037 | 8.5947 | 4 |
-| 15m | 157 | 55.41% | 44.59% | 4.935 | 3.5806 | 12.0684 | 9.017 | 5 |
-| long | 295 | 61.69% | 38.31% | 4.7877 | 4.0814 | 13.4989 | 8.6472 | 4 |
-| short | 303 | 58.75% | 41.25% | 4.773 | 4.0713 | 12.5698 | 8.7624 | 5 |
-| new_york_open | 41 | 58.54% | 41.46% | 4.3912 | 3.475 | 11.5906 | 7.9116 | 5 |
-| outside_rth | 358 | 60.61% | 39.39% | 4.9869 | 4.5418 | 13.6618 | 8.8161 | 5 |
+| all_ifvg | 599 | 59.43% | 40.57% | 4.7621 | 3.9924 | 12.7387 | 8.7081 | 8 |
+| 5m | 441 | 60.77% | 39.23% | 4.7673 | 4.0301 | 13.1526 | 8.6039 | 8 |
+| 15m | 158 | 55.70% | 44.30% | 4.7476 | 3.5807 | 11.7159 | 8.9992 | 5 |
+| long | 301 | 60.13% | 39.87% | 4.6439 | 4.0814 | 12.6485 | 8.6992 | 8 |
+| short | 298 | 58.72% | 41.28% | 4.8815 | 3.6961 | 12.8267 | 8.7172 | 6 |
+| new_york_open | 38 | 55.26% | 44.74% | 4.5603 | 3.3644 | 11.1937 | 8.5274 | 2 |
+| outside_rth | 361 | 59.56% | 40.44% | 4.9245 | 4.1126 | 13.1764 | 8.7423 | 6 |
 
 ## Cost Sensitivity
 
 | Cost Model | Avg R | Median R | Profit Factor | Total R | Max DD R | Longest Losing Streak |
 |---|---:|---:|---:|---:|---:|---:|
-| 0R | 4.7803 | 4.0763 | 13.0109 | 2858.6026 | 5 | 5 |
-| 0.25R | 4.5303 | 3.8264 | 10.1062 | 2709.1026 | 6.25 | 5 |
-| 0.5R | 4.2803 | 3.5764 | 8.1698 | 2559.6026 | 7.5 | 5 |
-| 1R | 3.7803 | 3.0764 | 5.7492 | 2260.6026 | 10 | 5 |
+| 0R | 4.7621 | 3.9924 | 12.7387 | 2852.505 | 8 | 8 |
+| 0.25R | 4.5121 | 3.7424 | 9.898 | 2702.755 | 10 | 8 |
+| 0.5R | 4.2621 | 3.4924 | 8.0041 | 2553.005 | 12 | 8 |
+| 1R | 3.7621 | 2.9924 | 5.6368 | 2253.505 | 16 | 8 |
 
 ## Filter Analysis
 
 | Filter | Candidates | Target-first | Invalidation-first | Avg R | Avg R @ 0.5R Cost | Dates | Windows | OOS | Classification | Top Failed Gate |
 |---|---:|---:|---:|---:|---:|---:|---:|---|---|---|
-| htf_aligned_only | 349 | 65.04% | 34.96% | 5.2217 | 4.7217 | 69 | 5 | passed | paper_watchlist_candidate | none |
-| rr_10_plus | 201 | 60.20% | 39.80% | 8.0632 | 7.5632 | 67 | 5 | passed | needs_filtering | invalidation_first_rate |
-| small_ifvg | 561 | 60.07% | 39.93% | 4.9662 | 4.4662 | 71 | 5 | passed | needs_filtering | invalidation_first_rate |
-| fifteen_minute_only | 157 | 55.41% | 44.59% | 4.935 | 4.435 | 58 | 5 | passed | needs_filtering | invalidation_first_rate |
-| long_only | 295 | 61.69% | 38.31% | 4.7877 | 4.2877 | 69 | 5 | passed | needs_filtering | invalidation_first_rate |
-| all_ifvg | 598 | 60.20% | 39.80% | 4.7803 | 4.2803 | 71 | 5 | passed | needs_filtering | invalidation_first_rate |
-| first_ifvg_use_only | 598 | 60.20% | 39.80% | 4.7803 | 4.2803 | 71 | 5 | passed | needs_filtering | invalidation_first_rate |
-| external_liquidity_target_present | 598 | 60.20% | 39.80% | 4.7803 | 4.2803 | 71 | 5 | passed | needs_filtering | invalidation_first_rate |
-| short_only | 303 | 58.75% | 41.25% | 4.773 | 4.273 | 66 | 5 | passed | needs_filtering | invalidation_first_rate |
-| five_minute_only | 441 | 61.90% | 38.10% | 4.7252 | 4.2252 | 70 | 5 | passed | needs_filtering | invalidation_first_rate |
-| avoid_outside_rth | 240 | 59.58% | 40.42% | 4.472 | 3.972 | 61 | 5 | passed | needs_filtering | invalidation_first_rate |
-| ny_open_only | 41 | 58.54% | 41.46% | 4.3912 | 3.8912 | 27 | 5 | passed | needs_filtering | invalidation_first_rate |
-| rr_5_to_10 | 243 | 57.61% | 42.39% | 3.8234 | 3.3234 | 66 | 5 | passed | needs_filtering | invalidation_first_rate |
-| rr_2_to_5 | 154 | 64.29% | 35.71% | 2.0054 | 1.5054 | 59 | 5 | passed | needs_filtering | invalidation_first_rate |
-| medium_ifvg | 37 | 62.16% | 37.84% | 1.9614 | 1.4614 | 24 | 5 | passed | needs_filtering | invalidation_first_rate |
+| rr_10_plus | 203 | 60.59% | 39.41% | 8.1726 | 7.6726 | 65 | 5 | passed | needs_filtering | invalidation_first_rate |
+| htf_aligned_only | 348 | 62.64% | 37.36% | 4.9563 | 4.4563 | 70 | 5 | passed | needs_filtering | invalidation_first_rate |
+| small_ifvg | 560 | 58.93% | 41.07% | 4.9385 | 4.4385 | 70 | 5 | passed | needs_filtering | invalidation_first_rate |
+| short_only | 298 | 58.72% | 41.28% | 4.8815 | 4.3815 | 67 | 5 | passed | needs_filtering | invalidation_first_rate |
+| five_minute_only | 441 | 60.77% | 39.23% | 4.7673 | 4.2673 | 70 | 5 | passed | needs_filtering | invalidation_first_rate |
+| all_ifvg | 599 | 59.43% | 40.57% | 4.7621 | 4.2621 | 71 | 5 | passed | needs_filtering | invalidation_first_rate |
+| first_ifvg_use_only | 599 | 59.43% | 40.57% | 4.7621 | 4.2621 | 71 | 5 | passed | needs_filtering | invalidation_first_rate |
+| external_liquidity_target_present | 599 | 59.43% | 40.57% | 4.7621 | 4.2621 | 71 | 5 | passed | needs_filtering | invalidation_first_rate |
+| fifteen_minute_only | 158 | 55.70% | 44.30% | 4.7476 | 4.2476 | 58 | 5 | passed | needs_filtering | invalidation_first_rate |
+| long_only | 301 | 60.13% | 39.87% | 4.6439 | 4.1439 | 69 | 5 | passed | needs_filtering | invalidation_first_rate |
+| ny_open_only | 38 | 55.26% | 44.74% | 4.5603 | 4.0603 | 27 | 5 | passed | needs_filtering | invalidation_first_rate |
+| avoid_outside_rth | 238 | 59.24% | 40.76% | 4.5158 | 4.0158 | 61 | 5 | passed | needs_filtering | invalidation_first_rate |
+| rr_5_to_10 | 241 | 57.26% | 42.74% | 3.7688 | 3.2688 | 66 | 5 | passed | needs_filtering | invalidation_first_rate |
+| medium_ifvg | 39 | 66.67% | 33.33% | 2.2289 | 1.7289 | 24 | 5 | passed | needs_filtering | rolling_window_stability |
+| rr_2_to_5 | 155 | 61.29% | 38.71% | 1.8399 | 1.3399 | 58 | 5 | passed | needs_filtering | invalidation_first_rate |
 | large_ifvg | 0 | 0.00% | 0.00% | 0 | 0 | 0 | 0 | insufficient_data | too_strict | minimum_candidate_count |
 
 ## Best Variant
 
-Best compact variant: `htf_aligned_only` with 349 candidates, 65.04% target-first, 4.7217 average R after 0.5R cost, and classification `paper_watchlist_candidate`.
+No IFVG filter variant met paper-watchlist evidence gates.
 
 ## Promotion Decision
 
-IFVG has a filtered paper-watchlist candidate for further deterministic validation only; Paper-Demo remains blocked until the full checklist passes.
+No IFVG promotion. Keep IFVG replay-required/research-only and test narrower filters before any paper-watchlist progression.
 
 ## Recommendation
 

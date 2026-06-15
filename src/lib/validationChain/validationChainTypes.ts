@@ -28,6 +28,7 @@ export type ValidationChainCandidateFamily =
   | "forming_model"
   | "pd_array"
   | "scalp"
+  | "ifvg"
   | "market_map"
   | "grinch"
   | "unclassified";

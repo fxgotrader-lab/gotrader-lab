@@ -86,6 +86,22 @@ async function main() {
   assert.equal(entry.executionIntent, "none");
   assert.match(describeValidationChainStage(entry), /not evidence/i);
 
+  const ifvgQueued = queueValidationChainEntry(
+    recognitionInput({
+      recognitionId: "recognition_ifvg_filtered_v2",
+      setupLabel: "IFVG filtered v2 - clean retest displacement",
+      htfContext: ["15m", "1h", "4h", "1d"],
+      sourceFingerprint: "mt5_fp_ifvg_filtered_v2"
+    })
+  );
+  assert.equal(ifvgQueued.ok, true);
+  assert.equal(ifvgQueued.entry.candidateFamily, "ifvg");
+  assert.equal(ifvgQueued.entry.hypothesisStatus, "replay_required");
+  assert.equal(ifvgQueued.entry.sourceFingerprint, "mt5_fp_ifvg_filtered_v2");
+  assert.match(ifvgQueued.entry.nextAction, /IFVG filtered v2/i);
+  assert.match(ifvgQueued.entry.paperDemoChecklistImpact, /candidate consideration only/i);
+  assert.equal(ifvgQueued.entry.executionIntent, "none");
+
   // 3. Replay result is preserved on the chain entry.
   const replayPassed = applyValidationChainReplayResult(entry, {
     runId: "replay_run_1",

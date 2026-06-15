@@ -465,7 +465,33 @@ export const STRATEGY_DEFINITIONS: StrategyDefinition[] = [
       "HTF conflict remains a blocker unless replay explicitly marks the setup as a lower-timeframe research case.",
       "Mock/sample data cannot create evidence or Paper-Demo eligibility."
     ],
-    validationRequirements: compactValidation,
+    validationRequirements: [
+      {
+        id: "replay_required",
+        label: "Replay required",
+        required: true,
+        detail: "Filtered v2 recognition is not evidence; replay validation must pass first."
+      },
+      {
+        id: "walk_forward_required",
+        label: "Walk-forward required",
+        required: true,
+        detail: "Walk-forward/OOS validation must not degrade or fail."
+      },
+      {
+        id: "evidence_required",
+        label: "Evidence required",
+        required: true,
+        minimum: 50,
+        detail: "Evidence and maturity summaries must be present before Paper-Demo discussion."
+      },
+      {
+        id: "paper_demo_gate_required",
+        label: "Paper-Demo gate required",
+        required: true,
+        detail: "Paper-Demo is not automatic; the normal Paper-Demo checklist must pass independently."
+      }
+    ],
     paperDemoRequirements: [
       {
         id: "ifvg_filtered_v2_replay_oos",
@@ -481,6 +507,11 @@ export const STRATEGY_DEFINITIONS: StrategyDefinition[] = [
       }
     ],
     forbiddenPromotionReasons: [
+      "validation_missing",
+      "rolling_stability_weak",
+      "invalidation_first_too_high",
+      "source_mock_sample",
+      "raw_ifvg_v1_unfiltered",
       "missing clean retest",
       "missing displacement confirmation",
       "reused IFVG",

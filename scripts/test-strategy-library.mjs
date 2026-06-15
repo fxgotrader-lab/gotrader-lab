@@ -193,6 +193,22 @@ async function main() {
   assert.equal(registry.getStrategyDefinition("ifvg_v1").status, "replay_required");
   assert.equal(registry.getStrategyDefinition("ifvg_filtered_v2_research").detectorStatus, "executable_research");
   assert.equal(registry.getStrategyDefinition("ifvg_filtered_v2_research").status, "paper_watchlist_candidate");
+  assert.deepEqual(
+    registry.getStrategyDefinition("ifvg_filtered_v2_research").validationRequirements.map((item) => item.id),
+    ["replay_required", "walk_forward_required", "evidence_required", "paper_demo_gate_required"]
+  );
+  for (const reason of [
+    "validation_missing",
+    "rolling_stability_weak",
+    "invalidation_first_too_high",
+    "source_mock_sample",
+    "raw_ifvg_v1_unfiltered"
+  ]) {
+    assert.ok(
+      registry.getStrategyDefinition("ifvg_filtered_v2_research").forbiddenPromotionReasons.includes(reason),
+      `ifvg filtered v2 should forbid promotion reason ${reason}`
+    );
+  }
   for (const strategyId of newStrategyIds.filter((id) => !["silver_bullet_v1", "silver_bullet_v2_refined_research", "turtle_soup_v1", "cisd_v1", "ifvg_v1", "ifvg_filtered_v2_research"].includes(id))) {
     assert.equal(registry.getStrategyDefinition(strategyId).detectorStatus, "research_only_placeholder");
   }

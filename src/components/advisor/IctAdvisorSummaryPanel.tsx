@@ -336,6 +336,12 @@ export function IctAdvisorSummaryPanel({
     currentOpportunitySummary?.topOpportunity ??
     currentOpportunitySummary?.topNearMiss ??
     currentOpportunitySummary?.topRejected;
+  const ifvgFilteredOpportunity = (currentRead.currentOpportunities ?? []).find(
+    (item) => item.strategyId === "ifvg_filtered_v2_research"
+  );
+  const ifvgFilteredNote = ifvgFilteredOpportunity
+    ? `IFVG filtered v2: ${formatToken(ifvgFilteredOpportunity.status)}. ${ifvgFilteredOpportunity.missingConditions[0] ?? ifvgFilteredOpportunity.blockers[0] ?? ifvgFilteredOpportunity.nextAction}`
+    : "IFVG v1 is broad positive expectancy, but filtered v2 is the research profile to validate when clean retest and displacement appear.";
 
   if (mode === "compact") {
     return (
@@ -523,6 +529,7 @@ export function IctAdvisorSummaryPanel({
                 </div>
                 <p className="mt-2 text-xs leading-5 text-emerald-50">
                   Depth {formatToken(currentOpportunitySummary.depthStatus)}; range history {currentOpportunitySummary.rangeHistoryAvailable ? `${currentOpportunitySummary.validationLookbackDays.toFixed(1)} days` : "not ready"}. Top-down {formatToken(currentOpportunitySummary.topDownBiasStatus)}; roles {currentOpportunitySummary.timeframeRoleSummary?.length ? currentOpportunitySummary.timeframeRoleSummary.map((item) => `${item.timeframe}:${item.status}`).join(" / ") : "pending"}. Blocker: {currentOpportunitySummary.topBlocker ?? "none"}. Next: {currentOpportunitySummary.nextAction}
+                  {" "}{ifvgFilteredNote}
                 </p>
               </div>
             ) : null}
@@ -733,6 +740,11 @@ export function IctAdvisorSummaryPanel({
                     detail={`${item.missingConditions[0] ?? item.blockers[0] ?? item.nextAction}`}
                   />
                 ))}
+                <AdvisorMini
+                  label="IFVG filtered v2"
+                  value={ifvgFilteredOpportunity ? `${formatToken(ifvgFilteredOpportunity.status)} / ${formatToken(ifvgFilteredOpportunity.side)}` : "waiting"}
+                  detail={ifvgFilteredNote}
+                />
               </div>
               <p className="mt-3 rounded-xl border border-emerald-300/15 bg-emerald-300/10 p-3 text-xs leading-5 text-emerald-50">
                 Top: {topCurrentOpportunity ? `${formatToken(topCurrentOpportunity.model)} / ${formatToken(topCurrentOpportunity.setupName)}` : "none"}. Top-down: {formatToken(currentOpportunitySummary.topDownBiasStatus)} ({currentOpportunitySummary.timeframeRoleSummary?.length ? currentOpportunitySummary.timeframeRoleSummary.map((item) => `${item.timeframe}:${item.status}`).join(" / ") : "pending"}). Blocker: {currentOpportunitySummary.topBlocker ?? "none"}. Next: {currentOpportunitySummary.nextAction}. Range history: {currentOpportunitySummary.rangeHistoryAvailable ? `${currentOpportunitySummary.validationLookbackDays.toFixed(1)} days` : "not ready"}.

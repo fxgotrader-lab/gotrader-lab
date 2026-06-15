@@ -19,7 +19,11 @@ import {
  * scripts/test-validation-chain.mjs can transpile it standalone.
  */
 
-const candidateFamilyFor = (type: ValidationChainRecognitionType): ValidationChainCandidateFamily => {
+const isIfvgFilteredSetup = (label?: string) =>
+  /\bifvg\b|inversion[\s_-]*fvg|filtered[\s_-]*v2|clean[\s_-]*retest[\s_-]*displacement/i.test(label ?? "");
+
+const candidateFamilyFor = (type: ValidationChainRecognitionType, setupLabel?: string): ValidationChainCandidateFamily => {
+  if (isIfvgFilteredSetup(setupLabel)) return "ifvg";
   switch (type) {
     case "full_model":
     case "forming_model":
@@ -69,7 +73,7 @@ export const queueValidationChainEntry = (input: ValidationChainRecognitionInput
     recognitionId: input.recognitionId,
     recognitionType: input.recognitionType,
     setupLabel: input.setupLabel,
-    candidateFamily: candidateFamilyFor(input.recognitionType),
+    candidateFamily: candidateFamilyFor(input.recognitionType, input.setupLabel),
     requiredValidation: requiredValidationFor(input.recognitionType),
     symbol: input.symbol,
     brokerSymbol: input.brokerSymbol,
@@ -110,10 +114,14 @@ export const queueValidationChainEntry = (input: ValidationChainRecognitionInput
       hypothesisStatus: "replay_required",
       nextAction: isCmdSetup(input.setupLabel)
         ? "Run replay validation for this CMD recognition; independent-date validation is required before Paper-Demo consideration."
+        : isIfvgFilteredSetup(input.setupLabel)
+          ? "Run replay validation for IFVG filtered v2; walk-forward/OOS, evidence, maturity, and Paper-Demo gates are still required."
         : "Run replay validation for this recognition.",
       paperDemoChecklistImpact:
         isCmdSetup(input.setupLabel)
           ? "Blocked for Paper-Demo: CMD requires replay, walk-forward/OOS, and independent-date validation before consideration."
+          : isIfvgFilteredSetup(input.setupLabel)
+            ? "Blocked for Paper-Demo: IFVG filtered v2 is candidate consideration only until replay, walk-forward/OOS, evidence, maturity, and checklist gates pass."
           : "Blocked for Paper-Demo: replay validation and walk-forward/OOS validation have not run yet."
     }
   };

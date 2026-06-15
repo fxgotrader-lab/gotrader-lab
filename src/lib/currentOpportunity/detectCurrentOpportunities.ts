@@ -28,7 +28,7 @@ const createId = (prefix: string, seed: string) =>
   `${prefix}_${Math.abs([...seed].reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) | 0, 7)).toString(36)}`;
 
 const token = (value?: string) => (value?.trim() ? value : "unknown").replace(/_/g, " ");
-const finite = (value?: number) => typeof value === "number" && Number.isFinite(value);
+const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 const unique = (values: Array<string | undefined>) =>
   Array.from(new Set(values.filter((value): value is string => Boolean(value?.trim())))).slice(0, 8);
 
@@ -93,7 +93,7 @@ const tradeConstructionFor = (
 
 const validationFor = (status: CurrentOpportunityStatus) =>
   status === "valid_candidate"
-    ? ["replay_required", "walk_forward_required", "evidence_required"] as const
+    ? ["replay_required", "walk_forward_required", "evidence_required", "paper_demo_gate_required"] as const
     : status === "forming" || status === "near_miss"
       ? ["replay_required"] as const
       : [] as const;
@@ -151,6 +151,133 @@ const baseBlockersFor = (context: CurrentOpportunityContext) =>
     !context.sourceFingerprint ? "Source fingerprint is missing." : undefined,
     ...context.sourceDepth.depthWarnings
   ]);
+
+const contextTextFor = (context: CurrentOpportunityContext) =>
+  [
+    context.modelName,
+    context.modelState,
+    context.modelLane,
+    context.opportunityType,
+    context.opportunityStage,
+    context.opportunityQuality,
+    context.opportunityDirection,
+    context.opportunityNextAction,
+    context.setupName,
+    context.thesis,
+    context.htfAlignmentStatus,
+    context.htfConflictReason,
+    context.weeklyBiasDirection,
+    context.sessionNarrativeProfile,
+    context.sessionDirectionalRead,
+    context.fvgStatus,
+    context.displacementStatus,
+    context.drawOnLiquidity,
+    context.liquiditySwept,
+    ...context.opportunityBlockers,
+    ...context.opportunityMissingEvidence,
+    ...context.topReasons
+  ].filter(Boolean).join(" ").toLowerCase();
+
+const hasLoadedHtfContext = (context: CurrentOpportunityContext) => {
+  const loaded = new Set([
+    ...context.contextTimeframes,
+    ...context.analysisTimeframesUsed,
+    ...context.timeframeRoleSummary.filter((item) => item.status === "loaded").map((item) => item.timeframe)
+  ].map((item) => item.toUpperCase()));
+  return loaded.has("M15") && (loaded.has("H1") || loaded.has("H4") || loaded.has("D1"));
+};
+
+const ifvgFilteredV2Opportunity = (context: CurrentOpportunityContext): CurrentOpportunity => {
+  const sharedBlockers = baseBlockersFor(context);
+  const text = contextTextFor(context);
+  const hasIfvg =
+    /\bifvg\b|inversion\s+fvg|inverted\s+fvg|inverse\s+fair\s+value|inversion\s+fair\s+value|full[_\s-]*inversion/.test(text);
+  const retestBlocked = /no[_\s-]*clean[_\s-]*retest|missing[_\s-]*clean[_\s-]*retest|no[_\s-]*retest|retest[_\s-]*(missing|failed)|reused[_\s-]*ifvg/.test(text);
+  const hasCleanRetest =
+    !retestBlocked &&
+    (/clean[_\s-]*retest|retest[_\s-]*(respected|confirmed)|ifvg[_\s-]*retest|return[_\s-]*(to|into)[_\s-]*ifvg/.test(text) ||
+      (hasIfvg && finite(context.entry)));
+  const displacementBlocked = /no[_\s-]*displacement[_\s-]*confirmation|missing[_\s-]*displacement|displacement[_\s-]*(missing|failed)|weak[_\s-]*displacement/.test(text);
+  const hasDisplacement =
+    !displacementBlocked &&
+    (/displacement[_\s-]*confirmation|confirmed[_\s-]*displacement|post[_\s-]*inversion[_\s-]*delivery|displacement|expansion/.test(text) ||
+      /with_fvg|bullish|bearish/.test(context.displacementStatus ?? ""));
+  const firstUseBlocked = /reused[_\s-]*ifvg|already[_\s-]*used|used[_\s-]*before[_\s-]*inversion/.test(text);
+  const htfMissing = !hasLoadedHtfContext(context);
+  const rr = context.rrEstimate;
+  const missingConditions = unique([
+    hasIfvg ? undefined : "no_inverted_fvg",
+    firstUseBlocked ? "reused_ifvg" : undefined,
+    hasCleanRetest ? undefined : "no_clean_retest",
+    hasDisplacement ? undefined : "no_displacement_confirmation",
+    finite(context.entry) ? undefined : "entry_missing",
+    finite(context.target) ? undefined : "target_missing",
+    finite(context.invalidation) ? undefined : "invalidation_missing",
+    finite(rr) ? undefined : "rr_unavailable",
+    finite(rr) && rr < 2 ? "rr_below_minimum" : undefined,
+    htfMissing ? "missing_htf_context" : undefined
+  ]);
+  const hardBlockers = unique([
+    ...sharedBlockers,
+    context.isMockOrSample ? "source_mock_sample" : undefined,
+    firstUseBlocked ? "reused_ifvg" : undefined,
+    context.sourceDepth.depthPolicyStatus === "insufficient" || context.sourceDepth.depthPolicyStatus === "tactical_only"
+      ? "needs_explicit_validation_depth"
+      : undefined,
+    htfMissing ? "missing_htf_context" : undefined,
+    finite(rr) && rr < 2 ? "rr_below_minimum" : undefined
+  ]);
+  const status: CurrentOpportunityStatus = context.isMockOrSample
+    ? "rejected"
+    : context.sourceDepth.depthPolicyStatus === "insufficient" || context.sourceDepth.depthPolicyStatus === "tactical_only"
+      ? "needs_more_data"
+      : !hasIfvg
+        ? "no_trade"
+        : !hasCleanRetest || !hasDisplacement
+          ? "forming"
+          : hardBlockers.length || !finite(context.entry) || !finite(context.target) || !finite(context.invalidation) || !finite(rr) || rr < 2
+            ? "near_miss"
+            : "valid_candidate";
+  const nextAction =
+    status === "valid_candidate"
+      ? "Queue replay validation for IFVG filtered v2; recognition is not evidence."
+      : !hasIfvg
+        ? "Wait for a fully inverted FVG before considering filtered v2."
+        : !hasCleanRetest
+          ? "Wait for clean IFVG retest."
+          : !hasDisplacement
+            ? "Wait for displacement confirmation."
+            : hardBlockers.includes("missing_htf_context")
+              ? "Load HTF context before queueing IFVG filtered v2 validation."
+              : missingConditions.includes("target_missing")
+                ? "Define the draw-on-liquidity target before calling the target too close."
+                : missingConditions.includes("invalidation_missing")
+                  ? "Define structure invalidation before replay validation."
+                  : missingConditions.includes("rr_below_minimum")
+                    ? "Wait for a cleaner target or tighter invalidation so RR meets 2R."
+                    : "Run walk-forward after replay; Paper-Demo remains gated.";
+
+  return opportunity(context, {
+    strategyId: "ifvg_filtered_v2_research",
+    model: "IFVG filtered v2",
+    status,
+    setupName: "IFVG filtered v2 - clean retest displacement",
+    thesis:
+      "Filtered IFVG v2 is the current best IFVG research profile: clean retest plus displacement confirmation, then replay and walk-forward before any Paper-Demo consideration.",
+    side: context.side ?? "flat",
+    entry: context.entry,
+    invalidation: context.invalidation,
+    target: context.target,
+    rrEstimate: context.rrEstimate,
+    confidence: context.confidence,
+    blockers: hardBlockers,
+    missingConditions,
+    nextAction,
+    requiredValidation: status === "valid_candidate"
+      ? ["replay_required", "walk_forward_required", "evidence_required", "paper_demo_gate_required"]
+      : [...validationFor(status)]
+  });
+};
 
 const primaryOpportunity = (context: CurrentOpportunityContext) => {
   const status = statusForPrimaryContext(context);
@@ -250,15 +377,16 @@ const strategyDiagnostics = (context: CurrentOpportunityContext): CurrentOpportu
       model: "IFVG v1",
       status: hasFvg ? "forming" : "no_trade",
       setupName: "inversion_fvg_retest",
-      thesis: "IFVG is research-only until an inverted FVG and retest are visible in compact context.",
+      thesis: "Broad IFVG v1 has positive expectancy but invalidation-first is too high; filtering is required before paper-watchlist consideration.",
       blockers: sharedBlockers,
       missingConditions: [
         hasFvg ? undefined : "fair_value_gap",
         /inversion|inverse|ifvg/i.test(context.topReasons.join(" ")) ? undefined : "full_inversion",
         "retest_confirmation"
       ],
-      nextAction: "Track as unavailable/research-only unless the IFVG detector returns a compact candidate."
+      nextAction: "Use IFVG filtered v2 clean-retest/displacement validation instead of promoting raw IFVG v1."
     }),
+    ifvgFilteredV2Opportunity(context),
     opportunity(context, {
       strategyId: "market_map_only_diagnostic_v1",
       model: "Market map diagnostic",

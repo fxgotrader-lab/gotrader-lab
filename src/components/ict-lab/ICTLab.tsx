@@ -71,6 +71,7 @@ import { Button } from "@/components/ui/button";
 import {
   CURRENT_OPPORTUNITY_SCAN_UPDATED_EVENT,
   readLatestCurrentOpportunityScan,
+  type CurrentOpportunity,
   type CurrentOpportunityScan
 } from "@/lib/currentOpportunity";
 
@@ -169,21 +170,34 @@ export function ICTLab() {
       window.removeEventListener("storage", refresh);
     };
   }, []);
-  const queueRecognitionValidation = (setupLabel: string) => {
+  const queueRecognitionValidation = (
+    setupLabel: string,
+    options?: {
+      brokerSymbol?: string;
+      htfContext?: string[];
+      recognitionIdPrefix?: string;
+      recognitionType?: "full_model" | "forming_model" | "grinch_profile" | "unknown_structured_opportunity";
+      sourceFingerprint?: string;
+      sourceProvider?: string;
+      sourceStatusLabel?: string;
+      symbol?: string;
+      timeframe?: string;
+    }
+  ) => {
     const result = queueValidationChainEntry({
-      recognitionId: `ictlab_${setupLabel.toLowerCase().replace(/\W+/g, "_")}_${Date.now().toString(36)}`,
-      recognitionType: "grinch_profile",
+      recognitionId: `${options?.recognitionIdPrefix ?? "ictlab"}_${setupLabel.toLowerCase().replace(/\W+/g, "_")}_${Date.now().toString(36)}`,
+      recognitionType: options?.recognitionType ?? "grinch_profile",
       setupLabel,
-      symbol: mt5RequestedSymbol,
-      brokerSymbol: mt5BrokerSymbol,
-      timeframe: displaySource.activeResearchSource.timeframe,
-      htfContext: mt5Runtime.higherTimeframeSources?.map((source) => source.timeframe) ?? [],
-      sourceFingerprint: displaySource.activeResearchSource.fingerprint,
+      symbol: options?.symbol ?? mt5RequestedSymbol,
+      brokerSymbol: options?.brokerSymbol ?? mt5BrokerSymbol,
+      timeframe: options?.timeframe ?? displaySource.activeResearchSource.timeframe,
+      htfContext: options?.htfContext ?? mt5Runtime.higherTimeframeSources?.map((source) => source.timeframe) ?? [],
+      sourceFingerprint: options?.sourceFingerprint ?? displaySource.activeResearchSource.fingerprint,
       sourceStatus: {
-        sourceProvider: displaySource.activeResearchSource.provider,
+        sourceProvider: options?.sourceProvider ?? displaySource.activeResearchSource.provider,
         isMockOrSample: analysisUsesMockData,
         isResearchActive: mt5ResearchEligible,
-        statusLabel: sourceLabel
+        statusLabel: options?.sourceStatusLabel ?? sourceLabel
       }
     });
     if (result.ok) {
@@ -195,6 +209,19 @@ export function ICTLab() {
     } else {
       setRecognitionQueueMessages((prev) => ({ ...prev, [setupLabel]: result.reason }));
     }
+  };
+  const queueCurrentOpportunityValidation = (item: CurrentOpportunity) => {
+    queueRecognitionValidation(item.setupName, {
+      brokerSymbol: item.brokerSymbol,
+      htfContext: item.contextTimeframes,
+      recognitionIdPrefix: `ictlab_${item.strategyId}`,
+      recognitionType: "full_model",
+      sourceFingerprint: currentOpportunityScan?.summary.sourceFingerprint,
+      sourceProvider: currentOpportunityScan?.summary.sourceProvider,
+      sourceStatusLabel: `${currentOpportunityScan?.summary.sourceProvider ?? "source"} / ${item.status}`,
+      symbol: item.symbol,
+      timeframe: item.timeframe
+    });
   };
   const recognitionCta = (setupLabel: string) => {
     const strategyId = suggestStrategyIdForRecognition({ modelName: setupLabel, setupName: setupLabel });
@@ -610,6 +637,40 @@ export function ICTLab() {
                     <p className="mt-2 text-xs leading-5 text-emerald-100/85">
                       {item.missingConditions[0] ?? item.blockers[0] ?? item.nextAction}
                     </p>
+                    <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                      <div className="rounded-md border border-border/70 bg-background/35 px-2 py-1.5">
+                        <span className="block uppercase tracking-wide text-muted-foreground/80">Entry model</span>
+                        <span className="font-medium text-foreground">{item.strategyId === "ifvg_filtered_v2_research" ? "IFVG" : "research"}</span>
+                      </div>
+                      <div className="rounded-md border border-border/70 bg-background/35 px-2 py-1.5">
+                        <span className="block uppercase tracking-wide text-muted-foreground/80">RR</span>
+                        <span className="font-medium text-foreground">{item.rrEstimate ? `${item.rrEstimate.toFixed(2)}R` : "missing"}</span>
+                      </div>
+                      <div className="rounded-md border border-border/70 bg-background/35 px-2 py-1.5">
+                        <span className="block uppercase tracking-wide text-muted-foreground/80">Entry</span>
+                        <span className="font-medium text-foreground">{item.entry ?? "missing"}</span>
+                      </div>
+                      <div className="rounded-md border border-border/70 bg-background/35 px-2 py-1.5">
+                        <span className="block uppercase tracking-wide text-muted-foreground/80">Invalidation / target</span>
+                        <span className="font-medium text-foreground">{item.invalidation ?? "missing"} / {item.target ?? "missing"}</span>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {item.status === "valid_candidate" && !analysisUsesMockData ? (
+                        <Button variant="outline" size="sm" onClick={() => queueCurrentOpportunityValidation(item)}>
+                          Queue replay validation
+                        </Button>
+                      ) : null}
+                      <Link to="/advisor" className="text-xs font-medium text-sky-300 underline underline-offset-2">
+                        Open Advisor
+                      </Link>
+                      <Link to="/replay" className="text-xs font-medium text-cyan-300 underline underline-offset-2">
+                        Open Replay
+                      </Link>
+                    </div>
+                    {recognitionQueueMessages[item.setupName] ? (
+                      <p className="mt-2 text-xs leading-5 text-slate-300">{recognitionQueueMessages[item.setupName]}</p>
+                    ) : null}
                   </div>
                 ))}
               </div>
