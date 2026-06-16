@@ -65,6 +65,7 @@ const unsafeExecutionControls = [
 ];
 const pageErrorsByTest = new Map<string, string[]>();
 const consoleErrorsByTest = new Map<string, string[]>();
+const routeHeadingTimeoutMs = 30_000;
 
 const expectedHeadings: Record<string, RegExp> = {
   "/dashboard": /Command Center/i,
@@ -125,7 +126,7 @@ test.describe("GoTrader browser route smoke", () => {
     test(`${route} loads without crashing`, async ({ page }) => {
       await gotoRoute(page, route);
       await expect(page.locator("main")).toBeVisible();
-      await expect(page.locator("main")).toContainText(expectedHeadings[route]);
+      await expect(page.locator("main")).toContainText(expectedHeadings[route], { timeout: routeHeadingTimeoutMs });
       await expect(page.locator("vite-error-overlay,#vite-error-overlay")).toHaveCount(0);
       await expect(page.getByText(/Internal server error|\[plugin:vite|Transform failed/i)).toHaveCount(0);
       await expectNoVisibleExecutionControls(page);

@@ -86,6 +86,16 @@ const fetchWithTimeout = async (url) => {
         ? await response.json()
         : await response.text()
     };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      payload: {
+        error: error instanceof Error ? error.message : String(error),
+        errorCode: error?.cause?.code || error?.code,
+        endpoint: url
+      }
+    };
   } finally {
     clearTimeout(timeout);
   }
