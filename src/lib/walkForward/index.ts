@@ -6,7 +6,9 @@ export {
   walkForwardModeWindowSize
 } from "@/lib/walkForward/dataSplitter";
 export { analyzeWalkForwardStability } from "@/lib/walkForward/stabilityAnalyzer";
+export { buildWalkForwardPreflight } from "@/lib/walkForward/walkForwardPreflight";
 export { loadPreparedCanonicalWalkForwardCandleSource } from "@/lib/walkForward/walkForwardSourceResolver";
+export type { BuildWalkForwardPreflightInput, WalkForwardPreflightValidationChainInput } from "@/lib/walkForward/walkForwardPreflight";
 export type { ResolvedWalkForwardCandleSource } from "@/lib/walkForward/walkForwardSourceResolver";
 export {
   clearWalkForwardHistory,
@@ -28,6 +30,10 @@ export type {
   WalkForwardLikelyFailureCause,
   WalkForwardMode,
   WalkForwardOverfitRisk,
+  WalkForwardPreflightBlocker,
+  WalkForwardPreflightBlockerCode,
+  WalkForwardPreflightStatus,
+  WalkForwardPreflightSummary,
   WalkForwardProgress,
   WalkForwardRun,
   WalkForwardRunOptions,

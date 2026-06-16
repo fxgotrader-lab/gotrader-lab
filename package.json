@@ -121,6 +121,7 @@
     "test:regime-classifier": "node scripts/test-regime-classifier.mjs",
     "test:source-status": "node scripts/test-source-status.mjs",
     "test:validation-chain": "node scripts/test-validation-chain.mjs",
+    "test:walk-forward-preflight": "node scripts/test-walk-forward-preflight.mjs",
     "test:advisor-provider-status": "node scripts/test-advisor-provider-status.mjs",
     "test:openclaw-pilot-dry-run": "node scripts/test-openclaw-pilot-dry-run.mjs",
     "test:paper-demo-operations": "node scripts/test-paper-demo-operations.mjs",

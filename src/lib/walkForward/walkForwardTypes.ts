@@ -42,6 +42,74 @@ export type WalkForwardLikelyFailureCause =
   | "overfit_risk"
   | "evidence_quality_weak";
 
+export type WalkForwardPreflightStatus = "ready" | "blocked";
+export type WalkForwardSourceDepthUsed =
+  | "mt5_90_day_range"
+  | "active_walk_forward_source"
+  | "tactical_latest_window"
+  | "unavailable";
+export type WalkForwardSourceDepthStatus = "sufficient" | "limited" | "tactical_only" | "insufficient" | "unavailable";
+export type WalkForwardPreflightBlockerCode =
+  | "source_not_eligible"
+  | "missing_strategy_id"
+  | "missing_source_fingerprint"
+  | "missing_replay_result"
+  | "replay_not_passed"
+  | "insufficient_replay_candidates"
+  | "insufficient_unique_dates"
+  | "insufficient_windows"
+  | "source_depth_insufficient";
+
+export interface WalkForwardPreflightBlocker {
+  code: WalkForwardPreflightBlockerCode;
+  message: string;
+  currentValue?: string | number;
+  requiredValue?: string | number;
+  nextAction: string;
+}
+
+export interface WalkForwardPreflightSummary {
+  status: WalkForwardPreflightStatus;
+  strategyId?: string;
+  validationChainId?: string;
+  requestedSymbol?: string;
+  brokerSymbol?: string;
+  timeframe?: string;
+  sourceProvider?: string;
+  sourceFingerprint?: string;
+  sourceDepthUsed: WalkForwardSourceDepthUsed;
+  sourceDepthStatus: WalkForwardSourceDepthStatus;
+  sourceDepthLabel: string;
+  canRequestDeepMt5History: boolean;
+  availableLookbackDays: number;
+  availableCandidateCount: number;
+  replayPassedCandidateCount: number;
+  uniqueTradingDates: number;
+  activeRollingWindowsPossible: number;
+  estimatedOosTrades: number;
+  requiredCandidates: number;
+  requiredReplayPassedCandidates: number;
+  requiredUniqueTradingDates: number;
+  requiredWindows: number;
+  requiredOosTrades: number;
+  blockers: WalkForwardPreflightBlocker[];
+  warnings: string[];
+  nextAction: string;
+  authority: {
+    executionAuthority: "none";
+    brokerAuthority: "none";
+    readinessOverrideAuthority: "none";
+  };
+  safety: {
+    rawCandlesExcluded: true;
+    rawSnapshotsExcluded: true;
+    accountDataExcluded: true;
+    orderDataExcluded: true;
+    positionDataExcluded: true;
+    secretsExcluded: true;
+  };
+}
+
 export interface WalkForwardEvidenceRules {
   minimumWindows: number;
   preferredWindows: number;
@@ -256,6 +324,7 @@ export interface WalkForwardRun {
   sourceFingerprint?: string;
   sourceDataQuality?: string;
   sourceWarnings?: string[];
+  preflight?: WalkForwardPreflightSummary;
   providerSymbol?: string;
   symbol: FuturesSymbol;
   contract?: string;
@@ -291,7 +360,26 @@ export interface WalkForwardRunOptions {
   minimumWindows?: number;
   minimumOosTradesPerWindow?: number;
   minimumTotalOosTrades?: number;
+  minimumReplayCandidates?: number;
+  minimumReplayPassedCandidates?: number;
+  minimumUniqueTradingDates?: number;
   proposalId?: string;
+  requireReplayHandoff?: boolean;
+  useDeepMt5History?: boolean;
+  validationChainEntry?: {
+    recognitionId?: string;
+    setupLabel?: string;
+    symbol?: string;
+    brokerSymbol?: string;
+    timeframe?: string;
+    sourceFingerprint?: string;
+    hypothesisStatus?: string;
+    replayResult?: {
+      verdict?: string;
+      totalSignals?: number;
+      reason?: string;
+    };
+  };
   signal?: AbortSignal;
   onProgress?: (run: WalkForwardRun) => void;
 }

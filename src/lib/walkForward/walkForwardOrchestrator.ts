@@ -14,6 +14,7 @@ import {
   resolveSplitRatio,
   walkForwardModeWindowSize
 } from "@/lib/walkForward/dataSplitter";
+import { buildWalkForwardPreflight } from "@/lib/walkForward/walkForwardPreflight";
 import { analyzeWalkForwardStability } from "@/lib/walkForward/stabilityAnalyzer";
 import {
   saveWalkForwardProgress,
@@ -195,7 +196,10 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
   const started = Date.now();
   const runId = uid("walk_forward");
   const mode = options.mode ?? "safe";
-  const source = await loadPreparedCanonicalWalkForwardCandleSource();
+  const source = await loadPreparedCanonicalWalkForwardCandleSource(undefined, {
+    allowMt5DeepHistory: Boolean(options.useDeepMt5History),
+    requestedLookbackDays: 90
+  });
   const activeConfig = resolveActiveBacktestConfig();
   const ratio = resolveSplitRatio(options.splitRatioPreset ?? "60_20_20", options.customRatio);
   const requestedMaxWindows = Math.max(1, options.maxWindows ?? modeMaxWindows[mode]);
@@ -223,6 +227,17 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
       ? "Use Standard preset, a larger raw candle window, or adjusted split settings to reach the preferred 3 windows."
       : undefined
   ].filter((note): note is string => Boolean(note));
+  const preflight = buildWalkForwardPreflight({
+    source,
+    windows,
+    validationChainEntry: options.validationChainEntry,
+    requireReplayHandoff: Boolean(options.requireReplayHandoff),
+    minimumCandidates: options.minimumReplayCandidates ?? DEFAULT_MINIMUM_TOTAL_OOS_TRADES,
+    minimumReplayPassedCandidates: options.minimumReplayPassedCandidates ?? DEFAULT_MINIMUM_TOTAL_OOS_TRADES,
+    minimumUniqueTradingDates: options.minimumUniqueTradingDates ?? 3,
+    minimumWindows: options.minimumWindows ?? DEFAULT_MINIMUM_WINDOWS,
+    minimumOosTrades: options.minimumTotalOosTrades ?? DEFAULT_MINIMUM_TOTAL_OOS_TRADES
+  });
   const evidenceQualityScore = evidenceQualityScoreFor(source.mode);
   let run: WalkForwardRun = {
     runId,
@@ -243,6 +258,7 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
     sourceFingerprint: source.sourceFingerprint,
     sourceDataQuality: source.dataQuality,
     sourceWarnings: source.sourceWarnings,
+    preflight,
     providerSymbol: source.brokerSymbol,
     symbol: source.metadata?.symbol ?? source.candles[0]?.symbol ?? activeConfig.config.symbol,
     contract: source.metadata?.contract,
@@ -286,6 +302,64 @@ export async function runWalkForwardValidation(options: WalkForwardRunOptions = 
   };
 
   try {
+    publishProgress(
+      preflight.status === "ready"
+        ? "Walk-forward preflight passed. Starting compact rolling-window validation."
+        : `Walk-forward preflight blocked: ${preflight.blockers[0]?.message ?? "requirements are missing"}`,
+      0
+    );
+    await sleepFrame();
+
+    if (preflight.status === "blocked") {
+      const stability = analyzeWalkForwardStability([], run.runId, {
+        requestedMaxWindows,
+        actualWindowsGenerated: windows.length,
+        minimumWindows: options.minimumWindows ?? DEFAULT_MINIMUM_WINDOWS,
+        preferredWindows: DEFAULT_MINIMUM_WINDOWS,
+        minimumOosTradesPerWindow: options.minimumOosTradesPerWindow ?? DEFAULT_MINIMUM_OOS_TRADES_PER_WINDOW,
+        minimumTotalOosTrades: options.minimumTotalOosTrades ?? DEFAULT_MINIMUM_TOTAL_OOS_TRADES,
+        windowGenerationNotes: [
+          ...windowGenerationNotes,
+          ...preflight.blockers.map((item) => item.message)
+        ]
+      });
+      const preflightSummary = preflight.blockers[0]?.message ?? "Walk-forward preflight requirements are missing.";
+      run = {
+        ...run,
+        status: "completed_with_warnings",
+        completedAt: now(),
+        stability: {
+          ...stability,
+          summary: `Walk-forward did not run because ${preflightSummary}`,
+          recommendedNextAction: preflight.nextAction,
+          evidenceSummary: stability.evidenceSummary
+            ? {
+                ...stability.evidenceSummary,
+                insufficientEvidenceReasons: preflight.blockers.map((item) => item.message)
+              }
+            : stability.evidenceSummary
+        },
+        failureDiagnostics: stability.diagnostics
+          ? {
+              ...stability.diagnostics,
+              repeatedFailureReasons: preflight.blockers.map((item) => item.message),
+              summary: `Preflight blocked walk-forward: ${preflightSummary}`
+            }
+          : undefined,
+        followUpPlan: stability.followUpPlan,
+        progress: {
+          status: "completed_with_warnings",
+          currentWindow: 0,
+          totalWindows: windows.length,
+          elapsedMs: Date.now() - started,
+          message: preflight.nextAction
+        }
+      };
+      saveWalkForwardRun(run);
+      options.onProgress?.(run);
+      return run;
+    }
+
     if (!windows.length) {
       throw new Error("No candles were available for walk-forward validation.");
     }

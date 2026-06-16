@@ -9,7 +9,11 @@ import { ValidateWorkspaceSummary } from "@/components/common/ValidateWorkspaceS
 import { ValidationChainCard } from "@/components/common/ValidationChainCard";
 import { WorkspaceEmptyState } from "@/components/common/WorkspaceEmptyState";
 import { WORKSPACE_PAGE } from "@/components/common/workspaceStyles";
-import { recordWalkForwardRunInValidationChain } from "@/lib/validationChain";
+import {
+  latestValidationChainEntry,
+  recordWalkForwardRunInValidationChain,
+  VALIDATION_CHAIN_UPDATED_EVENT
+} from "@/lib/validationChain";
 import { TechnicalDetails } from "@/components/common/TechnicalDetails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,6 +44,7 @@ import { SELF_IMPROVEMENT_UPDATED_EVENT } from "@/lib/selfImprovement";
 import { formatPercent, safeArray } from "@/lib/utils";
 import {
   clearWalkForwardHistory,
+  buildWalkForwardPreflight,
   createWalkForwardWindows,
   latestWalkForwardRun,
   loadWalkForwardState,
@@ -95,6 +100,7 @@ const emptyWalkForwardSource: ResolvedWalkForwardCandleSource = {
 export function WalkForwardView() {
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<ResearchRuntimeSnapshot>();
   const [latestRun, setLatestRun] = useState<WalkForwardRun | undefined>(() => latestWalkForwardRun());
+  const [validationChainEntry, setValidationChainEntry] = useState(() => latestValidationChainEntry());
   const [mode, setMode] = useState<WalkForwardMode>("safe");
   const [ratioPreset, setRatioPreset] = useState<WalkForwardSplitRatioPreset>("60_20_20");
   const [maxWindows, setMaxWindows] = useState(3);
@@ -117,6 +123,7 @@ export function WalkForwardView() {
 
   const refresh = () => {
     setLatestRun(latestWalkForwardRun(loadWalkForwardState()));
+    setValidationChainEntry(latestValidationChainEntry());
     setDashboardWindowSettings(loadCandleWindowSettings());
     setWalkForwardSettings(loadWalkForwardCandleWindowSettings());
     void loadPreparedCanonicalWalkForwardCandleSource()
@@ -142,6 +149,7 @@ export function WalkForwardView() {
     window.addEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
     window.addEventListener(WALK_FORWARD_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
     window.addEventListener(SELF_IMPROVEMENT_UPDATED_EVENT, refresh);
+    window.addEventListener(VALIDATION_CHAIN_UPDATED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
       window.removeEventListener(WALK_FORWARD_UPDATED_EVENT, refresh);
@@ -149,6 +157,7 @@ export function WalkForwardView() {
       window.removeEventListener(CANDLE_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener(WALK_FORWARD_WINDOW_SETTINGS_UPDATED_EVENT, refresh);
       window.removeEventListener(SELF_IMPROVEMENT_UPDATED_EVENT, refresh);
+      window.removeEventListener(VALIDATION_CHAIN_UPDATED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
   }, []);
@@ -160,22 +169,27 @@ export function WalkForwardView() {
       : 0;
 
   const run = async () => {
-    if (!walkForwardSource.walkForwardEligible) {
-      setActionMessage(walkForwardSource.walkForwardEligibilityReasons[0] ?? "Active walk-forward source is not eligible yet.");
+    if (busy) {
+      setActionMessage("Walk-forward is already running. Duplicate click ignored.");
       return;
     }
-    if (expectedWindows < 3) {
-      setActionMessage("Not enough data for meaningful walk-forward. Increase the walk-forward raw window or select Standard.");
+    if (preflight.status === "blocked") {
+      setActionMessage(preflight.blockers[0]?.message ?? "Walk-forward preflight blocked the run.");
       return;
     }
     const abortController = new AbortController();
     setController(abortController);
     setBusy(true);
+    setActionMessage("Walk-forward preflight accepted. Requesting explicit MT5 range history when available...");
+    await Promise.resolve();
     const result = await runWalkForwardValidation({
       mode,
       splitRatioPreset: ratioPreset,
       maxWindows,
       proposalId: latestProposal?.proposalId,
+      requireReplayHandoff: true,
+      useDeepMt5History: true,
+      validationChainEntry,
       customRatio:
         ratioPreset === "custom"
           ? {
@@ -225,6 +239,21 @@ export function WalkForwardView() {
     maxWindows
   });
   const expectedWindows = feasibilityWindows.length;
+  const preflight = useMemo(
+    () =>
+      buildWalkForwardPreflight({
+        source: walkForwardSource,
+        windows: feasibilityWindows,
+        validationChainEntry,
+        requireReplayHandoff: true,
+        minimumCandidates: 20,
+        minimumReplayPassedCandidates: 20,
+        minimumUniqueTradingDates: 3,
+        minimumWindows: 3,
+        minimumOosTrades: 20
+      }),
+    [feasibilityWindows, validationChainEntry, walkForwardSource]
+  );
   const expectedOosCandles =
     feasibilityWindows[0]?.splits.find((split) => split.label === "out_of_sample")?.processedCandleCount ?? 0;
   const minimumProcessedCandles = minimumProcessedCandlesFor(mode);
@@ -253,6 +282,7 @@ export function WalkForwardView() {
         ? walkForwardSource.walkForwardEligibilityReasons[0] ?? "Active walk-forward source is not eligible yet."
         : undefined,
     expectedWindows < 3 ? "Not enough data for meaningful walk-forward. Increase raw window." : undefined,
+    ...preflight.warnings,
     usingDashboardSafeData
       ? "Walk-forward is using Dashboard Safe data. Select a larger walk-forward data preset for meaningful validation."
       : undefined,
@@ -352,6 +382,44 @@ export function WalkForwardView() {
           </CardContent>
         </Card>
       ) : null}
+
+      <Card className={preflight.status === "ready" ? "border-emerald-300/25 bg-emerald-300/10" : "border-amber-300/25 bg-amber-300/10"}>
+        <CardHeader>
+          <CardTitle>Walk-Forward Preflight</CardTitle>
+          <CardDescription>
+            Replay handoff, source depth, candidate count, dates, and windows are checked before any heavy walk-forward processing.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 text-sm md:grid-cols-3 xl:grid-cols-6">
+            <StatusTile label="Preflight" value={preflight.status === "ready" ? "ready" : "blocked"} />
+            <StatusTile label="Strategy/model" value={preflight.strategyId ?? "missing"} />
+            <StatusTile label="Replay candidates" value={`${preflight.availableCandidateCount}/${preflight.requiredCandidates}`} />
+            <StatusTile label="Replay passed" value={`${preflight.replayPassedCandidateCount}/${preflight.requiredReplayPassedCandidates}`} />
+            <StatusTile label="Unique dates" value={`${preflight.uniqueTradingDates}/${preflight.requiredUniqueTradingDates}`} />
+            <StatusTile label="Rolling windows" value={`${preflight.activeRollingWindowsPossible}/${preflight.requiredWindows}`} />
+            <StatusTile label="Source depth" value={`${preflight.sourceDepthStatus.replace(/_/g, " ")} / ${preflight.availableLookbackDays.toFixed(1)} days`} />
+            <StatusTile label="Depth used" value={preflight.sourceDepthLabel} />
+            <StatusTile label="Source fingerprint" value={preflight.sourceFingerprint ?? "missing"} />
+          </div>
+          {preflight.blockers.length ? (
+            <div className="space-y-2">
+              {preflight.blockers.map((item) => (
+                <div key={`${item.code}-${item.message}`} className="rounded-lg border border-amber-200/25 bg-background/45 p-3 text-sm text-amber-50">
+                  <div className="font-medium">{item.message}</div>
+                  <div className="mt-1 text-xs text-amber-100/80">
+                    Current: {item.currentValue ?? "n/a"} / Required: {item.requiredValue ?? "n/a"}. Next: {item.nextAction}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-emerald-200/25 bg-background/45 p-3 text-sm text-emerald-50">
+              Preflight is ready. {preflight.nextAction}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
         <Card>
@@ -476,9 +544,9 @@ export function WalkForwardView() {
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2">
-              <Button onClick={run} disabled={busy || !walkForwardSource.walkForwardEligible || expectedWindows < 3} className="justify-center gap-2">
+              <Button onClick={run} disabled={busy || preflight.status === "blocked"} className="justify-center gap-2">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
-                {busy ? "Walk-forward running" : !walkForwardSource.walkForwardEligible ? "Source not eligible" : expectedWindows < 3 ? "Need more windows" : "Run Walk-Forward"}
+                {busy ? "Walk-forward running" : preflight.status === "blocked" ? "Preflight blocked" : "Run Walk-Forward"}
               </Button>
               {busy ? (
                 <Button variant="destructive" onClick={cancel} className="justify-center gap-2">
@@ -537,8 +605,14 @@ export function WalkForwardView() {
                 <div className="font-medium">Insufficient evidence</div>
                 <div className="mt-1">
                   {evidenceSummary?.insufficientEvidenceReasons[0] ??
-                    "Increase windows or out-of-sample trades before treating this as strategy failure."}
+                    latestRun?.preflight?.blockers[0]?.message ??
+                    "Walk-forward did not run enough independent OOS evidence to judge strategy quality."}
                 </div>
+                {latestRun?.preflight?.blockers.length ? (
+                  <div className="mt-2 text-xs">
+                    {latestRun.preflight.blockers.map((item) => `${item.code}: ${item.message}`).join(" ")}
+                  </div>
+                ) : null}
                 {safeArray(evidenceSummary?.windowGenerationNotes).length ? (
                   <div className="mt-2 text-xs">{safeArray(evidenceSummary?.windowGenerationNotes).join(" ")}</div>
                 ) : null}

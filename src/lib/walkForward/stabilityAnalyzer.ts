@@ -487,7 +487,10 @@ export function analyzeWalkForwardStability(
             : "Do not promote. Diagnose the weakest out-of-sample window and continue simulation research.",
     summary:
       verdict === "insufficient_evidence"
-        ? "Walk-forward validation has insufficient evidence; increase windows or out-of-sample trade count before judging strategy quality."
+        ? `Walk-forward validation has insufficient evidence: ${
+            evidenceSummary.insufficientEvidenceReasons.join(" ") ||
+            "increase windows or out-of-sample trade count before judging strategy quality."
+          }`
         : verdict === "fail"
         ? "Walk-forward validation failed; one selected window is not enough evidence."
         : `Walk-forward validation is ${verdict.replace(/_/g, " ")} with ${overfitRisk} overfit risk.`,

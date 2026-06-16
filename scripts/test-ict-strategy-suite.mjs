@@ -52,6 +52,8 @@ const sourceFiles = [
   { root: sourceRoot, file: "ictIndexSmtTypes.ts" },
   { root: sourceRoot, file: "ictNewsSessionRiskTypes.ts" },
   { root: sourceRoot, file: "ictNewsSessionRisk.ts" },
+  { root: sourceRoot, file: "ictSessionRaidReversalTypes.ts" },
+  { root: sourceRoot, file: "ictSessionRaidReversal.ts" },
   { root: sourceRoot, file: "ictReplayValidation.ts" },
   { root: sourceRoot, file: "ictReplayDiagnostics.ts" },
   { root: sourceRoot, file: "ictApprovedSetupProfile.ts" },
