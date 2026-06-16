@@ -169,7 +169,7 @@ const resolveMidnightOpen = (candles: CompactCandle[], tradingDate: string, timi
   return level("12AM New York Open", midnight, midnight?.open, "session_midnight_open", timingZone);
 };
 
-const resolveSundayOpen = (candles: CompactCandle[], timingZone: string, override?: number) => {
+const resolveSundayOpen = (candles: CompactCandle[], timingZone: string, override?: number, tradingDate?: string) => {
   if (finite(override)) {
     return {
       label: "Sunday Open",
@@ -177,12 +177,19 @@ const resolveSundayOpen = (candles: CompactCandle[], timingZone: string, overrid
       source: "operator_override"
     };
   }
-  const sunday = candles.find((candle) => {
+  const sundayCandidates = candles.filter((candle) => {
     const date = new Date(candle.timestamp);
     const weekday = new Intl.DateTimeFormat("en-US", { timeZone: timingZone, weekday: "short" }).format(date);
     const parts = localParts(candle.timestamp, timingZone);
-    return weekday === "Sun" && parts.minuteOfDay >= 18 * 60;
+    return weekday === "Sun" && parts.minuteOfDay >= 18 * 60 && (!tradingDate || parts.dateKey <= tradingDate);
   });
+  const latestSundayDate = sundayCandidates
+    .map((candle) => localParts(candle.timestamp, timingZone).dateKey)
+    .sort()
+    .at(-1);
+  const sunday = latestSundayDate
+    ? sundayCandidates.find((candle) => localParts(candle.timestamp, timingZone).dateKey === latestSundayDate)
+    : undefined;
   return level("Sunday Open", sunday, sunday?.open, "first_sunday_evening_candle", timingZone);
 };
 
@@ -322,7 +329,7 @@ export const evaluateIctSessionRaidReversal = (input: IctSessionRaidReversalInpu
   const londonRange = rangeOf(london);
   const nyRange = rangeOf(nyAm);
   const midnightOpen = resolveMidnightOpen(candles, tradingDate, timingZone);
-  const sundayOpen = resolveSundayOpen(candles, timingZone, input.sundayOpenOverride);
+  const sundayOpen = resolveSundayOpen(candles, timingZone, input.sundayOpenOverride, tradingDate);
   const priorHighCandle = highestCandle(priorDayCandles);
   const priorLowCandle = lowestCandle(priorDayCandles);
   const londonHighCandle = highestCandle(london.length ? london : earlyLondonToNy);
@@ -339,6 +346,7 @@ export const evaluateIctSessionRaidReversal = (input: IctSessionRaidReversalInpu
     const minute = localParts(candle.timestamp, timingZone).minuteOfDay;
     return minute >= 3 * 60 + 30 && minute <= 4 * 60 && finite(midnightOpen?.price) && candle.high > midnightOpen!.price!;
   });
+  const londonExpansionCandle = around345 ?? londonAboveMidnight;
   const asiaHighSweep = sweepAbove(earlyLondonToNy, asiaRange.high);
   const priorDayHighSweep = sweepAbove(earlyLondonToNy, priorHighCandle?.high);
   const nyRaid = sweepAbove(nyAm, londonHighCandle?.high);
@@ -454,9 +462,9 @@ export const evaluateIctSessionRaidReversal = (input: IctSessionRaidReversalInpu
   const steps: IctSessionRaidReversalStep[] = [
     step("asia_consolidation", asiaConsolidates, asiaConsolidates ? "Asia formed a bounded range before London." : "Asia range is missing or too wide.", { high: asiaRange.high, low: asiaRange.low }),
     step("london_expansion", Boolean(londonAboveMidnight), londonAboveMidnight ? "London expanded above the 12AM New York open." : "London did not trade above the 12AM New York open.", {
-      timestamp: londonAboveMidnight?.timestamp,
-      localTime: londonAboveMidnight ? localParts(londonAboveMidnight.timestamp, timingZone).label : undefined,
-      price: londonAboveMidnight?.high,
+      timestamp: londonExpansionCandle?.timestamp,
+      localTime: londonExpansionCandle ? localParts(londonExpansionCandle.timestamp, timingZone).label : undefined,
+      price: londonExpansionCandle?.high,
       confidence: around345 ? 0.9 : londonAboveMidnight ? 0.72 : 0.25
     }),
     step("asia_high_sweep", Boolean(asiaHighSweep), asiaHighSweep ? "London/early session swept Asia High." : "Asia High sweep not confirmed.", { timestamp: asiaHighSweep?.timestamp, localTime: asiaHighSweep ? localParts(asiaHighSweep.timestamp, timingZone).label : undefined, price: asiaHighSweep?.high }),
