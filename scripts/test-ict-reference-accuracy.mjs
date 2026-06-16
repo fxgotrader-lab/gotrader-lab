@@ -84,8 +84,12 @@ async function main() {
 
   assert.equal(report.sourceTimeframe, "M5");
   assert.equal(report.twelveAmOpen?.price, 110, "12AM Open should use session-local midnight, not literal UTC HH:mm");
+  assert.equal(report.twelveAmOpen?.label, "MT5-derived 12AM Open");
+  assert.equal(report.twelveAmOpen?.sourceMethod, "mt5_session_local_exact_midnight");
   assert.match(report.twelveAmOpen?.localTimestamp ?? "", /2026-06-09 00:00:00 America\/New_York/);
   assert.equal(report.sundayOpen?.price, 100, "Sunday Open should resolve from Sunday evening local session");
+  assert.equal(report.sundayOpen?.label, "MT5-derived Sunday Open");
+  assert.equal(report.sundayOpen?.sourceMethod, "mt5_session_local_sunday_after_18");
   assert.ok(report.previousDayHigh?.price && report.previousDayHigh.price > 105, "previous day high should be anchored to prior NY date");
   assert.ok(report.previousDayLow?.price && report.previousDayLow.price < 99, "previous day low should be anchored to prior NY date");
   assert.ok(report.latestSwingHigh?.price, "swing high should be detected from local candle structure");

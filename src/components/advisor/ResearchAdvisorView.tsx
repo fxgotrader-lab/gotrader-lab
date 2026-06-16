@@ -1725,8 +1725,8 @@ function SessionRaidReversalCard({ currentRead }: { currentRead: IctCurrentRead 
         </div>
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <AdvisorReadout label="Sunday Open" value={price(narrative.referenceLevels.sundayOpen?.price)} detail={narrative.referenceLevels.currentPremiumDiscount} />
-        <AdvisorReadout label="12AM Open" value={price(narrative.referenceLevels.midnightOpen?.price)} detail={narrative.referenceLevels.midnightOpen?.localTime ?? "New York midnight"} />
+        <AdvisorReadout label="MT5-derived Sunday Open" value={price(narrative.referenceLevels.sundayOpen?.price)} detail={narrative.referenceLevels.currentPremiumDiscount} />
+        <AdvisorReadout label="MT5-derived 12AM Open" value={price(narrative.referenceLevels.midnightOpen?.price)} detail={narrative.referenceLevels.midnightOpen?.localTime ?? "New York midnight"} />
         <AdvisorReadout label="Asia High / Low" value={`${price(narrative.referenceLevels.asiaRange.high)} / ${price(narrative.referenceLevels.asiaRange.low)}`} detail={`${narrative.referenceLevels.asiaRange.candleCount} candles`} />
         <AdvisorReadout label="London High" value={price(narrative.referenceLevels.londonHigh?.price)} detail={narrative.referenceLevels.londonHigh?.localTime ?? "pending"} />
         <AdvisorReadout label="NY Raid" value={stepStatus("ny_london_high_raid")} detail={narrative.steps.find((step) => step.step === "ny_london_high_raid")?.note} />

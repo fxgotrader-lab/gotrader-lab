@@ -417,20 +417,20 @@ const depthSummary = await fetchDepthSummary(latest.timestamp);
 
 const referenceLevels = {
   sundayOpen: levelTrace({
-    label: "Sunday Open",
+    label: "MT5-derived Sunday Open",
     candle: sundayOpenCandle,
     price: sundayOpenCandle?.open,
     timeframe: "5m",
     sourceWindow: "Sunday 18:00+ New York",
-    source: "first_sunday_evening_candle"
+    source: "mt5_first_sunday_evening_candle"
   }),
   twelveAmOpen: levelTrace({
-    label: "12AM NY Open",
+    label: "MT5-derived 12AM Open",
     candle: midnightOpenCandle,
     price: midnightOpenCandle?.open,
     timeframe: "5m",
     sourceWindow: "00:00 New York",
-    source: "session_local_exact_midnight"
+    source: "mt5_session_local_exact_midnight"
   }),
   asia: rangeTrace({
     label: "Asia",
@@ -476,7 +476,7 @@ const referenceLevels = {
 const stepByName = Object.fromEntries(narrative.steps.map((item) => [item.step, item]));
 const scenarioMatch = [
   ["Asia consolidation into London", "asia_consolidation"],
-  ["London expansion above 12AM Open", "london_expansion"],
+  ["London expansion above MT5-derived 12AM Open", "london_expansion"],
   ["Asia High sweep", "asia_high_sweep"],
   ["Prior-day high sweep", "prior_day_high_sweep"],
   ["London High created", "london_high_created"],

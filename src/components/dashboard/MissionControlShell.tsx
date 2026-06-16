@@ -560,10 +560,10 @@ const buildCommandCenterChartData = (
     });
     const replayDiagnostics = grinchProfileDiagnostics.expansionReplayDiagnostics;
     openingOverlays = [
-      horizontalOverlay(candles, replayDiagnostics.twelveAmOpen.price, "dashboard-grinch-12am-open", "12AM Open", "#38bdf8", "liquidity_level", {
+      horizontalOverlay(candles, replayDiagnostics.twelveAmOpen.price, "dashboard-grinch-12am-open", "MT5-derived 12AM Open", "#38bdf8", "liquidity_level", {
         lineWidth: 2
       }),
-      horizontalOverlay(candles, replayDiagnostics.sundayOpen.price, "dashboard-grinch-sunday-open", "Sunday Open", "#a78bfa", "liquidity_level", {
+      horizontalOverlay(candles, replayDiagnostics.sundayOpen.price, "dashboard-grinch-sunday-open", "MT5-derived Sunday Open", "#a78bfa", "liquidity_level", {
         lineWidth: 2
       })
     ].filter(isTradingChartLineOverlay);
@@ -3575,14 +3575,14 @@ export function MissionControlShell({ state }: { state: LabState }) {
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <MiniReadout
-                  label="12AM Open"
+                  label="MT5-derived 12AM Open"
                   value={expansionReplay.twelveAmOpen.rawTimestamp}
                   detail={`Local ${expansionReplay.twelveAmOpen.localTimestamp}; price ${
                     typeof expansionReplay.twelveAmOpen.price === "number" ? expansionReplay.twelveAmOpen.price.toFixed(2) : "not found"
                   }; fallback ${expansionReplay.twelveAmOpen.fallbackMethod}.`}
                 />
                 <MiniReadout
-                  label="Sunday Open"
+                  label="MT5-derived Sunday Open"
                   value={expansionReplay.sundayOpen.rawTimestamp}
                   detail={`Local ${expansionReplay.sundayOpen.localTimestamp}; price ${
                     typeof expansionReplay.sundayOpen.price === "number" ? expansionReplay.sundayOpen.price.toFixed(2) : "not found"

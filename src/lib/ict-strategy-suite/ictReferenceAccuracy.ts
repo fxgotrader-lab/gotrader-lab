@@ -119,10 +119,10 @@ const findTwelveAmOpen = (candles: IctReferenceCandleLike[], sourceTimeframe: st
   return candle
     ? reference({
         type: "twelve_am_open",
-        label: "12AM Open",
+        label: "MT5-derived 12AM Open",
         candle,
         sourceTimeframe,
-        sourceMethod: "session_local_exact_midnight",
+        sourceMethod: "mt5_session_local_exact_midnight",
         timeZone,
         price: candle.open
       })
@@ -143,10 +143,10 @@ const findSundayOpen = (candles: IctReferenceCandleLike[], sourceTimeframe: stri
   return candle
     ? reference({
         type: "sunday_open",
-        label: "Sunday Open",
+        label: "MT5-derived Sunday Open",
         candle,
         sourceTimeframe,
-        sourceMethod: "session_local_sunday_after_18",
+        sourceMethod: "mt5_session_local_sunday_after_18",
         timeZone,
         price: candle.open
       })
@@ -366,8 +366,8 @@ export const buildIctReferenceAccuracyReport = ({
     dealingRange,
     pdArrayReferences,
     warnings: [
-      !twelveAmOpen ? "12AM Open not found on the requested session-local date." : undefined,
-      !sundayOpen ? "Sunday Open not found in available local-session history." : undefined,
+      !twelveAmOpen ? "MT5-derived 12AM Open not found on the requested session-local date." : undefined,
+      !sundayOpen ? "MT5-derived Sunday Open not found in available local-session history." : undefined,
       !dealingRange ? "Dealing range could not be built from compact references." : undefined
     ].filter((item): item is string => Boolean(item)),
     safety,

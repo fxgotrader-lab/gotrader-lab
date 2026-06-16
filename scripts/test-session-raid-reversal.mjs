@@ -60,6 +60,8 @@ const candle = (dateKey, hour, minute, open, high, low, close) => ({
 
 function validScenario5m() {
   const candles = [];
+  // MT5-derived Sunday evening reference for the June 10 trading week.
+  candles.push(candle("2026-06-07", 20, 0, 90, 91, 89, 90.5));
   // Prior trading day reference levels.
   candles.push(candle("2026-06-09", 9, 30, 96, 103, 95, 101));
   candles.push(candle("2026-06-09", 10, 0, 101, 102, 86, 88));
@@ -124,8 +126,27 @@ function assertSafe(value) {
   assert.deepEqual(value.authority, authorityNone);
 }
 
+function assertMt5OnlyReferenceWording() {
+  const detectorSource = fs.readFileSync(path.join(ictRoot, "ictSessionRaidReversal.ts"), "utf8");
+  const detectorTypes = fs.readFileSync(path.join(ictRoot, "ictSessionRaidReversalTypes.ts"), "utf8");
+  const liveReport = fs.readFileSync(path.join(projectRoot, "docs", "live-session-raid-reversal-validation.md"), "utf8");
+  const narrativeReport = fs.readFileSync(path.join(projectRoot, "docs", "session-raid-reversal-narrative-audit.md"), "utf8");
+  const advisorSource = fs.readFileSync(path.join(projectRoot, "src", "components", "advisor", "ResearchAdvisorView.tsx"), "utf8");
+  const ictLabSource = fs.readFileSync(path.join(projectRoot, "src", "components", "ict-lab", "ICTLab.tsx"), "utf8");
+
+  const sessionReferenceText = [detectorSource, detectorTypes, liveReport, narrativeReport].join("\n");
+  assert.doesNotMatch(sessionReferenceText, /sundayOpenOverride|operator_override|manual\s+TradingView\s+override|TradingView\s+reference|TradingView\s+may\s+differ|visual\s+comparison/i);
+  assert.doesNotMatch([liveReport, narrativeReport].join("\n"), /\bTradingView\b|\bTV\b/i);
+
+  assert.match(advisorSource, /MT5-derived Sunday Open/);
+  assert.match(advisorSource, /MT5-derived 12AM Open/);
+  assert.match(ictLabSource, /MT5-derived Sunday Open/);
+  assert.match(ictLabSource, /MT5-derived 12AM Open/);
+}
+
 async function main() {
   compileForNode();
+  assertMt5OnlyReferenceWording();
   const detector = await import(pathToFileURL(path.join(outRoot, "ictSessionRaidReversal.mjs")).href);
   const contextBuilder = await import(pathToFileURL(path.join(outRoot, "buildCurrentOpportunityContext.mjs")).href);
   const scanner = await import(pathToFileURL(path.join(outRoot, "detectCurrentOpportunities.mjs")).href);
@@ -141,7 +162,6 @@ async function main() {
     entryTimeframe: "15m",
     htfContext: { H1: [{}], H4: [{}], D1: [{}] },
     weeklyBiasDirection: "bearish",
-    sundayOpenOverride: 90,
     timingZone: "America/New_York"
   };
 
@@ -152,6 +172,8 @@ async function main() {
   assert.ok(narrative.steps.every((step) => step.detected), "all synthetic steps should be detected");
   assert.equal(narrative.referenceLevels.currentPremiumDiscount, "discount");
   assert.equal(narrative.referenceLevels.sundayOpen.price, 90);
+  assert.equal(narrative.referenceLevels.sundayOpen.source, "mt5_first_sunday_evening_candle");
+  assert.equal(narrative.referenceLevels.midnightOpen.source, "mt5_session_midnight_open");
   assert.ok(narrative.entry);
   assert.ok(narrative.invalidation);
   assert.ok(narrative.target);

@@ -172,5 +172,4 @@ export interface IctSessionRaidReversalInput {
   generatedAt?: string;
   tradingDate?: string;
   weeklyBiasDirection?: string;
-  sundayOpenOverride?: number;
 }

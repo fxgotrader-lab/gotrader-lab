@@ -585,7 +585,7 @@ export function ICTLab() {
         <div className="flex flex-wrap gap-2">
           <Badge variant={sourceType === "imported" ? "success" : analysisUsesMockData ? "danger" : "warning"}>
             {sourceType === "tradingview_mcp_chart"
-              ? "TradingView research source active"
+              ? "Legacy chart research source active"
               : sourceType === "mt5_read_only"
                 ? "MT5 research source active"
               : sourceType === "imported"
@@ -593,7 +593,7 @@ export function ICTLab() {
                 : "Mock data active"}
           </Badge>
           {tradingViewCandles.length && !tradingViewResearchEligible ? (
-            <Badge variant="warning">TradingView visual only</Badge>
+            <Badge variant="warning">Legacy chart visual only</Badge>
           ) : null}
           {displaySource.chartDisplayUsesMt5ReadOnly && !mt5ResearchEligible ? (
             <Badge variant="warning">MT5 visual only</Badge>
@@ -725,8 +725,8 @@ export function ICTLab() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <StatusTile label="Sunday Open" value={formatSessionRaidPrice(sessionRaidReversal.referenceLevels.sundayOpen?.price)} detail={sessionRaidReversal.referenceLevels.currentPremiumDiscount} />
-              <StatusTile label="12AM Open" value={formatSessionRaidPrice(sessionRaidReversal.referenceLevels.midnightOpen?.price)} detail={sessionRaidReversal.referenceLevels.midnightOpen?.localTime ?? "New York midnight"} />
+              <StatusTile label="MT5-derived Sunday Open" value={formatSessionRaidPrice(sessionRaidReversal.referenceLevels.sundayOpen?.price)} detail={sessionRaidReversal.referenceLevels.currentPremiumDiscount} />
+              <StatusTile label="MT5-derived 12AM Open" value={formatSessionRaidPrice(sessionRaidReversal.referenceLevels.midnightOpen?.price)} detail={sessionRaidReversal.referenceLevels.midnightOpen?.localTime ?? "New York midnight"} />
               <StatusTile label="Asia High / Low" value={`${formatSessionRaidPrice(sessionRaidReversal.referenceLevels.asiaRange.high)} / ${formatSessionRaidPrice(sessionRaidReversal.referenceLevels.asiaRange.low)}`} detail={`${sessionRaidReversal.referenceLevels.asiaRange.candleCount} candles`} />
               <StatusTile label="Prior Day High / Low" value={`${formatSessionRaidPrice(sessionRaidReversal.referenceLevels.priorDayHigh?.price)} / ${formatSessionRaidPrice(sessionRaidReversal.referenceLevels.priorDayLow?.price)}`} />
               <StatusTile label="London High" value={formatSessionRaidPrice(sessionRaidReversal.referenceLevels.londonHigh?.price)} detail={sessionRaidReversal.referenceLevels.londonHigh?.localTime ?? "pending"} />
@@ -807,10 +807,10 @@ export function ICTLab() {
               ? `MT5 read-only is active for GoTrader ${mt5RequestedSymbol} via broker symbol ${mt5BrokerSymbol}. Treat this as CFD/proxy chart data, not CME MNQ futures broker truth.`
               : tradingViewCandles.length
               ? tradingViewResearchEligible
-                ? `TradingView MCP chart feed is active for research analysis with ${tradingViewCandles.length.toLocaleString()} read-only candles. It is still not broker truth.`
-                : `Displaying TradingView MCP candles visually; analysis uses ${displaySource.activeResearchSourceLabel} unless research eligibility passes. ${tradingViewFeed?.researchEligibility.reasons[0] ?? "It is not eligible for ICT analysis."}`
+                ? `Legacy chart feed is active for research analysis with ${tradingViewCandles.length.toLocaleString()} read-only candles. It is still not broker truth.`
+                : `Displaying legacy chart candles visually; analysis uses ${displaySource.activeResearchSourceLabel} unless research eligibility passes. ${tradingViewFeed?.researchEligibility.reasons[0] ?? "It is not eligible for ICT analysis."}`
               : tradingViewRuntime.latestEvidence?.technicalSummary ??
-                "TradingView MCP evidence is not connected. ICT Lab is using GoTrader candles and deterministic structure analysis only."}
+                "Legacy chart evidence is not connected. ICT Lab is using GoTrader candles and deterministic structure analysis only."}
           </div>
           <div className="rounded-lg border border-cyan-300/20 bg-background/45 p-3 text-xs text-cyan-100/80 md:col-span-4">
             Chart input: {displaySource.chartDisplayIdentity.sourceLabel} / {displaySource.chartDisplayIdentity.candleCount.toLocaleString()} candles / first{" "}

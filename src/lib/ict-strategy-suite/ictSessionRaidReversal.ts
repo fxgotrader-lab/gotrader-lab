@@ -166,17 +166,10 @@ const resolveMidnightOpen = (candles: CompactCandle[], tradingDate: string, timi
     const parts = localParts(candle.timestamp, timingZone);
     return parts.dateKey === tradingDate && parts.minuteOfDay > 0 && parts.minuteOfDay < 60;
   });
-  return level("12AM New York Open", midnight, midnight?.open, "session_midnight_open", timingZone);
+  return level("MT5-derived 12AM Open", midnight, midnight?.open, "mt5_session_midnight_open", timingZone);
 };
 
-const resolveSundayOpen = (candles: CompactCandle[], timingZone: string, override?: number, tradingDate?: string) => {
-  if (finite(override)) {
-    return {
-      label: "Sunday Open",
-      price: round(override),
-      source: "operator_override"
-    };
-  }
+const resolveSundayOpen = (candles: CompactCandle[], timingZone: string, tradingDate?: string) => {
   const sundayCandidates = candles.filter((candle) => {
     const date = new Date(candle.timestamp);
     const weekday = new Intl.DateTimeFormat("en-US", { timeZone: timingZone, weekday: "short" }).format(date);
@@ -190,7 +183,7 @@ const resolveSundayOpen = (candles: CompactCandle[], timingZone: string, overrid
   const sunday = latestSundayDate
     ? sundayCandidates.find((candle) => localParts(candle.timestamp, timingZone).dateKey === latestSundayDate)
     : undefined;
-  return level("Sunday Open", sunday, sunday?.open, "first_sunday_evening_candle", timingZone);
+  return level("MT5-derived Sunday Open", sunday, sunday?.open, "mt5_first_sunday_evening_candle", timingZone);
 };
 
 const findFirstFvg = (candles: CompactCandle[], startIndex: number, direction: "bearish" | "bullish"): IctSessionRaidReversalZone | undefined => {
@@ -249,7 +242,7 @@ const targetCandidatesForShort = (
   const targets: Array<IctSessionRaidReversalLevel | undefined> = [
     reference.asiaRange.low ? { label: "Asia Low", price: reference.asiaRange.low, source: "asia_low" } : undefined,
     reference.priorDayLow?.price ? { label: "Prior Day Low", price: reference.priorDayLow.price, source: "prior_day_low" } : undefined,
-    reference.sundayOpen?.price ? { label: "Sunday Open", price: reference.sundayOpen.price, source: "sunday_open_equilibrium" } : undefined,
+    reference.sundayOpen?.price ? { label: "MT5-derived Sunday Open", price: reference.sundayOpen.price, source: "mt5_sunday_open_equilibrium" } : undefined,
     reference.londonRange.low ? { label: "London Low", price: reference.londonRange.low, source: "london_low" } : undefined,
     swingLow ? { label: "Intraday Swing Low", price: swingLow.low, timestamp: swingLow.timestamp, source: "intraday_swing_low" } : undefined
   ];
@@ -329,7 +322,7 @@ export const evaluateIctSessionRaidReversal = (input: IctSessionRaidReversalInpu
   const londonRange = rangeOf(london);
   const nyRange = rangeOf(nyAm);
   const midnightOpen = resolveMidnightOpen(candles, tradingDate, timingZone);
-  const sundayOpen = resolveSundayOpen(candles, timingZone, input.sundayOpenOverride, tradingDate);
+  const sundayOpen = resolveSundayOpen(candles, timingZone, tradingDate);
   const priorHighCandle = highestCandle(priorDayCandles);
   const priorLowCandle = lowestCandle(priorDayCandles);
   const londonHighCandle = highestCandle(london.length ? london : earlyLondonToNy);
@@ -461,7 +454,7 @@ export const evaluateIctSessionRaidReversal = (input: IctSessionRaidReversalInpu
 
   const steps: IctSessionRaidReversalStep[] = [
     step("asia_consolidation", asiaConsolidates, asiaConsolidates ? "Asia formed a bounded range before London." : "Asia range is missing or too wide.", { high: asiaRange.high, low: asiaRange.low }),
-    step("london_expansion", Boolean(londonAboveMidnight), londonAboveMidnight ? "London expanded above the 12AM New York open." : "London did not trade above the 12AM New York open.", {
+    step("london_expansion", Boolean(londonAboveMidnight), londonAboveMidnight ? "London expanded above the MT5-derived 12AM Open." : "London did not trade above the MT5-derived 12AM Open.", {
       timestamp: londonExpansionCandle?.timestamp,
       localTime: londonExpansionCandle ? localParts(londonExpansionCandle.timestamp, timingZone).label : undefined,
       price: londonExpansionCandle?.high,
@@ -505,11 +498,11 @@ export const evaluateIctSessionRaidReversal = (input: IctSessionRaidReversalInpu
     "context_only";
   const weeklyBias = input.weeklyBiasDirection ?? "unknown";
   const bullishScenario = sundayOpen?.price
-    ? `If weekly bias is bullish, Sunday Open ${sundayOpen.price} is equilibrium/support to monitor after premium expansion; a return there can reset for higher continuation.`
-    : "Bullish scenario unavailable until Sunday Open/equilibrium is resolved.";
+    ? `If weekly bias is bullish, MT5-derived Sunday Open ${sundayOpen.price} is equilibrium/support to monitor after premium expansion; a return there can reset for higher continuation.`
+    : "Bullish scenario unavailable until MT5-derived Sunday Open/equilibrium is resolved.";
   const bearishScenario = sundayOpen?.price
-    ? `If weekly bias is bearish, price built premium above Sunday Open ${sundayOpen.price}; bearish delivery below that reference keeps sell-side liquidity in focus.`
-    : "Bearish scenario requires Sunday Open plus sell-side target confirmation.";
+    ? `If weekly bias is bearish, price built premium above MT5-derived Sunday Open ${sundayOpen.price}; bearish delivery below that reference keeps sell-side liquidity in focus.`
+    : "Bearish scenario requires MT5-derived Sunday Open plus sell-side target confirmation.";
   const nextAction =
     status === "complete_bearish_reversal_candidate"
       ? "Queue replay validation for NASDAQ London Raid -> NY Reversal. Recognition is not evidence."

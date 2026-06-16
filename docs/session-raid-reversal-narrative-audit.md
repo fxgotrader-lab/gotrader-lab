@@ -13,7 +13,7 @@ This document describes the research-only `nasdaq_london_raid_ny_reversal_v1` de
 - 15m breaker and bearish FVG
 - Retrace into the FVG
 - Sell-side delivery toward compact liquidity targets
-- Sunday Open as weekly equilibrium / premium-discount reference
+- MT5-derived Sunday Open as weekly equilibrium / premium-discount reference
 
 The detector is not an execution model. It creates research-only narrative diagnostics and can only queue replay validation when entry, invalidation, target, RR, source fingerprint, and authority gates are complete.
 
@@ -21,13 +21,13 @@ The detector is not an execution model. It creates research-only narrative diagn
 
 The detector resolves MT5 UTC/Z timestamps into `America/New_York` session time and produces compact references only:
 
-- Sunday Open
+- MT5-derived Sunday Open
 - 12AM New York Open
 - Asia High / Low
 - Prior Day High / Low
 - London High / Low
 - NY AM High / Low
-- Sunday Open premium/discount/equilibrium state
+- MT5-derived Sunday Open premium/discount/equilibrium state
 - Buy-side and sell-side liquidity targets
 
 Raw candles are never returned in the narrative, Advisor packet, current-opportunity scan, or UI card.
@@ -39,7 +39,7 @@ The user-described current NASDAQ setup maps as:
 | User observation | Detector step |
 | --- | --- |
 | Asia consolidated into London | `asia_consolidation` |
-| Around 3:45 AM NY, price expanded above 12AM Open | `london_expansion` |
+| Around 3:45 AM NY, price expanded above MT5-derived 12AM Open | `london_expansion` |
 | Price captured Asia High | `asia_high_sweep` |
 | Price captured previous daily high | `prior_day_high_sweep` |
 | Move created London High | `london_high_created` |
@@ -51,15 +51,15 @@ The user-described current NASDAQ setup maps as:
 
 When all sequence steps and trade construction pass, status becomes `complete_bearish_reversal_candidate`. Otherwise the detector reports `forming`, `near_miss`, `rejected`, `needs_more_data`, or `context_only` with explicit missing conditions.
 
-## Sunday Open Logic
+## MT5-Derived Sunday Open Logic
 
-Sunday Open is treated as weekly equilibrium and premium/discount context, not as a readiness override.
+MT5-derived Sunday Open is treated as weekly equilibrium and premium/discount context, not as a readiness bypass.
 
-- If price is above Sunday Open, the detector marks premium.
-- If price is below Sunday Open, the detector marks discount.
-- If weekly bias is bullish, the bullish scenario says Sunday Open may act as equilibrium/support before higher continuation.
-- If weekly bias is bearish, the bearish scenario says premium above Sunday Open can support sell-side delivery below it.
-- If Sunday Open is missing, the narrative still runs, but flags `sunday_open_missing`.
+- If price is above MT5-derived Sunday Open, the detector marks premium.
+- If price is below MT5-derived Sunday Open, the detector marks discount.
+- If weekly bias is bullish, the bullish scenario says MT5-derived Sunday Open may act as equilibrium/support before higher continuation.
+- If weekly bias is bearish, the bearish scenario says premium above MT5-derived Sunday Open can support sell-side delivery below it.
+- If MT5-derived Sunday Open is missing from the MT5 read-only candle stream, the narrative still runs, but flags `sunday_open_missing`.
 
 ## Validation Path
 
@@ -77,7 +77,7 @@ Replay validation remains required. Recognition is not evidence. Paper-Demo rema
 
 - The detector is tuned for NASDAQ/USTECH-style session structure first.
 - 15m FVG detection uses a compact three-candle imbalance definition.
-- Sunday Open can be resolved from candles or supplied as an operator override in tests.
+- MT5-derived Sunday Open and MT5-derived 12AM Open references are resolved from MT5 read-only candles only.
 - Prior-day high/low quality depends on loaded session history.
 - News and SMT filters are not hard gates in v1; they remain future confluence inputs.
 
