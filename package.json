@@ -76,6 +76,7 @@
     "test:ict-session-narrative": "node scripts/test-ict-session-narrative.mjs",
     "test:ict-session-narrative-90d": "node scripts/test-ict-session-narrative-90d.mjs",
     "test:ict-session-model-recognition": "node scripts/test-ict-session-model-recognition.mjs",
+    "test:session-raid-reversal": "node scripts/test-session-raid-reversal.mjs",
     "test:ict-opportunity-detection": "node scripts/test-ict-opportunity-detection.mjs",
     "test:current-opportunity-scanner": "node scripts/test-current-opportunity-scanner.mjs",
     "test:analysis-decision-trace": "node scripts/test-analysis-decision-trace.mjs",

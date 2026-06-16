@@ -1,3 +1,5 @@
+import type { IctSessionRaidReversalNarrative } from "../ict-strategy-suite/ictSessionRaidReversalTypes";
+
 export type CurrentOpportunityStatus =
   | "valid_candidate"
   | "forming"
@@ -34,6 +36,7 @@ export type CurrentOpportunityStrategyId =
   | "cisd_v1"
   | "ifvg_v1"
   | "ifvg_filtered_v2_research"
+  | "nasdaq_london_raid_ny_reversal_v1"
   | "market_map_only_diagnostic_v1";
 
 export type CurrentOpportunityDepthPolicyStatus =
@@ -112,6 +115,7 @@ export interface CurrentOpportunityContext {
   weeklyBiasDirection?: string;
   sessionNarrativeProfile?: string;
   sessionDirectionalRead?: string;
+  sessionRaidReversal?: IctSessionRaidReversalNarrative;
   fvgStatus?: string;
   displacementStatus?: string;
   drawOnLiquidity?: string;

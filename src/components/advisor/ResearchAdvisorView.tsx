@@ -1348,6 +1348,7 @@ export function ResearchAdvisorView() {
       />
       <RecognitionSummaryCard currentRead={currentRead} packet={activeAdvisorPacket} />
       <MarketOpportunityCard currentRead={currentRead} />
+      <SessionRaidReversalCard currentRead={currentRead} />
       <AdvisorStrategyLibraryCard currentRead={currentRead} />
       <ResearchSignalCard signal={researchSignal} />
       <LatestResearchStateStrip latestResearchState={latestResearchState} />
@@ -1690,6 +1691,55 @@ function DeferredResearchDetails({
         </div>
       )}
     </details>
+  );
+}
+
+function SessionRaidReversalCard({ currentRead }: { currentRead: IctCurrentRead }) {
+  const narrative = currentRead.sessionRaidReversal;
+  if (!narrative) return null;
+  const price = (value?: number) => (typeof value === "number" && Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "n/a");
+  const stepStatus = (step: string) => {
+    const item = narrative.steps.find((candidate) => candidate.step === step);
+    return item?.detected ? "detected" : "missing";
+  };
+  const sellSideTargets = narrative.referenceLevels.sellSideLiquidityTargets
+    .slice(0, 4)
+    .map((target) => `${target.label} ${price(target.price)}`)
+    .join(" / ");
+  return (
+    <section data-testid="session-raid-reversal-card" className={`${WORKSPACE_PRIMARY_PANEL} border-cyan-300/15 bg-cyan-300/[0.035]`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className={WORKSPACE_SECTION_LABEL}>Session Raid Narrative</p>
+          <h2 className="mt-1 text-xl font-semibold text-slate-50">NASDAQ London Raid -&gt; NY Reversal</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+            {narrative.nextAction}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant={narrative.status === "complete_bearish_reversal_candidate" ? "success" : narrative.status === "forming" || narrative.status === "near_miss" ? "warning" : "secondary"}>
+            {formatToken(narrative.status)}
+          </Badge>
+          <Badge variant="secondary">{narrative.steps.filter((step) => step.detected).length}/{narrative.steps.length} steps</Badge>
+          <Badge variant="danger">authority none</Badge>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <AdvisorReadout label="Sunday Open" value={price(narrative.referenceLevels.sundayOpen?.price)} detail={narrative.referenceLevels.currentPremiumDiscount} />
+        <AdvisorReadout label="12AM Open" value={price(narrative.referenceLevels.midnightOpen?.price)} detail={narrative.referenceLevels.midnightOpen?.localTime ?? "New York midnight"} />
+        <AdvisorReadout label="Asia High / Low" value={`${price(narrative.referenceLevels.asiaRange.high)} / ${price(narrative.referenceLevels.asiaRange.low)}`} detail={`${narrative.referenceLevels.asiaRange.candleCount} candles`} />
+        <AdvisorReadout label="London High" value={price(narrative.referenceLevels.londonHigh?.price)} detail={narrative.referenceLevels.londonHigh?.localTime ?? "pending"} />
+        <AdvisorReadout label="NY Raid" value={stepStatus("ny_london_high_raid")} detail={narrative.steps.find((step) => step.step === "ny_london_high_raid")?.note} />
+        <AdvisorReadout label="Bearish MSS" value={stepStatus("bearish_mss")} detail={narrative.steps.find((step) => step.step === "bearish_mss")?.note} />
+        <AdvisorReadout label="15m FVG / Retrace" value={`${stepStatus("fvg_detected")} / ${stepStatus("fvg_retrace")}`} detail={narrative.fairValueGap ? `${price(narrative.fairValueGap.high)}-${price(narrative.fairValueGap.low)}` : "FVG pending"} />
+        <AdvisorReadout label="Entry / RR" value={narrative.entry ? `${price(narrative.entry)} / ${narrative.rr?.toFixed(2) ?? "n/a"}R` : "not confirmed"} detail={narrative.entry ? `target ${price(narrative.target)} / invalidation ${price(narrative.invalidation)}` : narrative.missingConditions[0] ?? "no replay candidate"} />
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        <AdvisorReadout label="Sell-side targets" value={sellSideTargets || "none"} />
+        <AdvisorReadout label="Bullish scenario" value={narrative.bullishScenario} />
+        <AdvisorReadout label="Bearish scenario" value={narrative.bearishScenario} />
+      </div>
+    </section>
   );
 }
 

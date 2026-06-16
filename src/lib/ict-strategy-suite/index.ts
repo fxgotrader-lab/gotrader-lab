@@ -22,6 +22,8 @@ export * from "./ictTradeConstructionTypes";
 export * from "./ictTradeConstruction";
 export * from "./ictSessionNarrativeTypes";
 export * from "./ictSessionNarrative";
+export * from "./ictSessionRaidReversalTypes";
+export * from "./ictSessionRaidReversal";
 export * from "./ictGrinchModelTypes";
 export * from "./ictPhase2Types";
 export * from "./ictPhase2OrderBlocks";

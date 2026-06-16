@@ -31,6 +31,7 @@ import type {
   IctSessionModelState,
   IctSessionNarrativeProfile
 } from "./ictSessionNarrativeTypes";
+import type { IctSessionRaidReversalNarrative } from "./ictSessionRaidReversalTypes";
 import type { CurrentOpportunity, CurrentOpportunitySummary } from "../currentOpportunity/currentOpportunityTypes";
 
 export type IctCurrentReadPacketSource =
@@ -136,6 +137,7 @@ export interface IctCurrentRead {
   sessionNarrativeProfile?: IctSessionNarrativeProfile;
   sessionDirectionalRead?: IctSessionDirectionalRead;
   sessionNarrativeConfidence?: number;
+  sessionRaidReversal?: IctSessionRaidReversalNarrative;
   modelDetected?: boolean;
   modelName?: IctSessionModelName;
   modelState?: IctSessionModelState;

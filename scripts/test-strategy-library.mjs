@@ -161,10 +161,11 @@ async function main() {
   const evidence = await import(pathToFileURL(path.join(outRoot, "strategyEvidence.mjs")).href);
 
   const definitions = registry.listStrategyDefinitions();
-  assert.equal(definitions.length, 17);
+  assert.equal(definitions.length, 18);
   const newStrategyIds = [
     "silver_bullet_v1",
     "silver_bullet_v2_refined_research",
+    "nasdaq_london_raid_ny_reversal_v1",
     "camerons_model_research_v1",
     "ifvg_v1",
     "ifvg_filtered_v2_research",
@@ -181,6 +182,8 @@ async function main() {
   assert.equal(registry.getStrategyDefinition("silver_bullet_v1").status, "replay_required");
   assert.equal(registry.getStrategyDefinition("silver_bullet_v2_refined_research").detectorStatus, "executable_research");
   assert.equal(registry.getStrategyDefinition("silver_bullet_v2_refined_research").status, "replay_required");
+  assert.equal(registry.getStrategyDefinition("nasdaq_london_raid_ny_reversal_v1").detectorStatus, "executable_research");
+  assert.equal(registry.getStrategyDefinition("nasdaq_london_raid_ny_reversal_v1").status, "replay_required");
   assert.equal(registry.getStrategyDefinition("turtle_soup_v1").detectorStatus, "executable_research");
   assert.equal(registry.getStrategyDefinition("turtle_soup_v1").status, "replay_required");
   assert.equal(registry.getStrategyDefinition("cisd_v1").detectorStatus, "executable_research");
@@ -209,7 +212,7 @@ async function main() {
       `ifvg filtered v2 should forbid promotion reason ${reason}`
     );
   }
-  for (const strategyId of newStrategyIds.filter((id) => !["silver_bullet_v1", "silver_bullet_v2_refined_research", "turtle_soup_v1", "cisd_v1", "ifvg_v1", "ifvg_filtered_v2_research"].includes(id))) {
+  for (const strategyId of newStrategyIds.filter((id) => !["silver_bullet_v1", "silver_bullet_v2_refined_research", "nasdaq_london_raid_ny_reversal_v1", "turtle_soup_v1", "cisd_v1", "ifvg_v1", "ifvg_filtered_v2_research"].includes(id))) {
     assert.equal(registry.getStrategyDefinition(strategyId).detectorStatus, "research_only_placeholder");
   }
   assert.ok(registry.getStrategyDefinition("ict_cmd_short_paper_watchlist_v1"));
@@ -221,6 +224,10 @@ async function main() {
   assert.equal(
     registry.suggestStrategyIdForRecognition({ modelName: "Silver Bullet v2 refined" }),
     "silver_bullet_v2_refined_research"
+  );
+  assert.equal(
+    registry.suggestStrategyIdForRecognition({ modelName: "NASDAQ London raid NY reversal" }),
+    "nasdaq_london_raid_ny_reversal_v1"
   );
   assert.equal(
     registry.suggestStrategyIdForRecognition({ setupName: "Turtle Soup false breakout" }),

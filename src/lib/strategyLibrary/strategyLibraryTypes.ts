@@ -11,6 +11,7 @@ export type StrategyFamily =
   | "crt"
   | "ote"
   | "cisd"
+  | "session_raid_reversal"
   | "amd"
   | "grinch"
   | "pd_array"

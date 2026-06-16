@@ -213,6 +213,7 @@ export const buildCurrentOpportunityContext = ({
     weeklyBiasDirection,
     sessionNarrativeProfile: currentRead?.sessionNarrativeProfile ?? packet?.compactSummary?.sessionNarrativeProfile,
     sessionDirectionalRead: currentRead?.sessionDirectionalRead ?? packet?.compactSummary?.sessionDirectionalRead,
+    sessionRaidReversal: currentRead?.sessionRaidReversal ?? packet?.sessionRaidReversal,
     fvgStatus: currentRead?.fvgStatus,
     displacementStatus: currentRead?.displacementStatus,
     drawOnLiquidity: currentRead?.drawOnLiquidity ?? packet?.compactSummary?.drawOnLiquidity,

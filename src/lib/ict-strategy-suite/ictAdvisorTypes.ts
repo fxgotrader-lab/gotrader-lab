@@ -25,6 +25,7 @@ import type {
   IctSessionModelState,
   IctSessionNarrativeProfile
 } from "./ictSessionNarrativeTypes";
+import type { IctSessionRaidReversalNarrative } from "./ictSessionRaidReversalTypes";
 import type { IctMarketAnalysisContext, IctAnalysisTimeframe } from "./ictMarketAnalysisContextTypes";
 import type {
   IctRecognitionTier,
@@ -238,6 +239,7 @@ export interface IctAdvisorPacket {
   recommendedSignal: IctAdvisorSignal;
   indexSmt?: IctSmtSignal;
   sessionNarrative?: IctSessionNarrative;
+  sessionRaidReversal?: IctSessionRaidReversalNarrative;
   universalRecognition?: IctUniversalRecognitionResult;
   compactSummary: {
     compositeBias: IctBias;
@@ -269,6 +271,9 @@ export interface IctAdvisorPacket {
     fvgTargetDetected?: boolean;
     fvgTargetDirection?: "premium" | "discount" | "unknown";
     sessionTopReasons?: string[];
+    sessionRaidReversalStatus?: IctSessionRaidReversalNarrative["status"];
+    sessionRaidReversalStepCount?: number;
+    sessionRaidReversalDetectedStepCount?: number;
     dataDepthStatus?: IctDataDepthStatus;
     availableLookbackDays?: number;
     requestedLookbackDays?: number;

@@ -338,6 +338,52 @@ const ifvgFilteredV2Opportunity = (context: CurrentOpportunityContext): CurrentO
   });
 };
 
+const sessionRaidReversalOpportunity = (context: CurrentOpportunityContext): CurrentOpportunity | undefined => {
+  const narrative = context.sessionRaidReversal;
+  if (!narrative) return undefined;
+  const sharedBlockers = baseBlockersFor(context);
+  const status: CurrentOpportunityStatus =
+    narrative.status === "complete_bearish_reversal_candidate" && narrative.canCreateValidationChainEntry
+      ? "valid_candidate"
+      : narrative.status === "forming"
+        ? "forming"
+        : narrative.status === "needs_more_data"
+          ? "needs_more_data"
+          : narrative.status === "rejected"
+            ? "rejected"
+            : narrative.status === "context_only"
+              ? "diagnostic_context"
+              : "near_miss";
+  const diagnostic = narrative.status === "context_only";
+  const detectedSteps = narrative.steps.filter((item) => item.detected).length;
+  const stepSummary = `${detectedSteps}/${narrative.steps.length} narrative steps detected`;
+  const missing = narrative.missingConditions.length ? narrative.missingConditions : narrative.steps.filter((item) => !item.detected).map((item) => item.step);
+  return opportunity(context, {
+    strategyId: "nasdaq_london_raid_ny_reversal_v1",
+    model: "NASDAQ London Raid -> NY Reversal",
+    status,
+    classification: diagnostic ? "diagnostic" : undefined,
+    setupName: "nasdaq_london_raid_ny_reversal",
+    thesis:
+      narrative.status === "complete_bearish_reversal_candidate"
+        ? `London buy-side raid into NY bearish reversal candidate. ${stepSummary}.`
+        : `Session raid reversal narrative is ${narrative.status.replace(/_/g, " ")}. ${stepSummary}.`,
+    side: narrative.side === "short" ? "short" : "flat",
+    timeframe: narrative.primaryTimeframe,
+    entry: narrative.entry,
+    invalidation: narrative.invalidation,
+    target: narrative.target,
+    rrEstimate: narrative.rr,
+    confidence: narrative.confidence,
+    blockers: [...sharedBlockers, ...narrative.blockers],
+    missingConditions: missing,
+    nextAction: narrative.nextAction,
+    requiredValidation: status === "valid_candidate"
+      ? ["replay_required", "walk_forward_required", "evidence_required", "paper_demo_gate_required"]
+      : [...validationFor(status)]
+  });
+};
+
 const primaryOpportunity = (context: CurrentOpportunityContext) => {
   const status = statusForPrimaryContext(context);
   const isCmd = /consolidation|cmd/i.test(`${context.modelName ?? ""} ${context.sessionNarrativeProfile ?? ""} ${context.opportunityType ?? ""}`);
@@ -516,7 +562,8 @@ const summarize = (context: CurrentOpportunityContext, opportunities: CurrentOpp
 };
 
 export const detectCurrentOpportunities = (context: CurrentOpportunityContext): CurrentOpportunityScan => {
-  const opportunities = [primaryOpportunity(context), ...strategyDiagnostics(context)].sort(
+  const sessionRaid = sessionRaidReversalOpportunity(context);
+  const opportunities = [primaryOpportunity(context), ...(sessionRaid ? [sessionRaid] : []), ...strategyDiagnostics(context)].sort(
     (left, right) => statusRank[right.status] - statusRank[left.status] || right.confidence - left.confidence
   );
   const summary = summarize(context, opportunities);

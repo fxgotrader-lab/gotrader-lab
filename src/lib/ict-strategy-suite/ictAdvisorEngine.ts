@@ -72,6 +72,7 @@ import type { IctIndexComparisonCandles } from "./ictIndexSmtTypes";
 import type { IctNewsSessionRiskContextInput } from "./ictNewsSessionRiskTypes";
 import { buildIctSessionNarrative } from "./ictSessionNarrative";
 import type { IctSessionNarrative } from "./ictSessionNarrativeTypes";
+import { evaluateIctSessionRaidReversal } from "./ictSessionRaidReversal";
 import type { IctLiquidityPool as SuiteLiquidityPool } from "./ictStrategySuiteTypes";
 
 const createId = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -979,6 +980,21 @@ export async function buildIctAdvisorPacketFromRuntime(
         depthSource: options.marketAnalysisContextBundle ? "cached_depth" : "current_window"
       })
     : undefined;
+  const sessionRaidReversal = candles.length
+    ? evaluateIctSessionRaidReversal({
+        candles5m: candles,
+        candles15m: sessionCandles === candles ? undefined : sessionCandles,
+        htfContext: htfCandles,
+        requestedSymbol,
+        brokerSymbol,
+        sourceProvider: sourceSummary.provider,
+        sourceFingerprint: activeSource?.fingerprint ?? sourceSummary.fingerprint,
+        primaryTimeframe,
+        entryTimeframe: sessionModelTimeframe,
+        weeklyBiasDirection: marketAnalysisContext.weeklyBiasDirection,
+        timingZone: "America/New_York"
+      })
+    : undefined;
   const signals = candles.length
     ? buildIctAdvisorSignals({
         brokerSymbol,
@@ -1064,6 +1080,7 @@ export async function buildIctAdvisorPacketFromRuntime(
     recommendedSignal,
     indexSmt: recommendedSignal.smt,
     sessionNarrative,
+    sessionRaidReversal,
     universalRecognition,
     newsSessionRisk: recommendedSignal.newsSessionRisk,
     compactSummary: {
@@ -1098,6 +1115,9 @@ export async function buildIctAdvisorPacketFromRuntime(
       fvgTargetDetected: sessionNarrative?.fvgTarget?.detected,
       fvgTargetDirection: sessionNarrative?.fvgTarget?.direction,
       sessionTopReasons: sessionNarrative?.topReasons,
+      sessionRaidReversalStatus: sessionRaidReversal?.status,
+      sessionRaidReversalStepCount: sessionRaidReversal?.steps.length,
+      sessionRaidReversalDetectedStepCount: sessionRaidReversal?.steps.filter((item) => item.detected).length,
       dataDepthStatus: sessionNarrative?.dataDepth.status,
       availableLookbackDays: sessionNarrative?.dataDepth.availableLookbackDays,
       requestedLookbackDays: sessionNarrative?.dataDepth.requestedLookbackDays,

@@ -229,6 +229,9 @@ export function ICTLab() {
       timeframe: item.timeframe
     });
   };
+  const sessionRaidReversal = currentOpportunityScan?.context.sessionRaidReversal;
+  const formatSessionRaidPrice = (value?: number) =>
+    typeof value === "number" && Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "n/a";
   const recognitionCta = (setupLabel: string) => {
     const strategyId = suggestStrategyIdForRecognition({ modelName: setupLabel, setupName: setupLabel });
     const strategy = getStrategyDefinition(strategyId);
@@ -699,6 +702,48 @@ export function ICTLab() {
           )}
         </CardContent>
       </Card>
+
+      {sessionRaidReversal ? (
+        <Card data-testid="ict-lab-session-raid-reversal" className="border-cyan-300/20 bg-cyan-300/5">
+          <CardHeader>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle>NASDAQ London Raid -&gt; NY Reversal Narrative</CardTitle>
+                <CardDescription>
+                  Compact reference map from Activate Market. Raw candles are excluded; replay validation is still required.
+                </CardDescription>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant={sessionRaidReversal.status === "complete_bearish_reversal_candidate" ? "success" : sessionRaidReversal.status === "forming" || sessionRaidReversal.status === "near_miss" ? "warning" : "secondary"}>
+                  {sessionRaidReversal.status.replace(/_/g, " ")}
+                </Badge>
+                <Badge variant="muted">
+                  {sessionRaidReversal.steps.filter((step) => step.detected).length}/{sessionRaidReversal.steps.length} steps
+                </Badge>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <StatusTile label="Sunday Open" value={formatSessionRaidPrice(sessionRaidReversal.referenceLevels.sundayOpen?.price)} detail={sessionRaidReversal.referenceLevels.currentPremiumDiscount} />
+              <StatusTile label="12AM Open" value={formatSessionRaidPrice(sessionRaidReversal.referenceLevels.midnightOpen?.price)} detail={sessionRaidReversal.referenceLevels.midnightOpen?.localTime ?? "New York midnight"} />
+              <StatusTile label="Asia High / Low" value={`${formatSessionRaidPrice(sessionRaidReversal.referenceLevels.asiaRange.high)} / ${formatSessionRaidPrice(sessionRaidReversal.referenceLevels.asiaRange.low)}`} detail={`${sessionRaidReversal.referenceLevels.asiaRange.candleCount} candles`} />
+              <StatusTile label="Prior Day High / Low" value={`${formatSessionRaidPrice(sessionRaidReversal.referenceLevels.priorDayHigh?.price)} / ${formatSessionRaidPrice(sessionRaidReversal.referenceLevels.priorDayLow?.price)}`} />
+              <StatusTile label="London High" value={formatSessionRaidPrice(sessionRaidReversal.referenceLevels.londonHigh?.price)} detail={sessionRaidReversal.referenceLevels.londonHigh?.localTime ?? "pending"} />
+              <StatusTile label="NY Raid" value={sessionRaidReversal.steps.find((step) => step.step === "ny_london_high_raid")?.detected ? "detected" : "missing"} detail={sessionRaidReversal.steps.find((step) => step.step === "ny_london_high_raid")?.note} />
+              <StatusTile label="Bearish MSS" value={sessionRaidReversal.steps.find((step) => step.step === "bearish_mss")?.detected ? "detected" : "missing"} detail={sessionRaidReversal.steps.find((step) => step.step === "bearish_mss")?.note} />
+              <StatusTile label="15m FVG / Retrace" value={`${sessionRaidReversal.steps.find((step) => step.step === "fvg_detected")?.detected ? "detected" : "missing"} / ${sessionRaidReversal.steps.find((step) => step.step === "fvg_retrace")?.detected ? "detected" : "missing"}`} detail={sessionRaidReversal.fairValueGap ? `${formatSessionRaidPrice(sessionRaidReversal.fairValueGap.high)}-${formatSessionRaidPrice(sessionRaidReversal.fairValueGap.low)}` : "pending"} />
+              <StatusTile label="Entry / Target" value={`${formatSessionRaidPrice(sessionRaidReversal.entry)} / ${formatSessionRaidPrice(sessionRaidReversal.target)}`} detail={sessionRaidReversal.rr ? `${sessionRaidReversal.rr.toFixed(2)}R / invalidation ${formatSessionRaidPrice(sessionRaidReversal.invalidation)}` : sessionRaidReversal.missingConditions[0] ?? "not a candidate"} />
+              <StatusTile label="Sell-side targets" value={sessionRaidReversal.referenceLevels.sellSideLiquidityTargets.slice(0, 3).map((target) => `${target.label} ${formatSessionRaidPrice(target.price)}`).join(" / ") || "none"} />
+              <StatusTile label="Bullish scenario" value={sessionRaidReversal.bullishScenario} />
+              <StatusTile label="Bearish scenario" value={sessionRaidReversal.bearishScenario} />
+            </div>
+            <p className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-3 text-sm leading-6 text-cyan-50">
+              {sessionRaidReversal.nextAction}
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {analysisUsesMockData ? (
         <div

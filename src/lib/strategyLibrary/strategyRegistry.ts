@@ -970,6 +970,104 @@ export const STRATEGY_DEFINITIONS: StrategyDefinition[] = [
     authority: STRATEGY_LIBRARY_AUTHORITY
   },
   {
+    id: "nasdaq_london_raid_ny_reversal_v1",
+    name: "NASDAQ London Raid -> NY Reversal v1",
+    family: "session_raid_reversal",
+    status: "replay_required",
+    detectorStatus: "executable_research",
+    description:
+      "Executable research detector for the NASDAQ/USTECH multi-session narrative: Asia consolidation, London expansion and buy-side sweep, NY raid above London High, bearish MSS, 15m breaker/FVG retrace, and sell-side delivery. Research-only until replay, walk-forward, evidence, maturity, and Paper-Demo checklist gates pass.",
+    side: "short",
+    supportedSymbols: ["MNQ", "NQ", "USTECH", "US100", "NAS100"],
+    primaryTimeframes: ["5m"],
+    higherTimeframes: ["15m", "1h", "4h", "1d", "1w"],
+    sourceRequirements: mt5ResearchSource,
+    requiredConditions: [
+      {
+        id: "asia_consolidation",
+        label: "Asia consolidation",
+        description: "Asia session must form a bounded range before London.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "london_expansion_above_midnight",
+        label: "London expansion above 12AM",
+        description: "London must trade above the New York midnight open and create buy-side liquidity.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "liquidity_capture",
+        label: "Asia/prior-day liquidity capture",
+        description: "The move should sweep Asia High and preferably prior-day high before creating London High.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "ny_london_high_raid",
+        label: "NY raid above London High",
+        description: "NY AM must raid the London High before bearish reversal confirmation.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "bearish_mss_displacement",
+        label: "Bearish MSS/displacement",
+        description: "After the NY raid, price must break a prior 5m swing low with bearish displacement.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "breaker_fvg_retrace",
+        label: "15m breaker/FVG retrace",
+        description: "A bearish 15m breaker/FVG must form and price must retrace into it before candidate creation.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "target_invalidation_rr",
+        label: "Target/invalidation/RR",
+        description: "Sell-side target, stop above raid/breaker, and minimum 2R must be compactly defined.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      }
+    ],
+    invalidationRules: [
+      "Short invalidation must be above the NY raid/London High or breaker/FVG structure.",
+      "No widening stop to force RR; if structure stop is too wide, wait for a cleaner retrace."
+    ],
+    targetRules: [
+      "Target sell-side liquidity below entry: Asia Low, prior-day low, Sunday Open/equilibrium, London Low, or intraday swing low.",
+      "Minimum reward/risk is 2R before replay validation can be queued."
+    ],
+    minimumRR: 2,
+    sessionRules: [
+      "Use America/New_York session timing on MT5 UTC/Z timestamps.",
+      "Asia range uses 20:00-01:00 New York session date.",
+      "London expansion uses 02:00-05:00 New York; NY raid uses NY AM."
+    ],
+    regimeRules: [
+      "Sunday Open is a weekly equilibrium/premium-discount reference, not a readiness override.",
+      "If weekly bias is unavailable, present both bullish retest and bearish delivery scenarios.",
+      "No Paper-Demo progression without replay/OOS/evidence/maturity."
+    ],
+    validationRequirements: compactValidation,
+    paperDemoRequirements: [
+      {
+        id: "session_raid_reversal_replay_oos",
+        label: "Session raid reversal replay/OOS",
+        required: true,
+        detail: "Replay, walk-forward/OOS, evidence, maturity, and Paper-Demo checklist gates must pass."
+      }
+    ],
+    forbiddenPromotionReasons: [
+      "missing Asia consolidation",
+      "missing London expansion above 12AM Open",
+      "missing London High raid",
+      "missing bearish MSS",
+      "missing 15m FVG retrace",
+      "target/invalidation/RR incomplete",
+      "mock/sample source",
+      "missing replay/OOS",
+      "Paper-Demo checklist incomplete"
+    ],
+    authority: STRATEGY_LIBRARY_AUTHORITY
+  },
+  {
     id: "market_map_only_diagnostic_v1",
     name: "Market-Map Only Diagnostic",
     family: "market_map",
@@ -1042,6 +1140,12 @@ export const suggestStrategyIdForRecognition = (input: {
   }
   if (input.family === "cisd" || /\bcisd\b|change in state/.test(text)) {
     return "cisd_v1";
+  }
+  if (
+    input.family === "session_raid_reversal" ||
+    /london.*raid.*ny|ny.*raid.*london|session.*raid.*reversal|nasdaq.*raid.*reversal/.test(text)
+  ) {
+    return "nasdaq_london_raid_ny_reversal_v1";
   }
   if (input.family === "amd" || /\bamd\b|power of three|accumulation.*manipulation.*distribution/.test(text)) {
     return "amd_power_of_three_research_v1";
