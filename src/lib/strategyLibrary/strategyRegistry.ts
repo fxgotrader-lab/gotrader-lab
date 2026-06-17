@@ -1068,6 +1068,104 @@ export const STRATEGY_DEFINITIONS: StrategyDefinition[] = [
     authority: STRATEGY_LIBRARY_AUTHORITY
   },
   {
+    id: "nasdaq_london_raid_ny_reversal_v2_filtered_research",
+    name: "NASDAQ London Raid -> NY Reversal v2 Filtered Research",
+    family: "session_raid_reversal",
+    status: "replay_required",
+    detectorStatus: "executable_research",
+    description:
+      "Research-only filtered variant of the NASDAQ/USTECH London raid -> NY reversal detector. It requires the v1 sequence first, then tests quality filters for displacement body size, FVG size, FVG retrace depth, raid extension, stop distance, target feasibility, and high-RR traps. It cannot create Paper-Demo eligibility until replay, walk-forward, evidence, maturity, and checklist gates pass.",
+    side: "short",
+    supportedSymbols: ["MNQ", "NQ", "USTECH", "US100", "NAS100"],
+    primaryTimeframes: ["5m"],
+    higherTimeframes: ["15m", "1h", "4h", "1d", "1w"],
+    sourceRequirements: mt5ResearchSource,
+    requiredConditions: [
+      {
+        id: "base_v1_complete_candidate",
+        label: "Base v1 candidate complete",
+        description: "The unmodified v1 session raid reversal detector must produce a complete bearish reversal candidate first.",
+        requiredFor: ["intake", "replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "strong_bearish_displacement_body",
+        label: "Strong bearish displacement body",
+        description: "Post-raid bearish MSS candle body must meet the v2 minimum displacement threshold.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "winner_range_fvg_size",
+        label: "Winner-range FVG size",
+        description: "Post-MSS FVG size must avoid tiny weak gaps and oversized inefficient gaps.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "controlled_fvg_retrace",
+        label: "Controlled FVG retrace",
+        description: "FVG mitigation depth must remain shallow enough to avoid full chop-through conditions.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "raid_not_overextended",
+        label: "Raid not overextended",
+        description: "NY raid distance above London High must stay inside the filtered research bound.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "compact_stop_distance",
+        label: "Compact stop distance",
+        description: "Stop above raid/breaker/FVG structure must stay within the v2 stop-distance cap.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      },
+      {
+        id: "target_feasibility",
+        label: "Target feasibility",
+        description: "Target distance and selected liquidity target must be feasible without relying on a high-RR trap.",
+        requiredFor: ["replay", "paper_watchlist", "paper_demo"]
+      }
+    ],
+    invalidationRules: [
+      "Invalidation remains inherited from v1: above the NY raid/London High or breaker/FVG structure.",
+      "V2 rejects candidates whose stop distance exceeds the filtered research cap."
+    ],
+    targetRules: [
+      "Target remains inherited from v1 sell-side liquidity below entry.",
+      "V2 rejects candidates with weak target feasibility or high-RR trap characteristics."
+    ],
+    minimumRR: 2,
+    sessionRules: [
+      "Use America/New_York session timing on MT5 UTC/Z timestamps.",
+      "V2 is audit/replay oriented; current opportunity scanner integration requires compact v2 telemetry first."
+    ],
+    regimeRules: [
+      "V2 does not loosen the base model and cannot override source quality, replay, walk-forward, evidence, maturity, or Paper-Demo checklist gates.",
+      "No Paper-Demo progression from a filtered candidate alone."
+    ],
+    validationRequirements: compactValidation,
+    paperDemoRequirements: [
+      {
+        id: "v2_filtered_replay_oos",
+        label: "V2 filtered replay/OOS",
+        required: true,
+        detail: "Filtered candidates must show independent replay, walk-forward/OOS, evidence, maturity, and checklist support before progression."
+      }
+    ],
+    forbiddenPromotionReasons: [
+      "base v1 candidate incomplete",
+      "weak displacement body",
+      "FVG size outside filtered range",
+      "FVG retrace too deep",
+      "raid too extended above London High",
+      "stop distance too wide",
+      "target feasibility weak",
+      "high-RR trap",
+      "sample too small",
+      "missing replay/OOS",
+      "Paper-Demo checklist incomplete"
+    ],
+    authority: STRATEGY_LIBRARY_AUTHORITY
+  },
+  {
     id: "market_map_only_diagnostic_v1",
     name: "Market-Map Only Diagnostic",
     family: "market_map",

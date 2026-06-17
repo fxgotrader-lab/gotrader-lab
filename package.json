@@ -80,6 +80,7 @@
     "test:live-session-raid-reversal": "node scripts/test-live-session-raid-reversal.mjs",
     "test:session-raid-reversal-evidence-depth": "node scripts/test-session-raid-reversal-evidence-depth.mjs",
     "test:session-raid-reversal-winner-loser": "node scripts/test-session-raid-reversal-winner-loser.mjs",
+    "test:session-raid-reversal-v2-filtered": "node scripts/test-session-raid-reversal-v2-filtered.mjs",
     "test:ict-opportunity-detection": "node scripts/test-ict-opportunity-detection.mjs",
     "test:current-opportunity-scanner": "node scripts/test-current-opportunity-scanner.mjs",
     "test:analysis-decision-trace": "node scripts/test-analysis-decision-trace.mjs",
